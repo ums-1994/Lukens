@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../services/api_service.dart';
-import '../services/firebase_service.dart';
+import '../../services/api_service.dart';
+import '../../services/firebase_service.dart';
 
 class ProposalsPage extends StatefulWidget {
   @override

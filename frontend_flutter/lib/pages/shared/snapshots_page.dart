@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'editing_page.dart';
+import '../creator/editing_page.dart';
 
 class SnapshotsPage extends StatefulWidget {
   final String documentName;

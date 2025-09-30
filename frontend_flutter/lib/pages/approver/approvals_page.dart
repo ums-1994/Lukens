@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
+import '../../api.dart';
 
 class ApprovalsPage extends StatelessWidget {
   const ApprovalsPage({super.key});
@@ -10,16 +10,19 @@ class ApprovalsPage extends StatelessWidget {
     final app = context.watch<AppState>();
     final p = app.currentProposal;
     if (p == null) {
-      return const Center(child: Text("Select a proposal to manage approvals."));
+      return const Center(
+          child: Text("Select a proposal to manage approvals."));
     }
     final status = p["status"];
-    final approvals = Map<String, dynamic>.from(p["approval"]["approvals"] ?? {});
+    final approvals =
+        Map<String, dynamic>.from(p["approval"]["approvals"] ?? {});
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Status: $status", style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text("Status: $status",
+              style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Wrap(spacing: 12, children: [
             _stageChip(context, "Delivery", approvals["Delivery"] != null),
@@ -37,9 +40,11 @@ class ApprovalsPage extends StatelessWidget {
     final app = context.read<AppState>();
     return InputChip(
       label: Text("$stage ${approved ? "✓" : ""}"),
-      onPressed: approved ? null : () async {
-        await app.approveStage(stage);
-      },
+      onPressed: approved
+          ? null
+          : () async {
+              await app.approveStage(stage);
+            },
     );
   }
 }
@@ -58,7 +63,10 @@ class _SignPanelState extends State<SignPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        TextField(controller: ctrl, decoration: const InputDecoration(labelText: "Signer Name (Client)")),
+        TextField(
+            controller: ctrl,
+            decoration:
+                const InputDecoration(labelText: "Signer Name (Client)")),
         const SizedBox(height: 8),
         ElevatedButton.icon(
           icon: const Icon(Icons.draw_outlined),

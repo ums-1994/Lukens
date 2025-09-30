@@ -244,6 +244,31 @@ class ProposalUpdate(BaseModel):
     sections: Optional[Dict[str, Any]] = None
     dtype: Optional[DocType] = None
 
+class ProposalDraft(BaseModel):
+    sections: Dict[str, Any] = {}
+    version: str = "draft"
+    auto_saved: bool = False
+    timestamp: str = Field(default_factory=now_iso)
+    user_id: Optional[str] = None
+
+class ProposalVersion(BaseModel):
+    id: str
+    proposal_id: str
+    title: str
+    description: str
+    sections: Dict[str, Any] = {}
+    is_major: bool = False
+    created_by: str
+    created_at: str = Field(default_factory=now_iso)
+    restored_from: Optional[str] = None
+
+class VersionCreate(BaseModel):
+    title: str
+    description: str
+    sections: Dict[str, Any] = {}
+    is_major: bool = False
+    created_by: str
+
 class ContentBlockIn(BaseModel):
     key: str
     label: str
@@ -510,6 +535,151 @@ def submit_for_review(pid: str):
     p.updated_at = now_iso()
     save_proposal(p)
     return p
+
+# Import the new service
+from proposal_versions_service import ProposalVersionsService
+
+# Initialize the service
+versions_service = ProposalVersionsService()
+
+# Auto-draft endpoints
+@app.put("/proposals/{pid}/draft")
+def save_draft(pid: str, payload: ProposalDraft):
+    """Save auto-draft version of proposal"""
+    p = get_proposal_or_404(pid)
+    p.sections.update(payload.sections)
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return {"message": "Draft saved successfully", "timestamp": payload.timestamp}
+
+@app.post("/proposals/{pid}/autosave")
+def autosave_proposal(pid: str, payload: ProposalDraft):
+    """Auto-save proposal and create version history entry"""
+    p = get_proposal_or_404(pid)
+    
+    # Get previous sections for comparison
+    previous_sections = p.sections.copy()
+    
+    # Update proposal with new sections
+    p.sections.update(payload.sections)
+    p.updated_at = now_iso()
+    save_proposal(p)
+    
+    # Create version history entry if there are changes
+    if previous_sections != payload.sections:
+        try:
+            version = versions_service.create_version(
+                proposal_id=pid,
+                content=payload.sections,
+                created_by=payload.user_id or "system"
+            )
+            
+            return {
+                "message": "Autosaved",
+                "version_id": version['id'],
+                "saved_at": payload.timestamp
+            }
+        except Exception as e:
+            print(f"Error creating version: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "message": "Autosaved but version creation failed",
+                "saved_at": payload.timestamp
+            }
+    
+    return {
+        "message": "No changes to save",
+        "saved_at": payload.timestamp
+    }
+
+# Versioning endpoints
+@app.get("/proposals/{pid}/versions")
+def get_proposal_versions(pid: str):
+    """Get all versions for a proposal"""
+    try:
+        versions = versions_service.get_versions(pid)
+        return {"versions": versions}
+    except Exception as e:
+        print(f"Error getting versions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve versions")
+
+@app.post("/proposals/{pid}/versions")
+def create_proposal_version(pid: str, payload: VersionCreate):
+    """Create a new version of a proposal"""
+    p = get_proposal_or_404(pid)
+    
+    try:
+        version = versions_service.create_version(
+            proposal_id=pid,
+            content=payload.sections,
+            created_by=payload.created_by
+        )
+        
+        # Convert to the expected format for compatibility
+        return {
+            "id": version['id'],
+            "proposal_id": version['proposal_id'],
+            "title": payload.title,
+            "description": payload.description,
+            "sections": version['content'],
+            "is_major": payload.is_major,
+            "created_by": version['created_by'],
+            "created_at": version['created_at']
+        }
+    except Exception as e:
+        print(f"Error creating version: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create version")
+
+@app.post("/proposals/{pid}/versions/{version_id}/restore")
+def restore_proposal_version(pid: str, version_id: str):
+    """Restore a proposal to a specific version"""
+    p = get_proposal_or_404(pid)
+    
+    try:
+        # Get the version
+        version = versions_service.get_version(pid, version_id)
+        if not version:
+            raise HTTPException(status_code=404, detail="Version not found")
+        
+        # Restore sections
+        p.sections = version["content"]
+        p.updated_at = now_iso()
+        save_proposal(p)
+        
+        return {"message": "Version restored successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error restoring version: {e}")
+        raise HTTPException(status_code=500, detail="Failed to restore version")
+
+@app.delete("/proposals/{pid}/versions/{version_id}")
+def delete_proposal_version(pid: str, version_id: str):
+    """Delete a specific version"""
+    try:
+        success = versions_service.delete_version(pid, version_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Version not found")
+        
+        return {"message": "Version deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting version: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete version")
+
+@app.get("/proposals/{pid}/versions/diff")
+def get_version_diff(pid: str, from_version: str = Query(..., alias="from"), to_version: str = Query(..., alias="to")):
+    """Get differences between two versions"""
+    try:
+        diff = versions_service.get_version_diff(pid, from_version, to_version)
+        return diff
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"Error getting version diff: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get version diff")
 
 @app.post("/proposals/{pid}/approve", response_model=Proposal)
 def approve_stage(pid: str, stage: Stage = Query(..., description="Approval stage: Delivery | Legal | Exec")):
