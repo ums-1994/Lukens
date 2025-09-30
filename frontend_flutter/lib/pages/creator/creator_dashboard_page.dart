@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
-import '../services/auth_service.dart';
-import '../services/proposal_status_service.dart';
+import '../../api.dart';
+import '../../services/auth_service.dart';
+import '../../services/proposal_status_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});

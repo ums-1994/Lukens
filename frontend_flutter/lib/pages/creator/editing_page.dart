@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
-import 'proposal_viewer_page.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:async';
+import '../client/proposal_viewer_page.dart';
 import 'creator_dashboard_page.dart';
-import '../services/email_service.dart';
+import '../../services/email_service.dart';
+import '../../services/auto_draft_service.dart';
+import '../../services/versioning_service.dart';
+import '../shared/version_history_page.dart';
 
 class EditingPage extends StatefulWidget {
   final String documentName;
@@ -36,9 +42,11 @@ class _EditingPageState extends State<EditingPage> {
   bool _isSharing = false;
 
   final EmailService _emailService = EmailService();
+  final AutoDraftService _autoDraftService = AutoDraftService();
   final TextEditingController _addContactController = TextEditingController();
 
   final List<Map<String, String>> _recipients = [];
+  String? _currentProposalId;
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +113,45 @@ class _EditingPageState extends State<EditingPage> {
               ],
             ),
           ),
+          // Auto-save status bar
+          Container(
+            height: 40,
+            color: const Color(0xFFF8F9FA),
+            child: Row(
+              children: [
+                const SizedBox(width: 16),
+                Icon(
+                  _autoDraftService.isAutoSaving
+                      ? Icons.sync
+                      : _autoDraftService.hasUnsavedChanges
+                          ? Icons.warning
+                          : Icons.check_circle,
+                  size: 16,
+                  color: _autoDraftService.isAutoSaving
+                      ? Colors.orange
+                      : _autoDraftService.hasUnsavedChanges
+                          ? Colors.red
+                          : Colors.green,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _autoDraftService.getStatusMessage(),
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const Spacer(),
+                if (_autoDraftService.hasUnsavedChanges)
+                  TextButton(
+                    onPressed: _forceSave,
+                    child: const Text('Save Now'),
+                  ),
+                TextButton(
+                  onPressed: _openVersionHistory,
+                  child: const Text('Version History'),
+                ),
+                const SizedBox(width: 16),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -146,6 +193,25 @@ class _EditingPageState extends State<EditingPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6C757D),
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Create Version Button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _createVersion,
+              icon: const Icon(Icons.bookmark_add, size: 16),
+              label: const Text('Create Version'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF3498DB),
+                side: const BorderSide(color: Color(0xFF3498DB)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
@@ -335,6 +401,8 @@ class _EditingPageState extends State<EditingPage> {
                   setState(() {
                     _ccOtherEmails = value ?? false;
                   });
+                  // Mark data as changed for auto-draft
+                  _markDataChanged();
                 },
                 activeColor: const Color(0xFF3498DB),
               ),
@@ -349,7 +417,11 @@ class _EditingPageState extends State<EditingPage> {
           if (_ccOtherEmails) ...[
             const SizedBox(height: 8),
             TextField(
-              onChanged: (value) => _ccEmails = value,
+              onChanged: (value) {
+                _ccEmails = value;
+                // Mark data as changed for auto-draft
+                _markDataChanged();
+              },
               decoration: const InputDecoration(
                 hintText: 'Enter email addresses...',
                 border: OutlineInputBorder(),
@@ -392,6 +464,8 @@ class _EditingPageState extends State<EditingPage> {
                   setState(() {
                     _selectedTemplate = newValue!;
                   });
+                  // Mark data as changed for auto-draft
+                  _markDataChanged();
                 },
               ),
             ),
@@ -665,7 +739,7 @@ class _EditingPageState extends State<EditingPage> {
                     _isPlainText = value;
                   });
                 },
-                activeColor: const Color(0xFF3498DB),
+                activeThumbColor: const Color(0xFF3498DB),
               ),
             ],
           ),
@@ -1054,6 +1128,10 @@ class _EditingPageState extends State<EditingPage> {
                     setState(() {
                       recipient['percentage'] = '${percentage.round()}%';
                     });
+
+                    // Mark data as changed for auto-draft
+                    _markDataChanged();
+
                     Navigator.of(context).pop();
                   },
                   child: const Text('Save'),
@@ -1117,6 +1195,10 @@ class _EditingPageState extends State<EditingPage> {
                   recipient['email'] = emailController.text;
                   recipient['company'] = companyController.text;
                 });
+
+                // Mark data as changed for auto-draft
+                _markDataChanged();
+
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -1151,6 +1233,10 @@ class _EditingPageState extends State<EditingPage> {
                 setState(() {
                   _recipients.remove(recipient);
                 });
+
+                // Mark data as changed for auto-draft
+                _markDataChanged();
+
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -1212,6 +1298,9 @@ class _EditingPageState extends State<EditingPage> {
       });
       _addContactController.clear();
     });
+
+    // Mark data as changed for auto-draft
+    _markDataChanged();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1431,8 +1520,230 @@ class _EditingPageState extends State<EditingPage> {
     return null;
   }
 
+  // Auto-draft methods
+  Future<void> _createProposalAndInitializeAutoDraft() async {
+    try {
+      // Create a real proposal in the backend
+      final proposalId = await _createProposal();
+      if (proposalId != null) {
+        _currentProposalId = proposalId;
+        _initializeAutoDraft();
+      } else {
+        // Fallback to temp ID if creation fails
+        _currentProposalId =
+            'temp-proposal-${DateTime.now().millisecondsSinceEpoch}';
+        _initializeAutoDraft();
+      }
+    } catch (e) {
+      print('Error creating proposal: $e');
+      // Fallback to temp ID
+      _currentProposalId =
+          'temp-proposal-${DateTime.now().millisecondsSinceEpoch}';
+      _initializeAutoDraft();
+    }
+  }
+
+  Future<String?> _createProposal() async {
+    try {
+      print(
+          'Creating proposal: ${widget.documentName} for client: ${widget.selectedClient}');
+      final response = await http.post(
+        Uri.parse('http://localhost:8000/proposals'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'title': widget.documentName,
+          'client': widget.selectedClient,
+          'dtype': 'Proposal',
+        }),
+      );
+
+      print(
+          'Proposal creation response: ${response.statusCode} - ${response.body}');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('Created proposal with ID: ${data['id']}');
+        return data['id'] as String?;
+      }
+    } catch (e) {
+      print('Error creating proposal: $e');
+    }
+    return null;
+  }
+
+  void _initializeAutoDraft() {
+    // Initialize with current proposal data
+    if (_currentProposalId != null) {
+      print('Initializing auto-draft for proposal: $_currentProposalId');
+      final proposalData = {
+        'sections': _buildProposalDataFromSnapshots(),
+        'documentName': widget.documentName,
+        'companyName': widget.companyName,
+        'selectedClient': widget.selectedClient,
+        'selectedSnapshots': widget.selectedSnapshots,
+      };
+      print('Proposal data: ${json.encode(proposalData)}');
+      _autoDraftService.startAutoDraft(_currentProposalId!, proposalData);
+
+      // Start periodic auto-save trigger
+      _startPeriodicAutoSave();
+    } else {
+      print('No proposal ID available for auto-draft initialization');
+    }
+  }
+
+  void _startPeriodicAutoSave() {
+    // Trigger auto-save every 30 seconds to ensure data is saved
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (_currentProposalId != null) {
+        _markDataChanged();
+      }
+    });
+  }
+
+  void _openVersionHistory() {
+    if (_currentProposalId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VersionHistoryPage(
+            proposalId: _currentProposalId!,
+            proposalTitle: widget.documentName,
+          ),
+        ),
+      ).then((restored) {
+        if (restored == true) {
+          // Proposal was restored, refresh the page
+          setState(() {});
+        }
+      });
+    }
+  }
+
+  Future<void> _forceSave() async {
+    final success = await _autoDraftService.forceSave();
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Draft saved successfully'),
+          backgroundColor: Color(0xFF2ECC71),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_autoDraftService.lastError ?? 'Failed to save draft'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _markDataChanged() {
+    final proposalData = {
+      'sections': _buildProposalDataFromSnapshots(),
+      'documentName': widget.documentName,
+      'companyName': widget.companyName,
+      'selectedClient': widget.selectedClient,
+      'selectedSnapshots': widget.selectedSnapshots,
+    };
+    _autoDraftService.markChanged(proposalData);
+  }
+
+  void _createVersion() {
+    final titleController = TextEditingController();
+    final descriptionController = TextEditingController();
+    bool isMajor = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Create New Version'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Version Title',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Major Version'),
+                subtitle: const Text('Increment major version number'),
+                value: isMajor,
+                onChanged: (value) => setState(() => isMajor = value ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (titleController.text.trim().isEmpty) return;
+
+                // Force save current changes first
+                await _autoDraftService.forceSave();
+
+                // Create version with current proposal data
+                final versioningService = VersioningService();
+                final version = await versioningService.createVersion(
+                  _currentProposalId!,
+                  title: titleController.text.trim(),
+                  sections: _buildProposalDataFromSnapshots(),
+                  description: descriptionController.text.trim(),
+                  isMajor: isMajor,
+                );
+
+                if (version != null) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Version created successfully'),
+                      backgroundColor: Color(0xFF2ECC71),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(versioningService.lastError ??
+                          'Failed to create version'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _createProposalAndInitializeAutoDraft();
+  }
+
   @override
   void dispose() {
+    _autoDraftService.stopAutoDraft();
     _addContactController.dispose();
     super.dispose();
   }

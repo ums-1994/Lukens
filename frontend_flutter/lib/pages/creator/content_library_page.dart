@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/content_library_service.dart';
+import '../../services/content_library_service.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
