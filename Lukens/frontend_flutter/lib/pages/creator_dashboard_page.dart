@@ -1,0 +1,851 @@
+import 'package:flutter/material.dart';
+import '../widgets/footer.dart';
+import 'package:provider/provider.dart';
+import '../api.dart';
+import '../services/auth_service.dart';
+import '../services/asset_service.dart';
+
+class DashboardPage extends StatefulWidget {
+  const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> with TickerProviderStateMixin {
+  bool _isSidebarCollapsed = true;
+  late AnimationController _animationController;
+  late Animation<double> _widthAnimation;
+  String _currentPage = 'Dashboard';
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _widthAnimation = Tween<double>(
+      begin: 250.0,
+      end: 90.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+    // Start collapsed
+    _animationController.value = 1.0;
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final counts = app.dashboardCounts;
+
+    print('Dashboard - Current User: ${app.currentUser}');
+    print('Dashboard - Counts: $counts');
+    print('Dashboard - Proposals: ${app.proposals}');
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7F9),
+      body: Column(
+        children: [
+          // Header
+          Container(
+            height: 60,
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C3E50),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Proposal & SOW Builder',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/User_Profile.png',
+                          width: 105,
+                          height: 105,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _getUserName(app.currentUser),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(width: 10),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, color: Colors.white),
+                        onSelected: (value) {
+                          if (value == 'logout') {
+                            app.logout();
+                            AuthService.logout();
+                            Navigator.pushNamed(context, '/login');
+                          }
+                        },
+                        itemBuilder: (BuildContext context) => [
+                          const PopupMenuItem<String>(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                Icon(Icons.logout),
+                                SizedBox(width: 8),
+                                Text('Logout'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Main Content with Sidebar
+          Expanded(
+            child: Row(
+              children: [
+                // Collapsible Sidebar
+                GestureDetector(
+                  onTap: () {
+                    if (_isSidebarCollapsed) _toggleSidebar();
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width: _isSidebarCollapsed ? 90.0 : 250.0,
+                    color: const Color(0xFF34495E),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 16),
+                          // Toggle button
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: InkWell(
+                              onTap: _toggleSidebar,
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2C3E50),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: _isSidebarCollapsed
+                                      ? MainAxisAlignment.center
+                                      : MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    if (!_isSidebarCollapsed)
+                                      const Padding(
+                                        padding: EdgeInsets.symmetric(horizontal: 12),
+                                        child: Text(
+                                          'Navigation',
+                                          style: TextStyle(color: Colors.white, fontSize: 12),
+                                        ),
+                                      ),
+                                    Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: _isSidebarCollapsed ? 0 : 8),
+                                      child: Icon(
+                                        _isSidebarCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Navigation items
+                          _buildNavItem('Dashboard', 'assets/images/Dahboard.png', _currentPage == 'Dashboard', context),
+                          _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', _currentPage == 'My Proposals', context),
+                          _buildNavItem('Templates', 'assets/images/content_library.png', _currentPage == 'Templates', context),
+                          _buildNavItem('Content Library', 'assets/images/content_library.png', _currentPage == 'Content Library', context),
+                          _buildNavItem('Collaboration', 'assets/images/collaborations.png', _currentPage == 'Collaboration', context),
+                          _buildNavItem('Approvals Status', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approvals Status', context),
+                          _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Content Area
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Proposal Dashboard Section
+                          _buildSection(
+                            '📊 Proposal Dashboard',
+                            _buildDashboardGrid(counts, context),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // End-to-End Proposal Flow
+                          _buildSection(
+                            '🔧 End-to-End Proposal Flow',
+                            _buildWorkflow(context),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // AI-Powered Compound Risk Gate
+                          _buildAISection(),
+                          const SizedBox(height: 20),
+
+                          // Recent Proposals
+                          _buildSection(
+                            '📝 Recent Proposals',
+                            _buildRecentProposals(app.proposals),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // System Components
+                          _buildSection(
+                            '🧩 System Components',
+                            _buildSystemComponents(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Footer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(String label, String assetPath, bool isActive, BuildContext context) {
+    if (_isSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: () {
+              setState(() => _currentPage = label);
+              _navigateToPage(context, label);
+            },
+            borderRadius: BorderRadius.circular(30),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isActive ? const Color(0xFFE74C3C) : const Color(0xFFCBD5E1),
+                  width: isActive ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: ClipOval(
+                child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() => _currentPage = label);
+          _navigateToPage(context, label);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isActive ? Border.all(color: const Color(0xFF2980B9), width: 1) : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isActive ? const Color(0xFFE74C3C) : const Color(0xFFCBD5E1),
+                    width: isActive ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(6),
+                child: ClipOval(
+                  child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (isActive) const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        // Already on dashboard
+        break;
+      case 'My Proposals':
+        Navigator.pushNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushNamed(context, '/content_library');
+        break;
+      case 'Collaboration':
+        Navigator.pushNamed(context, '/collaboration');
+        break;
+      case 'Approvals Status':
+        Navigator.pushNamed(context, '/approvals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushNamed(context, '/analytics');
+        break;
+    }
+  }
+
+  Widget _buildSection(String title, Widget content) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border:
+            Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF2C3E50),
+              ),
+            ),
+            const SizedBox(height: 15),
+            content,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardGrid(
+      Map<String, dynamic> counts, BuildContext context) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      childAspectRatio: 2.5,
+      crossAxisSpacing: 20,
+      mainAxisSpacing: 20,
+      children: [
+        _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '4',
+            'Active', context),
+        _buildStatCard('In Review', counts['In Review']?.toString() ?? '2',
+            'Pending', context),
+        _buildStatCard('Awaiting Sign-off',
+            counts['Released']?.toString() ?? '3', 'With Clients', context),
+        _buildStatCard('Signed', counts['Signed']?.toString() ?? '12',
+            'This Quarter', context),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(
+      String title, String value, String subtitle, BuildContext context) {
+    return InkWell(
+      onTap: () {
+        // Navigate to proposals page when clicking on stat cards
+        Navigator.pushNamed(context, '/proposals');
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F9FA),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    children: [
+                      Text(
+                        value,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF3498DB),
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF7F8C8D),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkflow(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _buildWorkflowStep('1', 'Compose', context),
+        _buildWorkflowStep('2', 'Govern', context),
+        _buildWorkflowStep('3', 'AI Risk Gate', context),
+        _buildWorkflowStep('4', 'Internal Sign-off', context),
+        _buildWorkflowStep('5', 'Client Sign-off', context),
+      ],
+    );
+  }
+
+  Widget _buildWorkflowStep(String number, String label, BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          _navigateToWorkflowStep(context, label);
+        },
+        child: Column(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2F8),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF3498DB), width: 2),
+              ),
+              child: Center(
+                child: Text(
+                  number,
+                  style: const TextStyle(
+                    color: Color(0xFF3498DB),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF7F8C8D),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _navigateToWorkflowStep(BuildContext context, String step) {
+    // Show feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Opening $step...'),
+        duration: const Duration(milliseconds: 500),
+        backgroundColor: const Color(0xFF3498DB),
+      ),
+    );
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      switch (step) {
+        case 'Compose':
+          Navigator.pushNamed(context, '/compose');
+          break;
+        case 'Govern':
+          Navigator.pushNamed(context, '/govern');
+          break;
+        case 'AI Risk Gate':
+          // For now, navigate to approvals as AI risk gate might be part of approval process
+          Navigator.pushNamed(context, '/approvals');
+          break;
+        case 'Internal Sign-off':
+          Navigator.pushNamed(context, '/approvals');
+          break;
+        case 'Client Sign-off':
+          Navigator.pushNamed(context, '/approvals');
+          break;
+        default:
+          Navigator.pushNamed(context, '/creator_dashboard');
+      }
+    });
+  }
+
+  void _navigateToSystemComponent(BuildContext context, String component) {
+    // Show feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Opening $component...'),
+        duration: const Duration(milliseconds: 500),
+        backgroundColor: const Color(0xFF3498DB),
+      ),
+    );
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      switch (component) {
+        case 'Template Library':
+          Navigator.pushNamed(context, '/compose');
+          break;
+        case 'Content Blocks':
+          Navigator.pushNamed(context, '/content_library');
+          break;
+        case 'Collaboration Tools':
+          Navigator.pushNamed(context, '/approvals');
+          break;
+        case 'E-Signature':
+          Navigator.pushNamed(context, '/approvals');
+          break;
+        case 'Analytics':
+          Navigator.pushNamed(context, '/proposals');
+          break;
+        case 'User Management':
+          Navigator.pushNamed(context, '/admin_dashboard');
+          break;
+        default:
+          Navigator.pushNamed(context, '/creator_dashboard');
+      }
+    });
+  }
+
+  Widget _buildAISection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E6),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+            color: const Color(0xFFFFA94D), style: BorderStyle.solid),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '🤖 AI-Powered Compound Risk Gate',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFE67E22),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'AI analyzes multiple small deviations and flags combined risks before release',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              height: 1,
+              color: const Color(0xFFEEE),
+            ),
+            const SizedBox(height: 10),
+            _buildProposalItem(
+              'GlobalTech Cloud Migration',
+              '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
+              'Review Needed',
+              const Color(0xFFB8DAFF),
+              const Color(0xFF004085),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentProposals(List<dynamic> proposals) {
+    return Column(
+      children: proposals.take(3).map((proposal) {
+        String status = proposal['status'] ?? 'Draft';
+        Color statusColor = _getStatusColor(status);
+        Color textColor = _getStatusTextColor(status);
+
+        return _buildProposalItem(
+          proposal['title'] ?? 'Untitled',
+          'Last modified: ${_formatDate(proposal['updated_at'])}',
+          status,
+          statusColor,
+          textColor,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildProposalItem(String title, String subtitle, String status,
+      Color statusColor, Color textColor) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(4),
+        border:
+            Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF7F8C8D),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemComponents() {
+    final components = [
+      {'icon': '📋', 'label': 'Template Library'},
+      {'icon': '📁', 'label': 'Content Blocks'},
+      {'icon': '💬', 'label': 'Collaboration Tools'},
+      {'icon': '🖊️', 'label': 'E-Signature'},
+      {'icon': '📈', 'label': 'Analytics'},
+      {'icon': '👥', 'label': 'User Management'},
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 2,
+        crossAxisSpacing: 15,
+        mainAxisSpacing: 15,
+      ),
+      itemCount: components.length,
+      itemBuilder: (context, index) {
+        final component = components[index];
+        return InkWell(
+          onTap: () {
+            _navigateToSystemComponent(context, component['label']!);
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                  color: const Color(0xFFDDD), style: BorderStyle.solid),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  component['icon']!,
+                  style:
+                      const TextStyle(fontSize: 24, color: Color(0xFF3498DB)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  component['label']!,
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'draft':
+        return const Color(0xFFFFEEBA);
+      case 'in review':
+        return const Color(0xFFB8DAFF);
+      case 'signed':
+        return const Color(0xFFC3E6CB);
+      default:
+        return const Color(0xFFFFEEBA);
+    }
+  }
+
+  Color _getStatusTextColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'draft':
+        return const Color(0xFF856404);
+      case 'in review':
+        return const Color(0xFF004085);
+      case 'signed':
+        return const Color(0xFF155724);
+      default:
+        return const Color(0xFF856404);
+    }
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return 'Unknown';
+    // Simple date formatting - you might want to use intl package for better formatting
+    return date.toString();
+  }
+
+  String _getUserInitials(Map<String, dynamic>? user) {
+    if (user == null) return 'U';
+
+    // Try different possible field names for the user's name
+    String? name = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email']?.split('@')[0];
+
+    if (name == null || name.isEmpty) return 'U';
+
+    // Extract initials from the name
+    List<String> nameParts = name.split(' ');
+    if (nameParts.length >= 2) {
+      return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
+    } else {
+      return name.substring(0, 2).toUpperCase();
+    }
+  }
+
+  String _getUserName(Map<String, dynamic>? user) {
+    if (user == null) return 'User';
+
+    // Try different possible field names for the user's name
+    String? name = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email']?.split('@')[0];
+
+    return name ?? 'User';
+  }
+}
