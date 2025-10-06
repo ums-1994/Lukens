@@ -194,6 +194,21 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                           _buildNavItem('Collaboration', 'assets/images/collaborations.png', _currentPage == 'Collaboration', context),
                           _buildNavItem('Approvals Status', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approvals Status', context),
                           _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
+                          
+                          const SizedBox(height: 20),
+                          
+                          // Divider
+                          if (!_isSidebarCollapsed)
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                              height: 1,
+                              color: const Color(0xFF2C3E50),
+                            ),
+                          
+                          const SizedBox(height: 12),
+                          
+                          // Logout button
+                          _buildNavItem('Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
                           const SizedBox(height: 20),
                         ],
                       ),
@@ -376,7 +391,44 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
       case 'Analytics (My Pipeline)':
         Navigator.pushNamed(context, '/analytics');
         break;
+      case 'Logout':
+        _handleLogout(context);
+        break;
     }
+  }
+
+  void _handleLogout(BuildContext context) {
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                // Perform logout
+                final app = context.read<AppState>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildSection(String title, Widget content) {
