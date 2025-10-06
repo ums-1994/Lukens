@@ -231,6 +231,10 @@ class _HomeShellState extends State<HomeShell> {
             currentLabel: _current,
             onToggle: () => setState(() => _isCollapsed = !_isCollapsed),
             onSelect: (label) {
+              if (label == 'Logout') {
+                _handleLogout();
+                return;
+              }
               setState(() => _current = label);
               setState(() => idx = _idxForLabel(label));
             },
@@ -324,5 +328,38 @@ class _HomeShellState extends State<HomeShell> {
       case 7: return 'Preview';
       default: return 'Dashboard';
     }
+  }
+
+  void _handleLogout() {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                // Perform logout
+                final app = context.read<AppState>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

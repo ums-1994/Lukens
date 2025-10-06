@@ -94,22 +94,18 @@ class AppSideNav extends StatelessWidget {
                 ),
               ),
 
-              // Bottom icons (profile/logout placeholders)
+              // Bottom section - Logout
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Column(
                   children: [
-                    _buildCircleIconButton(
-                      icon: Icons.person_outline,
-                      active: false,
-                      onTap: () => onSelect('Profile'),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildCircleIconButton(
-                      icon: Icons.logout,
-                      active: false,
-                      onTap: () => onSelect('Logout'),
-                    ),
+                    if (!isCollapsed)
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        height: 1,
+                        color: const Color(0xFF2C3E50),
+                      ),
+                    _buildItem('Logout', 'assets/images/Logout_KhonoBuzz.png'),
                   ],
                 ),
               ),
@@ -200,21 +196,5 @@ class AppSideNav extends StatelessWidget {
     );
   }
 
-  Widget _buildCircleIconButton({required IconData icon, required bool active, required VoidCallback onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(30),
-      child: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: const Color(0xFFCBD5E1), width: 1),
-        ),
-        child: Icon(icon, size: 20, color: const Color(0xFF64748B)),
-      ),
-    );
-  }
 }
 
