@@ -17,7 +17,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  String _selectedRole = 'Business Developer';
+  String _selectedRole = 'Financial Manager';
   bool _isLoading = false;
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
@@ -30,9 +30,9 @@ class _RegisterPageState extends State<RegisterPage> {
   };
 
   final List<String> _roles = [
-    'Business Developer',
-    'Reviewer / Approver',
-    'Admin'
+    'CEO',
+    'Financial Manager',
+    'Client'
   ];
 
   @override

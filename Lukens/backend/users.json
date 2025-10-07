@@ -35,6 +35,42 @@
       "is_verified": true,
       "created_at": "2025-09-16T10:37:57.289825Z",
       "updated_at": "2025-09-16T10:40:21.425320Z"
+    },
+    {
+      "id": "5b4051ad-dea8-4322-b3c8-0f174b00b88f",
+      "username": "mokgaxikgothatso",
+      "email": "mokgaxikgothatso@gmail.com",
+      "full_name": "kgothatso Mokgashi",
+      "role": "Financial Manager",
+      "hashed_password": "$2b$12$6/ZCSnaIiRaPOmJ4yDCeIuALfzksbiSZc83o6Z1DOedYCYHqj/m1.",
+      "is_active": true,
+      "is_verified": true,
+      "created_at": "2025-10-06T14:21:25.729239Z",
+      "updated_at": "2025-10-06T14:21:56.590308Z"
+    },
+    {
+      "id": "1ba9fca3-afa4-49fc-beb4-3c534e934b83",
+      "username": "mokgashikgothii",
+      "email": "mokgashikgothii@gmail.com",
+      "full_name": "kgothatso mkg",
+      "role": "Client",
+      "hashed_password": "$2b$12$T5CKGsJkgf4p/AjoYd4JHu1vBg3kNkslqFO8bGKPyM4UEHQfFa912",
+      "is_active": true,
+      "is_verified": true,
+      "created_at": "2025-10-06T14:27:14.268168Z",
+      "updated_at": "2025-10-06T14:27:40.905126Z"
+    },
+    {
+      "id": "d6fdee16-8631-4a30-bef0-3ad714a8bad0",
+      "username": "gridx.noreply",
+      "email": "gridx.noreply@gmail.com",
+      "full_name": "jason Lukens",
+      "role": "CEO",
+      "hashed_password": "$2b$12$W2q45B9ncciCZmlNS20xWOzZU2UN90PhPPAv0MY/zep64wRE6Wq1S",
+      "is_active": true,
+      "is_verified": true,
+      "created_at": "2025-10-07T07:12:26.320739Z",
+      "updated_at": "2025-10-07T07:12:43.869287Z"
     }
   ]
 }

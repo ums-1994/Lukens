@@ -207,7 +207,7 @@ def seed_content_blocks():
 seed_content_blocks()
 
 # ---------- Data Models ----------
-Status = Literal["Draft","In Review","Released","Signed","Archived"]
+Status = Literal["Draft","Pending CEO Approval","Rejected","Approved","Sent to Client","Client Viewing","Signed","Declined by Client","Archived"]
 Stage = Literal["Delivery","Legal","Exec"]
 DocType = Literal["Proposal","SOW","RFI"]
 
@@ -231,6 +231,12 @@ class Proposal(BaseModel):
     readiness_issues: List[str] = []
     signed_at: Optional[str] = None
     signed_by: Optional[str] = None
+    # RBAC fields
+    creator_id: Optional[str] = None
+    current_approver_role: Optional[str] = None  # "CEO" when awaiting CEO approval
+    approval_history: List[Dict[str, Any]] = []  # Track all approvals/rejections
+    financial_data: Optional[Dict[str, Any]] = None  # Pricing, margins, etc.
+    client_actions: Optional[Dict[str, Any]] = None  # Sent time, viewed time, signed time
 
 class ProposalCreate(BaseModel):
     title: str
@@ -266,7 +272,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     full_name: str
-    role: Literal["Business Developer", "Reviewer / Approver", "Admin"] = "Business Developer"
+    role: Literal["CEO", "Financial Manager", "Client"] = "Financial Manager"
 
     @field_validator("password")
     @classmethod
@@ -459,13 +465,18 @@ def list_proposals():
     return load_db()["proposals"]
 
 @app.post("/proposals", response_model=Proposal)
-def create_proposal(payload: ProposalCreate):
+def create_proposal(payload: ProposalCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new proposal - Financial Manager and CEO only"""
+    if current_user["role"] not in ["Financial Manager", "CEO"]:
+        raise HTTPException(status_code=403, detail="Only Financial Managers and CEO can create proposals")
+    
     db = load_db()
     p = Proposal(
         id=str(uuid.uuid4()),
         title=payload.title,
         client=payload.client,
         dtype=payload.dtype or "Proposal",
+        creator_id=current_user["id"]
     )
     if payload.template_key:
         tmpl = next((t for t in db.get("templates",[]) if t.get("key")==payload.template_key), None)
@@ -499,53 +510,224 @@ def update_proposal(pid: str, payload: ProposalUpdate):
     return p
 
 @app.post("/proposals/{pid}/submit", response_model=Proposal)
-def submit_for_review(pid: str):
+def submit_for_review(pid: str, current_user: dict = Depends(get_current_user)):
+    """Submit proposal for CEO approval - Financial Manager only"""
+    if current_user["role"] not in ["Financial Manager", "CEO"]:
+        raise HTTPException(status_code=403, detail="Only Financial Managers can submit proposals")
+    
     p = get_proposal_or_404(pid)
     p = compute_readiness_and_risk(p)
     if p.readiness_issues and any(i.startswith("Missing mandatory section") for i in p.readiness_issues):
         raise HTTPException(status_code=400, detail={"message":"Readiness checks failed","issues":p.readiness_issues})
     if getattr(p, "_compound_minor_devs", 0) >= 2:
         raise HTTPException(status_code=400, detail={"message":"Compound minor deviations detected, please resolve","issues":p.readiness_issues})
-    p.status = "In Review"
+    
+    p.status = "Pending CEO Approval"
+    p.current_approver_role = "CEO"
+    p.approval_history.append({
+        "action": "submitted",
+        "by_user_id": current_user["id"],
+        "by_role": current_user["role"],
+        "at": now_iso(),
+        "comments": "Submitted for CEO approval"
+    })
     p.updated_at = now_iso()
     save_proposal(p)
     return p
 
 @app.post("/proposals/{pid}/approve", response_model=Proposal)
-def approve_stage(pid: str, stage: Stage = Query(..., description="Approval stage: Delivery | Legal | Exec")):
+def approve_proposal(pid: str, comments: str = "", current_user: dict = Depends(get_current_user)):
+    """CEO approves proposal"""
+    if current_user["role"] != "CEO":
+        raise HTTPException(status_code=403, detail="Only CEO can approve proposals")
+    
     p = get_proposal_or_404(pid)
-    if p.status not in ["In Review","Released"]:
-        raise HTTPException(status_code=400, detail="Proposal must be In Review to approve stages.")
-    p.approval.approvals[stage] = {"approved": True, "at": now_iso()}
-    if p.approval.mode == "sequential":
-        all_ok = all(s in p.approval.approvals for s in p.approval.order)
-    else:
-        all_ok = all(s in p.approval.approvals for s in ["Delivery","Legal","Exec"])
-    if all_ok:
-        p.status = "Released"
+    if p.status != "Pending CEO Approval":
+        raise HTTPException(status_code=400, detail="Proposal must be pending CEO approval")
+    
+    p.status = "Approved"
+    p.current_approver_role = None
+    p.approval_history.append({
+        "action": "approved",
+        "by_user_id": current_user["id"],
+        "by_role": current_user["role"],
+        "at": now_iso(),
+        "comments": comments or "Approved by CEO"
+    })
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return p
+
+@app.post("/proposals/{pid}/reject", response_model=Proposal)
+def reject_proposal(pid: str, comments: str = "", current_user: dict = Depends(get_current_user)):
+    """CEO rejects proposal"""
+    if current_user["role"] != "CEO":
+        raise HTTPException(status_code=403, detail="Only CEO can reject proposals")
+    
+    p = get_proposal_or_404(pid)
+    if p.status != "Pending CEO Approval":
+        raise HTTPException(status_code=400, detail="Proposal must be pending CEO approval")
+    
+    p.status = "Rejected"
+    p.current_approver_role = None
+    p.approval_history.append({
+        "action": "rejected",
+        "by_user_id": current_user["id"],
+        "by_role": current_user["role"],
+        "at": now_iso(),
+        "comments": comments or "Rejected by CEO"
+    })
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return p
+
+@app.post("/proposals/{pid}/send_to_client", response_model=Proposal)
+def send_to_client(pid: str, current_user: dict = Depends(get_current_user)):
+    """Financial Manager sends approved proposal to client"""
+    if current_user["role"] not in ["Financial Manager", "CEO"]:
+        raise HTTPException(status_code=403, detail="Only Financial Managers or CEO can send proposals to clients")
+    
+    p = get_proposal_or_404(pid)
+    if p.status != "Approved":
+        raise HTTPException(status_code=400, detail="Proposal must be approved before sending to client")
+    
+    p.status = "Sent to Client"
+    if not p.client_actions:
+        p.client_actions = {}
+    p.client_actions["sent_at"] = now_iso()
+    p.client_actions["sent_by"] = current_user["id"]
     p.updated_at = now_iso()
     save_proposal(p)
     return p
 
 @app.post("/proposals/{pid}/sign", response_model=Proposal)
-def sign_proposal(pid: str, payload: SignPayload):
+def sign_proposal(pid: str, payload: SignPayload, current_user: dict = Depends(get_current_user)):
+    """Client signs proposal"""
+    if current_user["role"] != "Client":
+        raise HTTPException(status_code=403, detail="Only Clients can sign proposals")
+    
     p = get_proposal_or_404(pid)
-    if p.status != "Released":
-        raise HTTPException(status_code=400, detail="Proposal must be Released before client sign-off.")
+    if p.status != "Sent to Client":
+        raise HTTPException(status_code=400, detail="Proposal must be sent to client before signing")
+    
     p.status = "Signed"
     p.signed_at = now_iso()
     p.signed_by = payload.signer_name
+    if not p.client_actions:
+        p.client_actions = {}
+    p.client_actions["signed_at"] = now_iso()
+    p.client_actions["signed_by"] = current_user["id"]
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return p
+
+@app.post("/proposals/{pid}/client_view")
+def client_viewed_proposal(pid: str, current_user: dict = Depends(get_current_user)):
+    """Track when client views proposal"""
+    if current_user["role"] != "Client":
+        raise HTTPException(status_code=403, detail="Only Clients can view proposals")
+    
+    p = get_proposal_or_404(pid)
+    if p.status == "Sent to Client":
+        p.status = "Client Viewing"
+    
+    if not p.client_actions:
+        p.client_actions = {}
+    if "viewed_at" not in p.client_actions:
+        p.client_actions["viewed_at"] = now_iso()
+        p.updated_at = now_iso()
+        save_proposal(p)
+    
+    return {"message": "View tracked"}
+
+@app.post("/proposals/{pid}/client_decline", response_model=Proposal)
+def client_decline_proposal(pid: str, comments: str = "", current_user: dict = Depends(get_current_user)):
+    """Client declines proposal"""
+    if current_user["role"] != "Client":
+        raise HTTPException(status_code=403, detail="Only Clients can decline proposals")
+    
+    p = get_proposal_or_404(pid)
+    if p.status not in ["Sent to Client", "Client Viewing"]:
+        raise HTTPException(status_code=400, detail="Proposal must be sent to client")
+    
+    p.status = "Declined by Client"
+    if not p.client_actions:
+        p.client_actions = {}
+    p.client_actions["declined_at"] = now_iso()
+    p.client_actions["decline_reason"] = comments
     p.updated_at = now_iso()
     save_proposal(p)
     return p
 
 @app.get("/dashboard_stats")
-def dashboard_stats():
+def dashboard_stats(current_user: dict = Depends(get_current_user)):
+    """Get dashboard statistics based on user role"""
     db = load_db()
-    counts = {"Draft":0,"In Review":0,"Released":0,"Signed":0,"Archived":0}
-    for pr in db["proposals"]:
-        counts[pr["status"]] = counts.get(pr["status"],0)+1
-    return {"counts":counts,"total":sum(counts.values())}
+    all_proposals = db["proposals"]
+    
+    # Filter proposals based on role
+    if current_user["role"] == "CEO":
+        # CEO sees all proposals
+        proposals = all_proposals
+    elif current_user["role"] == "Financial Manager":
+        # Financial Manager sees only their own proposals
+        proposals = [p for p in all_proposals if p.get("creator_id") == current_user["id"]]
+    elif current_user["role"] == "Client":
+        # Client sees only proposals sent to them (matching their email/username)
+        proposals = [p for p in all_proposals if p.get("client") == current_user["email"] or p.get("client") == current_user["username"]]
+    else:
+        proposals = []
+    
+    counts = {
+        "Draft": 0,
+        "Pending CEO Approval": 0,
+        "Rejected": 0,
+        "Approved": 0,
+        "Sent to Client": 0,
+        "Client Viewing": 0,
+        "Signed": 0,
+        "Declined by Client": 0,
+        "Archived": 0
+    }
+    
+    for pr in proposals:
+        status = pr.get("status", "Draft")
+        counts[status] = counts.get(status, 0) + 1
+    
+    return {
+        "counts": counts,
+        "total": len(proposals),
+        "role": current_user["role"]
+    }
+
+@app.get("/proposals/pending_approval")
+def get_pending_approvals(current_user: dict = Depends(get_current_user)):
+    """Get proposals pending CEO approval - CEO only"""
+    if current_user["role"] != "CEO":
+        raise HTTPException(status_code=403, detail="Only CEO can view pending approvals")
+    
+    db = load_db()
+    pending = [p for p in db["proposals"] if p.get("status") == "Pending CEO Approval"]
+    return {"proposals": pending, "count": len(pending)}
+
+@app.get("/proposals/my_proposals")
+def get_my_proposals(current_user: dict = Depends(get_current_user)):
+    """Get current user's proposals"""
+    db = load_db()
+    
+    if current_user["role"] == "CEO":
+        # CEO sees all proposals
+        proposals = db["proposals"]
+    elif current_user["role"] == "Financial Manager":
+        # Financial Manager sees only their own
+        proposals = [p for p in db["proposals"] if p.get("creator_id") == current_user["id"]]
+    elif current_user["role"] == "Client":
+        # Client sees only proposals sent to them
+        proposals = [p for p in db["proposals"] if p.get("client") == current_user["email"] or p.get("client") == current_user["username"]]
+    else:
+        proposals = []
+    
+    return {"proposals": proposals, "count": len(proposals)}
 
 # ---------- Authentication Routes ----------
 @app.post("/register", response_model=User)
