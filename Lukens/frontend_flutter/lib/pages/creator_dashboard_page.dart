@@ -57,8 +57,10 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final counts = app.dashboardCounts;
+    final userRole = app.currentUser?['role'] ?? 'Financial Manager';
 
     print('Dashboard - Current User: ${app.currentUser}');
+    print('Dashboard - User Role: $userRole');
     print('Dashboard - Counts: $counts');
     print('Dashboard - Proposals: ${app.proposals}');
 
@@ -77,9 +79,9 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Proposal & SOW Builder',
-                    style: TextStyle(
+                  Text(
+                    _getHeaderTitle(userRole),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -96,9 +98,19 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(
-                        _getUserName(app.currentUser),
-                        style: const TextStyle(color: Colors.white),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getUserName(app.currentUser),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            userRole,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 10),
                       PopupMenuButton<String>(
@@ -221,41 +233,7 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Proposal Dashboard Section
-                          _buildSection(
-                            '📊 Proposal Dashboard',
-                            _buildDashboardGrid(counts, context),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // End-to-End Proposal Flow
-                          _buildSection(
-                            '🔧 End-to-End Proposal Flow',
-                            _buildWorkflow(context),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // AI-Powered Compound Risk Gate
-                          _buildAISection(),
-                          const SizedBox(height: 20),
-
-                          // Recent Proposals
-                          _buildSection(
-                            '📝 Recent Proposals',
-                            _buildRecentProposals(app.proposals),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // System Components
-                          _buildSection(
-                            '🧩 System Components',
-                            _buildSystemComponents(),
-                          ),
-                        ],
-                      ),
+                      child: _buildRoleSpecificContent(userRole, counts, app),
                     ),
                   ),
                 ),
@@ -470,14 +448,14 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
       crossAxisSpacing: 20,
       mainAxisSpacing: 20,
       children: [
-        _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '4',
+        _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
             'Active', context),
-        _buildStatCard('In Review', counts['In Review']?.toString() ?? '2',
-            'Pending', context),
-        _buildStatCard('Awaiting Sign-off',
-            counts['Released']?.toString() ?? '3', 'With Clients', context),
-        _buildStatCard('Signed', counts['Signed']?.toString() ?? '12',
-            'This Quarter', context),
+        _buildStatCard('Pending CEO Approval', counts['Pending CEO Approval']?.toString() ?? '0',
+            'Awaiting Review', context),
+        _buildStatCard('Sent to Client',
+            counts['Sent to Client']?.toString() ?? '0', 'With Clients', context),
+        _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
+            'Completed', context),
       ],
     );
   }
@@ -899,5 +877,231 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
         user['email']?.split('@')[0];
 
     return name ?? 'User';
+  }
+
+  String _getHeaderTitle(String role) {
+    switch (role) {
+      case 'CEO':
+        return 'CEO Dashboard - Executive Overview';
+      case 'Financial Manager':
+        return 'Financial Manager - Proposal Management';
+      case 'Client':
+        return 'Client Portal - My Proposals';
+      default:
+        return 'Proposal & SOW Builder';
+    }
+  }
+
+  Widget _buildRoleSpecificContent(String role, Map<String, dynamic> counts, AppState app) {
+    switch (role) {
+      case 'CEO':
+        return _buildCEODashboard(counts, app);
+      case 'Client':
+        return _buildClientDashboard(counts, app);
+      case 'Financial Manager':
+      default:
+        return _buildFinancialManagerDashboard(counts, app);
+    }
+  }
+
+  Widget _buildCEODashboard(Map<String, dynamic> counts, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '👔 CEO Executive Dashboard',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50)),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Organization-wide overview and pending approvals',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+
+        // CEO Dashboard Grid
+        _buildSection(
+          '📊 Organization Overview',
+          _buildDashboardGrid(counts, context),
+        ),
+        const SizedBox(height: 20),
+
+        // Pending Approvals Section (CEO-specific)
+        _buildSection(
+          '⏳ Awaiting Your Approval',
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                const Icon(Icons.pending_actions, size: 48, color: Color(0xFFE67E22)),
+                const SizedBox(height: 12),
+                Text(
+                  '${counts['Pending CEO Approval'] ?? 0} proposals pending your approval',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.approval),
+                  label: const Text('Review Pending Approvals'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3498DB),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/approvals');
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Recent Proposals
+        _buildSection(
+          '📝 All Proposals (Organization-wide)',
+          _buildRecentProposals(app.proposals),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFinancialManagerDashboard(Map<String, dynamic> counts, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '💼 Financial Manager Dashboard',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50)),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Create and manage proposals for client engagement',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+
+        // Dashboard Grid
+        _buildSection(
+          '📊 My Proposal Dashboard',
+          _buildDashboardGrid(counts, context),
+        ),
+        const SizedBox(height: 20),
+
+        // End-to-End Proposal Flow
+        _buildSection(
+          '🔧 Proposal Workflow',
+          _buildWorkflow(context),
+        ),
+        const SizedBox(height: 20),
+
+        // AI-Powered Compound Risk Gate
+        _buildAISection(),
+        const SizedBox(height: 20),
+
+        // Recent Proposals
+        _buildSection(
+          '📝 My Recent Proposals',
+          _buildRecentProposals(app.proposals),
+        ),
+        const SizedBox(height: 20),
+
+        // System Components
+        _buildSection(
+          '🧩 Available Tools',
+          _buildSystemComponents(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClientDashboard(Map<String, dynamic> counts, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '🤝 Client Portal',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50)),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'View and manage proposals sent to you',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+
+        // Simplified Dashboard for Clients
+        _buildSection(
+          '📊 My Proposals Status',
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            childAspectRatio: 2.5,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 20,
+            children: [
+              _buildStatCard('Active Proposals', counts['Sent to Client']?.toString() ?? '0',
+                  'For Review', context),
+              _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
+                  'Completed', context),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Active Proposals
+        _buildSection(
+          '📝 Proposals Sent to Me',
+          app.proposals.isEmpty
+              ? Container(
+                  padding: const EdgeInsets.all(32),
+                  child: const Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.inbox, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'No proposals yet',
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _buildRecentProposals(app.proposals),
+        ),
+        const SizedBox(height: 20),
+
+        // Quick Actions
+        _buildSection(
+          '⚡ Quick Actions',
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.download),
+                label: const Text('Download Signed Documents'),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Feature coming soon!')),
+                  );
+                },
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.support_agent),
+                label: const Text('Contact Support'),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Support: support@example.com')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
