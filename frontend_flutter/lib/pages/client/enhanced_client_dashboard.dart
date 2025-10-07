@@ -3,16 +3,17 @@ import 'package:signature/signature.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
 
-class ClientPortalPage extends StatefulWidget {
+class EnhancedClientDashboard extends StatefulWidget {
   final String? token;
 
-  const ClientPortalPage({super.key, this.token});
+  const EnhancedClientDashboard({super.key, this.token});
 
   @override
-  State<ClientPortalPage> createState() => _ClientPortalPageState();
+  State<EnhancedClientDashboard> createState() =>
+      _EnhancedClientDashboardState();
 }
 
-class _ClientPortalPageState extends State<ClientPortalPage> {
+class _EnhancedClientDashboardState extends State<EnhancedClientDashboard> {
   String currentView = 'dashboard';
   bool isLoading = true;
   bool isAuthenticated = false;
@@ -42,11 +43,11 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
   }
 
   Future<void> _validateToken() async {
-    print('ClientPortalPage: Validating token...');
+    print('EnhancedClientDashboard: Validating token...');
     print('Token received: ${widget.token}');
 
     if (widget.token == null) {
-      print('ClientPortalPage: No token provided');
+      print('EnhancedClientDashboard: No token provided');
       setState(() {
         isLoading = false;
         errorMessage = 'No access token provided';
@@ -55,12 +56,12 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
     }
 
     try {
-      print('ClientPortalPage: Calling API to validate token');
+      print('EnhancedClientDashboard: Calling API to validate token');
       final result = await ApiService.validateClientToken(widget.token!);
-      print('ClientPortalPage: API result: $result');
+      print('EnhancedClientDashboard: API result: $result');
 
       if (result != null) {
-        print('ClientPortalPage: Token validation successful');
+        print('EnhancedClientDashboard: Token validation successful');
         setState(() {
           isLoading = false;
           isAuthenticated = true;
@@ -69,14 +70,14 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
           proposalData = result['proposal_data'];
         });
       } else {
-        print('ClientPortalPage: Token validation failed - null result');
+        print('EnhancedClientDashboard: Token validation failed - null result');
         setState(() {
           isLoading = false;
           errorMessage = 'Invalid or expired access token';
         });
       }
     } catch (e) {
-      print('ClientPortalPage: Token validation error: $e');
+      print('EnhancedClientDashboard: Token validation error: $e');
       setState(() {
         isLoading = false;
         errorMessage = 'Failed to validate access token: $e';

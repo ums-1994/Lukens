@@ -463,6 +463,264 @@
       ],
       "signed_at": null,
       "signed_by": null
+    },
+    {
+      "id": "822c1b22-f9b9-446d-827f-53ebdf7031eb",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T15:05:26.428319Z",
+      "updated_at": "2025-10-06T15:05:26.428353Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "a44c9d4f-07b4-4f80-bfd1-17bbbe228a73",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T15:36:13.192842Z",
+      "updated_at": "2025-10-06T15:36:13.192863Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "b12b4246-25b9-41e0-a719-1e8617a5a0a5",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T16:00:04.005261Z",
+      "updated_at": "2025-10-06T16:00:04.005285Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "98dca6c1-fd4c-4703-b16e-891d58e1591e",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T16:18:21.623696Z",
+      "updated_at": "2025-10-06T16:18:21.623728Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "8d8c4ac7-1a93-41ee-97d5-6856c28086a0",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T16:42:13.363967Z",
+      "updated_at": "2025-10-06T16:42:13.363995Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "dc513c87-5706-4863-a28b-6c5e576031fd",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T17:18:00.442411Z",
+      "updated_at": "2025-10-06T17:18:00.442453Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
     }
   ],
   "templates": [

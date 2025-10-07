@@ -10,6 +10,8 @@ import 'pages/creator/content_library_page.dart';
 import 'pages/approver/approver_dashboard_page.dart';
 import 'pages/admin/admin_dashboard_page.dart';
 import 'pages/client/client_portal_page.dart';
+import 'pages/client/enhanced_client_dashboard.dart';
+import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
 import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
@@ -48,6 +50,30 @@ class MyApp extends StatelessWidget {
               builder: (context) => EmailVerificationPage(token: token),
             );
           }
+
+          // Handle client portal with token
+          if (settings.name == '/client-portal' ||
+              (settings.name != null &&
+                  settings.name!.contains('client-portal'))) {
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            return MaterialPageRoute(
+              builder: (context) => ClientPortalPage(token: token),
+            );
+          }
+
+          // Handle enhanced client dashboard with token
+          if (settings.name == '/enhanced-client-dashboard' ||
+              (settings.name != null &&
+                  settings.name!.contains('enhanced-client-dashboard'))) {
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            return MaterialPageRoute(
+              builder: (context) => EnhancedClientDashboard(token: token),
+            );
+          }
           return null; // Let other routes be handled normally
         },
         routes: {
@@ -77,10 +103,16 @@ class MyApp extends StatelessWidget {
           '/approvals': (context) => const ApprovalsPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
-          '/client_portal': (context) => const ClientPortalPage(),
+          '/client_portal': (context) {
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            return ClientPortalPage(token: token);
+          },
           '/templates': (context) => const TemplatesPage(),
           '/collaboration': (context) => const CollaborationPage(),
           '/analytics': (context) => const AnalyticsPage(),
+          '/test-signature': (context) => const TestSignaturePage(),
         },
       ),
     );
@@ -126,6 +158,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if we're on a client dashboard route
+    final currentUrl = web.window.location.href;
+    final uri = Uri.parse(currentUrl);
+
+    if (uri.path.contains('enhanced-client-dashboard') ||
+        uri.path.contains('client-portal')) {
+      final token = uri.queryParameters['token'];
+      if (uri.path.contains('enhanced-client-dashboard')) {
+        return EnhancedClientDashboard(token: token);
+      } else {
+        return ClientPortalPage(token: token);
+      }
+    }
+
     // Check if user is authenticated
     if (AuthService.isLoggedIn) {
       // Initialize AppState when user is logged in

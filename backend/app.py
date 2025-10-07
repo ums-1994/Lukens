@@ -1493,9 +1493,35 @@ async def send_proposal_email(request: SendProposalEmailRequest):
             detail=f"Failed to send email: {str(e)}"
         )
 
-@app.get("/client-dashboard/{token}", response_class=HTMLResponse)
-async def client_dashboard(token: str):
-    """Client dashboard with secure token access"""
+@app.get("/client-dashboard/{token}")
+async def client_dashboard_json(token: str):
+    """Client dashboard JSON data for Flutter app"""
+    try:
+        # Verify and decode token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        proposal_id = payload.get('proposal_id')
+        client_email = payload.get('client_email')
+        proposal_data = payload.get('proposal_data', {})
+        
+        if not proposal_id or not client_email:
+            raise HTTPException(status_code=400, detail="Invalid token")
+        
+        return {
+            "client_email": client_email,
+            "proposal_id": proposal_id,
+            "proposal_data": proposal_data,
+            "status": "success"
+        }
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/client-dashboard-html/{token}", response_class=HTMLResponse)
+async def client_dashboard_html(token: str):
+    """Client dashboard with secure token access - HTML version"""
     try:
         # Verify and decode token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -2449,50 +2475,144 @@ async def submit_client_feedback(payload: Dict[str, Any]):
 
 
 
+# Signature endpoints for client dashboard
+@app.post("/client-dashboard/{token}/sign")
+async def sign_proposal_with_token(
+    token: str,
+    signature_data: dict
+):
+    """Sign a proposal using the client token"""
+    try:
+        # Validate token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        client_email = payload.get('client_email')
+        proposal_id = payload.get('proposal_id')
+        
+        if not client_email or not proposal_id:
+            raise HTTPException(status_code=400, detail="Invalid token")
+        
+        # Update proposal status to signed
+        db = load_db()
+        if proposal_id in db["proposals"]:
+            db["proposals"][proposal_id]["status"] = "Signed"
+            db["proposals"][proposal_id]["signed_by"] = client_email
+            db["proposals"][proposal_id]["signed_at"] = datetime.now().isoformat()
+            save_db(db)
+            
+            return {"message": "Proposal signed successfully", "status": "Signed"}
+        else:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+            
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/client-dashboard/{token}/pdf")
+async def get_signed_pdf_url(token: str):
+    """Get signed PDF URL for a proposal"""
+    try:
+        # Validate token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        proposal_id = payload.get('proposal_id')
+        
+        if not proposal_id:
+            raise HTTPException(status_code=400, detail="Invalid token")
+        
+        # For demo purposes, return a placeholder URL
+        # In production, this would generate and return the actual signed PDF URL
+        return {"pdf_url": f"http://localhost:8000/signed-pdfs/{proposal_id}_signed.pdf"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/client-dashboard-mini/{token}", response_class=HTMLResponse)
 async def client_dashboard_mini(token: str):
-        """A lightweight interactive client dashboard (mini SPA)"""
+        """Redirect to Flutter client portal with token"""
         try:
+                # Validate token first
                 payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
                 client_email = payload.get('client_email')
                 if not client_email:
                         raise HTTPException(status_code=400, detail="Invalid token")
 
-                html = """
+                # Create a redirect page that loads the Flutter app
+                html = f"""
                 <!doctype html>
                 <html>
                 <head>
                     <meta charset="utf-8" />
                     <meta name="viewport" content="width=device-width, initial-scale=1" />
-                    <title>Client Dashboard</title>
-                    <style>body{{font-family:Segoe UI, Arial; padding:20px;}} .btn{{padding:10px 14px; background:#3498db;color:#fff;border-radius:6px;border:none;}}</style>
+                    <title>Client Dashboard - Loading...</title>
+                    <style>
+                        body {{
+                            font-family: 'Segoe UI', Arial, sans-serif;
+                            margin: 0;
+                            padding: 0;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            height: 100vh;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                        }}
+                        .loading-container {{
+                            text-align: center;
+                            color: white;
+                        }}
+                        .spinner {{
+                            border: 4px solid #f3f3f3;
+                            border-top: 4px solid #3498db;
+                            border-radius: 50%;
+                            width: 50px;
+                            height: 50px;
+                            animation: spin 2s linear infinite;
+                            margin: 20px auto;
+                        }}
+                        @keyframes spin {{
+                            0% {{ transform: rotate(0deg); }}
+                            100% {{ transform: rotate(360deg); }}
+                        }}
+                        .redirect-btn {{
+                            background: #3498db;
+                            color: white;
+                            padding: 12px 24px;
+                            border: none;
+                            border-radius: 6px;
+                            font-size: 16px;
+                            cursor: pointer;
+                            margin-top: 20px;
+                        }}
+                        .redirect-btn:hover {{
+                            background: #2980b9;
+                        }}
+                    </style>
                 </head>
                 <body>
-                    <h2>Client Dashboard</h2>
-                    <p>Welcome, {client_email}</p>
-                    <div style="margin:12px 0;">
-                        <button class="btn" onclick="loadProposals()">📑 My Proposals</button>
-                        <button class="btn" onclick="loadSignList()">🖊 Sign Documents</button>
-                        <button class="btn" onclick="loadHistory()">📜 Signed History</button>
-                        <button class="btn" onclick="showFeedback()">💬 Feedback</button>
+                    <div class="loading-container">
+                        <h2>Client Dashboard</h2>
+                        <p>Welcome, {client_email}</p>
+                        <div class="spinner"></div>
+                        <p>Loading your dashboard...</p>
+                        <button class="redirect-btn" onclick="openFlutterApp()">Open Full Dashboard</button>
                     </div>
-                    <div id="app"></div>
+                    
                     <script>
-                        async function apiGet(path){const r=await fetch(path); if(!r.ok) throw new Error('err'); return r.json();}
-                        async function loadProposals(){ const p=await apiGet('/client/proposals'); document.getElementById('app').innerHTML= p.map(x=>`<div style=\"border:1px solid #eee;padding:8px;margin:6px;\"><b>${x.title}</b> — ${x.status} <button onclick=\"view('${x.id}')\">View</button></div>`).join(''); }
-                        async function view(id){ const d=await apiGet('/client/proposals/'+id); document.getElementById('app').innerHTML=`<h3>${d.title}</h3><pre>${JSON.stringify(d.sections,null,2)}</pre><div><input id='name' placeholder='Your full name'/> <button onclick="sign('${d.id}')">Sign</button></div>` }
-                        async function sign(id){ const name=document.getElementById('name').value; if(!name) return alert('Enter name'); const r=await fetch('/client/proposals/'+id+'/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signer_name:name})}); if(!r.ok) return alert('Failed to sign'); alert('Signed'); }
-                        async function loadSignList(){ const p=await apiGet('/client/proposals'); document.getElementById('app').innerHTML=p.filter(x=>x.status==='Released').map(x=>`<div style=\"border:1px solid #eee;padding:8px;margin:6px;\"><input type=radio name=s value='${x.id}'/> ${x.title}</div>`).join('')+'<div><input id="signer" placeholder="Your name"/> <button onclick="signSelected()">Sign Selected</button></div>'; }
-                        async function signSelected(){ const r=document.querySelector('input[name=s]:checked'); if(!r) return alert('Select'); const id=r.value; const nm=document.getElementById('signer').value; const res=await fetch('/client/proposals/'+id+'/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signer_name:nm})}); if(!res.ok) return alert('Failed'); alert('Signed'); }
-                        async function loadHistory(){ const p=await apiGet('/client/proposals'); document.getElementById('app').innerHTML=p.filter(x=>x.status==='Signed').map(x=>`<div style=\"border:1px solid #eee;padding:8px;margin:6px;\"><b>${x.title}</b> — Signed by ${x.signed_by}</div>`).join('') }
-                        function showFeedback(){ document.getElementById('app').innerHTML=`<h3>Send feedback</h3><textarea id='fb' rows=6 style='width:100%'></textarea><div><button onclick='sendFb()'>Send</button></div>` }
-                        async function sendFb(){ const msg=document.getElementById('fb').value; const r=await fetch('/client/proposals/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'{client_email}',message:msg})}); if(!r.ok) return alert('Failed'); alert('Feedback sent'); }
+                        // Store token in localStorage for Flutter app
+                        localStorage.setItem('client_token', '{token}');
+                        localStorage.setItem('client_email', '{client_email}');
+                        
+                        function openFlutterApp() {{
+                            // Try to open Flutter app in new tab
+                            const flutterUrl = 'http://localhost:3000/enhanced-client-dashboard?token={token}';
+                            window.open(flutterUrl, '_blank');
+                        }}
+                        
+                        // Auto-redirect after 3 seconds
+                        setTimeout(() => {{
+                            openFlutterApp();
+                        }}, 3000);
                     </script>
                 </body>
                 </html>
                 """
-                # inject client email without using f-string (avoid conflicts with JS template literals)
-                html = html.replace('{client_email}', client_email)
                 return HTMLResponse(content=html)
         except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
