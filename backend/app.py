@@ -19,6 +19,7 @@ import secrets
 import psycopg2
 import psycopg2.extras
 import tempfile
+from settings import router as settings_router
 
 BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, "storage.json")
@@ -480,6 +481,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include settings router
+app.include_router(settings_router, prefix="/api", tags=["settings"])
+
 # ---------- Postgres helpers (Content Library) ----------
 def _pg_conn():
     host = os.getenv("DB_HOST", "localhost")
@@ -758,32 +762,225 @@ def pg_revert_module(module_id: str, payload: RevertPayload):
 # ---------- Routes: Templates & Proposals (JSON storage) ----------
 @app.get("/templates")
 def list_templates():
-    db = load_db()
-    return db.get("templates", [])
+    """Get available proposal templates"""
+    templates = [
+        {
+            "id": "proposal",
+            "name": "Proposal",
+            "description": "Standard business proposal with executive summary, scope, and pricing",
+            "sections": ["executive_summary", "company_profile", "scope_deliverables", "timeline", "investment", "terms_conditions"]
+        },
+        {
+            "id": "sow",
+            "name": "Statement of Work (SOW)",
+            "description": "Detailed work statement with deliverables, timeline, and responsibilities",
+            "sections": ["project_overview", "scope_of_work", "deliverables", "timeline", "resources", "terms"]
+        },
+        {
+            "id": "rfi",
+            "name": "RFI Response",
+            "description": "Response to Request for Information with technical details and capabilities",
+            "sections": ["company_overview", "technical_capabilities", "past_experience", "team_qualifications", "references"]
+        }
+    ]
+    return {"templates": templates}
 
 @app.get("/proposals")
 def list_proposals():
-    return load_db()["proposals"]
+    """Get all proposals from PostgreSQL database"""
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT 
+                        id::text,
+                        title,
+                        client_name as client,
+                        status,
+                        content as sections,
+                        created_at,
+                        updated_at,
+                        budget as estimated_value,
+                        timeline_days as timeline
+                    FROM proposals 
+                    ORDER BY updated_at DESC
+                """)
+                proposals = cur.fetchall()
+                
+                # Convert to list of dicts and add required fields
+                result = []
+                for proposal in proposals:
+                    proposal_dict = dict(proposal)
+                    # Add required fields that might be missing
+                    proposal_dict['dtype'] = 'Proposal'
+                    proposal_dict['mandatory_sections'] = [
+                        "Executive Summary",
+                        "Scope & Deliverables", 
+                        "Delivery Approach",
+                        "Assumptions",
+                        "Risks",
+                        "References",
+                        "Team Bios"
+                    ]
+                    proposal_dict['approval'] = {
+                        "mode": "sequential",
+                        "order": ["Delivery", "Legal", "Exec"],
+                        "approvals": {}
+                    }
+                    proposal_dict['readiness_score'] = 0.0
+                    proposal_dict['readiness_issues'] = [
+                        "Missing mandatory section: Executive Summary",
+                        "Missing mandatory section: Scope & Deliverables",
+                        "Missing mandatory section: Delivery Approach",
+                        "Missing mandatory section: Assumptions",
+                        "Missing mandatory section: Risks",
+                        "Missing mandatory section: References",
+                        "Missing mandatory section: Team Bios"
+                    ]
+                    proposal_dict['signed_at'] = None
+                    proposal_dict['signed_by'] = None
+                    result.append(proposal_dict)
+                
+                return result
+    except Exception as e:
+        print(f"Error fetching proposals from database: {e}")
+        # Fallback to empty list if database fails
+        return []
+
+@app.post("/proposals/ai-analysis")
+def analyze_proposal_ai(proposal_data: dict = Body(...)):
+    """AI-powered proposal analysis endpoint"""
+    try:
+        # This would integrate with your AI service
+        # For now, return a mock analysis
+        analysis = {
+            "riskScore": 15,
+            "status": "At Risk",
+            "issues": [
+                {
+                    "type": "ai_analysis",
+                    "title": "Vague Scope Detected",
+                    "description": "Scope contains vague language that could lead to scope creep",
+                    "points": 6,
+                    "priority": "warning",
+                    "action": "Make deliverables more specific"
+                }
+            ]
+        }
+        return analysis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
+
+
+@app.get("/content-modules")
+def get_content_modules():
+    """Get available content modules for proposals"""
+    modules = [
+        {
+            "id": "company_profile",
+            "name": "Company Profile",
+            "category": "Company",
+            "description": "Standard company information and capabilities",
+            "required": True
+        },
+        {
+            "id": "executive_summary",
+            "name": "Executive Summary",
+            "category": "Content",
+            "description": "High-level project overview and value proposition",
+            "required": True
+        },
+        {
+            "id": "scope_deliverables",
+            "name": "Scope & Deliverables",
+            "category": "Project",
+            "description": "Detailed project scope and deliverable specifications",
+            "required": True
+        },
+        {
+            "id": "delivery_approach",
+            "name": "Delivery Approach",
+            "category": "Methodology",
+            "description": "Project methodology and implementation approach",
+            "required": False
+        },
+        {
+            "id": "case_studies",
+            "name": "Case Studies",
+            "category": "Portfolio",
+            "description": "Relevant past project examples and success stories",
+            "required": False
+        },
+        {
+            "id": "team_bios",
+            "name": "Team Bios",
+            "category": "Team",
+            "description": "Key team member profiles and qualifications",
+            "required": False
+        },
+        {
+            "id": "assumptions_risks",
+            "name": "Assumptions & Risks",
+            "category": "Legal",
+            "description": "Project assumptions and risk mitigation strategies",
+            "required": False
+        },
+        {
+            "id": "terms_conditions",
+            "name": "Terms & Conditions",
+            "category": "Legal",
+            "description": "Standard legal terms and contract conditions",
+            "required": True
+        }
+    ]
+    return {"modules": modules}
 
 @app.post("/proposals", response_model=Proposal)
 def create_proposal(payload: ProposalCreate):
-    db = load_db()
-    p = Proposal(
-        id=str(uuid.uuid4()),
-        title=payload.title,
-        client=payload.client,
-        dtype=payload.dtype or "Proposal",
-    )
-    if payload.template_key:
-        tmpl = next((t for t in db.get("templates",[]) if t.get("key")==payload.template_key), None)
-        if tmpl:
-            for sec in tmpl.get("sections",[]):
-                p.sections[sec] = ""
-            p.mandatory_sections = tmpl.get("sections", p.mandatory_sections)
-            p.dtype = tmpl.get("dtype", p.dtype)
-    p = compute_readiness_and_risk(p)
-    save_proposal(p)
-    return p
+    """Create a new proposal in PostgreSQL database"""
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor() as cur:
+                # Insert new proposal into PostgreSQL
+                cur.execute("""
+                    INSERT INTO proposals (user_id, title, client_name, status, content, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    "default_user",  # You might want to get this from auth
+                    payload.title,
+                    payload.client,
+                    "Draft",
+                    json.dumps({}),  # Empty sections initially
+                    datetime.now(),
+                    datetime.now()
+                ))
+                
+                proposal_id = cur.fetchone()[0]
+                conn.commit()
+                
+                # Create Proposal object for response
+                p = Proposal(
+                    id=str(proposal_id),
+                    title=payload.title,
+                    client=payload.client,
+                    dtype=payload.dtype or "Proposal",
+                    status="Draft",
+                    sections={},
+                    created_at=now_iso(),
+                    updated_at=now_iso()
+                )
+                
+                # Apply template if specified
+                if payload.template_key:
+                    # You can add template logic here if needed
+                    pass
+                
+                return p
+                
+    except Exception as e:
+        print(f"Error creating proposal in database: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create proposal")
 
 @app.get("/proposals/{pid}", response_model=Proposal)
 def get_proposal(pid: str):
@@ -804,6 +1001,47 @@ def update_proposal(pid: str, payload: ProposalUpdate):
     p = compute_readiness_and_risk(p)
     save_proposal(p)
     return p
+
+@app.patch("/proposals/{pid}/status")
+def update_proposal_status(pid: str, status_data: dict = Body(...)):
+    """Update proposal status"""
+    p = get_proposal_or_404(pid)
+    new_status = status_data.get("status")
+    if new_status not in ["Draft", "In Review", "Released", "Signed", "Archived"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    
+    p.status = new_status
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return {"message": "Status updated successfully", "status": new_status}
+
+@app.put("/proposals/{pid}/data")
+def update_proposal_data(pid: str, proposal_data: dict = Body(...)):
+    """Update proposal with enhanced data from compose page"""
+    p = get_proposal_or_404(pid)
+    
+    # Update basic fields
+    if "title" in proposal_data:
+        p.title = proposal_data["title"]
+    if "client" in proposal_data:
+        p.client = proposal_data["client"]
+    if "clientEmail" in proposal_data:
+        p.client_email = proposal_data["clientEmail"]
+    if "projectType" in proposal_data:
+        p.project_type = proposal_data["projectType"]
+    if "estimatedValue" in proposal_data:
+        p.estimated_value = proposal_data["estimatedValue"]
+    if "timeline" in proposal_data:
+        p.timeline = proposal_data["timeline"]
+    
+    # Update sections with enhanced content
+    if "sections" in proposal_data:
+        p.sections.update(proposal_data["sections"])
+    
+    p.updated_at = now_iso()
+    p = compute_readiness_and_risk(p)
+    save_proposal(p)
+    return {"message": "Proposal updated successfully", "proposal": p}
 
 @app.post("/proposals/{pid}/submit", response_model=Proposal)
 def submit_for_review(pid: str):

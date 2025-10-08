@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
-import '../../services/proposal_status_service.dart';
+import 'proposal_status_dashboard.dart';
+import 'proposal_wizard.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -11,8 +12,22 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> {
+class _DashboardPageState extends State<DashboardPage>
+    with TickerProviderStateMixin {
   bool _isRefreshing = false;
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   Future<void> _refreshData() async {
     setState(() {
@@ -133,156 +148,182 @@ class _DashboardPageState extends State<DashboardPage> {
 
           // Main Content
           Expanded(
-            child: Row(
+            child: Column(
               children: [
-                // Sidebar
+                // Tab Bar
                 Container(
-                  width: 250,
-                  color: const Color(0xFF34495E),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        // Title with better styling
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C3E50),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: const Color(0xFF34495E), width: 1),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.person_outline,
-                                color: Color(0xFF3498DB),
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Business Developer',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildNavItem('📊', 'Dashboard', true, context),
-                        _buildNavItem('📝', 'My Proposals', false, context),
-                        _buildNavItem('📂', 'Templates', false, context),
-                        _buildNavItem('🧩', 'Content Library', false, context),
-                        _buildNavItem('👥', 'Collaboration', false, context),
-                        _buildNavItem('📋', 'Approvals Status', false, context),
-                        _buildNavItem(
-                            '🔍', 'Analytics (My Pipeline)', false, context),
-
-                        // Divider
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 16),
-                          height: 1,
-                          color: const Color(0xFF2C3E50),
-                        ),
-
-                        // Quick Actions Section
-                        const Padding(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Text(
-                            'Quick Actions',
-                            style: TextStyle(
-                              color: Color(0xFF95A5A6),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-
-                        _buildNavItem('➕', 'New Proposal', false, context),
-                        _buildNavItem('⚙️', 'Settings', false, context),
-
-                        // Debug section
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          child: ElevatedButton(
-                            onPressed: () {
-                              print(
-                                  'Debug button clicked - navigating to templates');
-                              Navigator.pushReplacementNamed(
-                                  context, '/templates');
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFE74C3C),
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('DEBUG: Go to Templates'),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20), // Add bottom padding
-                      ],
-                    ),
+                  color: Colors.white,
+                  child: TabBar(
+                    controller: _tabController,
+                    labelColor: const Color(0xFF2C3E50),
+                    unselectedLabelColor: Colors.grey[600],
+                    indicatorColor: const Color(0xFF3498DB),
+                    tabs: const [
+                      Tab(
+                        icon: Icon(Icons.dashboard_outlined),
+                        text: 'Overview',
+                      ),
+                      Tab(
+                        icon: Icon(Icons.track_changes_outlined),
+                        text: 'Status Tracking',
+                      ),
+                    ],
                   ),
                 ),
-
-                // Content Area
+                // Tab Content
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // Original Dashboard Content
+                      Row(
                         children: [
-                          // Proposal Dashboard Section
-                          _buildSection(
-                            '📊 Proposal Dashboard',
-                            _buildDashboardGrid(counts, context),
+                          // Sidebar
+                          Container(
+                            width: 250,
+                            color: const Color(0xFF34495E),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                children: [
+                                  const SizedBox(height: 20),
+                                  // Title with better styling
+                                  Container(
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF2C3E50),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: const Color(0xFF34495E),
+                                          width: 1),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.person_outline,
+                                          color: Color(0xFF3498DB),
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Text(
+                                          'Business Developer',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildNavItem(
+                                      '📊', 'Dashboard', true, context),
+                                  _buildNavItem(
+                                      '📝', 'My Proposals', false, context),
+                                  _buildNavItem(
+                                      '📂', 'Templates', false, context),
+                                  _buildNavItem(
+                                      '🧩', 'Content Library', false, context),
+                                  _buildNavItem(
+                                      '👥', 'Collaboration', false, context),
+                                  _buildNavItem(
+                                      '📋', 'Approvals Status', false, context),
+                                  _buildNavItem('🔍', 'Analytics (My Pipeline)',
+                                      false, context),
+
+                                  // Divider
+                                  Container(
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 16),
+                                    height: 1,
+                                    color: const Color(0xFF2C3E50),
+                                  ),
+
+                                  // Quick Actions Section
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    child: Text(
+                                      'Quick Actions',
+                                      style: TextStyle(
+                                        color: Color(0xFF95A5A6),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ),
+
+                                  _buildNavItem(
+                                      '➕', 'New Proposal', false, context),
+                                  _buildNavItem(
+                                      '⚙️', 'Settings', false, context),
+
+                                  const SizedBox(
+                                      height: 20), // Add bottom padding
+                                ],
+                              ),
+                            ),
                           ),
-                          const SizedBox(height: 20),
 
-                          // End-to-End Proposal Flow
-                          _buildSection(
-                            '🔧 End-to-End Proposal Flow',
-                            _buildWorkflow(context),
-                          ),
-                          const SizedBox(height: 20),
+                          // Content Area
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Proposal Dashboard Section
+                                    _buildSection(
+                                      '📊 Proposal Dashboard',
+                                      _buildDashboardGrid(counts, context),
+                                    ),
+                                    const SizedBox(height: 20),
 
-                          // AI-Powered Compound Risk Gate
-                          _buildAISection(),
-                          const SizedBox(height: 20),
+                                    // End-to-End Proposal Flow
+                                    _buildSection(
+                                      '🔧 End-to-End Proposal Flow',
+                                      _buildWorkflow(context),
+                                    ),
+                                    const SizedBox(height: 20),
 
-                          // Recent Proposals
-                          _buildSection(
-                            '📝 Recent Proposals',
-                            _buildRecentProposals(app.proposals),
-                          ),
-                          const SizedBox(height: 20),
+                                    // AI-Powered Compound Risk Gate
+                                    _buildAISection(),
+                                    const SizedBox(height: 20),
 
-                          // Approved Proposals
-                          _buildSection(
-                            '✅ Approved Proposals',
-                            _buildApprovedProposals(app.proposals),
-                          ),
-                          const SizedBox(height: 20),
+                                    // Recent Proposals
+                                    _buildSection(
+                                      '📝 Recent Proposals',
+                                      _buildRecentProposals(app.proposals),
+                                    ),
+                                    const SizedBox(height: 20),
 
-                          // System Components
-                          _buildSection(
-                            '🧩 System Components',
-                            _buildSystemComponents(),
+                                    // Approved Proposals
+                                    _buildSection(
+                                      '✅ Approved Proposals',
+                                      _buildApprovedProposals(app.proposals),
+                                    ),
+                                    const SizedBox(height: 20),
+
+                                    // System Components
+                                    _buildSection(
+                                      '🧩 System Components',
+                                      _buildSystemComponents(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                      // Second Tab - Status Dashboard
+                      const ProposalStatusDashboard(),
+                    ],
                   ),
                 ),
               ],
@@ -396,16 +437,15 @@ class _DashboardPageState extends State<DashboardPage> {
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'New Proposal':
-        Navigator.pushReplacementNamed(context, '/compose');
-        break;
-      case 'Settings':
-        // For now, show a message as settings page might not exist
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings page coming soon!'),
-            backgroundColor: Color(0xFFE67E22),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ProposalWizard(),
           ),
         );
+        break;
+      case 'Settings':
+        Navigator.pushNamed(context, '/settings');
         break;
       default:
         // Default to dashboard

@@ -37,19 +37,23 @@ class AdminDashboardPage extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFFF8F9FA),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
+                          border: Border.all(
+                              color: const Color(0xFFCCC),
+                              style: BorderStyle.solid),
                         ),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 15),
                           child: Row(
                             children: [
-                              Icon(Icons.search, size: 16, color: Color(0xFF7F8C8D)),
+                              Icon(Icons.search,
+                                  size: 16, color: Color(0xFF7F8C8D)),
                               SizedBox(width: 8),
                               Expanded(
                                 child: TextField(
                                   decoration: InputDecoration(
                                     hintText: 'Search proposals...',
-                                    hintStyle: TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
+                                    hintStyle: TextStyle(
+                                        fontSize: 12, color: Color(0xFF7F8C8D)),
                                     border: InputBorder.none,
                                   ),
                                 ),
@@ -62,7 +66,8 @@ class AdminDashboardPage extends StatelessWidget {
                       // Notification Bell
                       Stack(
                         children: [
-                          const Icon(Icons.notifications, color: Colors.white, size: 24),
+                          const Icon(Icons.notifications,
+                              color: Colors.white, size: 24),
                           Positioned(
                             top: 0,
                             right: 0,
@@ -111,7 +116,7 @@ class AdminDashboardPage extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Main Content
           Expanded(
             child: Row(
@@ -126,7 +131,8 @@ class AdminDashboardPage extends StatelessWidget {
                         const SizedBox(height: 20),
                         // Title
                         const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 10),
                           child: Text(
                             'Admin',
                             style: TextStyle(
@@ -137,19 +143,27 @@ class AdminDashboardPage extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        _buildAdminNavItem('📊', 'Dashboard', true),
-                        _buildAdminNavItem('👥', 'User Management', false),
-                        _buildAdminNavItem('📂', 'Template Management', false),
-                        _buildAdminNavItem('🧩', 'Content Library Management', false),
-                        _buildAdminNavItem('🛡️', 'Governance Rules', false),
-                        _buildAdminNavItem('📈', 'Analytics & Reports', false),
-                        _buildAdminNavItem('⚙️', 'System Settings', false),
+                        _buildAdminNavItem('📊', 'Dashboard', true, context),
+                        _buildAdminNavItem(
+                            '👥', 'User Management', false, context),
+                        _buildAdminNavItem(
+                            '📂', 'Template Management', false, context),
+                        _buildAdminNavItem(
+                            '🧩', 'Content Library Management', false, context),
+                        _buildAdminNavItem(
+                            '🛡️', 'Governance Rules', false, context),
+                        _buildAdminNavItem(
+                            '🤖', 'AI Configuration', false, context),
+                        _buildAdminNavItem(
+                            '📈', 'Analytics & Reports', false, context),
+                        _buildAdminNavItem(
+                            '⚙️', 'System Settings', false, context),
                         const SizedBox(height: 20), // Add bottom padding
                       ],
                     ),
                   ),
                 ),
-                
+
                 // Content Area
                 Expanded(
                   child: Padding(
@@ -164,14 +178,14 @@ class AdminDashboardPage extends StatelessWidget {
                             _buildPipelineOverview(),
                           ),
                           const SizedBox(height: 20),
-                          
+
                           // Performance Metrics
                           _buildSection(
                             '📈 Performance Metrics',
                             _buildPerformanceMetrics(),
                           ),
                           const SizedBox(height: 20),
-                          
+
                           // User Management
                           _buildSection(
                             '👥 User Management',
@@ -185,12 +199,14 @@ class AdminDashboardPage extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Footer
           Container(
             height: 50,
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFDDD), style: BorderStyle.solid)),
+              border: Border(
+                  top: BorderSide(
+                      color: Color(0xFFDDD), style: BorderStyle.solid)),
             ),
             child: const Center(
               child: Text(
@@ -207,7 +223,8 @@ class AdminDashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAdminNavItem(String icon, String label, bool isActive) {
+  Widget _buildAdminNavItem(
+      String icon, String label, bool isActive, BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
@@ -215,7 +232,11 @@ class AdminDashboardPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: InkWell(
-        onTap: () {},
+        onTap: () {
+          if (label == 'AI Configuration') {
+            Navigator.pushNamed(context, '/ai-configuration');
+          }
+        },
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
@@ -261,7 +282,8 @@ class AdminDashboardPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
+        border:
+            Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
       ),
       child: Padding(
         padding: const EdgeInsets.all(15),
@@ -271,7 +293,9 @@ class AdminDashboardPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.only(bottom: 10),
               decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Color(0xFFEEE), style: BorderStyle.solid)),
+                border: Border(
+                    bottom: BorderSide(
+                        color: Color(0xFFEEE), style: BorderStyle.solid)),
               ),
               child: Text(
                 title,
@@ -304,7 +328,7 @@ class AdminDashboardPage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 15),
-        
+
         // Kanban Board
         _buildKanbanBoard(),
       ],
@@ -317,7 +341,8 @@ class AdminDashboardPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: isActive ? const Color(0xFF3498DB) : const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
+        border:
+            Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
       ),
       child: Text(
         text,
@@ -333,7 +358,11 @@ class AdminDashboardPage extends StatelessWidget {
     final columns = [
       {
         'title': 'Draft',
-        'items': ['NewVentures - Security', 'MedCorp - Compliance', 'TechStart - RFP'],
+        'items': [
+          'NewVentures - Security',
+          'MedCorp - Compliance',
+          'TechStart - RFP'
+        ],
       },
       {
         'title': 'In Review',
@@ -350,51 +379,61 @@ class AdminDashboardPage extends StatelessWidget {
     ];
 
     return Row(
-      children: columns.map((column) => Expanded(
-        child: Container(
-          margin: const EdgeInsets.only(right: 15),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8F9FA),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: Color(0xFFDDD), style: BorderStyle.solid)),
+      children: columns
+          .map((column) => Expanded(
+                child: Container(
+                  margin: const EdgeInsets.only(right: 15),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F9FA),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: const Color(0xFFDDD), style: BorderStyle.solid),
                   ),
-                  child: Text(
-                    column['title'] as String,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          decoration: const BoxDecoration(
+                            border: Border(
+                                bottom: BorderSide(
+                                    color: Color(0xFFDDD),
+                                    style: BorderStyle.solid)),
+                          ),
+                          child: Text(
+                            column['title'] as String,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ...(column['items'] as List<String>)
+                            .map((item) => Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                        color: const Color(0xFFCCC),
+                                        style: BorderStyle.solid),
+                                  ),
+                                  child: Text(
+                                    item,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ))
+                            .toList(),
+                      ],
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 10),
-                ...(column['items'] as List<String>).map((item) => Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
-                  ),
-                  child: Text(
-                    item,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                )).toList(),
-              ],
-            ),
-          ),
-        ),
-      )).toList(),
+              ))
+          .toList(),
     );
   }
 
@@ -461,7 +500,8 @@ class AdminDashboardPage extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xFFF8F9FA),
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
+            border: Border.all(
+                color: const Color(0xFFCCC), style: BorderStyle.solid),
           ),
           child: const Center(
             child: Text(
@@ -498,11 +538,13 @@ class AdminDashboardPage extends StatelessWidget {
 
     return Column(
       children: [
-        ...users.map((user) => _buildUserItem(
-          user['name'] as String,
-          user['role'] as String,
-          user['initials'] as String,
-        )).toList(),
+        ...users
+            .map((user) => _buildUserItem(
+                  user['name'] as String,
+                  user['role'] as String,
+                  user['initials'] as String,
+                ))
+            .toList(),
         const SizedBox(height: 10),
         Container(
           height: 1,
@@ -521,7 +563,8 @@ class AdminDashboardPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
+        border:
+            Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,

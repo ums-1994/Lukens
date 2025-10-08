@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
 import 'pages/creator/compose_page.dart';
+import 'pages/creator/proposal_wizard.dart';
+import 'pages/creator/enhanced_compose_page.dart';
 import 'pages/admin/govern_page.dart';
 import 'pages/approver/approvals_page.dart';
 import 'pages/shared/preview_page.dart';
@@ -19,10 +21,15 @@ import 'pages/shared/proposals_page.dart';
 import 'pages/creator/templates_page.dart';
 import 'pages/creator/collaboration_page.dart';
 import 'pages/admin/analytics_page.dart';
+import 'pages/admin/ai_configuration_page.dart';
+import 'pages/creator/settings_page.dart';
 import 'services/auth_service.dart';
+import 'services/ai_analysis_service.dart';
 import 'api.dart';
 
 void main() {
+  // Initialize AI service with your OpenAI API key
+  AIAnalysisService.initialize();
   runApp(const MyApp());
 }
 
@@ -96,6 +103,18 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const HomeShell(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) => const ComposePage(),
+          '/proposal-wizard': (context) => const ProposalWizard(),
+          '/enhanced-compose': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
+            return EnhancedComposePage(
+              proposalId: args?['proposalId'] ?? '',
+              proposalTitle: args?['proposalTitle'] ?? 'Untitled Proposal',
+              templateType: args?['templateType'] ?? 'proposal',
+              selectedModules:
+                  List<String>.from(args?['selectedModules'] ?? []),
+            );
+          },
           '/govern': (context) => const GovernPage(),
           '/preview': (context) => const PreviewPage(),
           '/creator_dashboard': (context) => const DashboardPage(),
@@ -112,6 +131,8 @@ class MyApp extends StatelessWidget {
           '/templates': (context) => const TemplatesPage(),
           '/collaboration': (context) => const CollaborationPage(),
           '/analytics': (context) => const AnalyticsPage(),
+          '/ai-configuration': (context) => const AIConfigurationPage(),
+          '/settings': (context) => const SettingsPage(),
           '/test-signature': (context) => const TestSignaturePage(),
         },
       ),

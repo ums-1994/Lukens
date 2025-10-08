@@ -44,57 +44,19 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchProposals() async {
     try {
-      // For now, use mock data but check real approval status
-      proposals = [
-        {
-          'id': 'proposal-1',
-          'title': 'Website Development Proposal',
-          'client': 'ABC Company',
-          'status': 'Sent',
-          'updated_at': '2023-10-25T10:30:00',
-          'created_at': '2023-10-25T09:00:00',
-        },
-        {
-          'id': 'proposal-2',
-          'title': 'Mobile App Development',
-          'client': 'XYZ Corp',
-          'status': 'Draft',
-          'updated_at': '2023-10-24T15:45:00',
-          'created_at': '2023-10-24T14:00:00',
-        },
-        {
-          'id': 'proposal-3',
-          'title': 'Cloud Migration Project',
-          'client': 'Tech Solutions Inc',
-          'status': 'Sent',
-          'updated_at': '2023-10-23T11:20:00',
-          'created_at': '2023-10-23T10:00:00',
-        },
-      ];
+      final r = await http.get(
+        Uri.parse("$baseUrl/proposals"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        proposals = List<dynamic>.from(data);
 
-      // Check approval status for each proposal
-      for (var proposal in proposals) {
-        try {
-          final response = await http.get(
-            Uri.parse("$baseUrl/proposal-status/${proposal['id']}"),
-            headers: _headers,
-          );
-
-          if (response.statusCode == 200) {
-            final statusData = jsonDecode(response.body);
-            proposal['approval_status'] = statusData['status'] ?? 'Pending';
-            proposal['is_approved'] = statusData['is_approved'] ?? false;
-            proposal['signed_by'] = statusData['signed_by'];
-            proposal['signed_at'] = statusData['signed_at'];
-          } else {
-            proposal['approval_status'] = 'Pending';
-            proposal['is_approved'] = false;
-          }
-        } catch (e) {
-          print("Error checking approval status for ${proposal['id']}: $e");
-          proposal['approval_status'] = 'Pending';
-          proposal['is_approved'] = false;
-        }
+        // Calculate dashboard counts from real data
+        _updateDashboardCounts();
+      } else {
+        print('Error fetching proposals: ${r.statusCode} - ${r.body}');
+        proposals = [];
       }
     } catch (e) {
       print('Error fetching proposals: $e');
@@ -102,14 +64,21 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _updateDashboardCounts() {
+    final counts = <String, int>{};
+    for (final proposal in proposals) {
+      final status = proposal['status'] ?? 'Draft';
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+    dashboardCounts = counts;
+  }
+
   Future<void> fetchDashboard() async {
-    // For now, return mock dashboard counts since backend doesn't have this endpoint yet
-    dashboardCounts = {
-      'Draft': 4,
-      'In Review': 2,
-      'Released': 3,
-      'Signed': 12,
-    };
+    // Dashboard counts are now calculated from real proposal data in fetchProposals
+    // This method is kept for compatibility but the real counts come from _updateDashboardCounts()
+    if (proposals.isNotEmpty) {
+      _updateDashboardCounts();
+    }
   }
 
   Future<void> createProposal(String title, String client,
@@ -125,6 +94,88 @@ class AppState extends ChangeNotifier {
     await fetchProposals();
     await fetchDashboard();
     notifyListeners();
+  }
+
+  Future<void> updateProposal(
+      String proposalId, Map<String, dynamic> data) async {
+    try {
+      final r = await http.put(
+        Uri.parse("$baseUrl/proposals/$proposalId"),
+        headers: _headers,
+        body: jsonEncode(data),
+      );
+      if (r.statusCode == 200) {
+        await fetchProposals();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error updating proposal: $e');
+    }
+  }
+
+  Future<void> updateProposalStatus(String proposalId, String status) async {
+    try {
+      final r = await http.patch(
+        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+        headers: _headers,
+        body: jsonEncode({"status": status}),
+      );
+      if (r.statusCode == 200) {
+        await fetchProposals();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error updating proposal status: $e');
+    }
+  }
+
+  Future<List<dynamic>> getTemplates() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/templates"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data['templates'] ?? [];
+      }
+    } catch (e) {
+      print('Error fetching templates: $e');
+    }
+    return [];
+  }
+
+  Future<List<dynamic>> getContentModules() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/content-modules"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data['modules'] ?? [];
+      }
+    } catch (e) {
+      print('Error fetching content modules: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> analyzeProposalAI(
+      Map<String, dynamic> proposalData) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals/ai-analysis"),
+        headers: _headers,
+        body: jsonEncode(proposalData),
+      );
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error analyzing proposal with AI: $e');
+    }
+    return null;
   }
 
   Future<void> updateSections(Map<String, dynamic> updates) async {
