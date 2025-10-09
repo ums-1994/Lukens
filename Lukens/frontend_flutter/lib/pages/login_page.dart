@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../widgets/footer.dart';
 import 'package:provider/provider.dart';
 import '../services/smtp_auth_service.dart';
 import '../api.dart';
+import 'dart:math' as math;
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -11,7 +11,8 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _LoginPageState extends State<LoginPage>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -20,10 +21,65 @@ class _LoginPageState extends State<LoginPage> {
   bool _isResending = false;
   bool _passwordVisible = false;
 
+  late final AnimationController _frameController;
+  late final AnimationController _parallaxController;
+  late final AnimationController _fadeInController;
+
+  final List<String> _backgroundImages = [
+    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+  ];
+
+  int _currentFrameIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _frameController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+
+    _parallaxController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+
+    _fadeInController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat(reverse: true);
+
+    _precacheFrames();
+    _cycleBackgrounds();
+  }
+
+  Future<void> _precacheFrames() async {
+    for (final imagePath in _backgroundImages) {
+      await precacheImage(AssetImage(imagePath), context);
+    }
+  }
+
+  void _cycleBackgrounds() {
+    _frameController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() {
+          _currentFrameIndex = (_currentFrameIndex + 1) % _backgroundImages.length;
+        });
+        _frameController.reset();
+        _frameController.forward();
+      }
+    });
+    _frameController.forward();
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _frameController.dispose();
+    _parallaxController.dispose();
+    _fadeInController.dispose();
     super.dispose();
   }
 
@@ -33,7 +89,6 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     try {
-      // Use SMTP authentication
       final result = await SmtpAuthService.loginUser(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -43,26 +98,22 @@ class _LoginPageState extends State<LoginPage> {
         setState(() => _isLoading = false);
 
         if (result != null) {
-          // Get user profile to check verification status
           final userProfile = await SmtpAuthService.getUserProfile(
             token: result['access_token'],
           );
 
           if (userProfile != null && userProfile['is_verified'] == true) {
-            // Set auth token in AppState and initialize data
             final appState = context.read<AppState>();
             appState.authToken = result['access_token'];
             appState.currentUser = userProfile;
             await appState.init();
 
-            // Navigate to dashboard
             Navigator.pushNamedAndRemoveUntil(
               context,
               '/creator_dashboard',
               (route) => false,
             );
           } else {
-            // Show resend verification option
             setState(() {
               _showResendVerification = true;
             });
@@ -86,7 +137,6 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         setState(() => _isLoading = false);
 
-        // Check if it's an email verification error
         if (e.toString().contains('Email not verified')) {
           setState(() {
             _showResendVerification = true;
@@ -154,156 +204,485 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isMobile = size.width < 900;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Login'),
-        centerTitle: true,
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Animated background
+          _buildBackgroundLayers(),
+
+          // Dark gradient overlay
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.black.withOpacity(0.5),
+                  Colors.black.withOpacity(0.7),
+                  Colors.black.withOpacity(0.6),
+                ],
+              ),
+            ),
+          ),
+
+          // Floating shapes - desktop only
+          if (!isMobile) _buildFloatingShapes(),
+
+          // Floating login card
+          Center(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 16 : 40,
+                vertical: 40,
+              ),
+              child: _buildLoginCard(isMobile),
+            ),
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+    );
+  }
+
+  Widget _buildBackgroundLayers() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Base background image
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 1200),
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          child: Image.asset(
+            _backgroundImages[_currentFrameIndex],
+            key: ValueKey<int>(_currentFrameIndex),
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: Colors.black);
+            },
+          ),
+        ),
+        // Pulsing light overlay (dark to light breathing)
+        AnimatedBuilder(
+          animation: _parallaxController,
+          builder: (context, child) {
+            // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
+            final darkness = 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
+            return Container(
+              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFloatingShapes() {
+    return AnimatedBuilder(
+      animation: _parallaxController,
+      builder: (context, child) {
+        return Stack(
+            children: [
+            Positioned(
+              left: 120 + (math.sin(_parallaxController.value * 2 * math.pi) * 40),
+              top: 180 + (math.cos(_parallaxController.value * 2 * math.pi) * 30),
+              child: Transform.rotate(
+                angle: _parallaxController.value * 2 * math.pi,
+                child: CustomPaint(
+                  painter: TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  size: const Size(70, 70),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 140 + (math.sin(_parallaxController.value * 2 * math.pi + 1.5) * 50),
+              top: 220 + (math.cos(_parallaxController.value * 2 * math.pi + 1.5) * 35),
+              child: Transform.rotate(
+                angle: -_parallaxController.value * 2 * math.pi * 0.8,
+                child: CustomPaint(
+                  painter: TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                  size: const Size(90, 90),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLoginCard(bool isMobile) {
+    return Container(
+      constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 500),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A).withOpacity(0.95),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFE9293A).withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFE9293A).withOpacity(0.2),
+            blurRadius: 40,
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      padding: EdgeInsets.all(isMobile ? 24 : 40),
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 50),
-              const Text(
-                'Welcome Back',
+            // Logo with subtle breathing fade animation
+            Center(
+              child: FadeTransition(
+                opacity: Tween<double>(begin: 0.3, end: 1.0).animate(
+                  CurvedAnimation(
+                    parent: _fadeInController,
+                    curve: Curves.easeInOut,
+                  ),
+                ),
+                child: Image.asset(
+                  'assets/images/2026.png',
+                  height: 120,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Text(
+                      '✕ Khonology',
                 style: TextStyle(
-                  fontSize: 28,
+                        fontFamily: 'Poppins',
+                        fontSize: 56,
                   fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    );
+                  },
                 ),
               ),
-              const SizedBox(height: 32),
-              TextFormField(
+            ),
+            const SizedBox(height: 24),
+
+            // Email
+            _buildTextField(
                 controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email),
-                ),
+              label: 'Email',
                 keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  if (!value.contains('@')) {
-                    return 'Please enter a valid email';
-                  }
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Email required';
+                if (!v.contains('@')) return 'Invalid email';
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
-              TextFormField(
+            const SizedBox(height: 12),
+
+            // Password
+            _buildTextField(
                 controller: _passwordController,
+              label: 'Password',
                 obscureText: !_passwordVisible,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.lock),
                   suffixIcon: IconButton(
-                    icon: Icon(_passwordVisible ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
-                  ),
+                icon: Icon(
+                  _passwordVisible ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.white54,
+                  size: 20,
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your password';
-                  }
+                onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
+              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Password required';
                   return null;
                 },
               ),
               const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Login', style: TextStyle(fontSize: 16)),
+
+            // Login Button
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFE9293A),
+                    Color(0xFF780A01),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("Don't have an account? "),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/register');
-                    },
-                    child: const Text('Register'),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFE9293A).withOpacity(0.4),
+                    blurRadius: 20,
+                    spreadRadius: 2,
                   ),
                 ],
               ),
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _login,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Login',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Social Login
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                _buildSocialButton(Icons.g_mobiledata),
+                const SizedBox(width: 16),
+                _buildSocialButton(Icons.window),
+                const SizedBox(width: 16),
+                _buildSocialButton(Icons.business),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Register / Forgot Password
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                  TextButton(
+                  onPressed: () => Navigator.pushNamed(context, '/register'),
+                  child: const Text(
+                    'Register',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+              ),
               TextButton(
                 onPressed: () {
-                  // Add forgot password logic later
+                    // TODO: Forgot password
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: Text('Forgot password feature coming soon')),
-                  );
-                },
-                child: const Text('Forgot password?'),
-              ),
+                        content: Text('Forgot password feature coming soon'),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'Forgot Password',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFFE9293A),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // Resend Verification (if needed)
               if (_showResendVerification) ...[
-                const SizedBox(height: 20),
+              const SizedBox(height: 24),
                 Container(
-                  padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    border: Border.all(color: Colors.orange.shade200),
-                    borderRadius: BorderRadius.circular(8),
+                  color: const Color(0xFF2A2A2A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFF59E0B).withOpacity(0.3),
+                    width: 1,
+                  ),
                   ),
                   child: Column(
                     children: [
                       const Text(
                         'Email not verified!',
                         style: TextStyle(
+                        fontFamily: 'Poppins',
                           fontWeight: FontWeight.bold,
-                          color: Colors.orange,
+                        color: Color(0xFFF59E0B),
+                        fontSize: 16,
                         ),
                       ),
                       const SizedBox(height: 8),
                       const Text(
                         'Please check your email and click the verification link, or resend it below.',
                         textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email Address',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.email),
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFFF59E0B),
+                            Color(0xFFD97706),
+                          ],
                         ),
-                        keyboardType: TextInputType.emailAddress,
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
                         child: ElevatedButton(
                           onPressed: _isResending ? null : _resendVerification,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 0,
                           ),
                           child: _isResending
-                              ? const CircularProgressIndicator(
-                                  color: Colors.white)
-                              : const Text('Resend Verification Email'),
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Resend Verification Email',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                         ),
                       ),
                     ],
                   ),
                 ),
               ],
-              const SizedBox(height: 50),
-            ],
-          ),
+          ],
         ),
       ),
-      bottomNavigationBar: const Footer(),
     );
   }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+    Widget? suffixIcon,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      validator: validator,
+      style: const TextStyle(
+        fontFamily: 'Poppins',
+        color: Colors.white,
+        fontSize: 14,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(
+          fontFamily: 'Poppins',
+          color: Colors.white70,
+          fontSize: 14,
+        ),
+        filled: true,
+        fillColor: const Color(0xFF2A2A2A),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE9293A), width: 1),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Colors.red, width: 1),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Colors.red, width: 1),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        suffixIcon: suffixIcon,
+      ),
+    );
+  }
+
+  Widget _buildSocialButton(IconData icon) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: IconButton(
+        icon: Icon(icon, size: 28, color: Colors.black87),
+        onPressed: () {
+          // TODO: Social login
+        },
+      ),
+    );
+  }
+}
+
+class TrianglePainter extends CustomPainter {
+  final Color color;
+
+  TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final path = Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(TrianglePainter oldDelegate) => false;
 }

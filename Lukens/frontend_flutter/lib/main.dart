@@ -21,6 +21,7 @@ import 'pages/proposals_page.dart';
 import 'pages/templates_page.dart';
 import 'pages/collaboration_page.dart';
 import 'pages/analytics_page.dart';
+import 'pages/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -112,6 +113,7 @@ class MyApp extends StatelessWidget {
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/client_portal': (context) => const ClientPortalPage(),
+          '/cinematic': (context) => const CinematicSequencePage(),
           '/templates': (context) => const TemplatesPage(),
           '/collaboration': (context) => const CollaborationPage(),
           '/analytics': (context) => const AnalyticsPage(),
