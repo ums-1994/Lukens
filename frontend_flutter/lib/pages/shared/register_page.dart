@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/smtp_auth_service.dart';
+import '../../services/smtp_auth_service.dart';
 import 'email_verification_page.dart';
 import 'dart:math' as math;
 
@@ -75,7 +75,8 @@ class _RegisterPageState extends State<RegisterPage>
     _frameController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         setState(() {
-          _currentFrameIndex = (_currentFrameIndex + 1) % _backgroundImages.length;
+          _currentFrameIndex =
+              (_currentFrameIndex + 1) % _backgroundImages.length;
         });
         _frameController.reset();
         _frameController.forward();
@@ -101,9 +102,12 @@ class _RegisterPageState extends State<RegisterPage>
     final hasMinLength = value.length >= 8;
     final hasUppercase = RegExp(r'[A-Z]').hasMatch(value);
     final hasNumber = RegExp(r'[0-9]').hasMatch(value);
-    final hasSpecial = RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;]').hasMatch(value);
+    final hasSpecial =
+        RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;]').hasMatch(value);
 
-    final passed = [hasMinLength, hasUppercase, hasNumber, hasSpecial].where((e) => e).length;
+    final passed = [hasMinLength, hasUppercase, hasNumber, hasSpecial]
+        .where((e) => e)
+        .length;
     setState(() {
       _criteria = {
         'minLength': hasMinLength,
@@ -116,8 +120,10 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   Color _getPasswordStrengthBarColor() {
-    if (_passwordStrength >= 0.75) return const Color(0xFF16A34A); // Green - Strong
-    if (_passwordStrength >= 0.5) return const Color(0xFFF59E0B); // Orange - Medium
+    if (_passwordStrength >= 0.75)
+      return const Color(0xFF16A34A); // Green - Strong
+    if (_passwordStrength >= 0.5)
+      return const Color(0xFFF59E0B); // Orange - Medium
     if (_passwordStrength > 0) return const Color(0xFFD72638); // Red - Weak
     return const Color(0xFF1A1A1A); // Dark - No password
   }
@@ -237,7 +243,8 @@ class _RegisterPageState extends State<RegisterPage>
           animation: _parallaxController,
           builder: (context, child) {
             // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
-            final darkness = 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
+            final darkness =
+                0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
               color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
             );
@@ -254,23 +261,31 @@ class _RegisterPageState extends State<RegisterPage>
         return Stack(
           children: [
             Positioned(
-              left: 120 + (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 + (math.cos(_parallaxController.value * 2 * math.pi) * 30),
+              left: 120 +
+                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
+              top: 180 +
+                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
                   size: const Size(70, 70),
                 ),
               ),
             ),
             Positioned(
-              right: 140 + (math.sin(_parallaxController.value * 2 * math.pi + 1.5) * 50),
-              top: 220 + (math.cos(_parallaxController.value * 2 * math.pi + 1.5) * 35),
+              right: 140 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
+                      50),
+              top: 220 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
+                      35),
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -300,12 +315,12 @@ class _RegisterPageState extends State<RegisterPage>
         ],
       ),
       padding: EdgeInsets.all(isMobile ? 24 : 40),
-        child: Form(
-          key: _formKey,
-          child: Column(
+      child: Form(
+        key: _formKey,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          children: [
             // Logo with subtle breathing fade animation
             Center(
               child: FadeTransition(
@@ -322,10 +337,10 @@ class _RegisterPageState extends State<RegisterPage>
                   errorBuilder: (context, error, stackTrace) {
                     return const Text(
                       '✕ Khonology',
-                style: TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: 56,
-                  fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                     );
@@ -336,38 +351,40 @@ class _RegisterPageState extends State<RegisterPage>
             const SizedBox(height: 24),
 
             // First & Last Name Row
-              Row(
-                children: [
-                  Expanded(
+            Row(
+              children: [
+                Expanded(
                   child: _buildTextField(
-                      controller: _firstNameController,
+                    controller: _firstNameController,
                     label: 'First Name',
-                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                    validator: (v) =>
+                        v == null || v.isEmpty ? 'Required' : null,
                   ),
                 ),
                 const SizedBox(width: 12),
-                  Expanded(
+                Expanded(
                   child: _buildTextField(
-                      controller: _lastNameController,
+                    controller: _lastNameController,
                     label: 'Last Name',
-                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                    ),
+                    validator: (v) =>
+                        v == null || v.isEmpty ? 'Required' : null,
                   ),
-                ],
-              ),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
 
             // Email
             _buildTextField(
-                controller: _emailController,
+              controller: _emailController,
               label: 'Email',
-                keyboardType: TextInputType.emailAddress,
+              keyboardType: TextInputType.emailAddress,
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Email required';
                 if (!v.contains('@')) return 'Invalid email';
-                  return null;
-                },
-              ),
+                return null;
+              },
+            ),
             const SizedBox(height: 12),
 
             // Role Dropdown
@@ -376,49 +393,55 @@ class _RegisterPageState extends State<RegisterPage>
 
             // Password
             _buildTextField(
-                controller: _passwordController,
+              controller: _passwordController,
               label: 'Password',
-                obscureText: !_passwordVisible,
-                onChanged: _evaluatePassword,
-                  suffixIcon: IconButton(
+              obscureText: !_passwordVisible,
+              onChanged: _evaluatePassword,
+              suffixIcon: IconButton(
                 icon: Icon(
                   _passwordVisible ? Icons.visibility_off : Icons.visibility,
                   color: Colors.white54,
                   size: 20,
                 ),
-                onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
+                onPressed: () =>
+                    setState(() => _passwordVisible = !_passwordVisible),
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Password required';
                 if (v.length < 8) return 'Min 8 characters';
                 if (!RegExp(r'[A-Z]').hasMatch(v)) return 'Need uppercase';
                 if (!RegExp(r'[0-9]').hasMatch(v)) return 'Need number';
-                if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;]').hasMatch(v)) {
+                if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;]')
+                    .hasMatch(v)) {
                   return 'Need special char';
                 }
-                  return null;
-                },
-              ),
+                return null;
+              },
+            ),
             const SizedBox(height: 12),
 
             // Confirm Password
             _buildTextField(
-                controller: _confirmPasswordController,
+              controller: _confirmPasswordController,
               label: 'Confirm Password',
-                obscureText: !_confirmPasswordVisible,
-                  suffixIcon: IconButton(
+              obscureText: !_confirmPasswordVisible,
+              suffixIcon: IconButton(
                 icon: Icon(
-                  _confirmPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                  _confirmPasswordVisible
+                      ? Icons.visibility_off
+                      : Icons.visibility,
                   color: Colors.white54,
                   size: 20,
                 ),
-                onPressed: () => setState(() => _confirmPasswordVisible = !_confirmPasswordVisible),
+                onPressed: () => setState(
+                    () => _confirmPasswordVisible = !_confirmPasswordVisible),
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Confirm password';
-                if (v != _passwordController.text) return 'Passwords don\'t match';
-                  return null;
-                },
+                if (v != _passwordController.text)
+                  return 'Passwords don\'t match';
+                return null;
+              },
             ),
             const SizedBox(height: 20),
 
@@ -477,8 +500,8 @@ class _RegisterPageState extends State<RegisterPage>
                   ),
                 ],
               ),
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _register,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _register,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,
                   shadowColor: Colors.transparent,
@@ -511,9 +534,9 @@ class _RegisterPageState extends State<RegisterPage>
             const SizedBox(height: 24),
 
             // Social Login
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
                 _buildSocialButton(Icons.g_mobiledata),
                 const SizedBox(width: 16),
                 _buildSocialButton(Icons.window),
@@ -538,8 +561,8 @@ class _RegisterPageState extends State<RegisterPage>
                     ),
                   ),
                 ),
-                  TextButton(
-                    onPressed: () {
+                TextButton(
+                  onPressed: () {
                     // TODO: Forgot password
                   },
                   child: const Text(
@@ -550,12 +573,12 @@ class _RegisterPageState extends State<RegisterPage>
                       fontSize: 14,
                     ),
                   ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         ),
+      ),
     );
   }
 
@@ -608,7 +631,8 @@ class _RegisterPageState extends State<RegisterPage>
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         suffixIcon: suffixIcon,
       ),
     );
@@ -638,7 +662,8 @@ class _RegisterPageState extends State<RegisterPage>
             fontSize: 14,
           ),
         ),
-        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white70, size: 20),
+        icon: const Icon(Icons.keyboard_arrow_down,
+            color: Colors.white70, size: 20),
         items: _roles.map((role) {
           return DropdownMenuItem(
             value: role,

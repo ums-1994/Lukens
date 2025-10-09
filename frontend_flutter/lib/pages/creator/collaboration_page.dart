@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/collaboration_service.dart';
-import '../services/auth_service.dart';
-import '../services/firebase_service.dart';
+import '../../services/collaboration_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/firebase_service.dart';
 
 class CollaborationPage extends StatefulWidget {
   const CollaborationPage({super.key});
@@ -96,10 +96,9 @@ class _CollaborationPageState extends State<CollaborationPage> {
   @override
   Widget build(BuildContext context) {
     final user = AuthService.currentUser;
-    final displayName = (user != null
-            ? (user['full_name'] ?? user['email'] ?? 'User')
-            : 'User')
-        .toString();
+    final displayName =
+        (user != null ? (user['full_name'] ?? user['email'] ?? 'User') : 'User')
+            .toString();
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
     final unreadCount = _notifications.where((n) => n['read'] != true).length;
     return Scaffold(
@@ -145,7 +144,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(displayName, style: const TextStyle(color: Colors.white)),
+                      Text(displayName,
+                          style: const TextStyle(color: Colors.white)),
                       const SizedBox(width: 10),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -242,123 +242,139 @@ class _CollaborationPageState extends State<CollaborationPage> {
                     padding: const EdgeInsets.all(20),
                     child: RefreshIndicator(
                       onRefresh: _refreshAll,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Header Section
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Collaboration',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF2C3E50),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header Section
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Collaboration',
+                                      style: TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF2C3E50),
+                                      ),
                                     ),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    'Manage teams, comments, and shared workspaces',
-                                    style: TextStyle(
-                                      color: Color(0xFF718096),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Manage teams, comments, and shared workspaces',
+                                      style: TextStyle(
+                                        color: Color(0xFF718096),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              ElevatedButton.icon(
-                                onPressed: () async {
-                                  final nameController = TextEditingController();
-                                  final membersController = TextEditingController();
-                                  final ok = await showDialog<bool>(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      title: const Text('Create Team'),
-                                      content: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          TextField(
-                                            controller: nameController,
-                                            decoration: const InputDecoration(labelText: 'Team name'),
-                                          ),
-                                          TextField(
-                                            controller: membersController,
-                                            decoration: const InputDecoration(labelText: 'Members (emails, comma-separated)'),
-                                          ),
+                                  ],
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final nameController =
+                                        TextEditingController();
+                                    final membersController =
+                                        TextEditingController();
+                                    final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        title: const Text('Create Team'),
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            TextField(
+                                              controller: nameController,
+                                              decoration: const InputDecoration(
+                                                  labelText: 'Team name'),
+                                            ),
+                                            TextField(
+                                              controller: membersController,
+                                              decoration: const InputDecoration(
+                                                  labelText:
+                                                      'Members (emails, comma-separated)'),
+                                            ),
+                                          ],
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: const Text('Cancel')),
+                                          ElevatedButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text('Create')),
                                         ],
                                       ),
-                                      actions: [
-                                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                                        ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
-                                      ],
-                                    ),
-                                  );
-                                  if (ok == true) {
-                                    final members = membersController.text
-                                        .split(',')
-                                        .map((s) => s.trim())
-                                        .where((s) => s.isNotEmpty)
-                                        .toList();
-                                    await CollaborationService.createTeam(
-                                        name: nameController.text.trim(), members: members);
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Team created')),
-                                      );
-                                      _refreshAll();
+                                    );
+                                    if (ok == true) {
+                                      final members = membersController.text
+                                          .split(',')
+                                          .map((s) => s.trim())
+                                          .where((s) => s.isNotEmpty)
+                                          .toList();
+                                      await CollaborationService.createTeam(
+                                          name: nameController.text.trim(),
+                                          members: members);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                              content: Text('Team created')),
+                                        );
+                                        _refreshAll();
+                                      }
                                     }
-                                  }
-                                },
-                                icon: const Icon(Icons.group_add, size: 16),
-                                label: const Text('Create Team'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF4a6cf7),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 12),
+                                  },
+                                  icon: const Icon(Icons.group_add, size: 16),
+                                  label: const Text('Create Team'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF4a6cf7),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Tab Navigation
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border:
-                                  Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              children: [
-                                _buildTab('teams', 'Teams', Icons.group),
-                                _buildTab('comments', 'Comments',
-                                    Icons.chat_bubble_outline),
-                                _buildTab('shared', 'Shared Workspaces',
-                                    Icons.folder_shared),
-                                _buildTab(
-                                    'notifications',
-                                    unreadCount > 0
-                                        ? 'Notifications ($unreadCount)'
-                                        : 'Notifications',
-                                    Icons.notifications_outlined),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 20),
+                            const SizedBox(height: 24),
 
-                          // Tab Content
-                          if (_selectedTab == 'teams') _buildTeamsContent(),
-                          if (_selectedTab == 'comments') _buildCommentsContent(),
-                          if (_selectedTab == 'shared') _buildSharedContent(),
-                          if (_selectedTab == 'notifications') _buildNotificationsContent(),
-                        ],
-                      ),
+                            // Tab Navigation
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border:
+                                    Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                children: [
+                                  _buildTab('teams', 'Teams', Icons.group),
+                                  _buildTab('comments', 'Comments',
+                                      Icons.chat_bubble_outline),
+                                  _buildTab('shared', 'Shared Workspaces',
+                                      Icons.folder_shared),
+                                  _buildTab(
+                                      'notifications',
+                                      unreadCount > 0
+                                          ? 'Notifications ($unreadCount)'
+                                          : 'Notifications',
+                                      Icons.notifications_outlined),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Tab Content
+                            if (_selectedTab == 'teams') _buildTeamsContent(),
+                            if (_selectedTab == 'comments')
+                              _buildCommentsContent(),
+                            if (_selectedTab == 'shared') _buildSharedContent(),
+                            if (_selectedTab == 'notifications')
+                              _buildNotificationsContent(),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -545,12 +561,12 @@ class _CollaborationPageState extends State<CollaborationPage> {
               children: [
                 const Expanded(
                   child: Text(
-              'My Teams',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
+                    'My Teams',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2C3E50),
+                    ),
                   ),
                 ),
                 IconButton(
@@ -598,7 +614,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
                 Expanded(
                   child: TextField(
                     controller: controller,
-                    decoration: const InputDecoration(hintText: 'Add a comment...'),
+                    decoration:
+                        const InputDecoration(hintText: 'Add a comment...'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -622,8 +639,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
                     c['text']?.toString() ?? '',
                     ((c['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
                   )),
-            if (!_loading && _comments.isEmpty)
-              const Text('No comments yet.'),
+            if (!_loading && _comments.isEmpty) const Text('No comments yet.'),
           ],
         ),
       ),
@@ -641,12 +657,12 @@ class _CollaborationPageState extends State<CollaborationPage> {
               children: [
                 const Expanded(
                   child: Text(
-              'Shared Workspaces',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
+                    'Shared Workspaces',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2C3E50),
+                    ),
                   ),
                 ),
                 TextButton.icon(
@@ -658,7 +674,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
                         title: const Text('New Workspace'),
                         content: TextField(
                           controller: controller,
-                          decoration: const InputDecoration(labelText: 'Workspace name'),
+                          decoration: const InputDecoration(
+                              labelText: 'Workspace name'),
                         ),
                         actions: [
                           TextButton(
@@ -671,7 +688,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
                       ),
                     );
                     if (ok == true) {
-                      await CollaborationService.createWorkspace(name: controller.text.trim());
+                      await CollaborationService.createWorkspace(
+                          name: controller.text.trim());
                       _refreshAll();
                     }
                   },
@@ -708,12 +726,12 @@ class _CollaborationPageState extends State<CollaborationPage> {
               children: [
                 const Expanded(
                   child: Text(
-              'Notifications',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
+                    'Notifications',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2C3E50),
+                    ),
                   ),
                 ),
                 TextButton(
@@ -731,7 +749,9 @@ class _CollaborationPageState extends State<CollaborationPage> {
               ..._notifications.map((n) => _buildNotificationItem(
                     n['message']?.toString() ?? '',
                     ((n['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
-                    n['read'] == true ? Icons.notifications_none : Icons.notifications_active,
+                    n['read'] == true
+                        ? Icons.notifications_none
+                        : Icons.notifications_active,
                     id: n['id']?.toString(),
                     read: n['read'] == true,
                   )),
@@ -788,7 +808,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
           ),
           IconButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/team_details', arguments: {'teamId': name});
+              Navigator.pushNamed(context, '/team_details',
+                  arguments: {'teamId': name});
             },
             icon: const Icon(Icons.arrow_forward_ios, size: 16),
           ),
@@ -890,7 +911,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
           ),
           IconButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/workspace', arguments: {'workspaceName': name});
+              Navigator.pushNamed(context, '/workspace',
+                  arguments: {'workspaceName': name});
             },
             icon: const Icon(Icons.arrow_forward_ios, size: 16),
           ),
@@ -899,7 +921,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
     );
   }
 
-  Widget _buildNotificationItem(String message, String time, IconData icon, {String? id, bool read = false}) {
+  Widget _buildNotificationItem(String message, String time, IconData icon,
+      {String? id, bool read = false}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -937,11 +960,13 @@ class _CollaborationPageState extends State<CollaborationPage> {
           if (id != null)
             IconButton(
               onPressed: () async {
-                await CollaborationService.markNotificationRead(id, read: !read);
+                await CollaborationService.markNotificationRead(id,
+                    read: !read);
                 _refreshAll();
               },
-              icon: Icon(read ? Icons.mark_email_read : Icons.mark_email_unread),
-          ),
+              icon:
+                  Icon(read ? Icons.mark_email_read : Icons.mark_email_unread),
+            ),
         ],
       ),
     );

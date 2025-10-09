@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'snapshots_page.dart';
+import '../creator/snapshots_page.dart';
 
 class DocumentSettingsPage extends StatefulWidget {
   final String selectedTemplate;

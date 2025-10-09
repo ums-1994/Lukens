@@ -3,8 +3,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'dart:convert';
 import 'package:signature/signature.dart';
 import 'dart:typed_data';
-import 'document_settings_page.dart';
-import '../services/asset_service.dart';
+import '../shared/document_settings_page.dart';
+import '../../services/asset_service.dart';
 
 // ... existing code until line 838 ...
 
@@ -66,12 +66,18 @@ class _TemplatesPageState extends State<TemplatesPage> {
 
   Future<void> _loadStockAssetImages() async {
     try {
-      final String manifestJson = await rootBundle.loadString('AssetManifest.json');
-      final Map<String, dynamic> manifestMap = jsonDecode(manifestJson) as Map<String, dynamic>;
-      const String stockDir = 'assets/images/Individual Icon Asset Collections & Variations/';
+      final String manifestJson =
+          await rootBundle.loadString('AssetManifest.json');
+      final Map<String, dynamic> manifestMap =
+          jsonDecode(manifestJson) as Map<String, dynamic>;
+      const String stockDir =
+          'assets/images/Individual Icon Asset Collections & Variations/';
       final List<String> assetPaths = manifestMap.keys
           .where((String key) => key.startsWith(stockDir))
-          .where((String key) => key.endsWith('.png') || key.endsWith('.jpg') || key.endsWith('.jpeg'))
+          .where((String key) =>
+              key.endsWith('.png') ||
+              key.endsWith('.jpg') ||
+              key.endsWith('.jpeg'))
           .toList()
         ..sort();
       if (mounted) {
@@ -85,14 +91,16 @@ class _TemplatesPageState extends State<TemplatesPage> {
     }
   }
 
-  Widget _buildImageWidget(String path, {double? width, double? height, BoxFit? fit}) {
+  Widget _buildImageWidget(String path,
+      {double? width, double? height, BoxFit? fit}) {
     if (path.startsWith('assets/')) {
       return Image.asset(
         path,
         width: width,
         height: height,
         fit: fit ?? BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+        errorBuilder: (context, error, stackTrace) =>
+            const Icon(Icons.broken_image, size: 24, color: Colors.grey),
       );
     }
     return Image.network(
@@ -100,7 +108,8 @@ class _TemplatesPageState extends State<TemplatesPage> {
       width: width,
       height: height,
       fit: fit ?? BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+      errorBuilder: (context, error, stackTrace) =>
+          const Icon(Icons.broken_image, size: 24, color: Colors.grey),
     );
   }
 
@@ -223,7 +232,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
                         icon: const Icon(Icons.more_vert, color: Colors.white),
                         onSelected: (value) {
                           if (value == 'logout') {
-              Navigator.pushNamed(context, '/login');
+                            Navigator.pushNamed(context, '/login');
                           }
                         },
                         itemBuilder: (BuildContext context) => [
@@ -3649,7 +3658,8 @@ class _TemplatesPageState extends State<TemplatesPage> {
   }
 
   void _showImageGalleryDialog() {
-    final List<Map<String, String>> galleryImages = AssetService.getGalleryImages();
+    final List<Map<String, String>> galleryImages =
+        AssetService.getGalleryImages();
 
     showDialog(
       context: context,

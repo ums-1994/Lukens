@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
+import '../../api.dart';
 
 class ApprovalsPage extends StatefulWidget {
   const ApprovalsPage({super.key});
@@ -22,7 +22,7 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
   Future<void> _loadPendingApprovals() async {
     final app = context.read<AppState>();
     final userRole = app.currentUser?['role'] ?? '';
-    
+
     if (userRole == 'CEO') {
       final proposals = await app.getPendingApprovals();
       setState(() {
@@ -40,7 +40,7 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final userRole = app.currentUser?['role'] ?? '';
-    
+
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -80,7 +80,7 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
 
   Widget _buildProposalCard(Map<String, dynamic> proposal) {
     final app = context.read<AppState>();
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
@@ -156,19 +156,23 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
             onPressed: () async {
               Navigator.pop(ctx);
               final app = context.read<AppState>();
-              final error = await app.approveProposal(proposalId, comments: commentsCtrl.text);
+              final error = await app.approveProposal(proposalId,
+                  comments: commentsCtrl.text);
               if (error != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(error), backgroundColor: Colors.red),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Proposal approved!'), backgroundColor: Colors.green),
+                  const SnackBar(
+                      content: Text('Proposal approved!'),
+                      backgroundColor: Colors.green),
                 );
                 _loadPendingApprovals();
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2ECC71)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71)),
             child: const Text('Approve'),
           ),
         ],
@@ -199,14 +203,17 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
             onPressed: () async {
               Navigator.pop(ctx);
               final app = context.read<AppState>();
-              final error = await app.rejectProposal(proposalId, comments: commentsCtrl.text);
+              final error = await app.rejectProposal(proposalId,
+                  comments: commentsCtrl.text);
               if (error != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(error), backgroundColor: Colors.red),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Proposal rejected'), backgroundColor: Colors.orange),
+                  const SnackBar(
+                      content: Text('Proposal rejected'),
+                      backgroundColor: Colors.orange),
                 );
                 _loadPendingApprovals();
               }
@@ -223,16 +230,19 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
     final app = context.watch<AppState>();
     final p = app.currentProposal;
     if (p == null) {
-      return const Center(child: Text("Select a proposal to manage approvals."));
+      return const Center(
+          child: Text("Select a proposal to manage approvals."));
     }
     final status = p["status"];
-    final approvals = Map<String, dynamic>.from(p["approval"]["approvals"] ?? {});
+    final approvals =
+        Map<String, dynamic>.from(p["approval"]["approvals"] ?? {});
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Status: $status", style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text("Status: $status",
+              style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Wrap(spacing: 12, children: [
             _stageChip(context, "Delivery", approvals["Delivery"] != null),
@@ -250,9 +260,11 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
     final app = context.read<AppState>();
     return InputChip(
       label: Text("$stage ${approved ? "✓" : ""}"),
-      onPressed: approved ? null : () async {
-        await app.approveStage(stage);
-      },
+      onPressed: approved
+          ? null
+          : () async {
+              await app.approveStage(stage);
+            },
     );
   }
 }
@@ -271,7 +283,10 @@ class _SignPanelState extends State<SignPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        TextField(controller: ctrl, decoration: const InputDecoration(labelText: "Signer Name (Client)")),
+        TextField(
+            controller: ctrl,
+            decoration:
+                const InputDecoration(labelText: "Signer Name (Client)")),
         const SizedBox(height: 8),
         ElevatedButton.icon(
           icon: const Icon(Icons.draw_outlined),

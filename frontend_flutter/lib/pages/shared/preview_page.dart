@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
+import '../../api.dart';
 
 class PreviewPage extends StatelessWidget {
   const PreviewPage({super.key});
@@ -17,22 +17,25 @@ class PreviewPage extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: ListView(
         children: [
-          Text(p["title"], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          Text(p["title"],
+              style:
+                  const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
           Text("${p["dtype"]} for ${p["client"]}"),
           const Divider(),
           // Export PDF & Request e-sign buttons handled here
           const SizedBox(height: 8),
           ...sections.entries.map((e) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(e.value?.toString() ?? ""),
-              ],
-            ),
-          )),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(e.key,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(e.value?.toString() ?? ""),
+                  ],
+                ),
+              )),
         ],
       ),
     );

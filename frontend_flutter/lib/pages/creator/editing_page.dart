@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'proposal_viewer_page.dart';
-import '../services/email_service.dart';
+import '../client/proposal_viewer_page.dart';
+import '../../services/email_service.dart';
 
 class EditingPage extends StatefulWidget {
   final String documentName;

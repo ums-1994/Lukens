@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../widgets/footer.dart';
+import '../../widgets/footer.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
-import '../services/auth_service.dart';
-import '../services/asset_service.dart';
+import '../../api.dart';
+import '../../services/auth_service.dart';
+import '../../services/asset_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -12,7 +12,8 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> with TickerProviderStateMixin {
+class _DashboardPageState extends State<DashboardPage>
+    with TickerProviderStateMixin {
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
   late Animation<double> _widthAnimation;
@@ -102,13 +103,16 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      Text(
-                        _getUserName(app.currentUser),
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          Text(
+                            _getUserName(app.currentUser),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
                           ),
                           Text(
                             userRole,
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
                           ),
                         ],
                       ),
@@ -155,10 +159,10 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     width: _isSidebarCollapsed ? 90.0 : 250.0,
-                  color: const Color(0xFF34495E),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
+                    color: const Color(0xFF34495E),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
                           const SizedBox(height: 16),
                           // Toggle button
                           Padding(
@@ -168,59 +172,99 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
                                 height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C3E50),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2C3E50),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
                                   mainAxisAlignment: _isSidebarCollapsed
                                       ? MainAxisAlignment.center
                                       : MainAxisAlignment.spaceBetween,
-                            children: [
+                                  children: [
                                     if (!_isSidebarCollapsed)
                                       const Padding(
-                                        padding: EdgeInsets.symmetric(horizontal: 12),
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 12),
                                         child: Text(
                                           'Navigation',
-                                          style: TextStyle(color: Colors.white, fontSize: 12),
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12),
                                         ),
                                       ),
                                     Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: _isSidebarCollapsed ? 0 : 8),
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal:
+                                              _isSidebarCollapsed ? 0 : 8),
                                       child: Icon(
-                                        _isSidebarCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
-                                  color: Colors.white,
+                                        _isSidebarCollapsed
+                                            ? Icons.keyboard_arrow_right
+                                            : Icons.keyboard_arrow_left,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
                             ),
                           ),
                           const SizedBox(height: 12),
                           // Navigation items
-                          _buildNavItem('Dashboard', 'assets/images/Dahboard.png', _currentPage == 'Dashboard', context),
-                          _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', _currentPage == 'My Proposals', context),
-                          _buildNavItem('Templates', 'assets/images/content_library.png', _currentPage == 'Templates', context),
-                          _buildNavItem('Content Library', 'assets/images/content_library.png', _currentPage == 'Content Library', context),
-                          _buildNavItem('Collaboration', 'assets/images/collaborations.png', _currentPage == 'Collaboration', context),
-                          _buildNavItem('Approvals Status', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approvals Status', context),
-                          _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
-                          
+                          _buildNavItem(
+                              'Dashboard',
+                              'assets/images/Dahboard.png',
+                              _currentPage == 'Dashboard',
+                              context),
+                          _buildNavItem(
+                              'My Proposals',
+                              'assets/images/My_Proposals.png',
+                              _currentPage == 'My Proposals',
+                              context),
+                          _buildNavItem(
+                              'Templates',
+                              'assets/images/content_library.png',
+                              _currentPage == 'Templates',
+                              context),
+                          _buildNavItem(
+                              'Content Library',
+                              'assets/images/content_library.png',
+                              _currentPage == 'Content Library',
+                              context),
+                          _buildNavItem(
+                              'Collaboration',
+                              'assets/images/collaborations.png',
+                              _currentPage == 'Collaboration',
+                              context),
+                          _buildNavItem(
+                              'Approvals Status',
+                              'assets/images/Time Allocation_Approval_Blue.png',
+                              _currentPage == 'Approvals Status',
+                              context),
+                          _buildNavItem(
+                              'Analytics (My Pipeline)',
+                              'assets/images/analytics.png',
+                              _currentPage == 'Analytics (My Pipeline)',
+                              context),
+
                           const SizedBox(height: 20),
 
-                        // Divider
+                          // Divider
                           if (!_isSidebarCollapsed)
-                        Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
-                          height: 1,
-                          color: const Color(0xFF2C3E50),
-                        ),
+                            Container(
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              height: 1,
+                              color: const Color(0xFF2C3E50),
+                            ),
 
                           const SizedBox(height: 12),
-                          
+
                           // Logout button
-                          _buildNavItem('Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
+                          _buildNavItem(
+                              'Logout',
+                              'assets/images/Logout_KhonoBuzz.png',
+                              false,
+                              context),
                           const SizedBox(height: 20),
                         ],
                       ),
@@ -247,7 +291,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
     );
   }
 
-  Widget _buildNavItem(String label, String assetPath, bool isActive, BuildContext context) {
+  Widget _buildNavItem(
+      String label, String assetPath, bool isActive, BuildContext context) {
     if (_isSidebarCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -262,11 +307,13 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
             child: Container(
               width: 42,
               height: 42,
-      decoration: BoxDecoration(
+              decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isActive ? const Color(0xFFE74C3C) : const Color(0xFFCBD5E1),
+                  color: isActive
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
                 boxShadow: [
@@ -279,7 +326,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
               ),
               padding: const EdgeInsets.all(6),
               child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
               ),
             ),
           ),
@@ -289,21 +337,23 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
           setState(() => _currentPage = label);
-            _navigateToPage(context, label);
-          },
+          _navigateToPage(context, label);
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            border: isActive ? Border.all(color: const Color(0xFF2980B9), width: 1) : null,
+            border: isActive
+                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                : null,
           ),
-            child: Row(
-              children: [
+          child: Row(
+            children: [
               Container(
                 width: 42,
                 height: 42,
@@ -311,7 +361,9 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                   color: Colors.white,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: isActive ? const Color(0xFFE74C3C) : const Color(0xFFCBD5E1),
+                    color: isActive
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
                   boxShadow: [
@@ -324,21 +376,24 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                 ),
                 padding: const EdgeInsets.all(6),
                 child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
                 ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                      fontSize: 14,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                    ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-              if (isActive) const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+              ),
+              if (isActive)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
             ],
           ),
         ),
@@ -395,7 +450,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                 final app = context.read<AppState>();
                 app.logout();
                 AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE74C3C),
@@ -450,10 +506,16 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
       children: [
         _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
             'Active', context),
-        _buildStatCard('Pending CEO Approval', counts['Pending CEO Approval']?.toString() ?? '0',
-            'Awaiting Review', context),
-        _buildStatCard('Sent to Client',
-            counts['Sent to Client']?.toString() ?? '0', 'With Clients', context),
+        _buildStatCard(
+            'Pending CEO Approval',
+            counts['Pending CEO Approval']?.toString() ?? '0',
+            'Awaiting Review',
+            context),
+        _buildStatCard(
+            'Sent to Client',
+            counts['Sent to Client']?.toString() ?? '0',
+            'With Clients',
+            context),
         _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
             'Completed', context),
       ],
@@ -892,7 +954,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
     }
   }
 
-  Widget _buildRoleSpecificContent(String role, Map<String, dynamic> counts, AppState app) {
+  Widget _buildRoleSpecificContent(
+      String role, Map<String, dynamic> counts, AppState app) {
     switch (role) {
       case 'CEO':
         return _buildCEODashboard(counts, app);
@@ -910,7 +973,10 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
       children: [
         const Text(
           '👔 CEO Executive Dashboard',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50)),
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2C3E50)),
         ),
         const SizedBox(height: 8),
         const Text(
@@ -933,11 +999,13 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                const Icon(Icons.pending_actions, size: 48, color: Color(0xFFE67E22)),
+                const Icon(Icons.pending_actions,
+                    size: 48, color: Color(0xFFE67E22)),
                 const SizedBox(height: 12),
                 Text(
                   '${counts['Pending CEO Approval'] ?? 0} proposals pending your approval',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
@@ -945,7 +1013,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                   label: const Text('Review Pending Approvals'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF3498DB),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                   ),
                   onPressed: () {
                     Navigator.pushNamed(context, '/approvals');
@@ -966,13 +1035,17 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
     );
   }
 
-  Widget _buildFinancialManagerDashboard(Map<String, dynamic> counts, AppState app) {
+  Widget _buildFinancialManagerDashboard(
+      Map<String, dynamic> counts, AppState app) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           '💼 Financial Manager Dashboard',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50)),
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2C3E50)),
         ),
         const SizedBox(height: 8),
         const Text(
@@ -1021,7 +1094,10 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
       children: [
         const Text(
           '🤝 Client Portal',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2C3E50)),
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2C3E50)),
         ),
         const SizedBox(height: 8),
         const Text(
@@ -1041,8 +1117,11 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
             crossAxisSpacing: 20,
             mainAxisSpacing: 20,
             children: [
-              _buildStatCard('Active Proposals', counts['Sent to Client']?.toString() ?? '0',
-                  'For Review', context),
+              _buildStatCard(
+                  'Active Proposals',
+                  counts['Sent to Client']?.toString() ?? '0',
+                  'For Review',
+                  context),
               _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
                   'Completed', context),
             ],
@@ -1094,7 +1173,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                 label: const Text('Contact Support'),
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Support: support@example.com')),
+                    const SnackBar(
+                        content: Text('Support: support@example.com')),
                   );
                 },
               ),

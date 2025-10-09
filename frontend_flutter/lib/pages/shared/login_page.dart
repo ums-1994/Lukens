@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../services/smtp_auth_service.dart';
-import '../api.dart';
+import '../../services/smtp_auth_service.dart';
+import '../../api.dart';
 import 'dart:math' as math;
 
 class LoginPage extends StatefulWidget {
@@ -11,8 +11,7 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage>
-    with TickerProviderStateMixin {
+class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -64,7 +63,8 @@ class _LoginPageState extends State<LoginPage>
     _frameController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         setState(() {
-          _currentFrameIndex = (_currentFrameIndex + 1) % _backgroundImages.length;
+          _currentFrameIndex =
+              (_currentFrameIndex + 1) % _backgroundImages.length;
         });
         _frameController.reset();
         _frameController.forward();
@@ -271,7 +271,8 @@ class _LoginPageState extends State<LoginPage>
           animation: _parallaxController,
           builder: (context, child) {
             // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
-            final darkness = 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
+            final darkness =
+                0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
               color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
             );
@@ -286,25 +287,33 @@ class _LoginPageState extends State<LoginPage>
       animation: _parallaxController,
       builder: (context, child) {
         return Stack(
-            children: [
+          children: [
             Positioned(
-              left: 120 + (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 + (math.cos(_parallaxController.value * 2 * math.pi) * 30),
+              left: 120 +
+                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
+              top: 180 +
+                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
                   size: const Size(70, 70),
                 ),
               ),
             ),
             Positioned(
-              right: 140 + (math.sin(_parallaxController.value * 2 * math.pi + 1.5) * 50),
-              top: 220 + (math.cos(_parallaxController.value * 2 * math.pi + 1.5) * 35),
+              right: 140 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
+                      50),
+              top: 220 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
+                      35),
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -334,12 +343,12 @@ class _LoginPageState extends State<LoginPage>
         ],
       ),
       padding: EdgeInsets.all(isMobile ? 24 : 40),
-        child: Form(
-          key: _formKey,
-          child: Column(
+      child: Form(
+        key: _formKey,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          children: [
             // Logo with subtle breathing fade animation
             Center(
               child: FadeTransition(
@@ -356,10 +365,10 @@ class _LoginPageState extends State<LoginPage>
                   errorBuilder: (context, error, stackTrace) {
                     return const Text(
                       '✕ Khonology',
-                style: TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: 56,
-                  fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                     );
@@ -371,36 +380,37 @@ class _LoginPageState extends State<LoginPage>
 
             // Email
             _buildTextField(
-                controller: _emailController,
+              controller: _emailController,
               label: 'Email',
-                keyboardType: TextInputType.emailAddress,
+              keyboardType: TextInputType.emailAddress,
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Email required';
                 if (!v.contains('@')) return 'Invalid email';
-                  return null;
-                },
-              ),
+                return null;
+              },
+            ),
             const SizedBox(height: 12),
 
             // Password
             _buildTextField(
-                controller: _passwordController,
+              controller: _passwordController,
               label: 'Password',
-                obscureText: !_passwordVisible,
-                  suffixIcon: IconButton(
+              obscureText: !_passwordVisible,
+              suffixIcon: IconButton(
                 icon: Icon(
                   _passwordVisible ? Icons.visibility_off : Icons.visibility,
                   color: Colors.white54,
                   size: 20,
                 ),
-                onPressed: () => setState(() => _passwordVisible = !_passwordVisible),
+                onPressed: () =>
+                    setState(() => _passwordVisible = !_passwordVisible),
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Password required';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
 
             // Login Button
             Container(
@@ -422,8 +432,8 @@ class _LoginPageState extends State<LoginPage>
                   ),
                 ],
               ),
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _login,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,
                   shadowColor: Colors.transparent,
@@ -456,9 +466,9 @@ class _LoginPageState extends State<LoginPage>
             const SizedBox(height: 24),
 
             // Social Login
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
                 _buildSocialButton(Icons.g_mobiledata),
                 const SizedBox(width: 16),
                 _buildSocialButton(Icons.window),
@@ -472,7 +482,7 @@ class _LoginPageState extends State<LoginPage>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                  TextButton(
+                TextButton(
                   onPressed: () => Navigator.pushNamed(context, '/register'),
                   child: const Text(
                     'Register',
@@ -482,12 +492,12 @@ class _LoginPageState extends State<LoginPage>
                       fontSize: 14,
                     ),
                   ),
-              ),
-              TextButton(
-                onPressed: () {
+                ),
+                TextButton(
+                  onPressed: () {
                     // TODO: Forgot password
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
                         content: Text('Forgot password feature coming soon'),
                       ),
                     );
@@ -505,40 +515,40 @@ class _LoginPageState extends State<LoginPage>
             ),
 
             // Resend Verification (if needed)
-              if (_showResendVerification) ...[
+            if (_showResendVerification) ...[
               const SizedBox(height: 24),
-                Container(
+              Container(
                 padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
+                decoration: BoxDecoration(
                   color: const Color(0xFF2A2A2A),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: const Color(0xFFF59E0B).withOpacity(0.3),
                     width: 1,
                   ),
-                  ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'Email not verified!',
-                        style: TextStyle(
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      'Email not verified!',
+                      style: TextStyle(
                         fontFamily: 'Poppins',
-                          fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                         color: Color(0xFFF59E0B),
                         fontSize: 16,
-                        ),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Please check your email and click the verification link, or resend it below.',
-                        textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Please check your email and click the verification link, or resend it below.',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         fontFamily: 'Poppins',
                         color: Colors.white70,
                         fontSize: 14,
                       ),
-                      ),
-                      const SizedBox(height: 16),
+                    ),
+                    const SizedBox(height: 16),
                     Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(8),
@@ -551,9 +561,9 @@ class _LoginPageState extends State<LoginPage>
                           ],
                         ),
                       ),
-                        child: ElevatedButton(
-                          onPressed: _isResending ? null : _resendVerification,
-                          style: ElevatedButton.styleFrom(
+                      child: ElevatedButton(
+                        onPressed: _isResending ? null : _resendVerification,
+                        style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
                           foregroundColor: Colors.white,
@@ -562,8 +572,8 @@ class _LoginPageState extends State<LoginPage>
                             borderRadius: BorderRadius.circular(8),
                           ),
                           elevation: 0,
-                          ),
-                          child: _isResending
+                        ),
+                        child: _isResending
                             ? const SizedBox(
                                 height: 18,
                                 width: 18,
@@ -580,12 +590,12 @@ class _LoginPageState extends State<LoginPage>
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
+            ],
           ],
         ),
       ),
@@ -639,7 +649,8 @@ class _LoginPageState extends State<LoginPage>
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         suffixIcon: suffixIcon,
       ),
     );
