@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/smtp_auth_service.dart';
+import '../../services/smtp_auth_service.dart';
 
 class EmailVerificationPage extends StatefulWidget {
   final String? token;

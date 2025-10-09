@@ -3,25 +3,25 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
-import 'pages/creator_dashboard_page.dart';
+import 'pages/creator/creator_dashboard_page.dart';
 import 'widgets/app_side_nav.dart';
-import 'pages/compose_page.dart';
-import 'pages/govern_page.dart';
-import 'pages/approvals_page.dart';
-import 'pages/preview_page.dart';
-import 'pages/content_library_page.dart';
-import 'pages/approver_dashboard_page.dart';
-import 'pages/admin_dashboard_page.dart';
-import 'pages/client_portal_page.dart';
-import 'pages/login_page.dart';
-import 'pages/register_page.dart';
-import 'pages/email_verification_page.dart';
-import 'pages/startup_page.dart';
-import 'pages/proposals_page.dart';
-import 'pages/templates_page.dart';
-import 'pages/collaboration_page.dart';
-import 'pages/analytics_page.dart';
-import 'pages/cinematic_sequence_page.dart';
+import 'pages/creator/compose_page.dart';
+import 'pages/admin/govern_page.dart';
+import 'pages/approver/approvals_page.dart';
+import 'pages/shared/preview_page.dart';
+import 'pages/creator/content_library_page.dart';
+import 'pages/approver/approver_dashboard_page.dart';
+import 'pages/admin/admin_dashboard_page.dart';
+import 'pages/client/client_portal_page.dart';
+import 'pages/shared/login_page.dart';
+import 'pages/shared/register_page.dart';
+import 'pages/shared/email_verification_page.dart';
+import 'pages/shared/startup_page.dart';
+import 'pages/shared/proposals_page.dart';
+import 'pages/creator/templates_page.dart';
+import 'pages/creator/collaboration_page.dart';
+import 'pages/admin/analytics_page.dart';
+import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -108,7 +108,8 @@ class MyApp extends StatelessWidget {
           '/preview': (context) => const PreviewPage(),
           '/creator_dashboard': (context) => const DashboardPage(),
           '/content_library': (context) => const ContentLibraryPage(),
-          '/content': (context) => const ContentLibraryPage(), // Add missing route
+          '/content': (context) =>
+              const ContentLibraryPage(), // Add missing route
           '/approvals': (context) => const ApprovalsPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
@@ -203,19 +204,19 @@ class _HomeShellState extends State<HomeShell> {
   String _current = 'Dashboard';
   int idx = 0;
   final pages = [
-    DashboardPage(),                 // 0
-    ProposalsPage(),                 // 1
-    TemplatesPage(),                 // 2
-    ContentLibraryPage(),            // 3
-    CollaborationPage(),             // 4
-    ApprovalsPage(),                 // 5
-    AnalyticsPage(),                 // 6
-    PreviewPage(),                   // 7 (optional)
-    ComposePage(),                   // 8 (optional)
-    GovernPage(),                    // 9 (optional)
-    ApproverDashboardPage(),         // 10 (optional)
-    AdminDashboardPage(),            // 11 (optional)
-    ClientPortalPage(),              // 12 (optional)
+    DashboardPage(), // 0
+    ProposalsPage(), // 1
+    TemplatesPage(), // 2
+    ContentLibraryPage(), // 3
+    CollaborationPage(), // 4
+    ApprovalsPage(), // 5
+    AnalyticsPage(), // 6
+    PreviewPage(), // 7 (optional)
+    ComposePage(), // 8 (optional)
+    GovernPage(), // 9 (optional)
+    ApproverDashboardPage(), // 10 (optional)
+    AdminDashboardPage(), // 11 (optional)
+    ClientPortalPage(), // 12 (optional)
   ];
 
   @override
@@ -306,29 +307,47 @@ class _HomeShellState extends State<HomeShell> {
 
   int _idxForLabel(String label) {
     switch (label) {
-      case 'Dashboard': return 0;
-      case 'My Proposals': return 1;
-      case 'Templates': return 2;
-      case 'Content Library': return 3;
-      case 'Collaboration': return 4;
-      case 'Approvals Status': return 5;
-      case 'Analytics (My Pipeline)': return 6;
-      case 'Preview': return 7;
-      default: return 0;
+      case 'Dashboard':
+        return 0;
+      case 'My Proposals':
+        return 1;
+      case 'Templates':
+        return 2;
+      case 'Content Library':
+        return 3;
+      case 'Collaboration':
+        return 4;
+      case 'Approvals Status':
+        return 5;
+      case 'Analytics (My Pipeline)':
+        return 6;
+      case 'Preview':
+        return 7;
+      default:
+        return 0;
     }
   }
 
   String _labelForIdx(int i) {
     switch (i) {
-      case 0: return 'Dashboard';
-      case 1: return 'My Proposals';
-      case 2: return 'Templates';
-      case 3: return 'Content Library';
-      case 4: return 'Collaboration';
-      case 5: return 'Approvals Status';
-      case 6: return 'Analytics (My Pipeline)';
-      case 7: return 'Preview';
-      default: return 'Dashboard';
+      case 0:
+        return 'Dashboard';
+      case 1:
+        return 'My Proposals';
+      case 2:
+        return 'Templates';
+      case 3:
+        return 'Content Library';
+      case 4:
+        return 'Collaboration';
+      case 5:
+        return 'Approvals Status';
+      case 6:
+        return 'Analytics (My Pipeline)';
+      case 7:
+        return 'Preview';
+      default:
+        return 'Dashboard';
     }
   }
 
@@ -351,7 +370,8 @@ class _HomeShellState extends State<HomeShell> {
                 final app = context.read<AppState>();
                 app.logout();
                 AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE74C3C),

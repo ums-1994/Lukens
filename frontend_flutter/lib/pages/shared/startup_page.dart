@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' show ImageFilter;
-import '../widgets/footer.dart';
+import '../../widgets/footer.dart';
 import 'animated_landing_page.dart';
 import 'animated_landing_page_v2.dart';
 import 'cinematic_sequence_page.dart';
@@ -12,10 +12,10 @@ class StartupPage extends StatelessWidget {
   Widget build(BuildContext context) {
     // Use the cinematic sequence with all 9 frames
     return const CinematicSequencePage();
-    
+
     // Alternative: Use V1 (previous version)
     // return const AnimatedLandingPage();
-    
+
     // Old simple startup page (commented out, can be restored if needed)
     /*
     final theme = Theme.of(context);
@@ -233,5 +233,3 @@ class _GlowingLogoState extends State<GlowingLogo>
     );
   }
 }
-
-

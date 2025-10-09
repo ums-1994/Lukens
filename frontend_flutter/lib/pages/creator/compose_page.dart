@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
+import '../../api.dart';
 
 class ComposePage extends StatelessWidget {
   const ComposePage({super.key});
@@ -10,16 +10,22 @@ class ComposePage extends StatelessWidget {
     final app = context.watch<AppState>();
     final p = app.currentProposal;
     if (p == null) {
-      return const Center(child: Text("Select or create a proposal on the Dashboard."));
+      return const Center(
+          child: Text("Select or create a proposal on the Dashboard."));
     }
     final sections = Map<String, dynamic>.from(p["sections"] ?? {});
-    final ctrls = { for (final e in sections.entries) e.key : TextEditingController(text: e.value?.toString() ?? "") };
+    final ctrls = {
+      for (final e in sections.entries)
+        e.key: TextEditingController(text: e.value?.toString() ?? "")
+    };
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("${p["title"]} • ${p["client"]} • ${p["dtype"]}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text("${p["title"]} • ${p["client"]} • ${p["dtype"]}",
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Expanded(
             child: ListView(
@@ -30,7 +36,9 @@ class ComposePage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(k, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(k,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         TextField(
                           controller: ctrls[k],
