@@ -102,8 +102,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            _getUserName(app.currentUser),
+                      Text(
+                        _getUserName(app.currentUser),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           ),
                           Text(
@@ -155,10 +155,10 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
+                  color: const Color(0xFF34495E),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
                           const SizedBox(height: 16),
                           // Toggle button
                           Padding(
@@ -168,15 +168,15 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
                                 height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2C3E50),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
                                   mainAxisAlignment: _isSidebarCollapsed
                                       ? MainAxisAlignment.center
                                       : MainAxisAlignment.spaceBetween,
-                                  children: [
+                            children: [
                                     if (!_isSidebarCollapsed)
                                       const Padding(
                                         padding: EdgeInsets.symmetric(horizontal: 12),
@@ -189,12 +189,12 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                                       padding: EdgeInsets.symmetric(horizontal: _isSidebarCollapsed ? 0 : 8),
                                       child: Icon(
                                         _isSidebarCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
+                                  color: Colors.white,
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -208,15 +208,15 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                           _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
                           
                           const SizedBox(height: 20),
-                          
-                          // Divider
+
+                        // Divider
                           if (!_isSidebarCollapsed)
-                            Container(
+                        Container(
                               margin: const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-                          
+                          height: 1,
+                          color: const Color(0xFF2C3E50),
+                        ),
+
                           const SizedBox(height: 12),
                           
                           // Logout button
@@ -262,7 +262,7 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
             child: Container(
               width: 42,
               height: 42,
-              decoration: BoxDecoration(
+      decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 border: Border.all(
@@ -289,12 +289,12 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
           setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
+            _navigateToPage(context, label);
+          },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
@@ -302,8 +302,8 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
             borderRadius: BorderRadius.circular(8),
             border: isActive ? Border.all(color: const Color(0xFF2980B9), width: 1) : null,
           ),
-          child: Row(
-            children: [
+            child: Row(
+              children: [
               Container(
                 width: 42,
                 height: 42,
@@ -326,18 +326,18 @@ class _DashboardPageState extends State<DashboardPage> with TickerProviderStateM
                 child: ClipOval(
                   child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                      fontSize: 14,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    ),
                   ),
                 ),
-              ),
               if (isActive) const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
             ],
           ),

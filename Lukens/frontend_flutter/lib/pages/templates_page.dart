@@ -3241,7 +3241,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
           // Navigation logic based on label
           switch (label) {
             case 'Dashboard':
-              Navigator.pushReplacementNamed(context, '/creator_dashboard');
+              Navigator.pushNamed(context, '/dashboard');
               break;
             case 'My Proposals':
               Navigator.pushNamed(context, '/proposals');
@@ -3250,7 +3250,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
               // Already on templates page, do nothing
               break;
             case 'Content Library':
-              Navigator.pushReplacementNamed(context, '/content_library');
+              Navigator.pushNamed(context, '/content');
               break;
             case 'Collaboration':
               Navigator.pushNamed(context, '/collaboration');
@@ -3285,13 +3285,11 @@ class _TemplatesPageState extends State<TemplatesPage> {
                 child: _navIconFor(label, isActive),
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFBDC3C7),
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  ),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? Colors.white : const Color(0xFFBDC3C7),
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
             ],
