@@ -4,6 +4,7 @@ import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
 import 'pages/creator/compose_page.dart';
 import 'pages/creator/proposal_wizard.dart';
+import 'pages/creator/new_proposal_page.dart';
 import 'pages/creator/enhanced_compose_page.dart';
 import 'pages/admin/govern_page.dart';
 import 'pages/approver/approvals_page.dart';
@@ -104,6 +105,7 @@ class MyApp extends StatelessWidget {
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) => const ComposePage(),
           '/proposal-wizard': (context) => const ProposalWizard(),
+          '/new-proposal': (context) => const NewProposalPage(),
           '/enhanced-compose': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
                 as Map<String, dynamic>?;

@@ -469,8 +469,63 @@ class _GovernancePanelState extends State<GovernancePanel>
     );
   }
 
+  int get _maxPossibleRiskScore {
+    // Only count points for issues that are actually possible for this proposal
+    int maxScore = 0;
+    final issues = <Map<String, dynamic>>[];
+    // Required sections
+    final requiredSections = [
+      'executive_summary',
+      'scope_deliverables',
+      'company_profile',
+      'terms_conditions',
+    ];
+    for (final section in requiredSections) {
+      if (!_hasContent(section)) {
+        maxScore += 10;
+      }
+    }
+    // Content checks
+    final contentChecks = [
+      {
+        'field': 'clientName',
+        'points': 5,
+      },
+      {
+        'field': 'projectType',
+        'points': 3,
+      },
+      {
+        'field': 'timeline',
+        'points': 5,
+      },
+    ];
+    for (final check in contentChecks) {
+      if (!_hasContent(check['field'] as String)) {
+        maxScore += check['points'] as int;
+      }
+    }
+    // AI checks
+    final timeline = widget.proposalData['timeline']?.toString().toLowerCase() ?? '';
+    if (timeline.contains('half') || timeline.contains('quick') || timeline.contains('urgent')) {
+      maxScore += 8;
+    }
+    final scope = widget.proposalData['scope']?.toString().toLowerCase() ?? '';
+    if (scope.contains('and other') || scope.contains('etc') || scope.contains('various')) {
+      maxScore += 6;
+    }
+    if (!_hasContent('assumptions') && !_hasContent('assumptions_risks')) {
+      maxScore += 4;
+    }
+    if (_hasContent('team_bios') && !_hasCompleteTeamInfo()) {
+      maxScore += 3;
+    }
+    return maxScore == 0 ? 1 : maxScore; // Prevent divide by zero
+  }
+
   Widget _buildRiskMeter() {
-    final percentage = (_riskScore / 30).clamp(0.0, 1.0);
+    final maxScore = _maxPossibleRiskScore;
+    final percentage = maxScore == 0 ? 0.0 : (_riskScore / maxScore).clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

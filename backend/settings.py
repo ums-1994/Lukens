@@ -1,3 +1,11 @@
+from fastapi import APIRouter
+
+router = APIRouter()
+
+
+@router.get('/ping')
+def ping():
+    return {'status': 'ok', 'source': 'settings_router'}
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
