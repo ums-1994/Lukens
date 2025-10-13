@@ -9,6 +9,17 @@ try:
 except Exception:
     genai = None
 import json, os, uuid, time, sqlite3
+# Load environment variables from .env if available
+try:
+    from dotenv import load_dotenv, find_dotenv
+    # Try to find a .env automatically; fallback to project root (parent of backend/)
+    _dotenv_path = find_dotenv(usecwd=True)
+    if not _dotenv_path:
+        _dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    load_dotenv(_dotenv_path)
+except Exception:
+    # If python-dotenv is not installed yet, env vars must be set in the shell
+    pass
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
