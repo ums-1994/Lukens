@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
-import 'widgets/app_side_nav.dart';
 import 'pages/creator/compose_page.dart';
+import 'pages/creator/proposal_wizard.dart';
+import 'pages/creator/new_proposal_page.dart';
+import 'pages/creator/enhanced_compose_page.dart';
 import 'pages/admin/govern_page.dart';
 import 'pages/approver/approvals_page.dart';
 import 'pages/shared/preview_page.dart';
@@ -13,44 +13,24 @@ import 'pages/creator/content_library_page.dart';
 import 'pages/approver/approver_dashboard_page.dart';
 import 'pages/admin/admin_dashboard_page.dart';
 import 'pages/client/client_portal_page.dart';
+import 'pages/client/enhanced_client_dashboard.dart';
+import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
 import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
-import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/creator/templates_page.dart';
 import 'pages/creator/collaboration_page.dart';
 import 'pages/admin/analytics_page.dart';
-import 'pages/shared/cinematic_sequence_page.dart';
+import 'pages/admin/ai_configuration_page.dart';
+import 'pages/creator/settings_page.dart';
 import 'services/auth_service.dart';
+import 'services/ai_analysis_service.dart';
 import 'api.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    if (kIsWeb) {
-      // Initialize Firebase for web using options matching web/firebase-config.js
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: 'AIzaSyC0WT1ArMcm6Ah8jM_hNaE9uffM1aTriBc',
-          authDomain: 'lukens-e17d6.firebaseapp.com',
-          databaseURL: 'https://lukens-e17d6-default-rtdb.firebaseio.com',
-          projectId: 'lukens-e17d6',
-          storageBucket: 'lukens-e17d6.firebasestorage.app',
-          messagingSenderId: '940107272310',
-          appId: '1:940107272310:web:bc6601706e2fe1d94d8f57',
-          measurementId: 'G-QBLQ7YBNGQ',
-        ),
-      );
-    } else {
-      await Firebase.initializeApp();
-    }
-  } catch (e) {
-    // Ignore if already initialized or not required
-  }
-  // Restore persisted auth session on startup (web)
-  AuthService.restoreSessionFromStorage();
+void main() {
+  // Initialize AI service with your OpenAI API key
+  AIAnalysisService.initialize();
   runApp(const MyApp());
 }
 
@@ -63,11 +43,7 @@ class MyApp extends StatelessWidget {
       create: (context) => AppState(),
       child: MaterialApp(
         title: 'Lukens',
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: Colors.blue,
-          textTheme: GoogleFonts.poppinsTextTheme(),
-        ),
+        theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
           // Handle verification routes
@@ -80,6 +56,30 @@ class MyApp extends StatelessWidget {
             final token = uri.queryParameters['token'];
             return MaterialPageRoute(
               builder: (context) => EmailVerificationPage(token: token),
+            );
+          }
+
+          // Handle client portal with token
+          if (settings.name == '/client-portal' ||
+              (settings.name != null &&
+                  settings.name!.contains('client-portal'))) {
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            return MaterialPageRoute(
+              builder: (context) => ClientPortalPage(token: token),
+            );
+          }
+
+          // Handle enhanced client dashboard with token
+          if (settings.name == '/enhanced-client-dashboard' ||
+              (settings.name != null &&
+                  settings.name!.contains('enhanced-client-dashboard'))) {
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            return MaterialPageRoute(
+              builder: (context) => EnhancedClientDashboard(token: token),
             );
           }
           return null; // Let other routes be handled normally
@@ -104,36 +104,38 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const HomeShell(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) => const ComposePage(),
+          '/proposal-wizard': (context) => const ProposalWizard(),
+          '/new-proposal': (context) => const NewProposalPage(),
+          '/enhanced-compose': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
+            return EnhancedComposePage(
+              proposalId: args?['proposalId'] ?? '',
+              proposalTitle: args?['proposalTitle'] ?? 'Untitled Proposal',
+              templateType: args?['templateType'] ?? 'proposal',
+              selectedModules:
+                  List<String>.from(args?['selectedModules'] ?? []),
+            );
+          },
           '/govern': (context) => const GovernPage(),
           '/preview': (context) => const PreviewPage(),
           '/creator_dashboard': (context) => const DashboardPage(),
           '/content_library': (context) => const ContentLibraryPage(),
-          '/content': (context) =>
-              const ContentLibraryPage(), // Add missing route
           '/approvals': (context) => const ApprovalsPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
-          '/client_portal': (context) => const ClientPortalPage(),
-          '/cinematic': (context) => const CinematicSequencePage(),
+          '/client_portal': (context) {
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            return ClientPortalPage(token: token);
+          },
           '/templates': (context) => const TemplatesPage(),
           '/collaboration': (context) => const CollaborationPage(),
           '/analytics': (context) => const AnalyticsPage(),
-          '/team_details': (context) {
-            final args = ModalRoute.of(context)!.settings.arguments as Map?;
-            final id = args != null ? (args['teamId'] ?? '') : '';
-            return Scaffold(
-              appBar: AppBar(title: const Text('Team')),
-              body: Center(child: Text('Team: $id')),
-            );
-          },
-          '/workspace': (context) {
-            final args = ModalRoute.of(context)!.settings.arguments as Map?;
-            final name = args != null ? (args['workspaceName'] ?? '') : '';
-            return Scaffold(
-              appBar: AppBar(title: const Text('Workspace')),
-              body: Center(child: Text('Workspace: $name')),
-            );
-          },
+          '/ai-configuration': (context) => const AIConfigurationPage(),
+          '/settings': (context) => const SettingsPage(),
+          '/test-signature': (context) => const TestSignaturePage(),
         },
       ),
     );
@@ -179,6 +181,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if we're on a client dashboard route
+    final currentUrl = web.window.location.href;
+    final uri = Uri.parse(currentUrl);
+
+    if (uri.path.contains('enhanced-client-dashboard') ||
+        uri.path.contains('client-portal')) {
+      final token = uri.queryParameters['token'];
+      if (uri.path.contains('enhanced-client-dashboard')) {
+        return EnhancedClientDashboard(token: token);
+      } else {
+        return ClientPortalPage(token: token);
+      }
+    }
+
     // Check if user is authenticated
     if (AuthService.isLoggedIn) {
       // Initialize AppState when user is logged in
@@ -187,64 +203,36 @@ class _AuthWrapperState extends State<AuthWrapper> {
       });
       return const HomeShell();
     } else {
-      return const StartupPage();
+      return const LoginPage();
     }
   }
 }
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, this.initialIdx});
-  final int? initialIdx;
+  const HomeShell({super.key});
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
-  bool _isCollapsed = true;
-  String _current = 'Dashboard';
   int idx = 0;
   final pages = [
-    DashboardPage(), // 0
-    ProposalsPage(), // 1
-    TemplatesPage(), // 2
-    ContentLibraryPage(), // 3
-    CollaborationPage(), // 4
-    ApprovalsPage(), // 5
-    AnalyticsPage(), // 6
-    PreviewPage(), // 7 (optional)
-    ComposePage(), // 8 (optional)
-    GovernPage(), // 9 (optional)
-    ApproverDashboardPage(), // 10 (optional)
-    AdminDashboardPage(), // 11 (optional)
-    ClientPortalPage(), // 12 (optional)
+    DashboardPage(), // Business Developer - Dashboard view
+    ProposalsPage(), // Business Developer - Proposals view
+    ComposePage(),
+    GovernPage(),
+    ApprovalsPage(),
+    PreviewPage(),
+    ContentLibraryPage(),
+    ApproverDashboardPage(),
+    AdminDashboardPage(),
+    ClientPortalPage(),
   ];
 
   @override
   Widget build(BuildContext context) {
-    if (widget.initialIdx != null && idx != widget.initialIdx) {
-      // initialize once with desired index
-      idx = widget.initialIdx!;
-      _current = _labelForIdx(idx);
-    }
     return Scaffold(
-      body: Row(
-        children: [
-          AppSideNav(
-            isCollapsed: _isCollapsed,
-            currentLabel: _current,
-            onToggle: () => setState(() => _isCollapsed = !_isCollapsed),
-            onSelect: (label) {
-              if (label == 'Logout') {
-                _handleLogout();
-                return;
-              }
-              setState(() => _current = label);
-              setState(() => idx = _idxForLabel(label));
-            },
-          ),
-          Expanded(child: pages[idx]),
-        ],
-      ),
+      body: pages[idx],
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           showDialog(
@@ -302,86 +290,6 @@ class _HomeShellState extends State<HomeShell> {
         child: const Icon(Icons.swap_horiz),
         tooltip: 'Switch Role',
       ),
-    );
-  }
-
-  int _idxForLabel(String label) {
-    switch (label) {
-      case 'Dashboard':
-        return 0;
-      case 'My Proposals':
-        return 1;
-      case 'Templates':
-        return 2;
-      case 'Content Library':
-        return 3;
-      case 'Collaboration':
-        return 4;
-      case 'Approvals Status':
-        return 5;
-      case 'Analytics (My Pipeline)':
-        return 6;
-      case 'Preview':
-        return 7;
-      default:
-        return 0;
-    }
-  }
-
-  String _labelForIdx(int i) {
-    switch (i) {
-      case 0:
-        return 'Dashboard';
-      case 1:
-        return 'My Proposals';
-      case 2:
-        return 'Templates';
-      case 3:
-        return 'Content Library';
-      case 4:
-        return 'Collaboration';
-      case 5:
-        return 'Approvals Status';
-      case 6:
-        return 'Analytics (My Pipeline)';
-      case 7:
-        return 'Preview';
-      default:
-        return 'Dashboard';
-    }
-  }
-
-  void _handleLogout() {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                // Perform logout
-                final app = context.read<AppState>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
     );
   }
 }

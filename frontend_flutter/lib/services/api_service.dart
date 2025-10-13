@@ -260,4 +260,61 @@ class ApiService {
       return false;
     }
   }
+
+  // Client Portal Methods
+  static Future<Map<String, dynamic>?> validateClientToken(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/client-dashboard/$token'),
+        headers: _getHeaders(null),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error validating client token: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> uploadSignature(
+      String token, List<int> signatureBytes) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/client-dashboard/$token/sign'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'signature': base64Encode(signatureBytes),
+          'signature_type': 'png',
+        }),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error uploading signature: $e');
+      return false;
+    }
+  }
+
+  static Future<String?> getSignedPdfUrl(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/client-dashboard/$token/pdf'),
+        headers: _getHeaders(null),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['pdf_url'];
+      }
+      return null;
+    } catch (e) {
+      print('Error getting signed PDF URL: $e');
+      return null;
+    }
+  }
 }

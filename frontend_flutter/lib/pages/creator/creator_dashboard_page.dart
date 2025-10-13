@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../widgets/footer.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
-import '../../services/asset_service.dart';
+import 'proposal_status_dashboard.dart';
+import 'proposal_wizard.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -14,209 +14,31 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage>
     with TickerProviderStateMixin {
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
-  late Animation<double> _widthAnimation;
-  String _currentPage = 'Dashboard';
-  // Chat state
-  final ValueNotifier<List<Map<String, String>>> _chatMessages =
-      ValueNotifier<List<Map<String, String>>>([]);
-  final TextEditingController _chatCtrl = TextEditingController();
-  final TextEditingController _chatModelCtrl = TextEditingController(text: 'llama3.1');
-  String _chatProvider = 'ollama';
-  bool _chatBusy = false;
+  bool _isRefreshing = false;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _widthAnimation = Tween<double>(
-      begin: 250.0,
-      end: 90.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-    // Start collapsed
-    _animationController.value = 1.0;
-  }
-
-  Future<void> _openChat(BuildContext context) async {
-    final app = context.read<AppState>();
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            left: 12,
-            right: 12,
-            top: 12,
-          ),
-          child: SizedBox(
-            height: MediaQuery.of(ctx).size.height * 0.6,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.smart_toy, color: Colors.redAccent),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'AI Chat',
-                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    DropdownButton<String>(
-                      value: _chatProvider,
-                      dropdownColor: const Color(0xFF2C2C2C),
-                      style: const TextStyle(color: Colors.white),
-                      items: const [
-                        DropdownMenuItem(value: 'ollama', child: Text('Ollama', style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(value: 'gemini', child: Text('Gemini', style: TextStyle(color: Colors.white))),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() {
-                          _chatProvider = v;
-                          _chatModelCtrl.text = v == 'gemini' ? 'gemini-1.5-flash' : 'llama3.1';
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 200,
-                      child: TextField(
-                        controller: _chatModelCtrl,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: const InputDecoration(
-                          labelText: 'Model',
-                          labelStyle: TextStyle(color: Colors.white70),
-                          enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-                          focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ValueListenableBuilder<List<Map<String, String>>>(
-                    valueListenable: _chatMessages,
-                    builder: (context, msgs, _) {
-                      if (msgs.isEmpty) {
-                        return const Center(
-                          child: Text('Ask anything about your pipeline, proposals or SOW.', style: TextStyle(color: Colors.white60)),
-                        );
-                      }
-                      return ListView.builder(
-                        itemCount: msgs.length,
-                        itemBuilder: (context, i) {
-                          final m = msgs[i];
-                          final isUser = m['role'] == 'user';
-                          return Align(
-                            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: isUser ? const Color(0xFF3498DB) : const Color(0xFF2C2C2C),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                m['content'] ?? '',
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _chatCtrl,
-                        minLines: 1,
-                        maxLines: 3,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: const InputDecoration(
-                          hintText: 'Type your message…',
-                          hintStyle: TextStyle(color: Colors.white54),
-                          enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-                          focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: _chatBusy
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.send, color: Colors.white),
-                      onPressed: _chatBusy
-                          ? null
-                          : () async {
-                              final q = _chatCtrl.text.trim();
-                              if (q.isEmpty) return;
-                              _chatCtrl.clear();
-                              _chatMessages.value = [..._chatMessages.value, {'role': 'user', 'content': q}];
-                              setState(() => _chatBusy = true);
-                              try {
-                                final reply = await app.aiChat(
-                                  provider: _chatProvider,
-                                  model: _chatModelCtrl.text.trim().isEmpty ? null : _chatModelCtrl.text.trim(),
-                                  messages: [
-                                    {'role': 'system', 'content': 'You are a helpful assistant for proposal management.'},
-                                    ..._chatMessages.value,
-                                  ],
-                                );
-                                _chatMessages.value = [..._chatMessages.value, {'role': 'assistant', 'content': reply}];
-                              } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Chat error: $e')));
-                              } finally {
-                                if (mounted) setState(() => _chatBusy = false);
-                              }
-                            },
-                    )
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
-    _chatCtrl.dispose();
-    _chatModelCtrl.dispose();
-    _chatMessages.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
-  void _toggleSidebar() {
+  Future<void> _refreshData() async {
     setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
+      _isRefreshing = true;
+    });
+
+    final app = context.read<AppState>();
+    await app.fetchProposals();
+
+    setState(() {
+      _isRefreshing = false;
     });
   }
 
@@ -224,10 +46,9 @@ class _DashboardPageState extends State<DashboardPage>
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final counts = app.dashboardCounts;
-    final userRole = app.currentUser?['role'] ?? 'Financial Manager';
 
+    // Debug: Print current state
     print('Dashboard - Current User: ${app.currentUser}');
-    print('Dashboard - User Role: $userRole');
     print('Dashboard - Counts: $counts');
     print('Dashboard - Proposals: ${app.proposals}');
 
@@ -246,9 +67,9 @@ class _DashboardPageState extends State<DashboardPage>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    _getHeaderTitle(userRole),
-                    style: const TextStyle(
+                  const Text(
+                    'Proposal & SOW Builder',
+                    style: TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -256,31 +77,44 @@ class _DashboardPageState extends State<DashboardPage>
                   ),
                   Row(
                     children: [
-                      ClipOval(
-                        child: Image.asset(
-                          'assets/images/User_Profile.png',
-                          width: 105,
-                          height: 105,
-                          fit: BoxFit.cover,
+                      // Refresh button
+                      IconButton(
+                        onPressed: _isRefreshing ? null : _refreshData,
+                        icon: _isRefreshing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                ),
+                              )
+                            : const Icon(Icons.refresh, color: Colors.white),
+                        tooltip: 'Refresh approval status',
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        width: 35,
+                        height: 35,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF3498DB),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            _getUserInitials(app.currentUser),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _getUserName(app.currentUser),
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            userRole,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12),
-                          ),
-                        ],
+                      Text(
+                        _getUserName(app.currentUser),
+                        style: const TextStyle(color: Colors.white),
                       ),
                       const SizedBox(width: 10),
                       PopupMenuButton<String>(
@@ -289,7 +123,7 @@ class _DashboardPageState extends State<DashboardPage>
                           if (value == 'logout') {
                             app.logout();
                             AuthService.logout();
-                            Navigator.pushNamed(context, '/login');
+                            Navigator.pushReplacementNamed(context, '/login');
                           }
                         },
                         itemBuilder: (BuildContext context) => [
@@ -312,262 +146,265 @@ class _DashboardPageState extends State<DashboardPage>
             ),
           ),
 
-          // Main Content with Sidebar
+          // Main Content
           Expanded(
-            child: Row(
+            child: Column(
               children: [
-                // Collapsible Sidebar
-                GestureDetector(
-                  onTap: () {
-                    if (_isSidebarCollapsed) _toggleSidebar();
-                  },
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
+                // Tab Bar
+                Container(
+                  color: Colors.white,
+                  child: TabBar(
+                    controller: _tabController,
+                    labelColor: const Color(0xFF2C3E50),
+                    unselectedLabelColor: Colors.grey[600],
+                    indicatorColor: const Color(0xFF3498DB),
+                    tabs: const [
+                      Tab(
+                        icon: Icon(Icons.dashboard_outlined),
+                        text: 'Overview',
+                      ),
+                      Tab(
+                        icon: Icon(Icons.track_changes_outlined),
+                        text: 'Status Tracking',
+                      ),
+                    ],
+                  ),
+                ),
+                // Tab Content
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      // Original Dashboard Content
+                      Row(
                         children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
+                          // Sidebar
+                          Container(
+                            width: 250,
+                            color: const Color(0xFF34495E),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                children: [
+                                  const SizedBox(height: 20),
+                                  // Title with better styling
+                                  Container(
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF2C3E50),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: const Color(0xFF34495E),
+                                          width: 1),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.person_outline,
+                                          color: Color(0xFF3498DB),
+                                          size: 20,
                                         ),
+                                        const SizedBox(width: 8),
+                                        const Text(
+                                          'Business Developer',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildNavItem(
+                                      '📊', 'Dashboard', true, context),
+                                  _buildNavItem(
+                                      '📝', 'My Proposals', false, context),
+                                  _buildNavItem(
+                                      '📂', 'Templates', false, context),
+                                  _buildNavItem(
+                                      '🧩', 'Content Library', false, context),
+                                  _buildNavItem(
+                                      '👥', 'Collaboration', false, context),
+                                  _buildNavItem(
+                                      '📋', 'Approvals Status', false, context),
+                                  _buildNavItem('🔍', 'Analytics (My Pipeline)',
+                                      false, context),
+
+                                  // Divider
+                                  Container(
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 16),
+                                    height: 1,
+                                    color: const Color(0xFF2C3E50),
+                                  ),
+
+                                  // Quick Actions Section
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    child: Text(
+                                      'Quick Actions',
+                                      style: TextStyle(
+                                        color: Color(0xFF95A5A6),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
                                       ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
+                                    ),
+                                  ),
+
+                                  _buildNavItem(
+                                      '➕', 'New Proposal', false, context),
+                                  _buildNavItem(
+                                      '⚙️', 'Settings', false, context),
+
+                                  const SizedBox(
+                                      height: 20), // Add bottom padding
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          // Content Area
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Proposal Dashboard Section
+                                    _buildSection(
+                                      '📊 Proposal Dashboard',
+                                      _buildDashboardGrid(counts, context),
+                                    ),
+                                    const SizedBox(height: 20),
+
+                                    // End-to-End Proposal Flow
+                                    _buildSection(
+                                      '🔧 End-to-End Proposal Flow',
+                                      _buildWorkflow(context),
+                                    ),
+                                    const SizedBox(height: 20),
+
+                                    // AI-Powered Compound Risk Gate
+                                    _buildAISection(),
+                                    const SizedBox(height: 20),
+
+                                    // Recent Proposals
+                                    _buildSection(
+                                      '📝 Recent Proposals',
+                                      _buildRecentProposals(app.proposals),
+                                    ),
+                                    const SizedBox(height: 20),
+
+                                    // Approved Proposals
+                                    _buildSection(
+                                      '✅ Approved Proposals',
+                                      _buildApprovedProposals(app.proposals),
+                                    ),
+                                    const SizedBox(height: 20),
+
+                                    // System Components
+                                    _buildSection(
+                                      '🧩 System Components',
+                                      _buildSystemComponents(),
                                     ),
                                   ],
                                 ),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              _currentPage == 'My Proposals',
-                              context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Collaboration',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
-                              context),
-                          _buildNavItem(
-                              'Approvals Status',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approvals Status',
-                              context),
-                          _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              _currentPage == 'Analytics (My Pipeline)',
-                              context),
-
-                          const SizedBox(height: 20),
-
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-
-                          const SizedBox(height: 12),
-
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
                         ],
                       ),
-                    ),
-                  ),
-                ),
-
-                // Content Area
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: SingleChildScrollView(
-                      child: _buildRoleSpecificContent(userRole, counts, app),
-                    ),
+                      // Second Tab - Status Dashboard
+                      const ProposalStatusDashboard(),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
 
-          const Footer(),
+          // Footer
+          Container(
+            height: 50,
+            decoration: const BoxDecoration(
+              border: Border(
+                  top: BorderSide(
+                      color: Color(0xFFDDD), style: BorderStyle.solid)),
+            ),
+            child: const Center(
+              child: Text(
+                'Khonology Proposal & SOW Builder | End-to-End Proposal Generation and Sign-Off',
+                style: TextStyle(
+                  color: Color(0xFF7F8C8D),
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openChat(context),
-        icon: const Icon(Icons.smart_toy, color: Colors.redAccent),
-        label: const Text('Chat'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
       ),
     );
   }
 
   Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
+      String icon, String label, bool isActive, BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+        border: isActive
+            ? Border.all(color: const Color(0xFF2980B9), width: 1)
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            print('Tapped on: $label'); // Debug print
+            _navigateToPage(context, label);
+          },
+          onHover: (hovering) {
+            // This will provide visual feedback on hover
+          },
+          splashColor: Colors.white.withValues(alpha: 0.1),
+          highlightColor: Colors.white.withValues(alpha: 0.05),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Text(icon,
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: isActive ? Colors.white : const Color(0xFFBDC3C7),
+                    )),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                      fontSize: 14,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
+                if (isActive)
+                  const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 12,
+                    color: Colors.white,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -575,67 +412,45 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   void _navigateToPage(BuildContext context, String label) {
+    print('Navigating to: $label'); // Debug print
+
     switch (label) {
       case 'Dashboard':
-        // Already on dashboard
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
         break;
       case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
-        Navigator.pushNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
+        Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+        Navigator.pushReplacementNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
-      case 'Logout':
-        _handleLogout(context);
-        break;
-    }
-  }
-
-  void _handleLogout(BuildContext context) {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                // Perform logout
-                final app = context.read<AppState>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
+      case 'New Proposal':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ProposalWizard(),
+          ),
         );
-      },
-    );
+        break;
+      case 'Settings':
+        Navigator.pushNamed(context, '/settings');
+        break;
+      default:
+        // Default to dashboard
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+    }
   }
 
   Widget _buildSection(String title, Widget content) {
@@ -677,20 +492,14 @@ class _DashboardPageState extends State<DashboardPage>
       crossAxisSpacing: 20,
       mainAxisSpacing: 20,
       children: [
-        _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
+        _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '4',
             'Active', context),
-        _buildStatCard(
-            'Pending CEO Approval',
-            counts['Pending CEO Approval']?.toString() ?? '0',
-            'Awaiting Review',
-            context),
-        _buildStatCard(
-            'Sent to Client',
-            counts['Sent to Client']?.toString() ?? '0',
-            'With Clients',
-            context),
-        _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
-            'Completed', context),
+        _buildStatCard('In Review', counts['In Review']?.toString() ?? '2',
+            'Pending', context),
+        _buildStatCard('Awaiting Sign-off',
+            counts['Released']?.toString() ?? '3', 'With Clients', context),
+        _buildStatCard('Signed', counts['Signed']?.toString() ?? '12',
+            'This Quarter', context),
       ],
     );
   }
@@ -700,7 +509,7 @@ class _DashboardPageState extends State<DashboardPage>
     return InkWell(
       onTap: () {
         // Navigate to proposals page when clicking on stat cards
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
       },
       child: Container(
         decoration: BoxDecoration(
@@ -819,23 +628,23 @@ class _DashboardPageState extends State<DashboardPage>
     Future.delayed(const Duration(milliseconds: 100), () {
       switch (step) {
         case 'Compose':
-          Navigator.pushNamed(context, '/compose');
+          Navigator.pushReplacementNamed(context, '/compose');
           break;
         case 'Govern':
-          Navigator.pushNamed(context, '/govern');
+          Navigator.pushReplacementNamed(context, '/govern');
           break;
         case 'AI Risk Gate':
           // For now, navigate to approvals as AI risk gate might be part of approval process
-          Navigator.pushNamed(context, '/approvals');
+          Navigator.pushReplacementNamed(context, '/approvals');
           break;
         case 'Internal Sign-off':
-          Navigator.pushNamed(context, '/approvals');
+          Navigator.pushReplacementNamed(context, '/approvals');
           break;
         case 'Client Sign-off':
-          Navigator.pushNamed(context, '/approvals');
+          Navigator.pushReplacementNamed(context, '/approvals');
           break;
         default:
-          Navigator.pushNamed(context, '/creator_dashboard');
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
       }
     });
   }
@@ -853,25 +662,25 @@ class _DashboardPageState extends State<DashboardPage>
     Future.delayed(const Duration(milliseconds: 100), () {
       switch (component) {
         case 'Template Library':
-          Navigator.pushNamed(context, '/compose');
+          Navigator.pushReplacementNamed(context, '/compose');
           break;
         case 'Content Blocks':
-          Navigator.pushNamed(context, '/content_library');
+          Navigator.pushReplacementNamed(context, '/content_library');
           break;
         case 'Collaboration Tools':
-          Navigator.pushNamed(context, '/approvals');
+          Navigator.pushReplacementNamed(context, '/approvals');
           break;
         case 'E-Signature':
-          Navigator.pushNamed(context, '/approvals');
+          Navigator.pushReplacementNamed(context, '/approvals');
           break;
         case 'Analytics':
-          Navigator.pushNamed(context, '/proposals');
+          Navigator.pushReplacementNamed(context, '/proposals');
           break;
         case 'User Management':
-          Navigator.pushNamed(context, '/admin_dashboard');
+          Navigator.pushReplacementNamed(context, '/admin_dashboard');
           break;
         default:
-          Navigator.pushNamed(context, '/creator_dashboard');
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
       }
     });
   }
@@ -928,19 +737,78 @@ class _DashboardPageState extends State<DashboardPage>
         Color statusColor = _getStatusColor(status);
         Color textColor = _getStatusTextColor(status);
 
+        // Add approval status
+        String approvalStatus = proposal['approval_status'] ?? 'Pending';
+        Color approvalColor = _getApprovalColor(approvalStatus);
+
         return _buildProposalItem(
           proposal['title'] ?? 'Untitled',
           'Last modified: ${_formatDate(proposal['updated_at'])}',
           status,
           statusColor,
           textColor,
+          approvalStatus: approvalStatus,
+          approvalColor: approvalColor,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildApprovedProposals(List<dynamic> proposals) {
+    final approvedProposals = proposals
+        .where((proposal) =>
+            proposal['approval_status'] == 'approved' ||
+            proposal['is_approved'] == true)
+        .toList();
+
+    if (approvedProposals.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(20.0),
+        child: Text(
+          'No approved proposals yet. Send proposals to clients to see approvals here.',
+          style: TextStyle(
+            color: Color(0xFF7F8C8D),
+            fontStyle: FontStyle.italic,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return Column(
+      children: approvedProposals.map((proposal) {
+        String status = proposal['status'] ?? 'Draft';
+        Color statusColor = _getStatusColor(status);
+        Color textColor = _getStatusTextColor(status);
+
+        String approvalStatus = proposal['approval_status'] ?? 'Pending';
+        Color approvalColor = _getApprovalColor(approvalStatus);
+
+        String subtitle =
+            'Last modified: ${_formatDate(proposal['updated_at'])}';
+        if (proposal['signed_by'] != null) {
+          subtitle += '\nSigned by: ${proposal['signed_by']}';
+        }
+        if (proposal['signed_at'] != null) {
+          subtitle += '\nSigned on: ${_formatDate(proposal['signed_at'])}';
+        }
+
+        return _buildProposalItem(
+          proposal['title'] ?? 'Untitled',
+          subtitle,
+          status,
+          statusColor,
+          textColor,
+          approvalStatus: approvalStatus,
+          approvalColor: approvalColor,
         );
       }).toList(),
     );
   }
 
   Widget _buildProposalItem(String title, String subtitle, String status,
-      Color statusColor, Color textColor) {
+      Color statusColor, Color textColor,
+      {String? approvalStatus, Color? approvalColor}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -975,20 +843,45 @@ class _DashboardPageState extends State<DashboardPage>
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: textColor,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: textColor,
+                  ),
+                ),
               ),
-            ),
+              if (approvalStatus != null) ...[
+                const SizedBox(height: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: approvalColor ?? Colors.grey,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    approvalStatus,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),
@@ -1076,6 +969,19 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
+  Color _getApprovalColor(String approvalStatus) {
+    switch (approvalStatus.toLowerCase()) {
+      case 'approved':
+        return const Color(0xFF27AE60);
+      case 'pending':
+        return const Color(0xFFF39C12);
+      case 'rejected':
+        return const Color(0xFFE74C3C);
+      default:
+        return const Color(0xFF95A5A6);
+    }
+  }
+
   String _formatDate(dynamic date) {
     if (date == null) return 'Unknown';
     // Simple date formatting - you might want to use intl package for better formatting
@@ -1112,249 +1018,5 @@ class _DashboardPageState extends State<DashboardPage>
         user['email']?.split('@')[0];
 
     return name ?? 'User';
-  }
-
-  String _getHeaderTitle(String role) {
-    switch (role) {
-      case 'CEO':
-        return 'CEO Dashboard - Executive Overview';
-      case 'Financial Manager':
-        return 'Financial Manager - Proposal Management';
-      case 'Client':
-        return 'Client Portal - My Proposals';
-      default:
-        return 'Proposal & SOW Builder';
-    }
-  }
-
-  Widget _buildRoleSpecificContent(
-      String role, Map<String, dynamic> counts, AppState app) {
-    switch (role) {
-      case 'CEO':
-        return _buildCEODashboard(counts, app);
-      case 'Client':
-        return _buildClientDashboard(counts, app);
-      case 'Financial Manager':
-      default:
-        return _buildFinancialManagerDashboard(counts, app);
-    }
-  }
-
-  Widget _buildCEODashboard(Map<String, dynamic> counts, AppState app) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '👔 CEO Executive Dashboard',
-          style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50)),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Organization-wide overview and pending approvals',
-          style: TextStyle(color: Colors.grey),
-        ),
-        const SizedBox(height: 24),
-
-        // CEO Dashboard Grid
-        _buildSection(
-          '📊 Organization Overview',
-          _buildDashboardGrid(counts, context),
-        ),
-        const SizedBox(height: 20),
-
-        // Pending Approvals Section (CEO-specific)
-        _buildSection(
-          '⏳ Awaiting Your Approval',
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                const Icon(Icons.pending_actions,
-                    size: 48, color: Color(0xFFE67E22)),
-                const SizedBox(height: 12),
-                Text(
-                  '${counts['Pending CEO Approval'] ?? 0} proposals pending your approval',
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.approval),
-                  label: const Text('Review Pending Approvals'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3498DB),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                  ),
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/approvals');
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Recent Proposals
-        _buildSection(
-          '📝 All Proposals (Organization-wide)',
-          _buildRecentProposals(app.proposals),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFinancialManagerDashboard(
-      Map<String, dynamic> counts, AppState app) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '💼 Financial Manager Dashboard',
-          style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50)),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Create and manage proposals for client engagement',
-          style: TextStyle(color: Colors.grey),
-        ),
-        const SizedBox(height: 24),
-
-        // Dashboard Grid
-        _buildSection(
-          '📊 My Proposal Dashboard',
-          _buildDashboardGrid(counts, context),
-        ),
-        const SizedBox(height: 20),
-
-        // End-to-End Proposal Flow
-        _buildSection(
-          '🔧 Proposal Workflow',
-          _buildWorkflow(context),
-        ),
-        const SizedBox(height: 20),
-
-        // AI-Powered Compound Risk Gate
-        _buildAISection(),
-        const SizedBox(height: 20),
-
-        // Recent Proposals
-        _buildSection(
-          '📝 My Recent Proposals',
-          _buildRecentProposals(app.proposals),
-        ),
-        const SizedBox(height: 20),
-
-        // System Components
-        _buildSection(
-          '🧩 Available Tools',
-          _buildSystemComponents(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildClientDashboard(Map<String, dynamic> counts, AppState app) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '🤝 Client Portal',
-          style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50)),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'View and manage proposals sent to you',
-          style: TextStyle(color: Colors.grey),
-        ),
-        const SizedBox(height: 24),
-
-        // Simplified Dashboard for Clients
-        _buildSection(
-          '📊 My Proposals Status',
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            childAspectRatio: 2.5,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 20,
-            children: [
-              _buildStatCard(
-                  'Active Proposals',
-                  counts['Sent to Client']?.toString() ?? '0',
-                  'For Review',
-                  context),
-              _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
-                  'Completed', context),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Active Proposals
-        _buildSection(
-          '📝 Proposals Sent to Me',
-          app.proposals.isEmpty
-              ? Container(
-                  padding: const EdgeInsets.all(32),
-                  child: const Center(
-                    child: Column(
-                      children: [
-                        Icon(Icons.inbox, size: 64, color: Colors.grey),
-                        SizedBox(height: 16),
-                        Text(
-                          'No proposals yet',
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : _buildRecentProposals(app.proposals),
-        ),
-        const SizedBox(height: 20),
-
-        // Quick Actions
-        _buildSection(
-          '⚡ Quick Actions',
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              ElevatedButton.icon(
-                icon: const Icon(Icons.download),
-                label: const Text('Download Signed Documents'),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Feature coming soon!')),
-                  );
-                },
-              ),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.support_agent),
-                label: const Text('Contact Support'),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Support: support@example.com')),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 }

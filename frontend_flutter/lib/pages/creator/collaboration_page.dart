@@ -1,9 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../services/collaboration_service.dart';
-import '../../services/auth_service.dart';
-import '../../services/firebase_service.dart';
 
 class CollaborationPage extends StatefulWidget {
   const CollaborationPage({super.key});
@@ -14,93 +9,9 @@ class CollaborationPage extends StatefulWidget {
 
 class _CollaborationPageState extends State<CollaborationPage> {
   String _selectedTab = 'teams';
-  bool _loading = false;
-  List<Map<String, dynamic>> _teams = [];
-  List<Map<String, dynamic>> _comments = [];
-  List<Map<String, dynamic>> _workspaces = [];
-  List<Map<String, dynamic>> _notifications = [];
-  Stream<List<Map<String, dynamic>>>? _teamsStream;
-  Stream<List<Map<String, dynamic>>>? _commentsStream;
-  Stream<List<Map<String, dynamic>>>? _workspacesStream;
-  Stream<List<Map<String, dynamic>>>? _notificationsStream;
-  late final List<Stream<List<Map<String, dynamic>>>?> _allStreams;
-
-  @override
-  void initState() {
-    super.initState();
-    _ensureFirebaseUser();
-    _refreshAll();
-    _bindRealtime();
-  }
-
-  Future<void> _ensureFirebaseUser() async {
-    try {
-      // Ensure we have a Firebase user for Firestore security rules
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _refreshAll() async {
-    setState(() {
-      _loading = true;
-    });
-    try {
-      final results = await Future.wait([
-        CollaborationService.listTeams(),
-        CollaborationService.listComments(),
-        CollaborationService.listWorkspaces(),
-        CollaborationService.listNotifications(),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _teams = results[0] as List<Map<String, dynamic>>;
-        _comments = results[1] as List<Map<String, dynamic>>;
-        _workspaces = results[2] as List<Map<String, dynamic>>;
-        _notifications = results[3] as List<Map<String, dynamic>>;
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  void _bindRealtime() {
-    _teamsStream = CollaborationService.streamTeams();
-    _commentsStream = CollaborationService.streamComments();
-    _workspacesStream = CollaborationService.streamWorkspaces();
-    _notificationsStream = CollaborationService.streamNotifications();
-
-    _teamsStream!.listen((data) {
-      if (!mounted) return;
-      setState(() => _teams = data);
-    });
-    _commentsStream!.listen((data) {
-      if (!mounted) return;
-      setState(() => _comments = data);
-    });
-    _workspacesStream!.listen((data) {
-      if (!mounted) return;
-      setState(() => _workspaces = data);
-    });
-    _notificationsStream!.listen((data) {
-      if (!mounted) return;
-      setState(() => _notifications = data);
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthService.currentUser;
-    final displayName =
-        (user != null ? (user['full_name'] ?? user['email'] ?? 'User') : 'User')
-            .toString();
-    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
-    final unreadCount = _notifications.where((n) => n['read'] != true).length;
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F9),
       body: Column(
@@ -133,10 +44,10 @@ class _CollaborationPageState extends State<CollaborationPage> {
                           color: Color(0xFF3498DB),
                           shape: BoxShape.circle,
                         ),
-                        child: Center(
+                        child: const Center(
                           child: Text(
-                            initial,
-                            style: const TextStyle(
+                            'U',
+                            style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
@@ -144,18 +55,16 @@ class _CollaborationPageState extends State<CollaborationPage> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(displayName,
-                          style: const TextStyle(color: Colors.white)),
+                      const Text(
+                        'User',
+                        style: TextStyle(color: Colors.white),
+                      ),
                       const SizedBox(width: 10),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, color: Colors.white),
-                        onSelected: (value) async {
+                        onSelected: (value) {
                           if (value == 'logout') {
-                            AuthService.logout();
-                            await FirebaseService.signOut();
-                            if (mounted) {
-                              Navigator.pushNamed(context, '/login');
-                            }
+                            Navigator.pushReplacementNamed(context, '/login');
                           }
                         },
                         itemBuilder: (BuildContext context) => [
@@ -240,141 +149,87 @@ class _CollaborationPageState extends State<CollaborationPage> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: RefreshIndicator(
-                      onRefresh: _refreshAll,
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Header Section
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Collaboration',
-                                      style: TextStyle(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF2C3E50),
-                                      ),
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Manage teams, comments, and shared workspaces',
-                                      style: TextStyle(
-                                        color: Color(0xFF718096),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: () async {
-                                    final nameController =
-                                        TextEditingController();
-                                    final membersController =
-                                        TextEditingController();
-                                    final ok = await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Create Team'),
-                                        content: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            TextField(
-                                              controller: nameController,
-                                              decoration: const InputDecoration(
-                                                  labelText: 'Team name'),
-                                            ),
-                                            TextField(
-                                              controller: membersController,
-                                              decoration: const InputDecoration(
-                                                  labelText:
-                                                      'Members (emails, comma-separated)'),
-                                            ),
-                                          ],
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, false),
-                                              child: const Text('Cancel')),
-                                          ElevatedButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(ctx, true),
-                                              child: const Text('Create')),
-                                        ],
-                                      ),
-                                    );
-                                    if (ok == true) {
-                                      final members = membersController.text
-                                          .split(',')
-                                          .map((s) => s.trim())
-                                          .where((s) => s.isNotEmpty)
-                                          .toList();
-                                      await CollaborationService.createTeam(
-                                          name: nameController.text.trim(),
-                                          members: members);
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                              content: Text('Team created')),
-                                        );
-                                        _refreshAll();
-                                      }
-                                    }
-                                  },
-                                  icon: const Icon(Icons.group_add, size: 16),
-                                  label: const Text('Create Team'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF4a6cf7),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 12),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-
-                            // Tab Navigation
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border:
-                                    Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Row(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header Section
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _buildTab('teams', 'Teams', Icons.group),
-                                  _buildTab('comments', 'Comments',
-                                      Icons.chat_bubble_outline),
-                                  _buildTab('shared', 'Shared Workspaces',
-                                      Icons.folder_shared),
-                                  _buildTab(
-                                      'notifications',
-                                      unreadCount > 0
-                                          ? 'Notifications ($unreadCount)'
-                                          : 'Notifications',
-                                      Icons.notifications_outlined),
+                                  Text(
+                                    'Collaboration',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF2C3E50),
+                                    ),
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'Manage teams, comments, and shared workspaces',
+                                    style: TextStyle(
+                                      color: Color(0xFF718096),
+                                    ),
+                                  ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(height: 20),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Create team functionality coming soon!'),
+                                      backgroundColor: Color(0xFFE67E22),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.group_add, size: 16),
+                                label: const Text('Create Team'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF4a6cf7),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
 
-                            // Tab Content
-                            if (_selectedTab == 'teams') _buildTeamsContent(),
-                            if (_selectedTab == 'comments')
-                              _buildCommentsContent(),
-                            if (_selectedTab == 'shared') _buildSharedContent(),
-                            if (_selectedTab == 'notifications')
-                              _buildNotificationsContent(),
-                          ],
-                        ),
+                          // Tab Navigation
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border:
+                                  Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              children: [
+                                _buildTab('teams', 'Teams', Icons.group),
+                                _buildTab('comments', 'Comments',
+                                    Icons.chat_bubble_outline),
+                                _buildTab('shared', 'Shared Workspaces',
+                                    Icons.folder_shared),
+                                _buildTab('notifications', 'Notifications',
+                                    Icons.notifications_outlined),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // Tab Content
+                          if (_selectedTab == 'teams') _buildTeamsContent(),
+                          if (_selectedTab == 'comments')
+                            _buildCommentsContent(),
+                          if (_selectedTab == 'shared') _buildSharedContent(),
+                          if (_selectedTab == 'notifications')
+                            _buildNotificationsContent(),
+                        ],
                       ),
                     ),
                   ),
@@ -428,11 +283,11 @@ class _CollaborationPageState extends State<CollaborationPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                SizedBox(
-                  width: 54,
-                  height: 54,
-                  child: _navIconFor(label, isActive),
-                ),
+                Text(icon,
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: isActive ? Colors.white : const Color(0xFFBDC3C7),
+                    )),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -496,57 +351,31 @@ class _CollaborationPageState extends State<CollaborationPage> {
     );
   }
 
-  Widget _navIconFor(String label, bool isActive) {
-    String path;
-    switch (label) {
-      case 'Dashboard':
-        path = 'assets/images/Dahboard.png';
-        break;
-      case 'My Proposals':
-        path = 'assets/images/My_Proposals.png';
-        break;
-      case 'Templates':
-      case 'Content Library':
-        path = 'assets/images/content_library.png';
-        break;
-      case 'Collaboration':
-        path = 'assets/images/collaborations.png';
-        break;
-      case 'Approvals Status':
-      case 'Analytics (My Pipeline)':
-        path = 'assets/images/analytics.png';
-        break;
-      default:
-        path = 'assets/images/Dahboard.png';
-    }
-    return Image.asset(path, fit: BoxFit.contain);
-  }
-
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
         break;
       case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
-        Navigator.pushNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Collaboration':
         // Already on collaboration page
         break;
       case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+        Navigator.pushReplacementNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
       default:
-        Navigator.pushNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
     }
   }
 
@@ -557,35 +386,23 @@ class _CollaborationPageState extends State<CollaborationPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'My Teams',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  onPressed: _refreshAll,
-                ),
-              ],
+            const Text(
+              'My Teams',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF2C3E50),
+              ),
             ),
             const SizedBox(height: 16),
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (!_loading)
-              ..._teams.map((t) => _buildTeamItem(
-                    t['name']?.toString() ?? 'Team',
-                    '${(t['members'] as List?)?.length ?? 0} members',
-                    Icons.group,
-                    const Color(0xFF3498DB),
-                  )),
-            if (!_loading && _teams.isEmpty)
-              const Text('No teams yet. Create one to get started.'),
+            _buildTeamItem('Development Team', '5 members', Icons.code,
+                const Color(0xFF3498DB)),
+            _buildTeamItem('Sales Team', '8 members', Icons.trending_up,
+                const Color(0xFFE74C3C)),
+            _buildTeamItem('Marketing Team', '6 members', Icons.campaign,
+                const Color(0xFF2ECC71)),
+            _buildTeamItem('Client Relations', '4 members', Icons.people,
+                const Color(0xFFF39C12)),
           ],
         ),
       ),
@@ -593,7 +410,6 @@ class _CollaborationPageState extends State<CollaborationPage> {
   }
 
   Widget _buildCommentsContent() {
-    final controller = TextEditingController();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -608,38 +424,15 @@ class _CollaborationPageState extends State<CollaborationPage> {
                 color: Color(0xFF2C3E50),
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    decoration:
-                        const InputDecoration(hintText: 'Add a comment...'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    final text = controller.text.trim();
-                    if (text.isEmpty) return;
-                    await CollaborationService.addComment(text: text);
-                    controller.clear();
-                    _refreshAll();
-                  },
-                  child: const Text('Post'),
-                ),
-              ],
-            ),
             const SizedBox(height: 16),
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (!_loading)
-              ..._comments.map((c) => _buildCommentItem(
-                    c['author']?.toString() ?? 'User',
-                    c['text']?.toString() ?? '',
-                    ((c['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
-                  )),
-            if (!_loading && _comments.isEmpty) const Text('No comments yet.'),
+            _buildCommentItem(
+                'John Smith', 'Great work on the proposal!', '2 hours ago'),
+            _buildCommentItem('Sarah Johnson',
+                'Can we add more details about the timeline?', '4 hours ago'),
+            _buildCommentItem(
+                'Mike Wilson', 'The budget looks good to me.', '1 day ago'),
+            _buildCommentItem(
+                'Lisa Brown', 'Ready for client review.', '2 days ago'),
           ],
         ),
       ),
@@ -653,954 +446,264 @@ class _CollaborationPageState extends State<CollaborationPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Shared Workspaces',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () async {
-                    final controller = TextEditingController();
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('New Workspace'),
-                        content: TextField(
-                          controller: controller,
-                          decoration: const InputDecoration(
-                              labelText: 'Workspace name'),
-                        ),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Cancel')),
-                          ElevatedButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Create')),
-                        ],
-                      ),
-                    );
-                    if (ok == true) {
-                      await CollaborationService.createWorkspace(
-                          name: controller.text.trim());
-                      _refreshAll();
-                    }
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('New'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (!_loading)
-              ..._workspaces.map((w) => _buildWorkspaceItem(
-                    w['name']?.toString() ?? 'Workspace',
-                    '${w['files'] ?? 0} files',
-                    Icons.folder,
-                    const Color(0xFF3498DB),
-                  )),
-            if (!_loading && _workspaces.isEmpty)
-              const Text('No workspaces yet.'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationsContent() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Notifications',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    await CollaborationService.clearAllNotifications();
-                    _refreshAll();
-                  },
-                  child: const Text('Clear all'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (!_loading)
-              ..._notifications.map((n) => _buildNotificationItem(
-                    n['message']?.toString() ?? '',
-                    ((n['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
-                    n['read'] == true
-                        ? Icons.notifications_none
-                        : Icons.notifications_active,
-                    id: n['id']?.toString(),
-                    read: n['read'] == true,
-                  )),
-            if (!_loading && _notifications.isEmpty)
-              const Text('No notifications.'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTeamItem(
-      String name, String members, IconData icon, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  members,
-                  style: const TextStyle(
-                    color: Color(0xFF718096),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/team_details',
-                  arguments: {'teamId': name});
-            },
-            icon: const Icon(Icons.arrow_forward_ios, size: 16),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCommentItem(String author, String comment, String time) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: const Color(0xFF3498DB),
-            child: Text(
-              author[0],
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  author,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  comment,
-                  style: const TextStyle(
-                    color: Color(0xFF2C3E50),
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  time,
-                  style: const TextStyle(
-                    color: Color(0xFF718096),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWorkspaceItem(
-      String name, String files, IconData icon, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  files,
-                  style: const TextStyle(
-                    color: Color(0xFF718096),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/workspace',
-                  arguments: {'workspaceName': name});
-            },
-            icon: const Icon(Icons.arrow_forward_ios, size: 16),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationItem(String message, String time, IconData icon,
-      {String? id, bool read = false}) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: const Color(0xFF3498DB), size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF2C3E50),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  time,
-                  style: const TextStyle(
-                    color: Color(0xFF718096),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (id != null)
-            IconButton(
-              onPressed: () async {
-                await CollaborationService.markNotificationRead(id,
-                    read: !read);
-                _refreshAll();
-              },
-              icon:
-                  Icon(read ? Icons.mark_email_read : Icons.mark_email_unread),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/*
-  Widget _buildCommentsContent() {
-
-    final controller = TextEditingController();
-    return Card(
-
-      child: Padding(
-
-        padding: const EdgeInsets.all(20),
-
-        child: Column(
-
-          crossAxisAlignment: CrossAxisAlignment.start,
-
-          children: [
-
             const Text(
-
-              'Recent Comments',
-
-              style: TextStyle(
-
-                fontSize: 18,
-
-                fontWeight: FontWeight.w600,
-
-                color: Color(0xFF2C3E50),
-
-              ),
-
-            ),
-
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(hintText: 'Add a comment...'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    final text = controller.text.trim();
-                    if (text.isEmpty) return;
-                    await CollaborationService.addComment(text: text);
-                    controller.clear();
-                    _refreshAll();
-                  },
-                  child: const Text('Post'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (!_loading)
-              ..._comments.map((c) => _buildCommentItem(
-                    c['author']?.toString() ?? 'User',
-                    c['text']?.toString() ?? '',
-                    ((c['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
-                  )),
-            if (!_loading && _comments.isEmpty)
-              const Text('No comments yet.'),
-          ],
-
-        ),
-
-      ),
-
-    );
-
-  }
-
-
-
-  Widget _buildSharedContent() {
-
-    return Card(
-
-      child: Padding(
-
-        padding: const EdgeInsets.all(20),
-
-        child: Column(
-
-          crossAxisAlignment: CrossAxisAlignment.start,
-
-          children: [
-
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
               'Shared Workspaces',
-
               style: TextStyle(
-
                 fontSize: 18,
-
                 fontWeight: FontWeight.w600,
-
                 color: Color(0xFF2C3E50),
-
               ),
-
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () async {
-                    final controller = TextEditingController();
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('New Workspace'),
-                        content: TextField(
-                          controller: controller,
-                          decoration: const InputDecoration(labelText: 'Workspace name'),
-                        ),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Cancel')),
-                          ElevatedButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Create')),
-                        ],
-                      ),
-                    );
-                    if (ok == true) {
-                      await CollaborationService.createWorkspace(name: controller.text.trim());
-                      _refreshAll();
-                    }
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('New'),
-                ),
-              ],
             ),
-
             const SizedBox(height: 16),
-
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (!_loading)
-              ..._workspaces.map((w) => _buildWorkspaceItem(
-                    w['name']?.toString() ?? 'Workspace',
-                    '${w['files'] ?? 0} files',
-                    Icons.folder,
-                    const Color(0xFF3498DB),
-                  )),
-            if (!_loading && _workspaces.isEmpty)
-              const Text('No workspaces yet.'),
+            _buildWorkspaceItem('Q1 Proposals', '12 files', Icons.folder,
+                const Color(0xFF3498DB)),
+            _buildWorkspaceItem('Client Templates', '8 files', Icons.folder,
+                const Color(0xFF2ECC71)),
+            _buildWorkspaceItem('Approved Contracts', '15 files', Icons.folder,
+                const Color(0xFFE74C3C)),
+            _buildWorkspaceItem('Draft Documents', '6 files', Icons.folder,
+                const Color(0xFFF39C12)),
           ],
-
         ),
-
       ),
-
     );
-
   }
-
-
 
   Widget _buildNotificationsContent() {
-
     return Card(
-
       child: Padding(
-
         padding: const EdgeInsets.all(20),
-
         child: Column(
-
           crossAxisAlignment: CrossAxisAlignment.start,
-
           children: [
-
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
+            const Text(
               'Notifications',
-
               style: TextStyle(
-
                 fontSize: 18,
-
                 fontWeight: FontWeight.w600,
-
                 color: Color(0xFF2C3E50),
-
               ),
-
-                  ),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    await CollaborationService.clearAllNotifications();
-                    _refreshAll();
-                  },
-                  child: const Text('Clear all'),
-                ),
-              ],
             ),
-
             const SizedBox(height: 16),
-
-            if (_loading) const Center(child: CircularProgressIndicator()),
-            if (!_loading)
-              ..._notifications.map((n) => _buildNotificationItem(
-                    n['message']?.toString() ?? '',
-                    ((n['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
-                    n['read'] == true ? Icons.notifications_none : Icons.notifications_active,
-                    id: n['id']?.toString(),
-                    read: n['read'] == true,
-                  )),
-            if (!_loading && _notifications.isEmpty)
-              const Text('No notifications.'),
+            _buildNotificationItem(
+                'New comment on "Software Development Proposal"',
+                '5 minutes ago',
+                Icons.chat),
+            _buildNotificationItem('Team member John joined "Development Team"',
+                '1 hour ago', Icons.person_add),
+            _buildNotificationItem(
+                'Document "Q1 Budget" was updated', '3 hours ago', Icons.edit),
+            _buildNotificationItem('Proposal "Cloud Migration" was approved',
+                '1 day ago', Icons.check_circle),
           ],
-
         ),
-
       ),
-
     );
-
   }
-
-
 
   Widget _buildTeamItem(
-
       String name, String members, IconData icon, Color color) {
-
     return Container(
-
       margin: const EdgeInsets.only(bottom: 12),
-
       padding: const EdgeInsets.all(16),
-
       decoration: BoxDecoration(
-
         color: const Color(0xFFF8F9FA),
-
         borderRadius: BorderRadius.circular(8),
-
         border: Border.all(color: const Color(0xFFE2E8F0)),
-
       ),
-
       child: Row(
-
         children: [
-
           Container(
-
             width: 40,
-
             height: 40,
-
             decoration: BoxDecoration(
-
               color: color.withValues(alpha: 0.1),
-
               borderRadius: BorderRadius.circular(8),
-
             ),
-
             child: Icon(icon, color: color, size: 20),
-
           ),
-
           const SizedBox(width: 12),
-
           Expanded(
-
             child: Column(
-
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
-
                 Text(
-
                   name,
-
                   style: const TextStyle(
-
                     fontWeight: FontWeight.w600,
-
                     fontSize: 14,
-
                   ),
-
                 ),
-
                 Text(
-
                   members,
-
                   style: const TextStyle(
-
                     color: Color(0xFF718096),
-
                     fontSize: 12,
-
                   ),
-
                 ),
-
               ],
-
             ),
-
           ),
-
           IconButton(
-
             onPressed: () {
-
-              Navigator.pushNamed(context, '/team_details', arguments: {'teamId': name});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Opening $name'),
+                  backgroundColor: const Color(0xFF3498DB),
+                ),
+              );
             },
-
             icon: const Icon(Icons.arrow_forward_ios, size: 16),
-
           ),
-
         ],
-
       ),
-
     );
-
   }
-
-
 
   Widget _buildCommentItem(String author, String comment, String time) {
-
     return Container(
-
       margin: const EdgeInsets.only(bottom: 12),
-
       padding: const EdgeInsets.all(16),
-
       decoration: BoxDecoration(
-
         color: const Color(0xFFF8F9FA),
-
         borderRadius: BorderRadius.circular(8),
-
         border: Border.all(color: const Color(0xFFE2E8F0)),
-
       ),
-
       child: Row(
-
         crossAxisAlignment: CrossAxisAlignment.start,
-
         children: [
-
           CircleAvatar(
-
             radius: 16,
-
             backgroundColor: const Color(0xFF3498DB),
-
             child: Text(
-
               author[0],
-
               style: const TextStyle(color: Colors.white, fontSize: 12),
-
             ),
-
           ),
-
           const SizedBox(width: 12),
-
           Expanded(
-
             child: Column(
-
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
-
                 Text(
-
                   author,
-
                   style: const TextStyle(
-
                     fontWeight: FontWeight.w600,
-
                     fontSize: 14,
-
                   ),
-
                 ),
-
                 const SizedBox(height: 4),
-
                 Text(
-
                   comment,
-
                   style: const TextStyle(
-
                     color: Color(0xFF2C3E50),
-
                     fontSize: 14,
-
                   ),
-
                 ),
-
                 const SizedBox(height: 4),
-
                 Text(
-
                   time,
-
                   style: const TextStyle(
-
                     color: Color(0xFF718096),
-
                     fontSize: 12,
-
                   ),
-
                 ),
-
               ],
-
             ),
-
           ),
-
         ],
-
       ),
-
     );
-
   }
-
-
 
   Widget _buildWorkspaceItem(
-
       String name, String files, IconData icon, Color color) {
-
     return Container(
-
       margin: const EdgeInsets.only(bottom: 12),
-
       padding: const EdgeInsets.all(16),
-
       decoration: BoxDecoration(
-
         color: const Color(0xFFF8F9FA),
-
         borderRadius: BorderRadius.circular(8),
-
         border: Border.all(color: const Color(0xFFE2E8F0)),
-
       ),
-
       child: Row(
-
         children: [
-
           Icon(icon, color: color, size: 24),
-
           const SizedBox(width: 12),
-
           Expanded(
-
             child: Column(
-
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
-
                 Text(
-
                   name,
-
                   style: const TextStyle(
-
                     fontWeight: FontWeight.w600,
-
                     fontSize: 14,
-
                   ),
-
                 ),
-
                 Text(
-
                   files,
-
                   style: const TextStyle(
-
                     color: Color(0xFF718096),
-
                     fontSize: 12,
-
                   ),
-
                 ),
-
               ],
-
             ),
-
           ),
-
           IconButton(
-
             onPressed: () {
-
-              Navigator.pushNamed(context, '/workspace', arguments: {'workspaceName': name});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Opening $name'),
+                  backgroundColor: const Color(0xFF3498DB),
+                ),
+              );
             },
-
             icon: const Icon(Icons.arrow_forward_ios, size: 16),
-
           ),
-
         ],
-
       ),
-
     );
-
   }
 
-
-
-  Widget _buildNotificationItem(String message, String time, IconData icon, {String? id, bool read = false}) {
+  Widget _buildNotificationItem(String message, String time, IconData icon) {
     return Container(
-
       margin: const EdgeInsets.only(bottom: 12),
-
       padding: const EdgeInsets.all(16),
-
       decoration: BoxDecoration(
-
         color: const Color(0xFFF8F9FA),
-
         borderRadius: BorderRadius.circular(8),
-
         border: Border.all(color: const Color(0xFFE2E8F0)),
-
       ),
-
       child: Row(
-
         children: [
-
           Icon(icon, color: const Color(0xFF3498DB), size: 20),
-
           const SizedBox(width: 12),
-
           Expanded(
-
             child: Column(
-
               crossAxisAlignment: CrossAxisAlignment.start,
-
               children: [
-
                 Text(
-
                   message,
-
                   style: const TextStyle(
-
                     fontSize: 14,
-
                     color: Color(0xFF2C3E50),
-
                   ),
-
                 ),
-
                 const SizedBox(height: 4),
-
                 Text(
-
                   time,
-
                   style: const TextStyle(
-
                     color: Color(0xFF718096),
-
                     fontSize: 12,
-
                   ),
-
                 ),
-
               ],
-
             ),
-
-          ),
-
-          if (id != null)
-            IconButton(
-              onPressed: () async {
-                await CollaborationService.markNotificationRead(id, read: !read);
-                _refreshAll();
-              },
-              icon: Icon(read ? Icons.mark_email_read : Icons.mark_email_unread),
           ),
         ],
-
       ),
-
     );
-
   }
-
 }
-
-
-*/

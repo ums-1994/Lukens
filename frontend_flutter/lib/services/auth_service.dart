@@ -1,8 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart' show kIsWeb;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 
 class AuthService {
   static const String baseUrl = 'http://localhost:8000';
@@ -13,43 +10,6 @@ class AuthService {
   static Map<String, dynamic>? get currentUser => _currentUser;
   static String? get token => _token;
   static bool get isLoggedIn => _token != null && _currentUser != null;
-
-  // Persist session in web localStorage so back/refresh keeps user logged in
-  static const String _storageKey = 'lukens_auth_session';
-
-  static void _persistSession() {
-    try {
-      if (kIsWeb && _token != null && _currentUser != null) {
-        final data = json.encode({'token': _token, 'user': _currentUser});
-        html.window.localStorage[_storageKey] = data;
-      }
-    } catch (_) {}
-  }
-
-  static void restoreSessionFromStorage() {
-    try {
-      if (kIsWeb) {
-        final data = html.window.localStorage[_storageKey];
-        if (data != null && data.isNotEmpty) {
-          final parsed = json.decode(data) as Map<String, dynamic>;
-          final storedToken = parsed['token'] as String?;
-          final storedUser = parsed['user'] as Map<String, dynamic>?;
-          if (storedToken != null && storedUser != null) {
-            _token = storedToken;
-            _currentUser = storedUser;
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  static void _clearSessionStorage() {
-    try {
-      if (kIsWeb) {
-        html.window.localStorage.remove(_storageKey);
-      }
-    } catch (_) {}
-  }
 
   // Register user
   static Future<Map<String, dynamic>?> register({
@@ -110,7 +70,6 @@ class AuthService {
           'username': email,
           'role': 'Business Developer'
         };
-        _persistSession();
         return {
           'access_token': data['access_token'],
           'token_type': data['token_type'],
@@ -221,14 +180,12 @@ class AuthService {
   static void setUserData(Map<String, dynamic> userData, String token) {
     _currentUser = userData;
     _token = token;
-    _persistSession();
   }
 
   // Logout
   static void logout() {
     _token = null;
     _currentUser = null;
-    _clearSessionStorage();
   }
 
   // Get headers for authenticated requests

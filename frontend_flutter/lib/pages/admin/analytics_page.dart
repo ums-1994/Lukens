@@ -64,7 +64,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                         icon: const Icon(Icons.more_vert, color: Colors.white),
                         onSelected: (value) {
                           if (value == 'logout') {
-                            Navigator.pushNamed(context, '/login');
+                            Navigator.pushReplacementNamed(context, '/login');
                           }
                         },
                         itemBuilder: (BuildContext context) => [
@@ -312,11 +312,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                SizedBox(
-                  width: 54,
-                  height: 54,
-                  child: _navIconFor(label, isActive),
-                ),
+                Text(icon,
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: isActive ? Colors.white : const Color(0xFFBDC3C7),
+                    )),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -642,57 +642,31 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
-  Widget _navIconFor(String label, bool isActive) {
-    String path;
-    switch (label) {
-      case 'Dashboard':
-        path = 'assets/images/Dahboard.png';
-        break;
-      case 'My Proposals':
-        path = 'assets/images/My_Proposals.png';
-        break;
-      case 'Templates':
-      case 'Content Library':
-        path = 'assets/images/content_library.png';
-        break;
-      case 'Collaboration':
-        path = 'assets/images/collaborations.png';
-        break;
-      case 'Approvals Status':
-      case 'Analytics (My Pipeline)':
-        path = 'assets/images/analytics.png';
-        break;
-      default:
-        path = 'assets/images/Dahboard.png';
-    }
-    return Image.asset(path, fit: BoxFit.contain);
-  }
-
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
         break;
       case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
-        Navigator.pushNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
+        Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+        Navigator.pushReplacementNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
         // Already on analytics page
         break;
       default:
-        Navigator.pushNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
     }
   }
 }

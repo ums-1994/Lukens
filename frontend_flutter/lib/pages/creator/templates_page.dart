@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'dart:convert';
 import 'package:signature/signature.dart';
 import 'dart:typed_data';
 import '../shared/document_settings_page.dart';
-import '../../services/asset_service.dart';
+import '../../services/khonology_templates_service.dart';
+import '../../services/template_service.dart';
 
 // ... existing code until line 838 ...
 
@@ -54,65 +53,6 @@ class _TemplatesPageState extends State<TemplatesPage> {
   Map<String, double> _imageHeights = {};
   Map<String, BoxFit> _imageFits = {};
 
-  // Stock asset images loaded from AssetManifest
-  List<String> _stockAssetImagePaths = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadStockAssetImages();
-    AssetService.initialize();
-  }
-
-  Future<void> _loadStockAssetImages() async {
-    try {
-      final String manifestJson =
-          await rootBundle.loadString('AssetManifest.json');
-      final Map<String, dynamic> manifestMap =
-          jsonDecode(manifestJson) as Map<String, dynamic>;
-      const String stockDir =
-          'assets/images/Individual Icon Asset Collections & Variations/';
-      final List<String> assetPaths = manifestMap.keys
-          .where((String key) => key.startsWith(stockDir))
-          .where((String key) =>
-              key.endsWith('.png') ||
-              key.endsWith('.jpg') ||
-              key.endsWith('.jpeg'))
-          .toList()
-        ..sort();
-      if (mounted) {
-        setState(() {
-          _stockAssetImagePaths = assetPaths;
-        });
-      }
-    } catch (_) {
-      // ignore: avoid_print
-      // print('Failed to load AssetManifest');
-    }
-  }
-
-  Widget _buildImageWidget(String path,
-      {double? width, double? height, BoxFit? fit}) {
-    if (path.startsWith('assets/')) {
-      return Image.asset(
-        path,
-        width: width,
-        height: height,
-        fit: fit ?? BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) =>
-            const Icon(Icons.broken_image, size: 24, color: Colors.grey),
-      );
-    }
-    return Image.network(
-      path,
-      width: width,
-      height: height,
-      fit: fit ?? BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) =>
-          const Icon(Icons.broken_image, size: 24, color: Colors.grey),
-    );
-  }
-
   // Signature properties
   final SignatureController _companySignatureController = SignatureController(
     penStrokeWidth: 2,
@@ -126,6 +66,63 @@ class _TemplatesPageState extends State<TemplatesPage> {
   );
   Uint8List? _companySignatureData;
   Uint8List? _clientSignatureData;
+
+  // Available templates
+  final List<Map<String, dynamic>> _templates = [
+    {
+      'id': 'khonology_digital_transformation',
+      'name': 'Digital Transformation Strategy',
+      'description':
+          'Comprehensive digital transformation proposal following Khonology standards',
+      'category': 'Khonology Standards',
+      'industry': 'Technology',
+      'complexity': 'High',
+      'estimatedDuration': '6-12 months',
+      'thumbnail': 'assets/images/business-presentation-template.png',
+    },
+    {
+      'id': 'khonology_ai_ml_implementation',
+      'name': 'AI/ML Implementation Strategy',
+      'description':
+          'End-to-end AI and machine learning solution implementation',
+      'category': 'Khonology Standards',
+      'industry': 'Technology',
+      'complexity': 'High',
+      'estimatedDuration': '4-8 months',
+      'thumbnail': 'assets/images/software-development-proposal-template.jpg',
+    },
+    {
+      'id': 'khonology_data_engineering',
+      'name': 'Data Engineering Platform',
+      'description': 'Comprehensive data engineering and analytics platform',
+      'category': 'Khonology Standards',
+      'industry': 'Technology',
+      'complexity': 'Medium',
+      'estimatedDuration': '3-6 months',
+      'thumbnail': 'assets/images/web-development-scope-document.jpg',
+    },
+    {
+      'id': 'khonology_custom_development',
+      'name': 'Custom Application Development',
+      'description':
+          'Bespoke application development following Khonology standards',
+      'category': 'Khonology Standards',
+      'industry': 'Technology',
+      'complexity': 'High',
+      'estimatedDuration': '6-12 months',
+      'thumbnail': 'assets/images/software-development-proposal-template.jpg',
+    },
+    {
+      'id': 'khonology_cloud_migration',
+      'name': 'Cloud Migration Strategy',
+      'description': 'Comprehensive cloud migration and optimization strategy',
+      'category': 'Khonology Standards',
+      'industry': 'Technology',
+      'complexity': 'Medium',
+      'estimatedDuration': '4-8 months',
+      'thumbnail': 'assets/images/consulting-contract-template.jpg',
+    },
+  ];
 
   // Template content
   Map<String, dynamic> _proposalData = {
@@ -182,9 +179,22 @@ class _TemplatesPageState extends State<TemplatesPage> {
   };
 
   @override
+  void initState() {
+    super.initState();
+    _loadCustomTemplates();
+    _loadKhonologyTemplates();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F9),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showCreateTemplateDialog,
+        backgroundColor: const Color(0xFF2C3E50),
+        child: const Icon(Icons.add, color: Colors.white),
+        tooltip: 'Create New Template',
+      ),
       body: Column(
         children: [
           // Header
@@ -232,7 +242,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
                         icon: const Icon(Icons.more_vert, color: Colors.white),
                         onSelected: (value) {
                           if (value == 'logout') {
-                            Navigator.pushNamed(context, '/login');
+                            Navigator.pushReplacementNamed(context, '/login');
                           }
                         },
                         itemBuilder: (BuildContext context) => [
@@ -394,24 +404,6 @@ class _TemplatesPageState extends State<TemplatesPage> {
                     ),
                   ],
                 ),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _isEditingMode = true;
-                      _selectedTemplate = 'Professional Business Proposal';
-                    });
-                  },
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('New Template'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4a6cf7),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -511,70 +503,9 @@ class _TemplatesPageState extends State<TemplatesPage> {
   }
 
   Widget _buildTemplatesGrid() {
-    final templates = [
-      {
-        'id': '1',
-        'title': 'Professional Business Proposal',
-        'category': 'Proposals',
-        'description':
-            'Comprehensive professional proposal with branding, pricing tables, and signature blocks',
-        'author': 'System',
-        'date': 'Today',
-        'thumbnail': 'assets/images/software-development-proposal-template.jpg',
-        'icon': Icons.description,
-      },
-      {
-        'id': '2',
-        'title': 'Marketing Campaign SOW',
-        'category': 'SOWs',
-        'description':
-            'Statement of work for marketing campaigns and strategies',
-        'author': 'Jane Smith',
-        'date': '1 week ago',
-        'thumbnail': 'assets/images/marketing-campaign-document-template.jpg',
-        'icon': Icons.campaign,
-      },
-      {
-        'id': '3',
-        'title': 'Consulting Services Contract',
-        'category': 'Contracts',
-        'description': 'Professional services contract template',
-        'author': 'Mike Johnson',
-        'date': '3 days ago',
-        'thumbnail': 'assets/images/consulting-contract-template.jpg',
-        'icon': Icons.handshake,
-      },
-      {
-        'id': '4',
-        'title': 'Project Presentation',
-        'category': 'Presentations',
-        'description': 'Client presentation template for project proposals',
-        'author': 'Sarah Wilson',
-        'date': '5 days ago',
-        'thumbnail': 'assets/images/business-presentation-template.png',
-        'icon': Icons.slideshow,
-      },
-      {
-        'id': '5',
-        'title': 'Web Development SOW',
-        'category': 'SOWs',
-        'description': 'Detailed scope of work for web development projects',
-        'author': 'Alex Brown',
-        'date': '1 day ago',
-        'thumbnail': 'assets/images/web-development-scope-document.jpg',
-        'icon': Icons.web,
-      },
-      {
-        'id': '6',
-        'title': 'Annual Service Agreement',
-        'category': 'Contracts',
-        'description': 'Long-term service agreement template',
-        'author': 'Lisa Davis',
-        'date': '1 week ago',
-        'thumbnail': 'assets/images/service-agreement-contract-template.jpg',
-        'icon': Icons.article,
-      },
-    ];
+    // Use the loaded templates from _templates list, with fallback defaults
+    final templates =
+        _templates.isNotEmpty ? _templates : _getDefaultTemplates();
 
     return GridView.builder(
       shrinkWrap: true,
@@ -604,8 +535,10 @@ class _TemplatesPageState extends State<TemplatesPage> {
         onTap: () {
           setState(() {
             _isEditingMode = true;
-            _selectedTemplate = template['title'] as String;
-            _loadTemplate(template['title'] as String);
+            _selectedTemplate = (template['name'] ??
+                template['title'] ??
+                'Unknown Template') as String;
+            _loadKhonologyTemplate((template['id'] ?? '') as String);
           });
         },
         borderRadius: BorderRadius.circular(12),
@@ -636,7 +569,8 @@ class _TemplatesPageState extends State<TemplatesPage> {
                         topRight: Radius.circular(12),
                       ),
                       child: Image.asset(
-                        template['thumbnail'] as String,
+                        (template['thumbnail'] ??
+                            'assets/images/placeholder.jpg') as String,
                         width: double.infinity,
                         height: double.infinity,
                         fit: BoxFit.cover,
@@ -650,14 +584,17 @@ class _TemplatesPageState extends State<TemplatesPage> {
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                                 colors: [
-                                  const Color(0xFF3498DB).withOpacity(0.1),
-                                  const Color(0xFF2ECC71).withOpacity(0.1),
+                                  const Color(0xFF3498DB)
+                                      .withValues(alpha: 0.1),
+                                  const Color(0xFF2ECC71)
+                                      .withValues(alpha: 0.1),
                                 ],
                               ),
                             ),
                             child: Center(
                               child: Icon(
-                                template['icon'] as IconData,
+                                (template['icon'] ?? Icons.description)
+                                    as IconData,
                                 size: 48,
                                 color: const Color(0xFF3498DB),
                               ),
@@ -679,7 +616,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
                           border: Border.all(color: const Color(0xFFE2E8F0)),
                         ),
                         child: Text(
-                          template['category'] as String,
+                          (template['category'] ?? 'Unknown') as String,
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w500,
@@ -701,7 +638,9 @@ class _TemplatesPageState extends State<TemplatesPage> {
                     children: [
                       // Title
                       Text(
-                        template['title'] as String,
+                        (template['name'] ??
+                            template['title'] ??
+                            'Unknown Template') as String,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 16,
@@ -715,7 +654,8 @@ class _TemplatesPageState extends State<TemplatesPage> {
 
                       // Description
                       Text(
-                        template['description'] as String,
+                        (template['description'] ?? 'No description available')
+                            as String,
                         style: const TextStyle(
                           fontSize: 13,
                           color: Color(0xFF64748B),
@@ -724,13 +664,112 @@ class _TemplatesPageState extends State<TemplatesPage> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
+
+                      // Category and Complexity
+                      if (template['category'] != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: template['category'] ==
+                                        'Khonology Standards'
+                                    ? const Color(0xFF2C3E50)
+                                    : const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                (template['category'] ?? 'Unknown') as String,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: (template['category'] ?? '') ==
+                                          'Khonology Standards'
+                                      ? Colors.white
+                                      : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                            if (template['complexity'] != null) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: template['complexity'] == 'High'
+                                      ? Colors.red.withValues(alpha: 0.1)
+                                      : template['complexity'] == 'Medium'
+                                          ? Colors.orange.withValues(alpha: 0.1)
+                                          : Colors.green.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.timeline,
+                                      size: 12,
+                                      color: template['complexity'] == 'High'
+                                          ? Colors.red
+                                          : template['complexity'] == 'Medium'
+                                              ? Colors.orange
+                                              : Colors.green,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      (template['complexity'] ?? 'Low')
+                                          as String,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color:
+                                            (template['complexity'] ?? 'Low') ==
+                                                    'High'
+                                                ? Colors.red
+                                                : (template['complexity'] ??
+                                                            'Low') ==
+                                                        'Medium'
+                                                    ? Colors.orange
+                                                    : Colors.green,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+
+                      // Duration
+                      if (template['estimatedDuration'] != null) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.schedule,
+                                size: 14, color: Color(0xFF64748B)),
+                            const SizedBox(width: 4),
+                            Text(
+                              (template['estimatedDuration'] ?? 'Not specified')
+                                  as String,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+
                       const SizedBox(height: 12),
 
                       // Author and date
                       Row(
                         children: [
                           Text(
-                            'By ${template['author']}',
+                            'By ${template['author'] ?? 'Unknown'}',
                             style: const TextStyle(
                               fontSize: 11,
                               color: Color(0xFF94A3B8),
@@ -738,7 +777,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
                           ),
                           const Spacer(),
                           Text(
-                            template['date'] as String,
+                            (template['date'] ?? 'Unknown date') as String,
                             style: const TextStyle(
                               fontSize: 11,
                               color: Color(0xFF94A3B8),
@@ -756,9 +795,11 @@ class _TemplatesPageState extends State<TemplatesPage> {
                               onPressed: () {
                                 setState(() {
                                   _isEditingMode = true;
-                                  _selectedTemplate =
-                                      template['title'] as String;
-                                  _loadTemplate(template['title'] as String);
+                                  _selectedTemplate = (template['name'] ??
+                                      template['title'] ??
+                                      'Unknown Template') as String;
+                                  _loadKhonologyTemplate(
+                                      (template['id'] ?? '') as String);
                                 });
                               },
                               icon: const Icon(Icons.edit, size: 14),
@@ -930,7 +971,13 @@ class _TemplatesPageState extends State<TemplatesPage> {
         // Main Canvas
         Expanded(
           child: Container(
-            color: const Color(0xFFF8FAFC),
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/khonology_bg.jpg'),
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+              ),
+            ),
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(40),
               child: Center(
@@ -1135,7 +1182,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
                       ),
                       const SizedBox(width: 12),
                       const Text(
-                        'ProposeIt',
+                        'PROPOSIFY',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 32,
@@ -1810,21 +1857,27 @@ class _TemplatesPageState extends State<TemplatesPage> {
             ],
           ),
           // Data rows
-          ...(_proposalData['investment'] as List<Map<String, dynamic>>)
+          ...((_proposalData['investment'] as List<Map<String, dynamic>?>?) ??
+                  [])
+              .where((item) => item != null)
               .map((item) {
+            final safeItem = item!;
             return TableRow(
               decoration: BoxDecoration(
-                color:
-                    (_proposalData['investment'] as List).indexOf(item) % 2 == 0
-                        ? Colors.white
-                        : const Color(0xFFF9F9F9),
+                color: ((_proposalData['investment'] as List?) ?? [])
+                                .indexOf(item) %
+                            2 ==
+                        0
+                    ? Colors.white
+                    : const Color(0xFFF9F9F9),
               ),
               children: [
-                _buildTableCell(item['item']),
-                _buildTableCell(item['description']),
-                _buildTableCell(item['quantity'].toString()),
-                _buildTableCell('\$${item['unitPrice'].toStringAsFixed(2)}'),
-                _buildTableCell('\$${item['total'].toStringAsFixed(2)}'),
+                _buildTableCell(safeItem['item']?.toString() ?? ''),
+                _buildTableCell(safeItem['description']?.toString() ?? ''),
+                _buildTableCell(safeItem['quantity']?.toString() ?? '0'),
+                _buildTableCell(
+                    '\$${_safeFormatCurrency(safeItem['unitPrice'])}'),
+                _buildTableCell('\$${_safeFormatCurrency(safeItem['total'])}'),
               ],
             );
           }).toList(),
@@ -1837,7 +1890,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
               _buildTableCell(''),
               _buildTableCell(''),
               _buildTableCell(
-                  '\$${_proposalData['subtotal'].toStringAsFixed(2)}',
+                  '\$${_safeFormatCurrency(_proposalData['subtotal'])}',
                   isBold: true),
             ],
           ),
@@ -1848,7 +1901,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
               _buildTableCell(''),
               _buildTableCell(''),
               _buildTableCell(''),
-              _buildTableCell('\$${_proposalData['tax'].toStringAsFixed(2)}'),
+              _buildTableCell('\$${_safeFormatCurrency(_proposalData['tax'])}'),
             ],
           ),
           // Total
@@ -1859,13 +1912,24 @@ class _TemplatesPageState extends State<TemplatesPage> {
               _buildTableCell(''),
               _buildTableCell(''),
               _buildTableCell(''),
-              _buildTableCell('\$${_proposalData['total'].toStringAsFixed(2)}',
+              _buildTableCell(
+                  '\$${_safeFormatCurrency(_proposalData['total'])}',
                   isBold: true),
             ],
           ),
         ],
       ),
     );
+  }
+
+  String _safeFormatCurrency(dynamic value) {
+    if (value == null) return '0.00';
+    if (value is num) return value.toStringAsFixed(2);
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      return parsed?.toStringAsFixed(2) ?? '0.00';
+    }
+    return '0.00';
   }
 
   Widget _buildTableCell(String text,
@@ -3235,7 +3299,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
         Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: const Color(0xFF3498DB),
+          activeThumbColor: const Color(0xFF3498DB),
         ),
       ],
     );
@@ -3250,25 +3314,25 @@ class _TemplatesPageState extends State<TemplatesPage> {
           // Navigation logic based on label
           switch (label) {
             case 'Dashboard':
-              Navigator.pushNamed(context, '/dashboard');
+              Navigator.pushReplacementNamed(context, '/dashboard');
               break;
             case 'My Proposals':
-              Navigator.pushNamed(context, '/proposals');
+              Navigator.pushReplacementNamed(context, '/proposals');
               break;
             case 'Templates':
               // Already on templates page, do nothing
               break;
             case 'Content Library':
-              Navigator.pushNamed(context, '/content');
+              Navigator.pushReplacementNamed(context, '/content');
               break;
             case 'Collaboration':
-              Navigator.pushNamed(context, '/collaboration');
+              Navigator.pushReplacementNamed(context, '/collaboration');
               break;
             case 'Approvals Status':
-              Navigator.pushNamed(context, '/approvals');
+              Navigator.pushReplacementNamed(context, '/approvals');
               break;
             case 'Analytics (My Pipeline)':
-              Navigator.pushNamed(context, '/analytics');
+              Navigator.pushReplacementNamed(context, '/analytics');
               break;
             default:
               // Show a snackbar for unimplemented features
@@ -3288,11 +3352,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
           ),
           child: Row(
             children: [
-              SizedBox(
-                width: 54,
-                height: 54,
-                child: _navIconFor(label, isActive),
-              ),
+              Text(icon, style: const TextStyle(fontSize: 16)),
               const SizedBox(width: 12),
               Text(
                 label,
@@ -3308,147 +3368,167 @@ class _TemplatesPageState extends State<TemplatesPage> {
     );
   }
 
-  Widget _navIconFor(String label, bool isActive) {
-    String path;
-    switch (label) {
-      case 'Dashboard':
-        path = 'assets/images/Dahboard.png';
-        break;
-      case 'My Proposals':
-        path = 'assets/images/My_Proposals.png';
-        break;
-      case 'Templates':
-      case 'Content Library':
-        path = 'assets/images/content_library.png';
-        break;
-      case 'Collaboration':
-        path = 'assets/images/collaborations.png';
-        break;
-      case 'Approvals Status':
-      case 'Analytics (My Pipeline)':
-        path = 'assets/images/analytics.png';
-        break;
-      default:
-        path = 'assets/images/Dahboard.png';
-    }
-    return Image.asset(path, fit: BoxFit.contain);
+  List<Map<String, dynamic>> _getDefaultTemplates() {
+    return [
+      {
+        'id': '1',
+        'name': 'Professional Business Proposal',
+        'title': 'Professional Business Proposal',
+        'category': 'Proposals',
+        'description':
+            'Comprehensive professional proposal with branding, pricing tables, and signature blocks',
+        'author': 'System',
+        'date': 'Today',
+        'thumbnail': 'assets/images/software-development-proposal-template.jpg',
+        'icon': Icons.description,
+        'complexity': 'Medium',
+        'estimatedDuration': '2-4 weeks',
+      },
+      {
+        'id': '2',
+        'name': 'Marketing Campaign SOW',
+        'title': 'Marketing Campaign SOW',
+        'category': 'SOWs',
+        'description':
+            'Statement of work for marketing campaigns and strategies',
+        'author': 'Jane Smith',
+        'date': '1 week ago',
+        'thumbnail': 'assets/images/marketing-campaign-document-template.jpg',
+        'icon': Icons.campaign,
+        'complexity': 'Low',
+        'estimatedDuration': '1-2 weeks',
+      },
+      {
+        'id': '3',
+        'name': 'Consulting Services Contract',
+        'title': 'Consulting Services Contract',
+        'category': 'Contracts',
+        'description': 'Professional services contract template',
+        'author': 'Mike Johnson',
+        'date': '3 days ago',
+        'thumbnail': 'assets/images/consulting-contract-template.jpg',
+        'icon': Icons.handshake,
+        'complexity': 'Medium',
+        'estimatedDuration': '1-3 weeks',
+      },
+      {
+        'id': '4',
+        'name': 'Web Development Scope',
+        'title': 'Web Development Scope Document',
+        'category': 'SOWs',
+        'description': 'Detailed scope of work for web development projects',
+        'author': 'Sarah Wilson',
+        'date': '2 days ago',
+        'thumbnail': 'assets/images/web-development-scope-document.jpg',
+        'icon': Icons.web,
+        'complexity': 'Medium',
+        'estimatedDuration': '2-3 weeks',
+      },
+      {
+        'id': '5',
+        'name': 'Service Agreement Contract',
+        'title': 'Service Agreement Contract',
+        'category': 'Contracts',
+        'description': 'Comprehensive service agreement template',
+        'author': 'David Brown',
+        'date': '5 days ago',
+        'thumbnail': 'assets/images/service-agreement-contract-template.jpg',
+        'icon': Icons.assignment,
+        'complexity': 'High',
+        'estimatedDuration': '3-4 weeks',
+      },
+      {
+        'id': '6',
+        'name': 'Business Presentation',
+        'title': 'Business Presentation Template',
+        'category': 'Presentations',
+        'description': 'Professional business presentation template',
+        'author': 'Lisa Garcia',
+        'date': '1 week ago',
+        'thumbnail': 'assets/images/business-presentation-template.png',
+        'icon': Icons.slideshow,
+        'complexity': 'Low',
+        'estimatedDuration': '1 week',
+      },
+    ];
   }
 
-  void _loadTemplate(String templateName) {
-    // Load different template data based on template name
-    switch (templateName) {
-      case 'Software Development SOW':
+  void _loadCustomTemplates() async {
+    // Load custom templates from local storage
+    final customTemplates = await TemplateService.getCustomTemplates();
+    setState(() {
+      for (var template in customTemplates) {
+        if (!_templates.any((t) => t['id'] == template['id'])) {
+          _templates.add(template);
+        }
+      }
+    });
+  }
+
+  void _loadKhonologyTemplates() {
+    // Load Khonology-standard templates
+    final khonologyTemplates = KhonologyTemplatesService.getAllTemplates();
+    setState(() {
+      // Add Khonology templates to the existing list
+      for (var template in khonologyTemplates) {
+        if (!_templates.any((t) => t['id'] == template['id'])) {
+          // Normalize the template data to ensure all required fields are present
+          final normalizedTemplate = {
+            'id': template['id'] ?? 'unknown',
+            'name': template['name'] ?? 'Unknown Template',
+            'title': template['name'] ?? 'Unknown Template',
+            'category': template['category'] ?? 'Unknown',
+            'description':
+                template['description'] ?? 'No description available',
+            'author': 'Khonology',
+            'date': 'Recently',
+            'thumbnail':
+                template['thumbnail'] ?? 'assets/images/placeholder.jpg',
+            'icon': template['icon'] ?? Icons.description,
+            'complexity': template['complexity'] ?? 'Medium',
+            'estimatedDuration': template['estimatedDuration'] ?? '3-6 months',
+            'industry': template['industry'] ?? 'Technology',
+            'template': template['template'] ?? {},
+          };
+          _templates.add(normalizedTemplate);
+        }
+      }
+    });
+  }
+
+  void _loadKhonologyTemplate(String templateId) {
+    final template = KhonologyTemplatesService.getTemplateById(templateId);
+    if (template != null && template['template'] != null) {
+      final templateData = template['template'] as Map<String, dynamic>;
+      setState(() {
+        // Ensure all required fields have default values
         _proposalData = {
-          'title': 'Software Development Statement of Work',
-          'proposalNumber': 'SOW-2023-001',
-          'date': 'October 25, 2023',
-          'companyName': 'Tech Solutions Inc.',
-          'companyAddress':
-              '123 Tech Street, Suite 200\nSan Francisco, CA 94105',
-          'companyEmail': 'contact@techsolutions.com',
-          'companyPhone': '(555) 123-4567',
-          'clientName': 'Global Enterprises',
-          'clientContact': 'Jane Smith, CTO',
-          'clientAddress': '456 Corporate Blvd\nChicago, IL 60601',
-          'clientEmail': 'jane.smith@globalent.com',
-          'executiveSummary':
-              'This Statement of Work outlines the development of a custom software solution to meet your business requirements. Our team will deliver a robust, scalable application that integrates seamlessly with your existing systems.',
-          'proposedSolution':
-              'We will develop a comprehensive software solution including:\n• Frontend web application with modern UI/UX\n• Backend API with secure authentication\n• Database design and implementation\n• Integration with third-party services\n• Comprehensive testing and quality assurance\n• Deployment and ongoing maintenance',
-          'investment': [
-            {
-              'item': 'Frontend Development',
-              'description': 'React-based web application',
-              'quantity': 1,
-              'unitPrice': 15000.00,
-              'total': 15000.00
-            },
-            {
-              'item': 'Backend Development',
-              'description': 'Node.js API and database',
-              'quantity': 1,
-              'unitPrice': 20000.00,
-              'total': 20000.00
-            },
-            {
-              'item': 'UI/UX Design',
-              'description': 'Custom design and user experience',
-              'quantity': 1,
-              'unitPrice': 8000.00,
-              'total': 8000.00
-            },
-            {
-              'item': 'Testing & QA',
-              'description': 'Comprehensive testing suite',
-              'quantity': 1,
-              'unitPrice': 5000.00,
-              'total': 5000.00
-            },
-          ],
-          'subtotal': 48000.00,
-          'tax': 3840.00,
-          'total': 51840.00,
+          'title': templateData['title'] ?? 'Business Proposal Template',
+          'proposalNumber': templateData['proposalNumber'] ?? 'TEMPLATE-001',
+          'date': templateData['date'] ?? 'Today',
+          'companyName': templateData['companyName'] ?? 'Company Name',
+          'companyAddress': templateData['companyAddress'] ?? 'Company Address',
+          'companyEmail': templateData['companyEmail'] ?? 'contact@company.com',
+          'companyPhone': templateData['companyPhone'] ?? '(555) 000-0000',
+          'clientName': templateData['clientName'] ?? 'Client Name',
+          'clientContact': templateData['clientContact'] ?? 'Client Contact',
+          'clientAddress': templateData['clientAddress'] ?? 'Client Address',
+          'clientEmail': templateData['clientEmail'] ?? 'client@company.com',
+          'executiveSummary': templateData['executiveSummary'] ??
+              'Executive summary not available.',
+          'proposedSolution': templateData['proposedSolution'] ??
+              'Proposed solution not available.',
+          'investment': templateData['investment'] ?? [],
+          'subtotal': templateData['subtotal'] ?? 0.0,
+          'tax': templateData['tax'] ?? 0.0,
+          'total': templateData['total'] ?? 0.0,
           'terms':
-              'This SOW is valid for 60 days. Payment terms are 40% upon signing, 40% at milestone completion, and 20% upon final delivery. Project timeline is 12-16 weeks from project kickoff.',
+              templateData['terms'] ?? 'Terms and conditions not available.',
+          'timeline': templateData['timeline'] ?? [],
+          'deliverables': templateData['deliverables'] ?? [],
+          'successMetrics': templateData['successMetrics'] ?? [],
         };
-        break;
-      case 'Marketing Campaign SOW':
-        _proposalData = {
-          'title': 'Marketing Campaign Statement of Work',
-          'proposalNumber': 'SOW-2023-002',
-          'date': 'October 25, 2023',
-          'companyName': 'Creative Marketing Agency',
-          'companyAddress': '789 Marketing Ave, Floor 5\nNew York, NY 10001',
-          'companyEmail': 'hello@creativemarketing.com',
-          'companyPhone': '(555) 987-6543',
-          'clientName': 'Retail Plus',
-          'clientContact': 'Mike Johnson, Marketing Director',
-          'clientAddress': '321 Commerce Street\nLos Angeles, CA 90210',
-          'clientEmail': 'mike.johnson@retailplus.com',
-          'executiveSummary':
-              'This Statement of Work outlines a comprehensive digital marketing campaign designed to increase brand awareness, drive traffic, and generate leads for your business.',
-          'proposedSolution':
-              'Our marketing campaign will include:\n• Social media strategy and content creation\n• Google Ads and Facebook advertising\n• Email marketing automation\n• SEO optimization and content marketing\n• Analytics and performance tracking\n• Monthly reporting and optimization',
-          'investment': [
-            {
-              'item': 'Campaign Strategy',
-              'description': 'Comprehensive marketing strategy development',
-              'quantity': 1,
-              'unitPrice': 5000.00,
-              'total': 5000.00
-            },
-            {
-              'item': 'Content Creation',
-              'description': 'Social media posts, blogs, and graphics',
-              'quantity': 1,
-              'unitPrice': 8000.00,
-              'total': 8000.00
-            },
-            {
-              'item': 'Paid Advertising',
-              'description': 'Google Ads and Facebook campaigns',
-              'quantity': 1,
-              'unitPrice': 12000.00,
-              'total': 12000.00
-            },
-            {
-              'item': 'Monthly Management',
-              'description': 'Ongoing campaign management (3 months)',
-              'quantity': 3,
-              'unitPrice': 3000.00,
-              'total': 9000.00
-            },
-          ],
-          'subtotal': 34000.00,
-          'tax': 2720.00,
-          'total': 36720.00,
-          'terms':
-              'This SOW is valid for 30 days. Payment terms are 50% upon signing and 50% upon campaign launch. Campaign duration is 3 months with monthly reporting.',
-        };
-        break;
-      default:
-        // Keep the default business proposal template
-        break;
+      });
     }
   }
 
@@ -3658,8 +3738,38 @@ class _TemplatesPageState extends State<TemplatesPage> {
   }
 
   void _showImageGalleryDialog() {
-    final List<Map<String, String>> galleryImages =
-        AssetService.getGalleryImages();
+    final List<Map<String, String>> galleryImages = [
+      {
+        'url':
+            'https://images.unsplash.com/photo-1497215728101-856f4ea42174?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
+        'caption': 'Business Meeting'
+      },
+      {
+        'url':
+            'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
+        'caption': 'Team Collaboration'
+      },
+      {
+        'url':
+            'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
+        'caption': 'Technology'
+      },
+      {
+        'url':
+            'https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
+        'caption': 'Training Session'
+      },
+      {
+        'url':
+            'https://images.unsplash.com/photo-1568992687947-868a62a9f521?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
+        'caption': 'Support Team'
+      },
+      {
+        'url':
+            'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
+        'caption': 'Security'
+      },
+    ];
 
     showDialog(
       context: context,
@@ -3708,10 +3818,16 @@ class _TemplatesPageState extends State<TemplatesPage> {
                               topLeft: Radius.circular(8),
                               topRight: Radius.circular(8),
                             ),
-                            child: AssetService.buildImageWidget(
-                              image['localPath'] ?? image['url']!,
+                            child: Image.network(
+                              image['url']!,
                               width: double.infinity,
                               fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Center(
+                                  child: Icon(Icons.broken_image,
+                                      size: 32, color: Colors.grey),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -3863,10 +3979,1139 @@ class _TemplatesPageState extends State<TemplatesPage> {
     );
   }
 
+  void _showCreateTemplateDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.8),
+      builder: (context) => const CreateTemplateDialog(),
+    );
+  }
+
   @override
   void dispose() {
     _companySignatureController.dispose();
     _clientSignatureController.dispose();
+    super.dispose();
+  }
+}
+
+class CreateTemplateDialog extends StatefulWidget {
+  const CreateTemplateDialog({super.key});
+
+  @override
+  State<CreateTemplateDialog> createState() => _CreateTemplateDialogState();
+}
+
+class _CreateTemplateDialogState extends State<CreateTemplateDialog> {
+  int _currentStep = 1;
+  final PageController _pageController = PageController();
+
+  // Form data
+  final Map<String, dynamic> _formData = {
+    'title': '',
+    'category': '',
+    'description': '',
+    'clientName': '',
+    'clientEmail': '',
+    'clientCompany': '',
+    'projectDescription': '',
+    'estimatedValue': '',
+    'dueDate': '',
+  };
+
+  final List<String> _selectedContentBlocks = [];
+
+  // Available content blocks (mock data - in real app, fetch from API)
+  final List<Map<String, dynamic>> _contentBlocks = [
+    {
+      'id': 1,
+      'title': 'Khonology Company Profile',
+      'category': 'Company Profile',
+      'selected': true
+    },
+    {
+      'id': 2,
+      'title': 'Vision & Mission Statement',
+      'category': 'Company Profile',
+      'selected': true
+    },
+    {
+      'id': 3,
+      'title': 'Leadership Team Bio: Dapo Adeyemo',
+      'category': 'Team Bio',
+      'selected': false
+    },
+    {
+      'id': 4,
+      'title': 'Leadership Team Bio: Africa Nkosi',
+      'category': 'Team Bio',
+      'selected': false
+    },
+    {
+      'id': 5,
+      'title': 'Delivery Framework',
+      'category': 'Proposal Module',
+      'selected': true
+    },
+    {
+      'id': 6,
+      'title': 'Services Offering',
+      'category': 'Services',
+      'selected': true
+    },
+    {
+      'id': 7,
+      'title': 'Standard Terms & Conditions',
+      'category': 'Legal / Terms',
+      'selected': true
+    },
+  ];
+
+  final List<Map<String, dynamic>> _steps = [
+    {'id': 1, 'name': 'Basic Info', 'icon': Icons.description_outlined},
+    {'id': 2, 'name': 'Client Details', 'icon': Icons.person_outline},
+    {'id': 3, 'name': 'Content Selection', 'icon': Icons.settings_outlined},
+    {'id': 4, 'name': 'Review', 'icon': Icons.visibility_outlined},
+  ];
+
+  void _nextStep() {
+    if (_currentStep < _steps.length) {
+      setState(() => _currentStep++);
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  void _previousStep() {
+    if (_currentStep > 1) {
+      setState(() => _currentStep--);
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  void _createTemplate() {
+    // Validate required fields
+    if (_formData['title']?.toString().trim().isEmpty ?? true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a template title'),
+          backgroundColor: Color(0xFFE74C3C),
+        ),
+      );
+      return;
+    }
+
+    if (_formData['category']?.toString().trim().isEmpty ?? true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a template category'),
+          backgroundColor: Color(0xFFE74C3C),
+        ),
+      );
+      return;
+    }
+
+    if (_formData['clientName']?.toString().trim().isEmpty ?? true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter client name'),
+          backgroundColor: Color(0xFFE74C3C),
+        ),
+      );
+      return;
+    }
+
+    // Create template data
+    final templateData = _createTemplateData();
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        ),
+      ),
+    );
+
+    // Simulate API call with delay
+    Future.delayed(const Duration(seconds: 2), () async {
+      Navigator.of(context).pop(); // Close loading dialog
+
+      // Create the template
+      final success = await _saveTemplate(templateData);
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Template "${_formData['title']}" created successfully!'),
+            backgroundColor: const Color(0xFF2ECC71),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        Navigator.of(context).pop(); // Close create template dialog
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to create template. Please try again.'),
+            backgroundColor: Color(0xFFE74C3C),
+          ),
+        );
+      }
+    });
+  }
+
+  Map<String, dynamic> _createTemplateData() {
+    final now = DateTime.now();
+    final templateId = 'custom_${now.millisecondsSinceEpoch}';
+
+    // Calculate totals from investment items
+    final investmentItems = _createInvestmentItems();
+    final subtotal = investmentItems.fold<double>(
+        0.0, (sum, item) => sum + (item['total'] as double));
+    final tax = subtotal * 0.08; // 8% tax
+    final total = subtotal + tax;
+
+    return {
+      'id': templateId,
+      'name': _formData['title'],
+      'category': _formData['category'],
+      'description': 'Custom template created by user',
+      'industry': 'Custom',
+      'complexity': _determineComplexity(),
+      'estimatedDuration': _formData['dueDate']?.isNotEmpty == true
+          ? _formData['dueDate']
+          : '3-6 months',
+      'createdAt': now.toIso8601String(),
+      'createdBy': 'Current User', // In real app, get from auth service
+      'template': {
+        'title': _formData['title'],
+        'proposalNumber':
+            'CUSTOM-${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+        'date': '${now.day}/${now.month}/${now.year}',
+        'companyName': 'Khonology Solutions',
+        'companyAddress': '123 Innovation Drive\nTech City, TC 12345',
+        'companyEmail': 'proposals@khonology.com',
+        'companyPhone': '+1 (555) 123-4567',
+        'clientName': _formData['clientName'] ?? 'Client Name',
+        'clientContact': _formData['clientEmail']?.isNotEmpty == true
+            ? 'Contact Person'
+            : 'Client Contact',
+        'clientAddress': 'Client Address\nCity, State ZIP',
+        'clientEmail': _formData['clientEmail'] ?? 'client@company.com',
+        'executiveSummary': _createExecutiveSummary(),
+        'proposedSolution': _createProposedSolution(),
+        'investment': investmentItems,
+        'subtotal': subtotal,
+        'tax': tax,
+        'total': total,
+        'terms': _createTermsAndConditions(),
+        'timeline': _createTimeline(),
+        'deliverables': _createDeliverables(),
+        'successMetrics': _createSuccessMetrics(),
+        'selectedContentBlocks': _selectedContentBlocks,
+        'projectDescription': _formData['projectDescription'] ?? '',
+        'estimatedValue': _formData['estimatedValue'] ?? '',
+      }
+    };
+  }
+
+  List<Map<String, dynamic>> _createInvestmentItems() {
+    final baseItems = [
+      {
+        'item': 'Project Planning',
+        'description': 'Initial planning and requirements analysis',
+        'quantity': 1,
+        'unitPrice': 5000.00,
+        'total': 5000.00
+      },
+      {
+        'item': 'Development',
+        'description': 'Core development and implementation',
+        'quantity': 1,
+        'unitPrice': 15000.00,
+        'total': 15000.00
+      },
+      {
+        'item': 'Testing & QA',
+        'description': 'Quality assurance and testing',
+        'quantity': 1,
+        'unitPrice': 3000.00,
+        'total': 3000.00
+      },
+      {
+        'item': 'Deployment',
+        'description': 'Deployment and configuration',
+        'quantity': 1,
+        'unitPrice': 2000.00,
+        'total': 2000.00
+      }
+    ];
+
+    // Add custom items based on selected content blocks
+    if (_selectedContentBlocks.contains('Khonology Company Profile')) {
+      baseItems.add({
+        'item': 'Company Profile Integration',
+        'description': 'Custom company profile setup',
+        'quantity': 1,
+        'unitPrice': 1000.00,
+        'total': 1000.00
+      });
+    }
+
+    if (_selectedContentBlocks.contains('Delivery Framework')) {
+      baseItems.add({
+        'item': 'Delivery Framework Setup',
+        'description': 'Khonology delivery framework implementation',
+        'quantity': 1,
+        'unitPrice': 2000.00,
+        'total': 2000.00
+      });
+    }
+
+    if (_selectedContentBlocks.contains('Services Offering')) {
+      baseItems.add({
+        'item': 'Services Configuration',
+        'description': 'Services offering configuration',
+        'quantity': 1,
+        'unitPrice': 1500.00,
+        'total': 1500.00
+      });
+    }
+
+    return baseItems;
+  }
+
+  String _determineComplexity() {
+    final contentBlockCount = _selectedContentBlocks.length;
+    if (contentBlockCount >= 5) return 'High';
+    if (contentBlockCount >= 3) return 'Medium';
+    return 'Low';
+  }
+
+  String _createExecutiveSummary() {
+    return '''
+We are pleased to present this comprehensive proposal for ${_formData['title']}. Our approach combines industry best practices with proven methodologies to deliver measurable business outcomes.
+
+${_formData['projectDescription']?.isNotEmpty == true ? _formData['projectDescription'] : 'This project will help your organization achieve its strategic objectives through innovative solutions and expert implementation.'}
+
+Our solution includes:
+• Strategic alignment with your business objectives
+• Proven methodologies and best practices
+• Comprehensive project management
+• Quality assurance and testing
+• Ongoing support and maintenance
+
+This proposal outlines our recommended approach, timeline, and investment required to successfully deliver your project.
+    ''';
+  }
+
+  String _createProposedSolution() {
+    return '''
+## Project Implementation Framework
+
+### Phase 1: Planning & Setup (Weeks 1-2)
+- Requirements finalization and documentation
+- Project team assembly and role definition
+- Development environment setup
+- Initial stakeholder meetings and alignment
+
+### Phase 2: Development & Implementation (Weeks 3-8)
+- Core development and feature implementation
+- Integration with existing systems
+- Regular progress reviews and feedback sessions
+- Quality assurance and testing
+
+### Phase 3: Testing & Refinement (Weeks 9-10)
+- Comprehensive testing and bug fixes
+- User acceptance testing
+- Performance optimization
+- Documentation and training materials
+
+### Phase 4: Deployment & Launch (Weeks 11-12)
+- Production deployment
+- User training and onboarding
+- Go-live support and monitoring
+- Post-launch optimization
+    ''';
+  }
+
+  String _createTermsAndConditions() {
+    return '''
+This proposal is valid for 30 days from the date of issue. Payment terms are 50% upon project initiation and 50% upon completion. 
+
+The project timeline is estimated at ${_formData['dueDate']?.isNotEmpty == true ? _formData['dueDate'] : '3-6 months'} from project kickoff.
+
+All work will be performed according to industry best practices and will include comprehensive testing and quality assurance.
+
+Intellectual property rights will be transferred to the client upon final payment, with Khonology retaining rights to methodologies and frameworks used.
+    ''';
+  }
+
+  List<Map<String, dynamic>> _createTimeline() {
+    return [
+      {'phase': 'Planning & Setup', 'duration': '2 weeks', 'start': 'Week 1'},
+      {
+        'phase': 'Development & Implementation',
+        'duration': '6 weeks',
+        'start': 'Week 3'
+      },
+      {
+        'phase': 'Testing & Refinement',
+        'duration': '2 weeks',
+        'start': 'Week 9'
+      },
+      {
+        'phase': 'Deployment & Launch',
+        'duration': '2 weeks',
+        'start': 'Week 11'
+      }
+    ];
+  }
+
+  List<String> _createDeliverables() {
+    final deliverables = [
+      'Project requirements and specifications document',
+      'Fully functional solution as specified',
+      'User documentation and training materials',
+      'Technical documentation and source code',
+      'Deployment and maintenance guides',
+      'Post-implementation support plan'
+    ];
+
+    // Add specific deliverables based on content blocks
+    if (_selectedContentBlocks.contains('Khonology Company Profile')) {
+      deliverables.add('Custom company profile integration');
+    }
+    if (_selectedContentBlocks.contains('Delivery Framework')) {
+      deliverables.add('Khonology delivery framework implementation');
+    }
+    if (_selectedContentBlocks.contains('Services Offering')) {
+      deliverables.add('Services offering configuration');
+    }
+
+    return deliverables;
+  }
+
+  List<String> _createSuccessMetrics() {
+    return [
+      '100% feature completion per requirements',
+      '99.9% system uptime and reliability',
+      'Sub-3 second response times for key operations',
+      '95% user satisfaction rating',
+      'Zero critical security vulnerabilities',
+      'On-time delivery within agreed timeline'
+    ];
+  }
+
+  Future<bool> _saveTemplate(Map<String, dynamic> templateData) async {
+    try {
+      // Save template using the TemplateService
+      final success = await TemplateService.saveTemplate(templateData);
+
+      if (success) {
+        // Optionally refresh the templates list
+        // You could call a method to reload templates here
+        print('Template saved successfully: ${templateData['name']}');
+      }
+
+      return success;
+    } catch (e) {
+      print('Error saving template: $e');
+      return false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.all(20),
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.height * 0.8,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFF27272A))),
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  ),
+                  const SizedBox(width: 16),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Create New Template',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Step 1 of 4',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Progress Steps
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: _steps.map((step) {
+                  final isActive = _currentStep == step['id'];
+                  final isCompleted = _currentStep > step['id'];
+                  final index = _steps.indexOf(step);
+
+                  return Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: isCompleted
+                                ? Colors.white
+                                : isActive
+                                    ? Colors.transparent
+                                    : Colors.transparent,
+                            border: Border.all(
+                              color: isCompleted || isActive
+                                  ? Colors.white
+                                  : const Color(0xFF3F3F46),
+                              width: 2,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Center(
+                            child: isCompleted
+                                ? const Icon(Icons.check,
+                                    color: Colors.black, size: 20)
+                                : Icon(
+                                    step['icon'] as IconData,
+                                    color: isActive
+                                        ? Colors.white
+                                        : const Color(0xFF71717A),
+                                    size: 20,
+                                  ),
+                          ),
+                        ),
+                        if (index < _steps.length - 1)
+                          Expanded(
+                            child: Container(
+                              height: 2,
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              color: isCompleted
+                                  ? Colors.white
+                                  : const Color(0xFF3F3F46),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+
+            // Step Content
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildBasicInfoStep(),
+                  _buildClientDetailsStep(),
+                  _buildContentSelectionStep(),
+                  _buildReviewStep(),
+                ],
+              ),
+            ),
+
+            // Navigation Buttons
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0xFF27272A))),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  ElevatedButton(
+                    onPressed: _currentStep == 1 ? null : _previousStep,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFF3F3F46)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.arrow_back, size: 16),
+                        SizedBox(width: 8),
+                        Text('Previous'),
+                      ],
+                    ),
+                  ),
+                  if (_currentStep == _steps.length)
+                    ElevatedButton(
+                      onPressed: _createTemplate,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                      ),
+                      child: const Text('Create Template'),
+                    )
+                  else
+                    ElevatedButton(
+                      onPressed: _nextStep,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Next'),
+                          SizedBox(width: 8),
+                          Icon(Icons.arrow_forward, size: 16),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBasicInfoStep() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Template Information',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Template Title
+          TextFormField(
+            decoration: const InputDecoration(
+              labelText: 'Template Title',
+              labelStyle: TextStyle(color: Colors.grey),
+              border: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white),
+              ),
+            ),
+            style: const TextStyle(color: Colors.white),
+            onChanged: (value) => _formData['title'] = value,
+          ),
+          const SizedBox(height: 16),
+
+          // Template Selection
+          const Text(
+            'Select Template Type',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 1.5,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+              ),
+              itemCount: KhonologyTemplatesService.getAllTemplates().length,
+              itemBuilder: (context, index) {
+                final template =
+                    KhonologyTemplatesService.getAllTemplates()[index];
+                final isSelected = _formData['category'] == template['name'];
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _formData['category'] = template['name'];
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color:
+                          isSelected ? Colors.white : const Color(0xFF18181B),
+                      border: Border.all(
+                        color:
+                            isSelected ? Colors.white : const Color(0xFF3F3F46),
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            template['name'],
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? Colors.black : Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            template['description'],
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isSelected
+                                  ? Colors.grey[600]
+                                  : Colors.grey[400],
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClientDetailsStep() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Client Information',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Client Name
+          TextFormField(
+            decoration: const InputDecoration(
+              labelText: 'Client Name',
+              labelStyle: TextStyle(color: Colors.grey),
+              border: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white),
+              ),
+            ),
+            style: const TextStyle(color: Colors.white),
+            onChanged: (value) => _formData['clientName'] = value,
+          ),
+          const SizedBox(height: 12),
+
+          // Client Email
+          TextFormField(
+            decoration: const InputDecoration(
+              labelText: 'Client Email',
+              labelStyle: TextStyle(color: Colors.grey),
+              border: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white),
+              ),
+            ),
+            style: const TextStyle(color: Colors.white),
+            onChanged: (value) => _formData['clientEmail'] = value,
+          ),
+          const SizedBox(height: 12),
+
+          // Company Name
+          TextFormField(
+            decoration: const InputDecoration(
+              labelText: 'Company Name',
+              labelStyle: TextStyle(color: Colors.grey),
+              border: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white),
+              ),
+            ),
+            style: const TextStyle(color: Colors.white),
+            onChanged: (value) => _formData['clientCompany'] = value,
+          ),
+          const SizedBox(height: 12),
+
+          // Project Description
+          TextFormField(
+            decoration: const InputDecoration(
+              labelText: 'Project Description',
+              labelStyle: TextStyle(color: Colors.grey),
+              border: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFF3F3F46)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white),
+              ),
+            ),
+            style: const TextStyle(color: Colors.white),
+            maxLines: 2,
+            onChanged: (value) => _formData['projectDescription'] = value,
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  decoration: const InputDecoration(
+                    labelText: 'Estimated Value',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    border: OutlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF3F3F46)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF3F3F46)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white),
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  onChanged: (value) => _formData['estimatedValue'] = value,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextFormField(
+                  decoration: const InputDecoration(
+                    labelText: 'Due Date',
+                    labelStyle: TextStyle(color: Colors.grey),
+                    border: OutlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF3F3F46)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Color(0xFF3F3F46)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white),
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  onChanged: (value) => _formData['dueDate'] = value,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContentSelectionStep() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Select Content Blocks',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Choose which content blocks to include in your template',
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _contentBlocks.length,
+              itemBuilder: (context, index) {
+                final block = _contentBlocks[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF18181B),
+                    border: Border.all(color: const Color(0xFF3F3F46)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: CheckboxListTile(
+                    title: Text(
+                      block['title'],
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      block['category'],
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                    value: block['selected'],
+                    onChanged: (value) {
+                      setState(() {
+                        block['selected'] = value ?? false;
+                        if (value == true) {
+                          _selectedContentBlocks.add(block['title']);
+                        } else {
+                          _selectedContentBlocks.remove(block['title']);
+                        }
+                      });
+                    },
+                    activeColor: Colors.white,
+                    checkColor: Colors.black,
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewStep() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Review Your Template',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Please review all details before creating your template',
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Template Details
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF18181B),
+                      border: Border.all(color: const Color(0xFF3F3F46)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Template Details',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildReviewItem('Title', _formData['title']),
+                        _buildReviewItem('Category', _formData['category']),
+                        _buildReviewItem(
+                            'Estimated Value', _formData['estimatedValue']),
+                        _buildReviewItem('Due Date', _formData['dueDate']),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Client Information
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF18181B),
+                      border: Border.all(color: const Color(0xFF3F3F46)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Client Information',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildReviewItem('Name', _formData['clientName']),
+                        _buildReviewItem('Email', _formData['clientEmail']),
+                        _buildReviewItem('Company', _formData['clientCompany']),
+                        _buildReviewItem(
+                            'Description', _formData['projectDescription']),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Selected Content Blocks
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF18181B),
+                      border: Border.all(color: const Color(0xFF3F3F46)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Selected Content Blocks',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        if (_selectedContentBlocks.isEmpty)
+                          const Text(
+                            'No content blocks selected',
+                            style: TextStyle(color: Colors.grey),
+                          )
+                        else
+                          ..._selectedContentBlocks.map(
+                            (block) => Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                '• $block',
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                color: Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value.isEmpty ? 'Not specified' : value,
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
     super.dispose();
   }
 }

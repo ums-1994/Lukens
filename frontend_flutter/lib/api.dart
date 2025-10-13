@@ -44,11 +44,18 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchProposals() async {
     try {
-      final r =
-          await http.get(Uri.parse("$baseUrl/proposals"), headers: _headers);
+      final r = await http.get(
+        Uri.parse("$baseUrl/proposals"),
+        headers: _headers,
+      );
       if (r.statusCode == 200) {
-        proposals = jsonDecode(r.body);
+        final data = jsonDecode(r.body);
+        proposals = List<dynamic>.from(data);
+
+        // Calculate dashboard counts from real data
+        _updateDashboardCounts();
       } else {
+        print('Error fetching proposals: ${r.statusCode} - ${r.body}');
         proposals = [];
       }
     } catch (e) {
@@ -57,22 +64,20 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _updateDashboardCounts() {
+    final counts = <String, int>{};
+    for (final proposal in proposals) {
+      final status = proposal['status'] ?? 'Draft';
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+    dashboardCounts = counts;
+  }
+
   Future<void> fetchDashboard() async {
-    try {
-      final r = await http.get(
-        Uri.parse("$baseUrl/dashboard_stats"),
-        headers: _headers,
-      );
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        dashboardCounts = Map<String, dynamic>.from(data['counts'] ?? {});
-      } else {
-        // Fallback to empty counts
-        dashboardCounts = {};
-      }
-    } catch (e) {
-      print('Error fetching dashboard: $e');
-      dashboardCounts = {};
+    // Dashboard counts are now calculated from real proposal data in fetchProposals
+    // This method is kept for compatibility but the real counts come from _updateDashboardCounts()
+    if (proposals.isNotEmpty) {
+      _updateDashboardCounts();
     }
   }
 
@@ -89,6 +94,88 @@ class AppState extends ChangeNotifier {
     await fetchProposals();
     await fetchDashboard();
     notifyListeners();
+  }
+
+  Future<void> updateProposal(
+      String proposalId, Map<String, dynamic> data) async {
+    try {
+      final r = await http.put(
+        Uri.parse("$baseUrl/proposals/$proposalId"),
+        headers: _headers,
+        body: jsonEncode(data),
+      );
+      if (r.statusCode == 200) {
+        await fetchProposals();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error updating proposal: $e');
+    }
+  }
+
+  Future<void> updateProposalStatus(String proposalId, String status) async {
+    try {
+      final r = await http.patch(
+        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+        headers: _headers,
+        body: jsonEncode({"status": status}),
+      );
+      if (r.statusCode == 200) {
+        await fetchProposals();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error updating proposal status: $e');
+    }
+  }
+
+  Future<List<dynamic>> getTemplates() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/templates"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data['templates'] ?? [];
+      }
+    } catch (e) {
+      print('Error fetching templates: $e');
+    }
+    return [];
+  }
+
+  Future<List<dynamic>> getContentModules() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/content-modules"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data['modules'] ?? [];
+      }
+    } catch (e) {
+      print('Error fetching content modules: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> analyzeProposalAI(
+      Map<String, dynamic> proposalData) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals/ai-analysis"),
+        headers: _headers,
+        body: jsonEncode(proposalData),
+      );
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error analyzing proposal with AI: $e');
+    }
+    return null;
   }
 
   Future<void> updateSections(Map<String, dynamic> updates) async {
@@ -149,126 +236,6 @@ class AppState extends ChangeNotifier {
     await fetchDashboard();
     notifyListeners();
     return null;
-  }
-
-  // RBAC Methods
-  Future<String?> approveProposal(String proposalId, {String comments = ""}) async {
-    try {
-      final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/approve?comments=$comments"),
-        headers: _headers,
-      );
-      if (r.statusCode >= 400) {
-        final data = jsonDecode(r.body);
-        return data["detail"] ?? "Approval failed";
-      }
-      await fetchProposals();
-      await fetchDashboard();
-      notifyListeners();
-      return null;
-    } catch (e) {
-      return "Error approving proposal: $e";
-    }
-  }
-
-  Future<String?> rejectProposal(String proposalId, {String comments = ""}) async {
-    try {
-      final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/reject?comments=$comments"),
-        headers: _headers,
-      );
-      if (r.statusCode >= 400) {
-        final data = jsonDecode(r.body);
-        return data["detail"] ?? "Rejection failed";
-      }
-      await fetchProposals();
-      await fetchDashboard();
-      notifyListeners();
-      return null;
-    } catch (e) {
-      return "Error rejecting proposal: $e";
-    }
-  }
-
-  Future<String?> sendToClient(String proposalId) async {
-    try {
-      final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
-        headers: _headers,
-      );
-      if (r.statusCode >= 400) {
-        final data = jsonDecode(r.body);
-        return data["detail"] ?? "Send to client failed";
-      }
-      await fetchProposals();
-      await fetchDashboard();
-      notifyListeners();
-      return null;
-    } catch (e) {
-      return "Error sending to client: $e";
-    }
-  }
-
-  Future<String?> clientDeclineProposal(String proposalId, {String comments = ""}) async {
-    try {
-      final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/client_decline?comments=$comments"),
-        headers: _headers,
-      );
-      if (r.statusCode >= 400) {
-        final data = jsonDecode(r.body);
-        return data["detail"] ?? "Decline failed";
-      }
-      await fetchProposals();
-      await fetchDashboard();
-      notifyListeners();
-      return null;
-    } catch (e) {
-      return "Error declining proposal: $e";
-    }
-  }
-
-  Future<void> trackClientView(String proposalId) async {
-    try {
-      await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/client_view"),
-        headers: _headers,
-      );
-    } catch (e) {
-      print('Error tracking client view: $e');
-    }
-  }
-
-  Future<List<dynamic>> getPendingApprovals() async {
-    try {
-      final r = await http.get(
-        Uri.parse("$baseUrl/proposals/pending_approval"),
-        headers: _headers,
-      );
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        return data["proposals"] ?? [];
-      }
-    } catch (e) {
-      print('Error fetching pending approvals: $e');
-    }
-    return [];
-  }
-
-  Future<List<dynamic>> getMyProposals() async {
-    try {
-      final r = await http.get(
-        Uri.parse("$baseUrl/proposals/my_proposals"),
-        headers: _headers,
-      );
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        return data["proposals"] ?? [];
-      }
-    } catch (e) {
-      print('Error fetching my proposals: $e');
-    }
-    return [];
   }
 
   Future<String?> requestEsign() async {
@@ -460,61 +427,6 @@ class AppState extends ChangeNotifier {
     authToken = null;
     currentUser = null;
     notifyListeners();
-  }
-
-  // ---------------- AI Methods ----------------
-  Future<String> aiChat({
-    String? provider,
-    String? model,
-    required List<Map<String, String>> messages,
-  }) async {
-    final r = await http.post(
-      Uri.parse("$baseUrl/ai/chat"),
-      headers: _headers,
-      body: jsonEncode({
-        if (provider != null) "provider": provider,
-        if (model != null) "model": model,
-        "messages": messages,
-      }),
-    );
-    if (r.statusCode == 200) {
-      final data = jsonDecode(r.body);
-      return (data["reply"] ?? "").toString();
-    } else {
-      throw Exception("AI chat failed: ${r.statusCode} ${r.body}");
-    }
-  }
-
-  Future<String> aiGenerateSow({
-    String? provider,
-    String? model,
-    required String title,
-    required String client,
-    List<String> scopePoints = const [],
-    List<String> constraints = const [],
-    List<String> assumptions = const [],
-    List<String> risks = const [],
-  }) async {
-    final r = await http.post(
-      Uri.parse("$baseUrl/ai/generate-sow"),
-      headers: _headers,
-      body: jsonEncode({
-        if (provider != null) "provider": provider,
-        if (model != null) "model": model,
-        "title": title,
-        "client": client,
-        "scope_points": scopePoints,
-        "constraints": constraints,
-        "assumptions": assumptions,
-        "risks": risks,
-      }),
-    );
-    if (r.statusCode == 200) {
-      final data = jsonDecode(r.body);
-      return (data["content"] ?? "").toString();
-    } else {
-      throw Exception("AI generate SOW failed: ${r.statusCode} ${r.body}");
-    }
   }
 
   Future<Map<String, dynamic>> verifyEmail(String token) async {
