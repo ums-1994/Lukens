@@ -3,7 +3,6 @@ import '../../services/smtp_auth_service.dart';
 import 'email_verification_page.dart';
 import 'dart:math' as math;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:sign_in_button/sign_in_button.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -539,17 +538,9 @@ class _RegisterPageState extends State<RegisterPage>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: SignInButton(
-                    Buttons.google,
-                    mini: true,
-                    onPressed: () {
-                      // TODO: wire to Google register/sign-in if desired
-                    },
-                  ),
-                ),
+                _googleIconButton(onTap: () {
+                  // TODO: wire to Google register/sign-in if desired
+                }),
                 const SizedBox(width: 16),
                 _buildSocialButton(const FaIcon(FontAwesomeIcons.windows, color: Color(0xFF0078D4), size: 22)),
                 const SizedBox(width: 16),
@@ -704,6 +695,32 @@ class _RegisterPageState extends State<RegisterPage>
         onPressed: () {
           // TODO: Social login
         },
+      ),
+    );
+  }
+
+  Widget _googleIconButton({VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        alignment: Alignment.center,
+        child: Image.asset(
+          'assets/images/google_g.png',
+          width: 22,
+          height: 22,
+          errorBuilder: (context, error, stack) => const FaIcon(
+            FontAwesomeIcons.google,
+            color: Color(0xFF4285F4),
+            size: 22,
+          ),
+        ),
       ),
     );
   }

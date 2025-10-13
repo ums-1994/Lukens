@@ -5,7 +5,6 @@ import '../../services/firebase_auth_service.dart';
 import '../../api.dart';
 import 'dart:math' as math;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:sign_in_button/sign_in_button.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -498,16 +497,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Google
-                SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: SignInButton(
-                    Buttons.google,
-                    mini: true,
-                    onPressed: _loginWithGoogle,
-                  ),
-                ),
+                // Google (exact multicolor "G" via asset)
+                _googleIconButton(onTap: _loginWithGoogle),
                 const SizedBox(width: 16),
                 _buildSocialButton(
                   const FaIcon(FontAwesomeIcons.windows, color: Color(0xFF0078D4), size: 22),
@@ -709,6 +700,32 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       child: IconButton(
         icon: icon,
         onPressed: onTap,
+      ),
+    );
+  }
+
+  Widget _googleIconButton({VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        alignment: Alignment.center,
+        child: Image.asset(
+          'assets/images/google_g.png', // place the multicolor G asset here
+          width: 22,
+          height: 22,
+          errorBuilder: (context, error, stack) => const FaIcon(
+            FontAwesomeIcons.google,
+            color: Color(0xFF4285F4),
+            size: 22,
+          ),
+        ),
       ),
     );
   }
