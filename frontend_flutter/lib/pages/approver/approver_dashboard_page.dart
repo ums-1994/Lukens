@@ -1,10 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../api.dart';
+// Direct page imports for navigation without named routes
+import 'reviewer_proposals_page.dart';
+import 'comments_feedback_page.dart';
+import 'approval_history_page.dart';
+import 'governance_checks_page.dart';
 
-class ApproverDashboardPage extends StatelessWidget {
+class ApproverDashboardPage extends StatefulWidget {
   const ApproverDashboardPage({super.key});
 
   @override
+  State<ApproverDashboardPage> createState() => _ApproverDashboardPageState();
+}
+
+class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final a = context.read<AppState>();
+      a.fetchReviewerApprovals();
+      a.fetchAdminMetrics();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F9),
       body: Column(
@@ -39,7 +62,7 @@ class ApproverDashboardPage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
                         ),
-                        child: const Padding(
+                        child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 15),
                           child: Row(
                             children: [
@@ -159,14 +182,20 @@ class ApproverDashboardPage extends StatelessWidget {
                           // My Approval Queue
                           _buildSection(
                             '📋 My Approval Queue',
-                            _buildApprovalQueue(),
+                            _buildApprovalQueue(context, app),
                           ),
                           const SizedBox(height: 20),
                           
                           // My Approval Metrics
                           _buildSection(
                             '📈 My Approval Metrics',
-                            _buildApproverMetrics(),
+                            _buildApproverMetrics(app),
+                          ),
+                          const SizedBox(height: 20),
+                          // Reviewer Performance (per reviewer approved/rejected counts)
+                          _buildSection(
+                            '🏅 Reviewer Performance',
+                            _buildReviewerPerformance(app),
                           ),
                           const SizedBox(height: 20),
                           
@@ -213,7 +242,26 @@ class ApproverDashboardPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: InkWell(
-        onTap: () {},
+        onTap: () {
+          // Use direct routes to avoid any named route/context issues
+          if (label == 'Proposals for Review') {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ReviewerProposalsPage()),
+            );
+          } else if (label == 'Comments & Feedback') {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CommentsFeedbackPage()),
+            );
+          } else if (label == 'Approval History') {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ApprovalHistoryPage()),
+            );
+          } else if (label == 'Governance Checks') {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const GovernanceChecksPage()),
+            );
+          }
+        },
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
@@ -238,13 +286,20 @@ class ApproverDashboardPage extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? const Color(0xFF2C3E50) : Colors.white,
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: isActive ? const Color(0xFF2C3E50) : Colors.white,
+                          fontSize: 14,
+                          fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                    // Badge for open comments (optional)
+                  ],
                 ),
               ),
             ],
@@ -288,28 +343,22 @@ class ApproverDashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildApprovalQueue() {
-    final approvalItems = [
-      {
-        'name': 'GlobalTech Inc. - Cloud Migration',
-        'meta': 'Submitted by: Sarah Johnson • Due: Today',
-      },
-      {
-        'name': 'NewVentures - Security Assessment',
-        'meta': 'Submitted by: Michael Chen • Due: Tomorrow',
-      },
-      {
-        'name': 'Axis Corp - Managed Services',
-        'meta': 'Submitted by: Emily Wong • Due: In 2 days',
-      },
-    ];
-
+  Widget _buildApprovalQueue(BuildContext context, AppState app) {
+    final items = app.reviewerApprovals;
+    if (items.isEmpty) {
+      return const Text('No proposals pending your review', style: TextStyle(color: Color(0xFF7F8C8D)));
+    }
     return Column(
-      children: approvalItems.map((item) => _buildApprovalItem(item['name'] as String, item['meta'] as String)).toList(),
+      children: items.map((p) {
+        final name = (p['title'] ?? 'Untitled').toString();
+        final meta = 'Client: ${(p['client'] ?? 'N/A')} • Status: ${(p['status'] ?? '')}';
+        final id = (p['id'] ?? '').toString();
+        return _buildApprovalItem(context, app, id, name, meta);
+      }).toList(),
     );
   }
 
-  Widget _buildApprovalItem(String name, String meta) {
+  Widget _buildApprovalItem(BuildContext context, AppState app, String id, String name, String meta) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -343,13 +392,25 @@ class ApproverDashboardPage extends StatelessWidget {
               ],
             ),
           ),
-                          Row(
+          Row(
             children: [
               _buildButton('View Details', const Color(0xFF3498DB), true),
               const SizedBox(width: 10),
-              _buildButton('Approve', const Color(0xFF3498DB), false),
+              GestureDetector(
+                onTap: () async {
+                  await app.reviewerApprove(id, reviewerId: 'reviewer-1');
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Approved')));
+                },
+                child: _buildButton('Approve', const Color(0xFF3498DB), false),
+              ),
               const SizedBox(width: 10),
-              _buildButton('Reject', const Color(0xFFE74C3C), false),
+              GestureDetector(
+                onTap: () async {
+                  await app.reviewerReject(id, reviewerId: 'reviewer-1');
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rejected')));
+                },
+                child: _buildButton('Reject', const Color(0xFFE74C3C), false),
+              ),
             ],
           ),
         ],
@@ -376,28 +437,60 @@ class ApproverDashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildApproverMetrics() {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      childAspectRatio: 2.5,
-      crossAxisSpacing: 15,
-      mainAxisSpacing: 15,
+  // -------- Metrics --------
+  Widget _buildApproverMetrics(AppState app) {
+    final m = app.adminMetrics;
+    final pending = (m['pending'] ?? 0).toString();
+    final avgSec = (m['avg_response_time_seconds'] ?? 0).toString();
+    final totalReviewed = (m['total_reviewed'] ?? 0).toString();
+    final openComments = (m['open_comments'] ?? 0).toString();
+    final flagged = (m['flagged_count'] ?? 0).toString();
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
       children: [
-        _buildMetricCard('Pending My Approval', '7', 'Proposals'),
-        _buildMetricCard('Avg. Response Time', '1.5', 'Days'),
-        _buildMetricCard('Approval Rate', '85%', 'This Month'),
-        _buildMetricCard('Rejected Proposals', '3', 'This Month'),
+        _buildMetricCard('Pending My Approval', pending, 'Proposals'),
+        _buildMetricCard('Avg. Response Time', avgSec, 'Seconds'),
+        _buildMetricCard('Total Reviewed', totalReviewed, 'Proposals'),
+        _buildMetricCard('Open Comments', openComments, 'Unresolved'),
+        _buildMetricCard('Flagged Proposals', flagged, 'Need Review'),
       ],
+    );
+  }
+
+  Widget _buildReviewerPerformance(AppState app) {
+    final stats = Map<String, dynamic>.from(app.adminMetrics['reviewer_stats'] ?? {});
+    if (stats.isEmpty) {
+      return const Text('No reviewer activity yet', style: TextStyle(color: Color(0xFF7F8C8D)));
+    }
+    final rows = stats.entries.map((e) {
+      final rid = e.key;
+      final m = Map<String, dynamic>.from(e.value as Map);
+      final approved = (m['approved'] ?? 0).toString();
+      final rejected = (m['rejected'] ?? 0).toString();
+      return DataRow(cells: [
+        DataCell(Text(rid)),
+        DataCell(Text(approved)),
+        DataCell(Text(rejected)),
+      ]);
+    }).toList();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(columns: const [
+        DataColumn(label: Text('Reviewer')),
+        DataColumn(label: Text('Approved')),
+        DataColumn(label: Text('Rejected')),
+      ], rows: rows),
     );
   }
 
   Widget _buildMetricCard(String title, String value, String subtitle) {
     return Container(
+      width: 260,
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
       ),
       child: Padding(
         padding: const EdgeInsets.all(15),
@@ -412,11 +505,12 @@ class ApproverDashboardPage extends StatelessWidget {
                 color: Color(0xFF2C3E50),
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       value,

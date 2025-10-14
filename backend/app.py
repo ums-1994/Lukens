@@ -4,6 +4,15 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any, Literal
 import json, os, uuid, time, sqlite3
+import urllib.request, urllib.error
+# Load environment variables from a .env file if present
+try:
+    from dotenv import load_dotenv, find_dotenv
+    _dotenv = find_dotenv(usecwd=True) or os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    load_dotenv(_dotenv)
+except Exception:
+    # If python-dotenv is not installed yet, env vars must come from the shell
+    pass
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.pdfgen import canvas
@@ -20,6 +29,7 @@ import psycopg2
 import psycopg2.extras
 import tempfile
 from settings import router as settings_router
+from reviewer_routes import router as reviewer_router
 
 BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, "storage.json")
@@ -2939,3 +2949,101 @@ def create_esign_request(pid: str, payload: dict = Body({})):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
+# ---- AI Routes (appended by automation) ----
+# Minimal Ollama/Gemini chat endpoints to support frontend /ai/chat calls
+try:
+    import google.generativeai as _genai
+except Exception:
+    _genai = None
+import httpx as _httpx
+from typing import Literal as _Literal
+from pydantic import BaseModel as _BaseModel
+
+_AI_PROVIDER_DEFAULT = os.getenv("AI_PROVIDER", "ollama").lower()
+_OLLAMA_MODEL_DEFAULT = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+_GEMINI_MODEL_DEFAULT = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+_GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
+class _AIMessage(_BaseModel):
+    role: _Literal["system","user","assistant"]
+    content: str
+
+class _AIChatRequest(_BaseModel):
+    provider: _Literal["ollama","gemini"] | None = None
+    model: str | None = None
+    messages: list[_AIMessage]
+
+class _AIGenerateSOWRequest(_BaseModel):
+    provider: _Literal["ollama","gemini"] | None = None
+    model: str | None = None
+    title: str
+    client: str
+    scope_points: list[str] = []
+    constraints: list[str] = []
+    assumptions: list[str] = []
+    risks: list[str] = []
+
+def _ensure_gemini_ready():
+    if _genai is None:
+        raise HTTPException(status_code=500, detail="google-generativeai not installed")
+    if not _GOOGLE_API_KEY:
+        raise HTTPException(status_code=400, detail="GOOGLE_API_KEY not set")
+    _genai.configure(api_key=_GOOGLE_API_KEY)
+
+async def _ollama_chat(model: str, messages: list[dict[str,str]]) -> str:
+    url = "http://localhost:11434/api/chat"
+    payload = {"model": model, "messages": messages, "stream": False}
+    async with _httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(url, json=payload)
+        if r.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Ollama error: {r.text}")
+        data = r.json()
+        msg = data.get("message") or {}
+        return msg.get("content", "")
+
+def _gemini_chat(model: str, messages: list[dict[str,str]]) -> str:
+    _ensure_gemini_ready()
+    contents = []
+    for m in messages:
+        contents.append({
+            "role": "user" if m["role"] in ("user","system") else "model",
+            "parts": [{"text": m["content"]}],
+        })
+    gmodel = _genai.GenerativeModel(model)
+    resp = gmodel.generate_content(contents)
+    return getattr(resp, "text", None) or (resp.candidates[0].content.parts[0].text if getattr(resp, "candidates", None) else "")
+
+@app.post("/ai/chat")
+async def ai_chat(req: _AIChatRequest):
+    provider = (req.provider or _AI_PROVIDER_DEFAULT).lower()
+    model = req.model or (_OLLAMA_MODEL_DEFAULT if provider == "ollama" else _GEMINI_MODEL_DEFAULT)
+    msgs = [{"role": m.role, "content": m.content} for m in req.messages]
+    if provider == "ollama":
+        reply = await _ollama_chat(model, msgs)
+    elif provider == "gemini":
+        reply = _gemini_chat(model, msgs)
+    else:
+        raise HTTPException(status_code=400, detail="Unknown provider")
+    return {"provider": provider, "model": model, "reply": reply}
+
+@app.post("/ai/generate-sow")
+async def ai_generate_sow(req: _AIGenerateSOWRequest):
+    provider = (req.provider or _AI_PROVIDER_DEFAULT).lower()
+    model = req.model or (_OLLAMA_MODEL_DEFAULT if provider == "ollama" else _GEMINI_MODEL_DEFAULT)
+    prompt = (
+        f"You are an expert consulting proposal writer. Draft a professional Statement of Work for the project titled '{req.title}' for client '{req.client}'.\n"
+        "Include these sections: Executive Summary, Objectives, Scope & Deliverables, Approach & Methodology, Assumptions, Constraints, Roles & Responsibilities, Timeline, Acceptance Criteria, Risks & Mitigations, Pricing (placeholder), and Terms (placeholder).\n"
+        f"Scope points: {req.scope_points}\nConstraints: {req.constraints}\nAssumptions: {req.assumptions}\nRisks: {req.risks}\n"
+        "Write concise, business-friendly text with bullet points where helpful."
+    )
+    system = {"role": "system", "content": "You are a consulting proposal assistant that outputs clear, structured business documents."}
+    user = {"role": "user", "content": prompt}
+    msgs = [system, user]
+    if provider == "ollama":
+        reply = await _ollama_chat(model, msgs)
+    elif provider == "gemini":
+        reply = _gemini_chat(model, msgs)
+    else:
+        raise HTTPException(status_code=400, detail="Unknown provider")
+    return {"provider": provider, "model": model, "title": req.title, "content": reply}
+# ---- end AI Routes ----

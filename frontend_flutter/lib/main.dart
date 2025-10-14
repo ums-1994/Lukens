@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
@@ -11,13 +12,17 @@ import 'pages/approver/approvals_page.dart';
 import 'pages/shared/preview_page.dart';
 import 'pages/creator/content_library_page.dart';
 import 'pages/approver/approver_dashboard_page.dart';
-import 'pages/admin/admin_dashboard_page.dart';
+import 'pages/approver/reviewer_proposals_page.dart';
+import 'pages/approver/comments_feedback_page.dart';
+import 'pages/approver/approval_history_page.dart';
+import 'pages/approver/governance_checks_page.dart';
 import 'pages/client/client_portal_page.dart';
 import 'pages/client/enhanced_client_dashboard.dart';
 import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
 import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
+import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/creator/templates_page.dart';
 import 'pages/creator/collaboration_page.dart';
@@ -27,8 +32,16 @@ import 'pages/creator/settings_page.dart';
 import 'services/auth_service.dart';
 import 'services/ai_analysis_service.dart';
 import 'api.dart';
+import 'firebase_options.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize Firebase for web (required before using Firebase Auth popup)
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.web);
+  } catch (_) {
+    // ignore if already initialized / hot-reload
+  }
   // Initialize AI service with your OpenAI API key
   AIAnalysisService.initialize();
   runApp(const MyApp());
@@ -123,7 +136,11 @@ class MyApp extends StatelessWidget {
           '/content_library': (context) => const ContentLibraryPage(),
           '/approvals': (context) => const ApprovalsPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
-          '/admin_dashboard': (context) => const AdminDashboardPage(),
+          '/reviewer/proposals': (context) => const ReviewerProposalsPage(),
+          '/approver/comments': (context) => const CommentsFeedbackPage(),
+          '/approver/history': (context) => const ApprovalHistoryPage(),
+          '/approver/governance': (context) => const GovernanceChecksPage(),
+          '/admin_dashboard': (context) => const DashboardPage(),
           '/client_portal': (context) {
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
@@ -203,7 +220,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       });
       return const HomeShell();
     } else {
-      return const LoginPage();
+      return const StartupPage();
     }
   }
 }
@@ -225,7 +242,7 @@ class _HomeShellState extends State<HomeShell> {
     PreviewPage(),
     ContentLibraryPage(),
     ApproverDashboardPage(),
-    AdminDashboardPage(),
+    DashboardPage(), // Admin role entry
     ClientPortalPage(),
   ];
 

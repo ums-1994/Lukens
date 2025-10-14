@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:web/web.dart' as web; // WebSocket for Flutter Web
 
-const String baseUrl = "http://localhost:8000";
+const String baseUrl = "http://localhost:8001";
 
 class AppState extends ChangeNotifier {
   List<dynamic> templates = [];
@@ -10,16 +11,357 @@ class AppState extends ChangeNotifier {
   List<dynamic> proposals = [];
   Map<String, dynamic>? currentProposal;
   Map<String, dynamic> dashboardCounts = {};
+  // Reviewer data
+  List<dynamic> reviewerApprovals = [];
+  Map<String, dynamic> adminMetrics = {};
+  // Proposals for review list (with filters/search)
+  List<dynamic> reviewerProposals = [];
+  // Comments
+  Map<String, List<dynamic>> proposalComments = {}; // key: proposalId
+  List<dynamic> proposalsWithComments = [];
+  // Reviewer history
+  List<dynamic> reviewerHistory = [];
+  // Governance results cache by proposal
+  Map<String, Map<String, dynamic>> governanceResults = {};
+  // Realtime admin websocket
+  web.WebSocket? _adminSocket;
 
   Future<void> init() async {
     // Only fetch data if user is authenticated
     if (authToken != null) {
-      await Future.wait([
+      await Future.wait<void>([
         fetchTemplates(),
         fetchContent(),
         fetchProposals(),
-        fetchDashboard()
+        fetchDashboard(),
+        fetchAdminMetrics(),
       ]);
+    }
+  }
+
+  // Reviewer endpoints (FastAPI backend)
+  Future<void> fetchReviewerApprovals() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/reviewer/approvals"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        reviewerApprovals = List<dynamic>.from(jsonDecode(r.body));
+      } else {
+        reviewerApprovals = [];
+      }
+    } catch (e) {
+      reviewerApprovals = [];
+    }
+    notifyListeners();
+  }
+  
+  // -------- Admin Realtime (WebSocket) --------
+  void connectAdminRealtime({String? token}) {
+    // Derive ws URL from baseUrl
+    final wsBase = baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
+    final url = token == null ? '$wsBase/ws/admin' : '$wsBase/ws/admin?token=$token';
+    try { _adminSocket?.close(); } catch (_) {}
+    final socket = web.WebSocket(url);
+    _adminSocket = socket;
+    socket.onOpen.listen((_) {
+      // Fallback initial fetch in case no event comes immediately
+      fetchAdminMetrics();
+    });
+    socket.onMessage.listen((evt) {
+      try {
+        final data = jsonDecode(evt.data as String);
+        if (data is Map && data['metrics'] != null) {
+          adminMetrics = Map<String, dynamic>.from(data['metrics']);
+          notifyListeners();
+        }
+      } catch (_) {}
+    });
+    socket.onError.listen((_) {
+      // optional: could retry later
+    });
+    socket.onClose.listen((_) {
+      // optional: could retry later
+    });
+  }
+
+  void disconnectAdminRealtime() {
+    try { _adminSocket?.close(); } catch (_) {}
+    _adminSocket = null;
+  }
+  
+  // -------- Reviewer Comments (PostgreSQL via FastAPI) --------
+  Future<void> fetchProposalsWithComments() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/reviewer/comments"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        proposalsWithComments = List<dynamic>.from(jsonDecode(r.body));
+      } else {
+        proposalsWithComments = [];
+      }
+    } catch (_) {
+      proposalsWithComments = [];
+    }
+    notifyListeners();
+  }
+
+  Future<void> fetchComments(String proposalId) async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/reviewer/comments/$proposalId"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        proposalComments[proposalId] = List<dynamic>.from(jsonDecode(r.body));
+      } else {
+        proposalComments[proposalId] = [];
+      }
+    } catch (_) {
+      proposalComments[proposalId] = [];
+    }
+    notifyListeners();
+  }
+
+  Future<void> addOrEditComment({required String proposalId, required String comment, int? commentId}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/api/reviewer/comments/add"),
+        headers: _headers,
+        body: jsonEncode({
+          "proposal_id": proposalId,
+          "comment": comment,
+          if (commentId != null) "comment_id": commentId,
+        }),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchComments(proposalId),
+        fetchProposalsWithComments(),
+        fetchAdminMetrics(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  // -------- Governance Checks --------
+  Future<Map<String, dynamic>?> runGovernanceCheck(String proposalId) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/api/reviewer/governance-check"),
+        headers: _headers,
+        body: jsonEncode({"proposal_id": proposalId}),
+      );
+      if (r.statusCode == 200) {
+        final res = jsonDecode(r.body) as Map<String, dynamic>;
+        governanceResults[proposalId] = res;
+        notifyListeners();
+        return res;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> approveWithConditions({required String proposalId, String? note}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/api/reviewer/approve-conditional"),
+        headers: _headers,
+        body: jsonEncode({
+          "proposal_id": proposalId,
+          if (note != null) "note": note,
+        }),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchAdminMetrics(),
+        fetchProposals(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  Future<void> flagIssue({required String proposalId, String? note}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/api/reviewer/flag-issue"),
+        headers: _headers,
+        body: jsonEncode({
+          "proposal_id": proposalId,
+          if (note != null) "note": note,
+        }),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchAdminMetrics(),
+        fetchProposals(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  // -------- Reviewer History --------
+  Future<void> fetchReviewerHistory() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/reviewer/history"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        reviewerHistory = List<dynamic>.from(jsonDecode(r.body));
+      } else {
+        reviewerHistory = [];
+      }
+    } catch (_) {
+      reviewerHistory = [];
+    }
+    notifyListeners();
+  }
+
+  String reviewerHistoryExportUrl({String format = 'csv'}) {
+    // Browser will download when opened
+    return "$baseUrl/api/reviewer/history/export?format=$format";
+  }
+
+  Future<void> resolveComment({required String proposalId, required int commentId}) async {
+    try {
+      await http.put(
+        Uri.parse("$baseUrl/api/reviewer/comments/resolve"),
+        headers: _headers,
+        body: jsonEncode({"comment_id": commentId}),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchComments(proposalId),
+        fetchProposalsWithComments(),
+        fetchAdminMetrics(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  // Reviewer: list proposals ready for review with filters/search
+  Future<void> fetchReviewerProposals({
+    String? developer,
+    String? dtype,
+    String? dateFrom,
+    String? dateTo,
+    String? q,
+  }) async {
+    final params = <String, String>{};
+    if (developer != null && developer.isNotEmpty) params['developer'] = developer;
+    if (dtype != null && dtype.isNotEmpty) params['dtype'] = dtype;
+    if (dateFrom != null && dateFrom.isNotEmpty) params['date_from'] = dateFrom;
+    if (dateTo != null && dateTo.isNotEmpty) params['date_to'] = dateTo;
+    if (q != null && q.isNotEmpty) params['q'] = q;
+    final uri = Uri.parse("$baseUrl/api/reviewer/proposals").replace(queryParameters: params.isEmpty ? null : params);
+    try {
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        reviewerProposals = List<dynamic>.from(jsonDecode(r.body));
+      } else {
+        reviewerProposals = [];
+      }
+    } catch (_) {
+      reviewerProposals = [];
+    }
+    notifyListeners();
+  }
+
+  Future<void> assignReviewer(String proposalId, String reviewerId) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/api/reviewer/assign"),
+        headers: _headers,
+        body: jsonEncode({"proposal_id": proposalId, "reviewer_id": reviewerId}),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchReviewerProposals(),
+        fetchReviewerApprovals(),
+        fetchProposals(),
+        fetchAdminMetrics(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendBackForEdit(String proposalId, {String? comment}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/api/reviewer/sendback"),
+        headers: _headers,
+        body: jsonEncode({"proposal_id": proposalId, if (comment != null) "comment": comment}),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchReviewerProposals(),
+        fetchReviewerApprovals(),
+        fetchProposals(),
+        fetchAdminMetrics(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  Future<void> reviewerApprove(String proposalId,
+      {String? reviewerId, String? comment}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/api/reviewer/approve"),
+        headers: _headers,
+        body: jsonEncode({
+          "proposal_id": proposalId,
+          if (reviewerId != null) "reviewer_id": reviewerId,
+          if (comment != null) "comment": comment,
+        }),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchReviewerApprovals(),
+        fetchProposals(),
+        fetchAdminMetrics(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  Future<void> reviewerReject(String proposalId,
+      {String? reviewerId, String? comment}) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/api/reviewer/reject"),
+        headers: _headers,
+        body: jsonEncode({
+          "proposal_id": proposalId,
+          if (reviewerId != null) "reviewer_id": reviewerId,
+          if (comment != null) "comment": comment,
+        }),
+      );
+    } finally {
+      await Future.wait<void>([
+        fetchReviewerApprovals(),
+        fetchProposals(),
+        fetchAdminMetrics(),
+      ]);
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchAdminMetrics() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/admin/metrics"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        adminMetrics = Map<String, dynamic>.from(jsonDecode(r.body));
+      }
+    } catch (e) {
+      // ignore
     }
     notifyListeners();
   }
@@ -369,7 +711,7 @@ class AppState extends ChangeNotifier {
       authToken = data["access_token"];
       await fetchCurrentUser();
       // Fetch data after successful login
-      await Future.wait([
+      await Future.wait<void>([
         fetchTemplates(),
         fetchContent(),
         fetchProposals(),
