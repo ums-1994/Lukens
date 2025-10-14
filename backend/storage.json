@@ -762,20 +762,5 @@
         "References"
       ]
     }
-  ],
-  "proposal_versions": [
-    {
-      "id": "b2687dca-35f3-4b9a-903b-dddf38bcda48",
-      "proposal_id": "d50a6cdb-1f10-424c-ae7f-408fb611315e",
-      "title": "Test Version",
-      "description": "Test version description",
-      "sections": {
-        "test": "content"
-      },
-      "is_major": false,
-      "created_by": "test-user",
-      "created_at": "2025-09-29T11:37:33.255042Z",
-      "restored_from": null
-    }
   ]
 }

@@ -229,7 +229,11 @@ class _ApproverAdminPageState extends State<ApproverAdminPage> {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           child: Row(
             children: [
-              Text(icon, style: const TextStyle(fontSize: 16)),
+              SizedBox(
+                width: 54,
+                height: 54,
+                child: _navIconFor(label, isActive),
+              ),
               const SizedBox(width: 10),
               Text(
                 label,
@@ -243,6 +247,32 @@ class _ApproverAdminPageState extends State<ApproverAdminPage> {
         ),
       ),
     );
+  }
+
+  Widget _navIconFor(String label, bool isActive) {
+    String path;
+    switch (label) {
+      case 'Dashboard':
+        path = 'assets/images/Dahboard.png';
+        break;
+      case 'My Proposals':
+        path = 'assets/images/My_Proposals.png';
+        break;
+      case 'Templates':
+      case 'Content Library':
+        path = 'assets/images/content_library.png';
+        break;
+      case 'Collaboration':
+        path = 'assets/images/collaborations.png';
+        break;
+      case 'Approvals Status':
+      case 'Analytics (My Pipeline)':
+        path = 'assets/images/analytics.png';
+        break;
+      default:
+        path = 'assets/images/Dahboard.png';
+    }
+    return Image.asset(path, fit: BoxFit.contain);
   }
 
   List<Widget> _buildApproverContent() {

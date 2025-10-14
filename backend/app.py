@@ -1,17 +1,14 @@
 from fastapi import FastAPI, HTTPException, Body, Query, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator, ValidationError
 from typing import List, Optional, Dict, Any, Literal
 import json, os, uuid, time, sqlite3
 from datetime import datetime, timedelta
-from reportlab.lib.pagesizes import A4, letter
+from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.units import inch
 import io
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
@@ -90,112 +87,8 @@ def save_verification_tokens(tokens_data):
     with open(VERIFICATION_TOKENS_PATH, "w", encoding="utf-8") as f:
         json.dump(tokens_data, f, indent=2)
 
-def load_proposal_signatures():
-    try:
-        with open('proposal_signatures.json', 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-
-def save_proposal_signatures(signatures_data):
-    with open('proposal_signatures.json', 'w') as f:
-        json.dump(signatures_data, f, indent=2)
-
 def generate_verification_token():
     return secrets.token_urlsafe(32)
-
-def generate_client_dashboard_token(proposal_id: str, client_email: str, proposal_data: Dict[str, Any] = None):
-    """Generate a secure token for client dashboard access"""
-    payload = {
-        'proposal_id': proposal_id,
-        'client_email': client_email,
-        'proposal_data': proposal_data or {},
-        'exp': datetime.utcnow() + timedelta(days=30)  # 30 days expiry
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-
-def generate_proposal_pdf(proposal_data: Dict[str, Any], filename: str):
-    """Generate a professional PDF proposal"""
-    try:
-        doc = SimpleDocTemplate(filename, pagesize=letter)
-        styles = getSampleStyleSheet()
-        
-        # Custom styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            spaceAfter=30,
-            alignment=1  # Center alignment
-        )
-        
-        heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=16,
-            spaceAfter=12,
-            spaceBefore=20
-        )
-        
-        # Build PDF content
-        story = []
-        
-        # Title
-        story.append(Paragraph(str(proposal_data.get('title', 'Business Proposal')), title_style))
-        story.append(Spacer(1, 20))
-        
-        # Client info
-        story.append(Paragraph(f"<b>Client:</b> {str(proposal_data.get('client', 'N/A'))}", styles['Normal']))
-        story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%B %d, %Y')}", styles['Normal']))
-        story.append(Spacer(1, 30))
-        
-        # Executive Summary
-        if proposal_data.get('executive_summary'):
-            story.append(Paragraph("Executive Summary", heading_style))
-            story.append(Paragraph(str(proposal_data['executive_summary']), styles['Normal']))
-            story.append(Spacer(1, 20))
-        
-        # Scope & Deliverables
-        if proposal_data.get('scope'):
-            story.append(Paragraph("Scope & Deliverables", heading_style))
-            story.append(Paragraph(str(proposal_data['scope']), styles['Normal']))
-            story.append(Spacer(1, 20))
-        
-        # Timeline
-        if proposal_data.get('timeline'):
-            story.append(Paragraph("Project Timeline", heading_style))
-            story.append(Paragraph(str(proposal_data['timeline']), styles['Normal']))
-            story.append(Spacer(1, 20))
-        
-        # Investment
-        if proposal_data.get('investment'):
-            story.append(Paragraph("Investment", heading_style))
-            story.append(Paragraph(str(proposal_data['investment']), styles['Normal']))
-            story.append(Spacer(1, 20))
-        
-        # Terms & Conditions
-        if proposal_data.get('terms'):
-            story.append(Paragraph("Terms & Conditions", heading_style))
-            story.append(Paragraph(str(proposal_data['terms']), styles['Normal']))
-            story.append(Spacer(1, 20))
-        
-        # Next Steps
-        story.append(Paragraph("Next Steps", heading_style))
-        story.append(Paragraph(
-            "We look forward to discussing this proposal with you and answering any questions you may have. "
-            "Please feel free to contact us to schedule a follow-up meeting.",
-            styles['Normal']
-        ))
-        
-        # Build PDF
-        doc.build(story)
-        print(f"PDF generated successfully: {filename}")
-        
-    except Exception as e:
-        print(f"Error generating PDF: {e}")
-        import traceback
-        traceback.print_exc()
-        raise e
 
 async def send_verification_email(email: str, token: str):
     verification_url = f"http://localhost:8000/?verify=true&token={token}"
@@ -313,42 +206,12 @@ def seed_content_blocks():
         ]
         cur.executemany("INSERT INTO content_blocks (key,label,content,created_at,updated_at) VALUES (?,?,?,?,?)", blocks)
         conn.commit()
-    # Ensure SBG ESG sample modules exist (idempotent)
-    extras = [
-        ("cover_letter_sbg_esg", "Proposal Cover Letter", "To: Sibusiso Ngubeni\n10 April 2025\nKhonology Proposal – SBG ESG Impact Reporting\n\nThank you for the opportunity to collaborate on the SBG. Our aim is to assist SBG with streamlining its ability to submit sustainability metrics in its annual financial statements. The proof of concept we are proposing will look to leverage technologies that will enable a solution that can effectively create easier reporting by mainly automating the process and reduce human or manual touch when creating reports.\n\nYours sincerely,\nName: Africa Nkosi\nPosition: Director\nCompany: Khonology (Pty) Ltd (the RESPONDENT)"),
-        ("company_background_purpose", "Company background – Our Purpose", "Khonology is a B-BBEE Level 2 South African digital services company... Our vision is to become Africa's leading digital enabler. Recent clients include InfoCare, Standard Bank, RMB, Auditor General of South Africa, SA Taxi Finance Company, NatWest Bank, ADB Safegate.\n\nRecent Awards:\n• 2023 TopCo Award for Best Fintech Company\n• 2023 Top Empowerment Digital Transformation Award of the Year\n• 2022 DataMagazine.Uk Top 44 Most Innovative Cloud Data Services Start-ups & Companies in South Africa\n• 2022 DataMagazine.Uk Top 14 Most Innovative Cloud Data Services Start-ups & Companies in Johannesburg\n• 2022/23 Prestige Awards Digital Services Company of the Year"),
-        ("organizational_structure", "Organizational Structure", "Dapo Adeyemo – CEO – Co-founder\nMosa Nyamande – Head of Delivery - Co-founder\nAfrica Nkosi – Sales & Marketing – Co- founder\nMichael Roberts – Chairman - Co-founder\nLezanne Kruger – Finance Manager\nLerato Thekiso – Legal Partner"),
-        ("background_sbg", "Background", "SBG needs to submit sustainability metrics in its annual financial statements... Retrieve deal information at inception and throughout the deal lifecycle, giving a comprehensive picture of planned vs actual impact & sustainability."),
-        ("proposed_solution", "Proposed Solution", "Manual effort is required to locate key information in lengthy legal documents. The proposed solution automates extraction, standardisation, and structuring of contract data using document processing, AI-powered language models, and Microsoft SharePoint."),
-        ("poc_objectives", "Objective of the PoC", "Validate feasibility and business value of automated data extraction and structuring for legal contracts, including: extracting key information; mapping terminology; storing structured data; UI for validation and monitoring; defining human validation; target OCR accuracy of 85%+."),
-        ("approach_proposed_solution", "Approach to the proposed solution", "Two streams: Concept validation (extract key contract data from varied documents; classification and validation layer for auditability; store standardised data; SharePoint UI with natural language search) and Technical validation (assess org-approved technologies, integration points, platform and hosting)."),
-        ("team_composition", "Team Composition", "Developer – builds platform and OCR integration.\nData Analyst/Tester – clarifies requirements and validates delivery.\nDelivery Manager – manages delivery and planning.\nAI Lead – guides technology stack and solution direction."),
-        ("contact_us", "Contact Us", "Africa Nkosi – africa@khonology.com – +27 81 487 2317\nDapo Adeyemo – dapo@khonology.com – +27 81 379 0109\nMosa Nyamande – mosa@khonology.com – +27 81 487 7001\nKhonology Website / LinkedIn / Facebook / Twitter / Instagram"),
-        ("case_studies", "Case Studies", "PowerPulse – connects accredited energy solution providers; CreditConnect – digital bond market platform; Automated Term Sheet – automated loan term sheet generation for RMB; include links and summaries as needed."),
-        # Legal & Compliance
-        ("legal_confidentiality", "Confidentiality Statement", "This document contains confidential information intended solely for the recipient named. Do not copy, distribute, or disclose without prior written consent from Khonology (Pty) Ltd."),
-        ("legal_terms", "Standard Terms", "Engagement subject to mutually agreed Scope of Work, change control, payment terms, and IP ownership terms. ESG commitments adhered to per client policy."),
-        # Proposal Modules (templates)
-        ("proposal_exec_summary_tpl", "Executive Summary (Template)", "Use this section to succinctly state the client problem, proposed solution, expected outcomes, and next steps."),
-        ("proposal_scope_tpl", "Scope & Deliverables (Template)", "Outline in-scope items, deliverables, and assumptions; explicitly note exclusions."),
-        ("proposal_risks_tpl", "Risks (Template)", "Identify key delivery risks and mitigations. Include owner and likelihood/impact."),
-        ("proposal_approach_tpl", "Delivery Approach (Template)", "Phased, agile delivery with discovery, design, implementation, testing, and handover. Include governance and cadence."),
-        # Media Assets (URLs)
-        ("media_powerpulse_video", "Media: PowerPulse Demo", "https://youtu.be/placeholder-powerpulse-demo"),
-        ("media_company_logo", "Media: Company Logo", "https://khonology.com/assets/logo.png"),
-    ]
-    for k, label, content in extras:
-        cur.execute("SELECT 1 FROM content_blocks WHERE key=? LIMIT 1", (k,))
-        if not cur.fetchone():
-            cur.execute("INSERT INTO content_blocks (key,label,content,created_at,updated_at) VALUES (?,?,?,?,?)",
-                        (k, label, content, now_iso(), now_iso()))
-            conn.commit()
     conn.close()
 
 seed_content_blocks()
 
 # ---------- Data Models ----------
-Status = Literal["Draft","In Review","Released","Signed","Archived"]
+Status = Literal["Draft","Pending CEO Approval","Rejected","Approved","Sent to Client","Client Viewing","Signed","Declined by Client","Archived"]
 Stage = Literal["Delivery","Legal","Exec"]
 DocType = Literal["Proposal","SOW","RFI"]
 
@@ -372,6 +235,12 @@ class Proposal(BaseModel):
     readiness_issues: List[str] = []
     signed_at: Optional[str] = None
     signed_by: Optional[str] = None
+    # RBAC fields
+    creator_id: Optional[str] = None
+    current_approver_role: Optional[str] = None  # "CEO" when awaiting CEO approval
+    approval_history: List[Dict[str, Any]] = []  # Track all approvals/rejections
+    financial_data: Optional[Dict[str, Any]] = None  # Pricing, margins, etc.
+    client_actions: Optional[Dict[str, Any]] = None  # Sent time, viewed time, signed time
 
 class ProposalCreate(BaseModel):
     title: str
@@ -384,31 +253,6 @@ class ProposalUpdate(BaseModel):
     client: Optional[str] = None
     sections: Optional[Dict[str, Any]] = None
     dtype: Optional[DocType] = None
-
-class ProposalDraft(BaseModel):
-    sections: Dict[str, Any] = {}
-    version: str = "draft"
-    auto_saved: bool = False
-    timestamp: str = Field(default_factory=now_iso)
-    user_id: Optional[str] = None
-
-class ProposalVersion(BaseModel):
-    id: str
-    proposal_id: str
-    title: str
-    description: str
-    sections: Dict[str, Any] = {}
-    is_major: bool = False
-    created_by: str
-    created_at: str = Field(default_factory=now_iso)
-    restored_from: Optional[str] = None
-
-class VersionCreate(BaseModel):
-    title: str
-    description: str
-    sections: Dict[str, Any] = {}
-    is_major: bool = False
-    created_by: str
 
 class ContentBlockIn(BaseModel):
     key: str
@@ -432,7 +276,20 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     full_name: str
-    role: Literal["Business Developer", "Reviewer / Approver", "Admin"] = "Business Developer"
+    role: Literal["CEO", "Financial Manager", "Client"] = "Financial Manager"
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, v: str):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must include an uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must include a number")
+        if not any(c in "!@#$%^&*(),.?\":{}|<>_-[]\\/`~+=;'" for c in v):
+            raise ValueError("Password must include a special character")
+        return v
 
 class UserLogin(BaseModel):
     username: str
@@ -1044,198 +901,224 @@ def update_proposal_data(pid: str, proposal_data: dict = Body(...)):
     return {"message": "Proposal updated successfully", "proposal": p}
 
 @app.post("/proposals/{pid}/submit", response_model=Proposal)
-def submit_for_review(pid: str):
+def submit_for_review(pid: str, current_user: dict = Depends(get_current_user)):
+    """Submit proposal for CEO approval - Financial Manager only"""
+    if current_user["role"] not in ["Financial Manager", "CEO"]:
+        raise HTTPException(status_code=403, detail="Only Financial Managers can submit proposals")
+    
     p = get_proposal_or_404(pid)
     p = compute_readiness_and_risk(p)
     if p.readiness_issues and any(i.startswith("Missing mandatory section") for i in p.readiness_issues):
         raise HTTPException(status_code=400, detail={"message":"Readiness checks failed","issues":p.readiness_issues})
     if getattr(p, "_compound_minor_devs", 0) >= 2:
         raise HTTPException(status_code=400, detail={"message":"Compound minor deviations detected, please resolve","issues":p.readiness_issues})
-    p.status = "In Review"
+    
+    p.status = "Pending CEO Approval"
+    p.current_approver_role = "CEO"
+    p.approval_history.append({
+        "action": "submitted",
+        "by_user_id": current_user["id"],
+        "by_role": current_user["role"],
+        "at": now_iso(),
+        "comments": "Submitted for CEO approval"
+    })
     p.updated_at = now_iso()
     save_proposal(p)
     return p
 
-# Import the new service
-from proposal_versions_service import ProposalVersionsService
-
-# Initialize the service
-versions_service = ProposalVersionsService()
-
-# Auto-draft endpoints
-@app.put("/proposals/{pid}/draft")
-def save_draft(pid: str, payload: ProposalDraft):
-    """Save auto-draft version of proposal"""
-    p = get_proposal_or_404(pid)
-    p.sections.update(payload.sections)
-    p.updated_at = now_iso()
-    save_proposal(p)
-    return {"message": "Draft saved successfully", "timestamp": payload.timestamp}
-
-@app.post("/proposals/{pid}/autosave")
-def autosave_proposal(pid: str, payload: ProposalDraft):
-    """Auto-save proposal and create version history entry"""
-    p = get_proposal_or_404(pid)
-    
-    # Get previous sections for comparison
-    previous_sections = p.sections.copy()
-    
-    # Update proposal with new sections
-    p.sections.update(payload.sections)
-    p.updated_at = now_iso()
-    save_proposal(p)
-    
-    # Create version history entry if there are changes
-    if previous_sections != payload.sections:
-        try:
-            version = versions_service.create_version(
-                proposal_id=pid,
-                content=payload.sections,
-                created_by=payload.user_id or "system"
-            )
-            
-            return {
-                "message": "Autosaved",
-                "version_id": version['id'],
-                "saved_at": payload.timestamp
-            }
-        except Exception as e:
-            print(f"Error creating version: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "message": "Autosaved but version creation failed",
-                "saved_at": payload.timestamp
-            }
-    
-    return {
-        "message": "No changes to save",
-        "saved_at": payload.timestamp
-    }
-
-# Versioning endpoints
-@app.get("/proposals/{pid}/versions")
-def get_proposal_versions(pid: str):
-    """Get all versions for a proposal"""
-    try:
-        versions = versions_service.get_versions(pid)
-        return {"versions": versions}
-    except Exception as e:
-        print(f"Error getting versions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve versions")
-
-@app.post("/proposals/{pid}/versions")
-def create_proposal_version(pid: str, payload: VersionCreate):
-    """Create a new version of a proposal"""
-    p = get_proposal_or_404(pid)
-    
-    try:
-        version = versions_service.create_version(
-            proposal_id=pid,
-            content=payload.sections,
-            created_by=payload.created_by
-        )
-        
-        # Convert to the expected format for compatibility
-        return {
-            "id": version['id'],
-            "proposal_id": version['proposal_id'],
-            "title": payload.title,
-            "description": payload.description,
-            "sections": version['content'],
-            "is_major": payload.is_major,
-            "created_by": version['created_by'],
-            "created_at": version['created_at']
-        }
-    except Exception as e:
-        print(f"Error creating version: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create version")
-
-@app.post("/proposals/{pid}/versions/{version_id}/restore")
-def restore_proposal_version(pid: str, version_id: str):
-    """Restore a proposal to a specific version"""
-    p = get_proposal_or_404(pid)
-    
-    try:
-        # Get the version
-        version = versions_service.get_version(pid, version_id)
-        if not version:
-            raise HTTPException(status_code=404, detail="Version not found")
-        
-        # Restore sections
-        p.sections = version["content"]
-        p.updated_at = now_iso()
-        save_proposal(p)
-        
-        return {"message": "Version restored successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error restoring version: {e}")
-        raise HTTPException(status_code=500, detail="Failed to restore version")
-
-@app.delete("/proposals/{pid}/versions/{version_id}")
-def delete_proposal_version(pid: str, version_id: str):
-    """Delete a specific version"""
-    try:
-        success = versions_service.delete_version(pid, version_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Version not found")
-        
-        return {"message": "Version deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error deleting version: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete version")
-
-@app.get("/proposals/{pid}/versions/diff")
-def get_version_diff(pid: str, from_version: str = Query(..., alias="from"), to_version: str = Query(..., alias="to")):
-    """Get differences between two versions"""
-    try:
-        diff = versions_service.get_version_diff(pid, from_version, to_version)
-        return diff
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        print(f"Error getting version diff: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get version diff")
-
 @app.post("/proposals/{pid}/approve", response_model=Proposal)
-def approve_stage(pid: str, stage: Stage = Query(..., description="Approval stage: Delivery | Legal | Exec")):
+def approve_proposal(pid: str, comments: str = "", current_user: dict = Depends(get_current_user)):
+    """CEO approves proposal"""
+    if current_user["role"] != "CEO":
+        raise HTTPException(status_code=403, detail="Only CEO can approve proposals")
+    
     p = get_proposal_or_404(pid)
-    if p.status not in ["In Review","Released"]:
-        raise HTTPException(status_code=400, detail="Proposal must be In Review to approve stages.")
-    p.approval.approvals[stage] = {"approved": True, "at": now_iso()}
-    if p.approval.mode == "sequential":
-        all_ok = all(s in p.approval.approvals for s in p.approval.order)
-    else:
-        all_ok = all(s in p.approval.approvals for s in ["Delivery","Legal","Exec"])
-    if all_ok:
-        p.status = "Released"
+    if p.status != "Pending CEO Approval":
+        raise HTTPException(status_code=400, detail="Proposal must be pending CEO approval")
+    
+    p.status = "Approved"
+    p.current_approver_role = None
+    p.approval_history.append({
+        "action": "approved",
+        "by_user_id": current_user["id"],
+        "by_role": current_user["role"],
+        "at": now_iso(),
+        "comments": comments or "Approved by CEO"
+    })
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return p
+
+@app.post("/proposals/{pid}/reject", response_model=Proposal)
+def reject_proposal(pid: str, comments: str = "", current_user: dict = Depends(get_current_user)):
+    """CEO rejects proposal"""
+    if current_user["role"] != "CEO":
+        raise HTTPException(status_code=403, detail="Only CEO can reject proposals")
+    
+    p = get_proposal_or_404(pid)
+    if p.status != "Pending CEO Approval":
+        raise HTTPException(status_code=400, detail="Proposal must be pending CEO approval")
+    
+    p.status = "Rejected"
+    p.current_approver_role = None
+    p.approval_history.append({
+        "action": "rejected",
+        "by_user_id": current_user["id"],
+        "by_role": current_user["role"],
+        "at": now_iso(),
+        "comments": comments or "Rejected by CEO"
+    })
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return p
+
+@app.post("/proposals/{pid}/send_to_client", response_model=Proposal)
+def send_to_client(pid: str, current_user: dict = Depends(get_current_user)):
+    """Financial Manager sends approved proposal to client"""
+    if current_user["role"] not in ["Financial Manager", "CEO"]:
+        raise HTTPException(status_code=403, detail="Only Financial Managers or CEO can send proposals to clients")
+    
+    p = get_proposal_or_404(pid)
+    if p.status != "Approved":
+        raise HTTPException(status_code=400, detail="Proposal must be approved before sending to client")
+    
+    p.status = "Sent to Client"
+    if not p.client_actions:
+        p.client_actions = {}
+    p.client_actions["sent_at"] = now_iso()
+    p.client_actions["sent_by"] = current_user["id"]
     p.updated_at = now_iso()
     save_proposal(p)
     return p
 
 @app.post("/proposals/{pid}/sign", response_model=Proposal)
-def sign_proposal(pid: str, payload: SignPayload):
+def sign_proposal(pid: str, payload: SignPayload, current_user: dict = Depends(get_current_user)):
+    """Client signs proposal"""
+    if current_user["role"] != "Client":
+        raise HTTPException(status_code=403, detail="Only Clients can sign proposals")
+    
     p = get_proposal_or_404(pid)
-    if p.status != "Released":
-        raise HTTPException(status_code=400, detail="Proposal must be Released before client sign-off.")
+    if p.status != "Sent to Client":
+        raise HTTPException(status_code=400, detail="Proposal must be sent to client before signing")
+    
     p.status = "Signed"
     p.signed_at = now_iso()
     p.signed_by = payload.signer_name
+    if not p.client_actions:
+        p.client_actions = {}
+    p.client_actions["signed_at"] = now_iso()
+    p.client_actions["signed_by"] = current_user["id"]
+    p.updated_at = now_iso()
+    save_proposal(p)
+    return p
+
+@app.post("/proposals/{pid}/client_view")
+def client_viewed_proposal(pid: str, current_user: dict = Depends(get_current_user)):
+    """Track when client views proposal"""
+    if current_user["role"] != "Client":
+        raise HTTPException(status_code=403, detail="Only Clients can view proposals")
+    
+    p = get_proposal_or_404(pid)
+    if p.status == "Sent to Client":
+        p.status = "Client Viewing"
+    
+    if not p.client_actions:
+        p.client_actions = {}
+    if "viewed_at" not in p.client_actions:
+        p.client_actions["viewed_at"] = now_iso()
+        p.updated_at = now_iso()
+        save_proposal(p)
+    
+    return {"message": "View tracked"}
+
+@app.post("/proposals/{pid}/client_decline", response_model=Proposal)
+def client_decline_proposal(pid: str, comments: str = "", current_user: dict = Depends(get_current_user)):
+    """Client declines proposal"""
+    if current_user["role"] != "Client":
+        raise HTTPException(status_code=403, detail="Only Clients can decline proposals")
+    
+    p = get_proposal_or_404(pid)
+    if p.status not in ["Sent to Client", "Client Viewing"]:
+        raise HTTPException(status_code=400, detail="Proposal must be sent to client")
+    
+    p.status = "Declined by Client"
+    if not p.client_actions:
+        p.client_actions = {}
+    p.client_actions["declined_at"] = now_iso()
+    p.client_actions["decline_reason"] = comments
     p.updated_at = now_iso()
     save_proposal(p)
     return p
 
 @app.get("/dashboard_stats")
-def dashboard_stats():
+def dashboard_stats(current_user: dict = Depends(get_current_user)):
+    """Get dashboard statistics based on user role"""
     db = load_db()
-    counts = {"Draft":0,"In Review":0,"Released":0,"Signed":0,"Archived":0}
-    for pr in db["proposals"]:
-        counts[pr["status"]] = counts.get(pr["status"],0)+1
-    return {"counts":counts,"total":sum(counts.values())}
+    all_proposals = db["proposals"]
+    
+    # Filter proposals based on role
+    if current_user["role"] == "CEO":
+        # CEO sees all proposals
+        proposals = all_proposals
+    elif current_user["role"] == "Financial Manager":
+        # Financial Manager sees only their own proposals
+        proposals = [p for p in all_proposals if p.get("creator_id") == current_user["id"]]
+    elif current_user["role"] == "Client":
+        # Client sees only proposals sent to them (matching their email/username)
+        proposals = [p for p in all_proposals if p.get("client") == current_user["email"] or p.get("client") == current_user["username"]]
+    else:
+        proposals = []
+    
+    counts = {
+        "Draft": 0,
+        "Pending CEO Approval": 0,
+        "Rejected": 0,
+        "Approved": 0,
+        "Sent to Client": 0,
+        "Client Viewing": 0,
+        "Signed": 0,
+        "Declined by Client": 0,
+        "Archived": 0
+    }
+    
+    for pr in proposals:
+        status = pr.get("status", "Draft")
+        counts[status] = counts.get(status, 0) + 1
+    
+    return {
+        "counts": counts,
+        "total": len(proposals),
+        "role": current_user["role"]
+    }
+
+@app.get("/proposals/pending_approval")
+def get_pending_approvals(current_user: dict = Depends(get_current_user)):
+    """Get proposals pending CEO approval - CEO only"""
+    if current_user["role"] != "CEO":
+        raise HTTPException(status_code=403, detail="Only CEO can view pending approvals")
+    
+    db = load_db()
+    pending = [p for p in db["proposals"] if p.get("status") == "Pending CEO Approval"]
+    return {"proposals": pending, "count": len(pending)}
+
+@app.get("/proposals/my_proposals")
+def get_my_proposals(current_user: dict = Depends(get_current_user)):
+    """Get current user's proposals"""
+    db = load_db()
+    
+    if current_user["role"] == "CEO":
+        # CEO sees all proposals
+        proposals = db["proposals"]
+    elif current_user["role"] == "Financial Manager":
+        # Financial Manager sees only their own
+        proposals = [p for p in db["proposals"] if p.get("creator_id") == current_user["id"]]
+    elif current_user["role"] == "Client":
+        # Client sees only proposals sent to them
+        proposals = [p for p in db["proposals"] if p.get("client") == current_user["email"] or p.get("client") == current_user["username"]]
+    else:
+        proposals = []
+    
+    return {"proposals": proposals, "count": len(proposals)}
 
 # ---------- Authentication Routes ----------
 @app.post("/register", response_model=User)
@@ -1433,17 +1316,6 @@ async def verify_email(verification: EmailVerification):
 
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
-
-class SendProposalEmailRequest(BaseModel):
-    to: List[EmailStr]
-    cc: List[EmailStr] = []
-    subject: str
-    body: str
-    from_name: str
-    from_email: str
-    proposal_data: Optional[Dict[str, Any]] = None
-    include_pdf: bool = True
-    include_dashboard_link: bool = True
 
 @app.post("/resend-verification")
 async def resend_verification_email(request: ResendVerificationRequest):

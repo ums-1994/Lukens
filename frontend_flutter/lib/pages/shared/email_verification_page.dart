@@ -37,7 +37,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     });
 
     try {
-      await SmtpAuthService.verifyEmail(token: widget.token!);
+      final result = await SmtpAuthService.verifyEmail(token: widget.token!);
 
       if (mounted) {
         setState(() {
@@ -55,7 +55,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
         // Navigate to login page after 2 seconds
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
-            Navigator.pushReplacementNamed(context, '/login');
+            Navigator.pushNamed(context, '/login');
           }
         });
       }
@@ -155,9 +155,9 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
+                  color: Colors.red.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
                 ),
                 child: Column(
                   children: [
@@ -218,7 +218,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
             // Back to login button
             TextButton(
               onPressed: () {
-                Navigator.pushReplacementNamed(context, '/login');
+                Navigator.pushNamed(context, '/login');
               },
               child: const Text('Back to Login'),
             ),

@@ -56,6 +56,7 @@ class _ProposalsPageState extends State<ProposalsPage> {
     }).toList();
 
     return Scaffold(
+<<<<<<< HEAD
       body: Row(
         children: [
           // Sidebar
@@ -63,6 +64,37 @@ class _ProposalsPageState extends State<ProposalsPage> {
             width: 220,
             color: const Color(0xFF1E293B),
             child: Column(
+=======
+      appBar: AppBar(
+        title: Text('ProposeIt'),
+        backgroundColor: Color(0xFF2c3e50),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.search),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: Icon(Icons.notifications),
+            onPressed: () {},
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8.0),
+            child: CircleAvatar(
+              backgroundColor: Color(0xFF4bc0c0),
+              child: Text('JD', style: TextStyle(color: Colors.white)),
+            ),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Section
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+>>>>>>> 3fccc6e8161ea52668ff67b89c4aad567279b198
               children: [
                 Container(
                   height: 64,

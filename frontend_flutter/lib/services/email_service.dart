@@ -1,12 +1,7 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-
 class EmailService {
   static final EmailService _instance = EmailService._internal();
   factory EmailService() => _instance;
   EmailService._internal();
-
-  static const String baseUrl = 'http://localhost:8000';
 
   // Email templates
   static const Map<String, Map<String, String>> emailTemplates = {
@@ -59,11 +54,11 @@ Best regards,
     required String companyName,
     required String clientName,
     required String proposalLink,
-    Map<String, dynamic>? proposalData,
-    bool includePdf = true,
-    bool includeDashboardLink = true,
   }) async {
     try {
+      // Simulate API call delay
+      await Future.delayed(const Duration(seconds: 2));
+
       // Get template content
       final templateData =
           emailTemplates[template] ?? emailTemplates['Default Send Email']!;
@@ -80,65 +75,18 @@ Best regards,
           .replaceAll('{clientName}', clientName)
           .replaceAll('{proposalLink}', proposalLink);
 
-      // Convert body to HTML
-      String htmlBody = '''
-      <html>
-      <body>
-        <p>${body.replaceAll('\n', '<br>')}</p>
-        <br>
-        <a href="$proposalLink" style="background-color: #3498DB; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Click to view proposal</a>
-      </body>
-      </html>
-      ''';
-
-      // Extract name and email from 'from' field
-      String fromName = from.split(' | ')[0];
-      String fromEmail = from.split(' | ')[1];
-
-      // Call Python backend to send email
-      print('Sending email to: $baseUrl/send-proposal-email');
-      print('Recipients: $to');
-      print('CC: $cc');
+      // Simulate email sending
+      print('Sending email...');
+      print('From: $from');
+      print('To: ${to.join(', ')}');
+      print('CC: ${cc.join(', ')}');
       print('Subject: $subject');
-      print('From Name: $fromName');
-      print('From Email: $fromEmail');
-      print('Proposal Data: $proposalData');
+      print('Body: $body');
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/send-proposal-email'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'to': to,
-          'cc': cc,
-          'subject': subject,
-          'body': htmlBody,
-          'from_name': fromName,
-          'from_email': fromEmail,
-          'proposal_data': proposalData,
-          'include_pdf': includePdf,
-          'include_dashboard_link': includeDashboardLink,
-        }),
-      );
-
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        print('Email sent successfully!');
-        return true;
-      } else {
-        print('Failed to send email. Status: ${response.statusCode}');
-        print('Response: ${response.body}');
-        return false;
-      }
+      // Simulate success
+      return true;
     } catch (e) {
       print('Error sending email: $e');
-      print('Error type: ${e.runtimeType}');
-      if (e.toString().contains('SocketException')) {
-        print('Network error - backend might not be running');
-      }
       return false;
     }
   }
@@ -152,9 +100,6 @@ Best regards,
     required String companyName,
     required String clientName,
     required String proposalLink,
-    Map<String, dynamic>? proposalData,
-    bool includePdf = true,
-    bool includeDashboardLink = true,
   }) async {
     return await sendEmail(
       from: from,
@@ -165,9 +110,6 @@ Best regards,
       companyName: companyName,
       clientName: clientName,
       proposalLink: proposalLink,
-      proposalData: proposalData,
-      includePdf: includePdf,
-      includeDashboardLink: includeDashboardLink,
     );
   }
 
@@ -179,6 +121,6 @@ Best regards,
   // Generate proposal link
   String generateProposalLink(String documentName, String companyName) {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    return 'https://proposify.app/view/$timestamp/${documentName.replaceAll(' ', '-').toLowerCase()}';
+    return 'https://proposeit.app/view/$timestamp/${documentName.replaceAll(' ', '-').toLowerCase()}';
   }
 }

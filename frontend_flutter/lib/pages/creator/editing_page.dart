@@ -1,13 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'dart:async';
 import '../client/proposal_viewer_page.dart';
-import 'creator_dashboard_page.dart';
 import '../../services/email_service.dart';
-import '../../services/auto_draft_service.dart';
-import '../../services/versioning_service.dart';
-import '../shared/version_history_page.dart';
 
 class EditingPage extends StatefulWidget {
   final String documentName;
@@ -42,11 +35,22 @@ class _EditingPageState extends State<EditingPage> {
   bool _isSharing = false;
 
   final EmailService _emailService = EmailService();
-  final AutoDraftService _autoDraftService = AutoDraftService();
   final TextEditingController _addContactController = TextEditingController();
 
-  final List<Map<String, String>> _recipients = [];
-  String? _currentProposalId;
+  final List<Map<String, String>> _recipients = [
+    {
+      'name': 'John maeshton',
+      'email': 'excallibur98@gmail.com',
+      'company': 'WEN MEDIA',
+      'percentage': '100%'
+    },
+    {
+      'name': 'osama hussain',
+      'email': 'osmahussain.25j@gmail.com',
+      'company': 'ANYTHING.INC',
+      'percentage': '0%'
+    },
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -113,45 +117,6 @@ class _EditingPageState extends State<EditingPage> {
               ],
             ),
           ),
-          // Auto-save status bar
-          Container(
-            height: 40,
-            color: const Color(0xFFF8F9FA),
-            child: Row(
-              children: [
-                const SizedBox(width: 16),
-                Icon(
-                  _autoDraftService.isAutoSaving
-                      ? Icons.sync
-                      : _autoDraftService.hasUnsavedChanges
-                          ? Icons.warning
-                          : Icons.check_circle,
-                  size: 16,
-                  color: _autoDraftService.isAutoSaving
-                      ? Colors.orange
-                      : _autoDraftService.hasUnsavedChanges
-                          ? Colors.red
-                          : Colors.green,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _autoDraftService.getStatusMessage(),
-                  style: const TextStyle(fontSize: 12),
-                ),
-                const Spacer(),
-                if (_autoDraftService.hasUnsavedChanges)
-                  TextButton(
-                    onPressed: _forceSave,
-                    child: const Text('Save Now'),
-                  ),
-                TextButton(
-                  onPressed: _openVersionHistory,
-                  child: const Text('Version History'),
-                ),
-                const SizedBox(width: 16),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -193,25 +158,6 @@ class _EditingPageState extends State<EditingPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6C757D),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Create Version Button
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _createVersion,
-              icon: const Icon(Icons.bookmark_add, size: 16),
-              label: const Text('Create Version'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF3498DB),
-                side: const BorderSide(color: Color(0xFF3498DB)),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
@@ -313,83 +259,27 @@ class _EditingPageState extends State<EditingPage> {
             ),
           ),
           const SizedBox(height: 8),
-
-          // Quick Email Input
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              borderRadius: BorderRadius.circular(6),
-              color: Colors.white,
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.email_outlined,
-                    color: Color(0xFF6C757D), size: 16),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _addContactController,
-                    decoration: const InputDecoration(
-                      hintText: 'Enter email address (e.g., john@company.com)',
-                      border: InputBorder.none,
-                      hintStyle: TextStyle(
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 14,
-                      ),
-                    ),
-                    style: const TextStyle(fontSize: 14),
-                    onSubmitted: (value) {
-                      if (value.trim().isNotEmpty) {
-                        _addQuickEmail(value.trim());
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () {
-                    if (_addContactController.text.trim().isNotEmpty) {
-                      _addQuickEmail(_addContactController.text.trim());
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3498DB),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Icon(Icons.add, color: Colors.white, size: 16),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Recipients List
           ..._recipients
               .map((recipient) => _buildRecipientItem(recipient))
               .toList(),
 
-          // Add Contact Button (for detailed contact info)
-          if (_recipients.isEmpty)
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _showAddContactDialog,
-                icon: const Icon(Icons.person_add, size: 16),
-                label: const Text('+ Add Contact with Details'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF6C757D),
-                  side: const BorderSide(color: Color(0xFFE2E8F0)),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
+          // Add Contact Button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _showAddContactDialog,
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('+ Add Contact'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF6C757D),
+                side: const BorderSide(color: Color(0xFFE2E8F0)),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
                 ),
               ),
             ),
+          ),
           const SizedBox(height: 16),
 
           // CC Checkbox
@@ -401,8 +291,6 @@ class _EditingPageState extends State<EditingPage> {
                   setState(() {
                     _ccOtherEmails = value ?? false;
                   });
-                  // Mark data as changed for auto-draft
-                  _markDataChanged();
                 },
                 activeColor: const Color(0xFF3498DB),
               ),
@@ -417,11 +305,7 @@ class _EditingPageState extends State<EditingPage> {
           if (_ccOtherEmails) ...[
             const SizedBox(height: 8),
             TextField(
-              onChanged: (value) {
-                _ccEmails = value;
-                // Mark data as changed for auto-draft
-                _markDataChanged();
-              },
+              onChanged: (value) => _ccEmails = value,
               decoration: const InputDecoration(
                 hintText: 'Enter email addresses...',
                 border: OutlineInputBorder(),
@@ -464,8 +348,6 @@ class _EditingPageState extends State<EditingPage> {
                   setState(() {
                     _selectedTemplate = newValue!;
                   });
-                  // Mark data as changed for auto-draft
-                  _markDataChanged();
                 },
               ),
             ),
@@ -739,7 +621,7 @@ class _EditingPageState extends State<EditingPage> {
                     _isPlainText = value;
                   });
                 },
-                activeThumbColor: const Color(0xFF3498DB),
+                activeColor: const Color(0xFF3498DB),
               ),
             ],
           ),
@@ -792,7 +674,8 @@ class _EditingPageState extends State<EditingPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildEmailField('To', _getRecipientEmails()),
+              _buildEmailField(
+                  'To', 'excallibur98@gmail.com, osmahussain.25j@gmail.com'),
               const SizedBox(height: 8),
               _buildEmailField(
                   'Subject', '${widget.documentName} - ${widget.companyName}'),
@@ -809,9 +692,9 @@ class _EditingPageState extends State<EditingPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Hi ${_getPrimaryRecipientName()},',
-                  style: const TextStyle(
+                const Text(
+                  'Hi John maeshton,',
+                  style: TextStyle(
                     fontSize: 16,
                     color: Color(0xFF2C3E50),
                   ),
@@ -900,16 +783,17 @@ class _EditingPageState extends State<EditingPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildEmailField('To', _getRecipientEmails()),
+          _buildEmailField(
+              'To', 'excallibur98@gmail.com, osmahussain.25j@gmail.com'),
           const SizedBox(height: 8),
           _buildEmailField(
               'Subject', '${widget.documentName} - ${widget.companyName}'),
           const SizedBox(height: 8),
           _buildEmailField('From', '$_currentUserName <$_currentUserEmail>'),
           const SizedBox(height: 16),
-          Text(
-            'Hi ${_getPrimaryRecipientName()},',
-            style: const TextStyle(
+          const Text(
+            'Hi John maeshton,',
+            style: TextStyle(
               fontSize: 16,
               color: Color(0xFF2C3E50),
             ),
@@ -1128,10 +1012,6 @@ class _EditingPageState extends State<EditingPage> {
                     setState(() {
                       recipient['percentage'] = '${percentage.round()}%';
                     });
-
-                    // Mark data as changed for auto-draft
-                    _markDataChanged();
-
                     Navigator.of(context).pop();
                   },
                   child: const Text('Save'),
@@ -1195,10 +1075,6 @@ class _EditingPageState extends State<EditingPage> {
                   recipient['email'] = emailController.text;
                   recipient['company'] = companyController.text;
                 });
-
-                // Mark data as changed for auto-draft
-                _markDataChanged();
-
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -1233,10 +1109,6 @@ class _EditingPageState extends State<EditingPage> {
                 setState(() {
                   _recipients.remove(recipient);
                 });
-
-                // Mark data as changed for auto-draft
-                _markDataChanged();
-
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -1256,74 +1128,6 @@ class _EditingPageState extends State<EditingPage> {
     );
   }
 
-  void _addQuickEmail(String email) {
-    // Basic email validation
-    if (!email.contains('@') || !email.contains('.')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid email address'),
-          backgroundColor: Color(0xFFE74C3C),
-        ),
-      );
-      return;
-    }
-
-    // Check if email already exists
-    if (_recipients.any((recipient) => recipient['email'] == email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This email address is already added'),
-          backgroundColor: Color(0xFFE74C3C),
-        ),
-      );
-      return;
-    }
-
-    // Extract name from email (part before @)
-    String name = email.split('@')[0];
-    name = name.replaceAll('.', ' ').replaceAll('_', ' ');
-    name = name
-        .split(' ')
-        .map((word) => word.isNotEmpty
-            ? word[0].toUpperCase() + word.substring(1).toLowerCase()
-            : '')
-        .join(' ');
-
-    setState(() {
-      _recipients.add({
-        'name': name,
-        'email': email,
-        'company': 'Unknown',
-        'percentage': '100%'
-      });
-      _addContactController.clear();
-    });
-
-    // Mark data as changed for auto-draft
-    _markDataChanged();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Added $email to recipients'),
-        backgroundColor: const Color(0xFF27AE60),
-      ),
-    );
-  }
-
-  String _getRecipientEmails() {
-    if (_recipients.isEmpty) {
-      return 'No recipients added';
-    }
-    return _recipients.map((r) => r['email']!).join(', ');
-  }
-
-  String _getPrimaryRecipientName() {
-    if (_recipients.isEmpty) {
-      return 'Recipient';
-    }
-    return _recipients.first['name']!;
-  }
-
   Future<void> _sendTestEmail() async {
     setState(() {
       _isLoading = true;
@@ -1335,9 +1139,6 @@ class _EditingPageState extends State<EditingPage> {
         widget.companyName,
       );
 
-      // Prepare proposal data for PDF generation using actual template content
-      final proposalData = _buildProposalDataFromSnapshots();
-
       final success = await _emailService.sendTestEmail(
         from: '$_currentUserName | $_currentUserEmail',
         testEmail: _currentUserEmail, // Send test email to current user
@@ -1346,9 +1147,6 @@ class _EditingPageState extends State<EditingPage> {
         companyName: widget.companyName,
         clientName: widget.selectedClient,
         proposalLink: proposalLink,
-        proposalData: proposalData,
-        includePdf: false,
-        includeDashboardLink: true,
       );
 
       if (success) {
@@ -1356,14 +1154,6 @@ class _EditingPageState extends State<EditingPage> {
           const SnackBar(
             content: Text('Test email sent successfully!'),
             backgroundColor: Color(0xFF2ECC71),
-          ),
-        );
-
-        // Navigate back to Creator Dashboard
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const DashboardPage(),
           ),
         );
       } else {
@@ -1404,9 +1194,6 @@ class _EditingPageState extends State<EditingPage> {
           ? _ccEmails.split(',').map((e) => e.trim()).toList()
           : <String>[];
 
-      // Prepare proposal data for PDF generation using actual template content
-      final proposalData = _buildProposalDataFromSnapshots();
-
       final success = await _emailService.sendEmail(
         from: '$_currentUserName | $_currentUserEmail',
         to: recipientEmails,
@@ -1416,9 +1203,6 @@ class _EditingPageState extends State<EditingPage> {
         companyName: widget.companyName,
         clientName: widget.selectedClient,
         proposalLink: proposalLink,
-        proposalData: proposalData,
-        includePdf: false,
-        includeDashboardLink: true,
       );
 
       if (success) {
@@ -1426,14 +1210,6 @@ class _EditingPageState extends State<EditingPage> {
           const SnackBar(
             content: Text('Proposal sent to client successfully!'),
             backgroundColor: Color(0xFF2ECC71),
-          ),
-        );
-
-        // Navigate back to Creator Dashboard
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const DashboardPage(),
           ),
         );
       } else {
@@ -1458,292 +1234,8 @@ class _EditingPageState extends State<EditingPage> {
     }
   }
 
-  // Build proposal data from selected snapshots
-  Map<String, dynamic> _buildProposalDataFromSnapshots() {
-    // This is a simplified version - in a real app, you'd parse the selectedSnapshots
-    // and extract the actual content from the template blocks
-    return {
-      'title': widget.documentName,
-      'client': widget.companyName,
-      'executive_summary': _getSnapshotContent('executive-summary') ??
-          'This proposal outlines our comprehensive solution for your business needs.',
-      'scope': _getSnapshotContent('proposed-solution') ??
-          'Our services include consultation, implementation, and ongoing support.',
-      'timeline': _getSnapshotContent('timeline') ??
-          'Project completion within 4-6 weeks from contract signing.',
-      'investment': _getSnapshotContent('pricing-table') ??
-          'Please refer to the detailed pricing in the attached proposal.',
-      'terms': _getSnapshotContent('terms-conditions') ??
-          'Standard terms and conditions apply. Payment terms: 50% upfront, 50% on completion.',
-      'selected_snapshots': widget.selectedSnapshots,
-    };
-  }
-
-  // Helper method to get content from snapshots
-  String? _getSnapshotContent(String section) {
-    // Template blocks with actual content (same as in snapshots_page.dart)
-    final templateBlocks = [
-      {
-        'id': 'executive-summary',
-        'content':
-            'Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.',
-      },
-      {
-        'id': 'proposed-solution',
-        'content':
-            'Based on our analysis, we recommend the following approach:\n• Implementation of our premium software platform\n• Customization to integrate with your existing systems\n• Comprehensive training for your team members\n• Ongoing support and maintenance',
-      },
-      {
-        'id': 'pricing-table',
-        'content':
-            'Software License: \$9,999.00\nImplementation: \$4,500.00\nTraining: \$3,600.00\nSupport: \$2,000.00\nTotal: \$21,706.92',
-      },
-      {
-        'id': 'terms-conditions',
-        'content':
-            'This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.',
-      },
-      {
-        'id': 'timeline',
-        'content':
-            'Project Timeline:\n• Week 1-2: Planning and setup\n• Week 3-6: Implementation and customization\n• Week 7-8: Testing and quality assurance\n• Week 9-10: Training and go-live\n• Week 11-12: Support and handover',
-      },
-    ];
-
-    // Find the content for the requested section
-    for (final block in templateBlocks) {
-      if (block['id'] == section) {
-        return block['content'];
-      }
-    }
-
-    return null;
-  }
-
-  // Auto-draft methods
-  Future<void> _createProposalAndInitializeAutoDraft() async {
-    try {
-      // Create a real proposal in the backend
-      final proposalId = await _createProposal();
-      if (proposalId != null) {
-        _currentProposalId = proposalId;
-        _initializeAutoDraft();
-      } else {
-        // Fallback to temp ID if creation fails
-        _currentProposalId =
-            'temp-proposal-${DateTime.now().millisecondsSinceEpoch}';
-        _initializeAutoDraft();
-      }
-    } catch (e) {
-      print('Error creating proposal: $e');
-      // Fallback to temp ID
-      _currentProposalId =
-          'temp-proposal-${DateTime.now().millisecondsSinceEpoch}';
-      _initializeAutoDraft();
-    }
-  }
-
-  Future<String?> _createProposal() async {
-    try {
-      print(
-          'Creating proposal: ${widget.documentName} for client: ${widget.selectedClient}');
-      final response = await http.post(
-        Uri.parse('http://localhost:8000/proposals'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'title': widget.documentName,
-          'client': widget.selectedClient,
-          'dtype': 'Proposal',
-        }),
-      );
-
-      print(
-          'Proposal creation response: ${response.statusCode} - ${response.body}');
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        print('Created proposal with ID: ${data['id']}');
-        return data['id'] as String?;
-      }
-    } catch (e) {
-      print('Error creating proposal: $e');
-    }
-    return null;
-  }
-
-  void _initializeAutoDraft() {
-    // Initialize with current proposal data
-    if (_currentProposalId != null) {
-      print('Initializing auto-draft for proposal: $_currentProposalId');
-      final proposalData = {
-        'sections': _buildProposalDataFromSnapshots(),
-        'documentName': widget.documentName,
-        'companyName': widget.companyName,
-        'selectedClient': widget.selectedClient,
-        'selectedSnapshots': widget.selectedSnapshots,
-      };
-      print('Proposal data: ${json.encode(proposalData)}');
-      _autoDraftService.startAutoDraft(_currentProposalId!, proposalData);
-
-      // Start periodic auto-save trigger
-      _startPeriodicAutoSave();
-    } else {
-      print('No proposal ID available for auto-draft initialization');
-    }
-  }
-
-  void _startPeriodicAutoSave() {
-    // Trigger auto-save every 30 seconds to ensure data is saved
-    Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (_currentProposalId != null) {
-        _markDataChanged();
-      }
-    });
-  }
-
-  void _openVersionHistory() {
-    if (_currentProposalId != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => VersionHistoryPage(
-            proposalId: _currentProposalId!,
-            proposalTitle: widget.documentName,
-          ),
-        ),
-      ).then((restored) {
-        if (restored == true) {
-          // Proposal was restored, refresh the page
-          setState(() {});
-        }
-      });
-    }
-  }
-
-  Future<void> _forceSave() async {
-    final success = await _autoDraftService.forceSave();
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Draft saved successfully'),
-          backgroundColor: Color(0xFF2ECC71),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_autoDraftService.lastError ?? 'Failed to save draft'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  void _markDataChanged() {
-    final proposalData = {
-      'sections': _buildProposalDataFromSnapshots(),
-      'documentName': widget.documentName,
-      'companyName': widget.companyName,
-      'selectedClient': widget.selectedClient,
-      'selectedSnapshots': widget.selectedSnapshots,
-    };
-    _autoDraftService.markChanged(proposalData);
-  }
-
-  void _createVersion() {
-    final titleController = TextEditingController();
-    final descriptionController = TextEditingController();
-    bool isMajor = false;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Create New Version'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Version Title',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Description (Optional)',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 16),
-              CheckboxListTile(
-                title: const Text('Major Version'),
-                subtitle: const Text('Increment major version number'),
-                value: isMajor,
-                onChanged: (value) => setState(() => isMajor = value ?? false),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (titleController.text.trim().isEmpty) return;
-
-                // Force save current changes first
-                await _autoDraftService.forceSave();
-
-                // Create version with current proposal data
-                final versioningService = VersioningService();
-                final version = await versioningService.createVersion(
-                  _currentProposalId!,
-                  title: titleController.text.trim(),
-                  sections: _buildProposalDataFromSnapshots(),
-                  description: descriptionController.text.trim(),
-                  isMajor: isMajor,
-                );
-
-                if (version != null) {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Version created successfully'),
-                      backgroundColor: Color(0xFF2ECC71),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(versioningService.lastError ??
-                          'Failed to create version'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              },
-              child: const Text('Create'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _createProposalAndInitializeAutoDraft();
-  }
-
   @override
   void dispose() {
-    _autoDraftService.stopAutoDraft();
     _addContactController.dispose();
     super.dispose();
   }

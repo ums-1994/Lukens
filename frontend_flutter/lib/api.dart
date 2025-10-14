@@ -238,6 +238,130 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  // RBAC Methods
+  Future<String?> approveProposal(String proposalId,
+      {String comments = ""}) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals/$proposalId/approve?comments=$comments"),
+        headers: _headers,
+      );
+      if (r.statusCode >= 400) {
+        final data = jsonDecode(r.body);
+        return data["detail"] ?? "Approval failed";
+      }
+      await fetchProposals();
+      await fetchDashboard();
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return "Error approving proposal: $e";
+    }
+  }
+
+  Future<String?> rejectProposal(String proposalId,
+      {String comments = ""}) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals/$proposalId/reject?comments=$comments"),
+        headers: _headers,
+      );
+      if (r.statusCode >= 400) {
+        final data = jsonDecode(r.body);
+        return data["detail"] ?? "Rejection failed";
+      }
+      await fetchProposals();
+      await fetchDashboard();
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return "Error rejecting proposal: $e";
+    }
+  }
+
+  Future<String?> sendToClient(String proposalId) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
+        headers: _headers,
+      );
+      if (r.statusCode >= 400) {
+        final data = jsonDecode(r.body);
+        return data["detail"] ?? "Send to client failed";
+      }
+      await fetchProposals();
+      await fetchDashboard();
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return "Error sending to client: $e";
+    }
+  }
+
+  Future<String?> clientDeclineProposal(String proposalId,
+      {String comments = ""}) async {
+    try {
+      final r = await http.post(
+        Uri.parse(
+            "$baseUrl/proposals/$proposalId/client_decline?comments=$comments"),
+        headers: _headers,
+      );
+      if (r.statusCode >= 400) {
+        final data = jsonDecode(r.body);
+        return data["detail"] ?? "Decline failed";
+      }
+      await fetchProposals();
+      await fetchDashboard();
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return "Error declining proposal: $e";
+    }
+  }
+
+  Future<void> trackClientView(String proposalId) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/proposals/$proposalId/client_view"),
+        headers: _headers,
+      );
+    } catch (e) {
+      print('Error tracking client view: $e');
+    }
+  }
+
+  Future<List<dynamic>> getPendingApprovals() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/proposals/pending_approval"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data["proposals"] ?? [];
+      }
+    } catch (e) {
+      print('Error fetching pending approvals: $e');
+    }
+    return [];
+  }
+
+  Future<List<dynamic>> getMyProposals() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/proposals/my_proposals"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data["proposals"] ?? [];
+      }
+    } catch (e) {
+      print('Error fetching my proposals: $e');
+    }
+    return [];
+  }
+
   Future<String?> requestEsign() async {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
