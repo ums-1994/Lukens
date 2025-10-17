@@ -1,0 +1,781 @@
+﻿{
+  "proposals": [
+    {
+      "id": "d50a6cdb-1f10-424c-ae7f-408fb611315e",
+      "title": "Test Proposal",
+      "client": "Test Client",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "test": "auto-save-test-2025-09-29-14-10-50",
+        "title": "Test Autosave",
+        "description": "Testing autosave functionality"
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-29T11:23:51.142315Z",
+      "updated_at": "2025-09-30T12:29:00.726493Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "dda4655d-072f-4232-a172-9f818a50157d",
+      "title": "Digital Transformation Strategy",
+      "client": "Tech Solutions Inc.",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "selected_snapshots": []
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-29T12:06:31.992191Z",
+      "updated_at": "2025-09-29T12:15:04.274555Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "d5f0b611-ac84-4a37-9b3f-a19a4dd91ffe",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "selected_snapshots": []
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-29T12:24:38.008241Z",
+      "updated_at": "2025-09-29T12:26:40.656879Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "1c87a3bf-2265-4700-949b-e9204f2e865f",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "selected_snapshots": []
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-29T12:26:59.935447Z",
+      "updated_at": "2025-09-29T12:37:02.358377Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "5aadda58-1ccc-4320-aea9-33b007397e41",
+      "title": "Digital Transformation Strategy",
+      "client": "Tech Solutions Inc.",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "selected_snapshots": []
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-30T11:48:08.186048Z",
+      "updated_at": "2025-09-30T11:49:10.520688Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "741c9d30-30cf-4223-b60e-b6f3efe9aa17",
+      "title": "Digital Transformation Strategy",
+      "client": "Tech Solutions Inc.",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "selected_snapshots": [],
+        "description": "This is a test"
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-30T11:52:38.994320Z",
+      "updated_at": "2025-09-30T12:16:11.160149Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "d4491040-51e3-4e30-a780-5c61a605c805",
+      "title": "Digital Transformation Strategy",
+      "client": "Tech Solutions Inc.",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "selected_snapshots": []
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-30T12:20:04.576316Z",
+      "updated_at": "2025-09-30T12:23:07.768457Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "68636806-98e8-4498-9398-02549b66d5b0",
+      "title": "Digital Transformation Strategy",
+      "client": "Tech Solutions Inc.",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "selected_snapshots": []
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-30T12:24:39.786189Z",
+      "updated_at": "2025-09-30T12:29:42.188861Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "c4d7ccb6-d3e1-42e9-8b76-5fa0fd7d681d",
+      "title": "Digital Transformation Strategy",
+      "client": "Startup Ventures",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {
+        "title": "Digital Transformation Strategy",
+        "client": "Khonology",
+        "executive_summary": "Thank you for the opportunity to submit this proposal. We have carefully reviewed your requirements and are confident that our solution will meet your needs effectively and efficiently.",
+        "scope": "Based on our analysis, we recommend the following approach:\n\u2022 Implementation of our premium software platform\n\u2022 Customization to integrate with your existing systems\n\u2022 Comprehensive training for your team members\n\u2022 Ongoing support and maintenance",
+        "timeline": "Project Timeline:\n\u2022 Week 1-2: Planning and setup\n\u2022 Week 3-6: Implementation and customization\n\u2022 Week 7-8: Testing and quality assurance\n\u2022 Week 9-10: Training and go-live\n\u2022 Week 11-12: Support and handover",
+        "investment": "Software License: $9,999.00\nImplementation: $4,500.00\nTraining: $3,600.00\nSupport: $2,000.00\nTotal: $21,706.92",
+        "terms": "This agreement is valid for 30 days from the proposal date. Payment terms: 50% upon contract signing, 50% upon project completion. All work is subject to our standard terms and conditions.",
+        "selected_snapshots": []
+      },
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-09-30T12:30:41.374343Z",
+      "updated_at": "2025-09-30T12:38:13.580682Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "822c1b22-f9b9-446d-827f-53ebdf7031eb",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T15:05:26.428319Z",
+      "updated_at": "2025-10-06T15:05:26.428353Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "a44c9d4f-07b4-4f80-bfd1-17bbbe228a73",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T15:36:13.192842Z",
+      "updated_at": "2025-10-06T15:36:13.192863Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "b12b4246-25b9-41e0-a719-1e8617a5a0a5",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T16:00:04.005261Z",
+      "updated_at": "2025-10-06T16:00:04.005285Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "98dca6c1-fd4c-4703-b16e-891d58e1591e",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T16:18:21.623696Z",
+      "updated_at": "2025-10-06T16:18:21.623728Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "8d8c4ac7-1a93-41ee-97d5-6856c28086a0",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T16:42:13.363967Z",
+      "updated_at": "2025-10-06T16:42:13.363995Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "dc513c87-5706-4863-a28b-6c5e576031fd",
+      "title": "Digital Transformation Strategy",
+      "client": "No client selected",
+      "dtype": "Proposal",
+      "status": "Draft",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-06T17:18:00.442411Z",
+      "updated_at": "2025-10-06T17:18:00.442453Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {}
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    }
+  ],
+  "templates": [
+    {
+      "key": "proposal_standard",
+      "dtype": "Proposal",
+      "name": "Standard Proposal",
+      "sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ]
+    },
+    {
+      "key": "sow_standard",
+      "dtype": "SOW",
+      "name": "Standard SOW",
+      "sections": [
+        "Scope & Deliverables",
+        "Acceptance Criteria",
+        "Timeline & Milestones",
+        "Assumptions",
+        "Risks",
+        "Team Bios",
+        "Terms"
+      ]
+    },
+    {
+      "key": "rfi_standard",
+      "dtype": "RFI",
+      "name": "Standard RFI",
+      "sections": [
+        "Company Profile",
+        "Questions",
+        "References"
+      ]
+    }
+  ],
+  "proposal_versions": [
+    {
+      "id": "b2687dca-35f3-4b9a-903b-dddf38bcda48",
+      "proposal_id": "d50a6cdb-1f10-424c-ae7f-408fb611315e",
+      "title": "Test Version",
+      "description": "Test version description",
+      "sections": {
+        "test": "content"
+      },
+      "is_major": false,
+      "created_by": "test-user",
+      "created_at": "2025-09-29T11:37:33.255042Z",
+      "restored_from": null
+    }
+  ]
+}
