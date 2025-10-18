@@ -297,7 +297,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Content List
+                  // Content List or Grid
                   Expanded(
                     child: pagedItems.isEmpty
                         ? Center(
@@ -306,88 +306,248 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                               style: TextStyle(color: Colors.grey[600]),
                             ),
                           )
-                        : ListView.builder(
-                            itemCount: pagedItems.length,
-                            itemBuilder: (ctx, i) {
-                              final item = pagedItems[i];
-                              final isFolder = item["is_folder"] ?? false;
+                        : selectedCategory == "Images"
+                            ? GridView.builder(
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 4,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 0.85,
+                                ),
+                                itemCount: pagedItems.length,
+                                itemBuilder: (ctx, i) {
+                                  final item = pagedItems[i];
+                                  final isFolder = item["is_folder"] ?? false;
 
-                              return GestureDetector(
-                                onTap: isFolder
-                                    ? () => setState(
-                                        () => currentFolderId = item["id"])
-                                    : null,
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border:
-                                        Border.all(color: Colors.grey[300]!),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        isFolder
-                                            ? Icons.folder
-                                            : Icons.description_outlined,
-                                        color: isFolder
-                                            ? const Color(0xFF4A90E2)
-                                            : const Color(0xFFFFA500),
-                                        size: 28,
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
+                                  if (isFolder) {
+                                    // Folder in Images category - show as list-like item
+                                    return GestureDetector(
+                                      onTap: () => setState(
+                                          () => currentFolderId = item["id"]),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                              color: Colors.grey[300]!),
+                                        ),
                                         child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
-                                            Text(
-                                              item["label"] ?? item["key"],
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: Color(0xFF0066CC),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              isFolder
-                                                  ? "Folder"
-                                                  : (item["content"] ?? "")
-                                                      .toString(),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
+                                            Icon(Icons.folder,
+                                                color: const Color(0xFF4A90E2),
+                                                size: 32),
+                                            const SizedBox(height: 8),
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 4),
+                                              child: Text(
+                                                item["label"] ??
+                                                    item["key"] ??
+                                                    "Folder",
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: TextAlign.center,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF0066CC),
+                                                ),
                                               ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                      PopupMenuButton(
-                                        itemBuilder: (context) => [
-                                          PopupMenuItem(
-                                            child: const Text("Edit"),
-                                            onTap: () => _showEditDialog(
-                                                context, app, item),
+                                    );
+                                  }
+
+                                  // Image grid item
+                                  return GestureDetector(
+                                    onLongPress: () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: const Text("Options"),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () {
+                                                Navigator.pop(ctx);
+                                                _showEditDialog(
+                                                    context, app, item);
+                                              },
+                                              child: const Text("Edit"),
+                                            ),
+                                            TextButton(
+                                              onPressed: () {
+                                                Navigator.pop(ctx);
+                                                _deleteItem(
+                                                    context, app, item["id"]);
+                                              },
+                                              child: const Text("Delete"),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                            color: Colors.grey[300]!),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Expanded(
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  const BorderRadius.only(
+                                                topLeft: Radius.circular(8),
+                                                topRight: Radius.circular(8),
+                                              ),
+                                              child: Image.network(
+                                                item["content"] ?? "",
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error,
+                                                    stackTrace) {
+                                                  return Container(
+                                                    color: Colors.grey[300],
+                                                    child: const Icon(Icons
+                                                        .image_not_supported),
+                                                  );
+                                                },
+                                                loadingBuilder: (context, child,
+                                                    loadingProgress) {
+                                                  if (loadingProgress == null)
+                                                    return child;
+                                                  return Container(
+                                                    color: Colors.grey[300],
+                                                    child: const Center(
+                                                      child: SizedBox(
+                                                        width: 16,
+                                                        height: 16,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
                                           ),
-                                          PopupMenuItem(
-                                            child: const Text("Delete"),
-                                            onTap: () => _deleteItem(
-                                                context, app, item["id"]),
+                                          Padding(
+                                            padding: const EdgeInsets.all(8),
+                                            child: Text(
+                                              item["label"] ??
+                                                  item["key"] ??
+                                                  "",
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF0066CC),
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                                    ),
+                                  );
+                                },
+                              )
+                            : ListView.builder(
+                                itemCount: pagedItems.length,
+                                itemBuilder: (ctx, i) {
+                                  final item = pagedItems[i];
+                                  final isFolder = item["is_folder"] ?? false;
+
+                                  return GestureDetector(
+                                    onTap: isFolder
+                                        ? () => setState(
+                                            () => currentFolderId = item["id"])
+                                        : null,
+                                    child: Container(
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                            color: Colors.grey[300]!),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isFolder
+                                                ? Icons.folder
+                                                : Icons.description_outlined,
+                                            color: isFolder
+                                                ? const Color(0xFF4A90E2)
+                                                : const Color(0xFFFFA500),
+                                            size: 28,
+                                          ),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  item["label"] ?? item["key"],
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF0066CC),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  isFolder
+                                                      ? "Folder"
+                                                      : (item["content"] ?? "")
+                                                          .toString(),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          PopupMenuButton(
+                                            itemBuilder: (context) => [
+                                              PopupMenuItem(
+                                                child: const Text("Edit"),
+                                                onTap: () => _showEditDialog(
+                                                    context, app, item),
+                                              ),
+                                              PopupMenuItem(
+                                                child: const Text("Delete"),
+                                                onTap: () => _deleteItem(
+                                                    context, app, item["id"]),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                   ),
                 ],
               ),
