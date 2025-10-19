@@ -4,6 +4,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
+import 'pages/ceo_dashboard_page.dart';
+import 'pages/financial_manager_dashboard_page.dart';
+import 'pages/reviewer_dashboard_page.dart';
+import 'pages/client_dashboard_page.dart';
 import 'widgets/app_side_nav.dart';
 import 'pages/creator/compose_page.dart';
 import 'pages/admin/govern_page.dart';
@@ -22,12 +26,25 @@ import 'pages/creator/templates_page.dart';
 import 'pages/creator/collaboration_page.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
+import 'pages/admin/admin_panel_page.dart';
+import 'pages/admin/user_management_page.dart';
+import 'pages/admin/system_settings_page.dart';
+import 'pages/reviewer/pending_reviews_page.dart';
+import 'pages/reviewer/review_queue_page.dart';
+import 'pages/client/signed_documents_page.dart';
+import 'pages/client/messages_page.dart';
 import 'services/auth_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'services/video_preload_service.dart';
+import 'widgets/app_background.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize default role for testing
+  AuthService.initializeDefaultRole();
+  
   try {
     if (kIsWeb) {
       // Initialize Firebase for web using options matching web/firebase-config.js
@@ -51,6 +68,8 @@ Future<void> main() async {
   }
   // Restore persisted auth session on startup (web)
   AuthService.restoreSessionFromStorage();
+  // Pre-initialize 3D earth video for fast first paint on CEO dashboard
+  await VideoPreloadService.init('assets/images/3D earth.mp4');
   runApp(const MyApp());
 }
 
@@ -67,7 +86,14 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
           textTheme: GoogleFonts.poppinsTextTheme(),
+          scaffoldBackgroundColor: Colors.transparent,
+          canvasColor: Colors.transparent,
         ),
+        builder: (context, child) {
+          // Wrap every page with the landing-style background
+          if (child == null) return const SizedBox.shrink();
+          return AppBackground(child: child);
+        },
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
           // Handle verification routes
@@ -102,38 +128,31 @@ class MyApp extends StatelessWidget {
             return EmailVerificationPage(token: token);
           },
           '/home': (context) => const HomeShell(),
-          '/proposals': (context) => ProposalsPage(),
-          '/compose': (context) => const ComposePage(),
-          '/govern': (context) => const GovernPage(),
-          '/preview': (context) => const PreviewPage(),
-          '/creator_dashboard': (context) => const DashboardPage(),
-          '/content_library': (context) => const ContentLibraryPage(),
-          '/content': (context) =>
-              const ContentLibraryPage(), // Add missing route
-          '/approvals': (context) => const ApprovalsPage(),
-          '/approver_dashboard': (context) => const ApproverDashboardPage(),
-          '/admin_dashboard': (context) => const AdminDashboardPage(),
-          '/client_portal': (context) => const ClientPortalPage(),
+          '/proposals': (context) => const HomeShell(initialIdx: 1),
+          '/compose': (context) => const HomeShell(initialIdx: 8),
+          '/govern': (context) => const HomeShell(initialIdx: 9),
+          '/preview': (context) => const HomeShell(initialIdx: 7),
+          '/creator_dashboard': (context) => const HomeShell(initialIdx: 0),
+          '/content_library': (context) => const HomeShell(initialIdx: 3),
+          '/content': (context) => const HomeShell(initialIdx: 3),
+          '/approvals': (context) => const HomeShell(initialIdx: 5),
+          '/approver_dashboard': (context) => const HomeShell(initialIdx: 10),
+          '/admin_dashboard': (context) => const HomeShell(initialIdx: 11),
+          '/client_portal': (context) => const HomeShell(initialIdx: 12),
           '/cinematic': (context) => const CinematicSequencePage(),
-          '/templates': (context) => const TemplatesPage(),
-          '/collaboration': (context) => const CollaborationPage(),
-          '/analytics': (context) => const AnalyticsPage(),
-          '/team_details': (context) {
-            final args = ModalRoute.of(context)!.settings.arguments as Map?;
-            final id = args != null ? (args['teamId'] ?? '') : '';
-            return Scaffold(
-              appBar: AppBar(title: const Text('Team')),
-              body: Center(child: Text('Team: $id')),
-            );
-          },
-          '/workspace': (context) {
-            final args = ModalRoute.of(context)!.settings.arguments as Map?;
-            final name = args != null ? (args['workspaceName'] ?? '') : '';
-            return Scaffold(
-              appBar: AppBar(title: const Text('Workspace')),
-              body: Center(child: Text('Workspace: $name')),
-            );
-          },
+          '/templates': (context) => const HomeShell(initialIdx: 2),
+          '/collaboration': (context) => const HomeShell(initialIdx: 4),
+          '/analytics': (context) => const HomeShell(initialIdx: 6),
+          '/user_management': (context) => const HomeShell(initialIdx: 10),
+          '/system_settings': (context) => const HomeShell(initialIdx: 11),
+          '/review_queue': (context) => const HomeShell(initialIdx: 1),
+          '/pending_reviews': (context) => const HomeShell(initialIdx: 5),
+          '/quality_metrics': (context) => const HomeShell(initialIdx: 6),
+          '/review_history': (context) => const HomeShell(initialIdx: 3),
+          '/signed_documents': (context) => const HomeShell(initialIdx: 3),
+          '/messages': (context) => const HomeShell(initialIdx: 4),
+          '/support': (context) => const HomeShell(initialIdx: 5),
+          '/approval_history': (context) => const HomeShell(initialIdx: 3),
         },
       ),
     );
@@ -203,21 +222,48 @@ class _HomeShellState extends State<HomeShell> {
   bool _isCollapsed = true;
   String _current = 'Dashboard';
   int idx = 0;
-  final pages = [
-    DashboardPage(), // 0
-    ProposalsPage(), // 1
-    TemplatesPage(), // 2
-    ContentLibraryPage(), // 3
-    CollaborationPage(), // 4
-    ApprovalsPage(), // 5
-    AnalyticsPage(), // 6
-    PreviewPage(), // 7 (optional)
-    ComposePage(), // 8 (optional)
-    GovernPage(), // 9 (optional)
-    ApproverDashboardPage(), // 10 (optional)
-    AdminDashboardPage(), // 11 (optional)
-    ClientPortalPage(), // 12 (optional)
-  ];
+  String? _lastRole;
+  List<Widget> get pages {
+    final userRole = AuthService.currentUser?['role'] ?? 'CEO';
+    
+    // Base pages that all roles can access
+    final basePages = [
+      _getDashboardForRole(userRole), // 0 - Role-specific dashboard
+      ProposalsPage(), // 1
+      TemplatesPage(), // 2
+      ContentLibraryPage(), // 3
+      CollaborationPage(), // 4
+      ApprovalsPage(), // 5
+      AnalyticsPage(), // 6
+      PreviewPage(), // 7
+      ComposePage(), // 8
+      GovernPage(), // 9
+      ApproverDashboardPage(), // 10
+      AdminDashboardPage(), // 11
+      ClientPortalPage(), // 12
+    ];
+    
+    return basePages;
+  }
+
+  Widget _getDashboardForRole(String role) {
+    switch (role) {
+      case 'CEO':
+        return const CEODashboardPage();
+      case 'Financial Manager':
+        return const FinancialManagerDashboardPage();
+      case 'Reviewer':
+        return const ReviewerDashboardPage();
+      case 'Client':
+        return const ClientDashboardPage();
+      case 'Approver':
+        return const ApproverDashboardPage();
+      case 'Admin':
+        return const AdminDashboardPage();
+      default:
+        return const CEODashboardPage();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +271,18 @@ class _HomeShellState extends State<HomeShell> {
       // initialize once with desired index
       idx = widget.initialIdx!;
       _current = _labelForIdx(idx);
+    }
+    
+    // Force rebuild when role changes
+    final currentRole = AuthService.currentUser?['role'] ?? 'CEO';
+    if (_lastRole != currentRole) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _lastRole = currentRole;
+          _current = 'Dashboard'; // Reset to dashboard when role changes
+          idx = 0;
+        });
+      });
     }
     return Scaffold(
       body: Row(
@@ -306,48 +364,132 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   int _idxForLabel(String label) {
-    switch (label) {
-      case 'Dashboard':
-        return 0;
-      case 'My Proposals':
-        return 1;
-      case 'Templates':
-        return 2;
-      case 'Content Library':
-        return 3;
-      case 'Collaboration':
-        return 4;
-      case 'Approvals Status':
-        return 5;
-      case 'Analytics (My Pipeline)':
-        return 6;
-      case 'Preview':
-        return 7;
-      default:
-        return 0;
+    final userRole = AuthService.currentUser?['role'] ?? 'Financial Manager';
+    
+    // Role-specific label mapping
+    switch (userRole) {
+      case 'CEO':
+        switch (label) {
+          case 'Dashboard': return 0;
+          case 'My Proposals': return 1;
+          case 'Analytics': return 6;
+          case 'User Management': return 10;
+          case 'System Settings': return 11;
+          case 'Govern': return 9;
+          default: return 0;
+        }
+      case 'Reviewer':
+        switch (label) {
+          case 'Dashboard': return 0;
+          case 'Review Queue': return 1;
+          case 'Pending Reviews': return 5;
+          case 'Quality Metrics': return 6;
+          case 'Review History': return 3;
+          default: return 0;
+        }
+      case 'Client':
+        switch (label) {
+          case 'Dashboard': return 0;
+          case 'My Proposals': return 1;
+          case 'Signed Documents': return 3;
+          case 'Messages': return 4;
+          case 'Support': return 5;
+          default: return 0;
+        }
+      case 'Approver':
+        switch (label) {
+          case 'Dashboard': return 0;
+          case 'Approvals': return 5;
+          case 'Approval History': return 3;
+          case 'Analytics': return 6;
+          default: return 0;
+        }
+      case 'Admin':
+        switch (label) {
+          case 'Dashboard': return 0;
+          case 'User Management': return 10;
+          case 'System Settings': return 11;
+          case 'Analytics': return 6;
+          case 'Govern': return 9;
+          default: return 0;
+        }
+      default: // Financial Manager
+        switch (label) {
+          case 'Dashboard': return 0;
+          case 'My Proposals': return 1;
+          case 'Templates': return 2;
+          case 'Content Library': return 3;
+          case 'Collaboration': return 4;
+          case 'Approvals Status': return 5;
+          case 'Analytics': return 6;
+          case 'Preview': return 7;
+          default: return 0;
+        }
     }
   }
 
   String _labelForIdx(int i) {
-    switch (i) {
-      case 0:
-        return 'Dashboard';
-      case 1:
-        return 'My Proposals';
-      case 2:
-        return 'Templates';
-      case 3:
-        return 'Content Library';
-      case 4:
-        return 'Collaboration';
-      case 5:
-        return 'Approvals Status';
-      case 6:
-        return 'Analytics (My Pipeline)';
-      case 7:
-        return 'Preview';
-      default:
-        return 'Dashboard';
+    final userRole = AuthService.currentUser?['role'] ?? 'Financial Manager';
+    
+    // Role-specific index mapping
+    switch (userRole) {
+      case 'CEO':
+        switch (i) {
+          case 0: return 'Dashboard';
+          case 1: return 'My Proposals';
+          case 6: return 'Analytics';
+          case 10: return 'User Management';
+          case 11: return 'System Settings';
+          case 9: return 'Govern';
+          default: return 'Dashboard';
+        }
+      case 'Reviewer':
+        switch (i) {
+          case 0: return 'Dashboard';
+          case 1: return 'Review Queue';
+          case 5: return 'Pending Reviews';
+          case 6: return 'Quality Metrics';
+          case 3: return 'Review History';
+          default: return 'Dashboard';
+        }
+      case 'Client':
+        switch (i) {
+          case 0: return 'Dashboard';
+          case 1: return 'My Proposals';
+          case 3: return 'Signed Documents';
+          case 4: return 'Messages';
+          case 5: return 'Support';
+          default: return 'Dashboard';
+        }
+      case 'Approver':
+        switch (i) {
+          case 0: return 'Dashboard';
+          case 5: return 'Approvals';
+          case 3: return 'Approval History';
+          case 6: return 'Analytics';
+          default: return 'Dashboard';
+        }
+      case 'Admin':
+        switch (i) {
+          case 0: return 'Dashboard';
+          case 10: return 'User Management';
+          case 11: return 'System Settings';
+          case 6: return 'Analytics';
+          case 9: return 'Govern';
+          default: return 'Dashboard';
+        }
+      default: // Financial Manager
+        switch (i) {
+          case 0: return 'Dashboard';
+          case 1: return 'My Proposals';
+          case 2: return 'Templates';
+          case 3: return 'Content Library';
+          case 4: return 'Collaboration';
+          case 5: return 'Approvals Status';
+          case 6: return 'Analytics';
+          case 7: return 'Preview';
+          default: return 'Dashboard';
+        }
     }
   }
 

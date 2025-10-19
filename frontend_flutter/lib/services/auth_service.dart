@@ -9,6 +9,20 @@ class AuthService {
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 
+  // Test method to set a role for debugging
+  static void setTestRole(String role) {
+    _currentUser = {'role': role, 'name': 'Test User', 'email': 'test@example.com'};
+    _token = 'test_token';
+    _persistSession();
+  }
+
+  // Initialize with default role for testing
+  static void initializeDefaultRole() {
+    if (_currentUser == null) {
+      setTestRole('CEO');
+    }
+  }
+
   // Get current user
   static Map<String, dynamic>? get currentUser => _currentUser;
   static String? get token => _token;

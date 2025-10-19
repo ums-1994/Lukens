@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../services/api_service.dart';
 import '../../services/firebase_service.dart';
+import '../../widgets/liquid_glass_card.dart';
 
 class ProposalsPage extends StatefulWidget {
   @override
@@ -178,10 +179,10 @@ class _ProposalsPageState extends State<ProposalsPage> {
             SizedBox(height: 24),
 
             // Filter and Search Section
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
+            LiquidGlassCard(
+              padding: EdgeInsets.all(16.0),
+              borderRadius: 16,
+              child: Column(
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -191,7 +192,7 @@ class _ProposalsPageState extends State<ProposalsPage> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF2c3e50),
+                            color: Colors.white,
                           ),
                         ),
                         Row(
@@ -202,17 +203,18 @@ class _ProposalsPageState extends State<ProposalsPage> {
                                 controller: _searchController,
                                 decoration: InputDecoration(
                                   hintText: 'Search proposals...',
+                                  hintStyle: TextStyle(color: Colors.white70),
                                   contentPadding: EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 8),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(6),
                                     borderSide:
-                                        BorderSide(color: Color(0xFFe2e8f0)),
+                                        BorderSide(color: Colors.white24),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(6),
                                     borderSide:
-                                        BorderSide(color: Color(0xFFe2e8f0)),
+                                        BorderSide(color: Colors.white24),
                                   ),
                                 ),
                               ),
@@ -220,7 +222,7 @@ class _ProposalsPageState extends State<ProposalsPage> {
                             SizedBox(width: 12),
                             Container(
                               decoration: BoxDecoration(
-                                border: Border.all(color: Color(0xFFe2e8f0)),
+                                border: Border.all(color: Colors.white24),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Padding(
@@ -228,6 +230,8 @@ class _ProposalsPageState extends State<ProposalsPage> {
                                 child: DropdownButtonHideUnderline(
                                   child: DropdownButton<String>(
                                     value: _filterStatus,
+                                    dropdownColor: const Color(0xFF121212),
+                                    style: const TextStyle(color: Colors.white),
                                     items: [
                                       'All Statuses',
                                       'Draft',
@@ -237,7 +241,7 @@ class _ProposalsPageState extends State<ProposalsPage> {
                                     ].map((String value) {
                                       return DropdownMenuItem<String>(
                                         value: value,
-                                        child: Text(value),
+                                        child: Text(value, style: const TextStyle(color: Colors.white)),
                                       );
                                     }).toList(),
                                     onChanged: (String? newValue) {
@@ -299,7 +303,7 @@ class _ProposalsPageState extends State<ProposalsPage> {
                         physics: NeverScrollableScrollPhysics(),
                         itemCount: proposals.length,
                         separatorBuilder: (context, index) =>
-                            Divider(height: 1),
+                            SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final proposal = proposals[index];
                           return ProposalItem(
@@ -310,7 +314,6 @@ class _ProposalsPageState extends State<ProposalsPage> {
                       ),
                   ],
                 ),
-              ),
             ),
           ],
         ),
@@ -380,10 +383,19 @@ class ProposalItem extends StatelessWidget {
         statusBgColor = Colors.grey[200]!;
     }
 
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 16.0),
+    return LiquidGlassCard(
+      borderRadius: 16,
+      padding: EdgeInsets.all(16),
+      onTap: () {
+        if (proposal['status'] == 'Draft') {
+          Navigator.pushNamed(context, '/compose', arguments: proposal);
+        } else {
+          Navigator.pushNamed(context, '/preview', arguments: proposal);
+        }
+      },
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
@@ -391,37 +403,37 @@ class ProposalItem extends StatelessWidget {
               children: [
                 Text(
                   proposal['title'] ?? proposal['name'] ?? 'Untitled Proposal',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF2c3e50),
+                    color: Colors.white,
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: 16,
                   children: [
                     Text(
                       'Created: ${_formatDate(proposal['created_at'] ?? proposal['created'])}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF718096),
+                        color: Colors.white70,
                       ),
                     ),
                     if (proposal['value'] != null)
                       Text(
                         'Value: \$${proposal['value'].toString()}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 13,
-                          color: Color(0xFF718096),
+                          color: Colors.white70,
                         ),
                       ),
                     if (proposal['client_name'] != null ||
                         proposal['client'] != null)
                       Text(
                         'Client: ${proposal['client_name'] ?? proposal['client']}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 13,
-                          color: Color(0xFF718096),
+                          color: Colors.white70,
                         ),
                       ),
                   ],
@@ -432,7 +444,7 @@ class ProposalItem extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
                   color: statusBgColor,
                   borderRadius: BorderRadius.circular(20),
@@ -446,16 +458,13 @@ class ProposalItem extends StatelessWidget {
                   ),
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () {
-                  // Navigate to proposal details or edit
                   if (proposal['status'] == 'Draft') {
-                    Navigator.pushNamed(context, '/compose',
-                        arguments: proposal);
+                    Navigator.pushNamed(context, '/compose', arguments: proposal);
                   } else {
-                    Navigator.pushNamed(context, '/preview',
-                        arguments: proposal);
+                    Navigator.pushNamed(context, '/preview', arguments: proposal);
                   }
                 },
                 child: Text(
@@ -466,7 +475,7 @@ class ProposalItem extends StatelessWidget {
                           : 'View',
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFF4a6cf7),
+                  backgroundColor: const Color(0xFF4a6cf7),
                   foregroundColor: Colors.white,
                 ),
               ),

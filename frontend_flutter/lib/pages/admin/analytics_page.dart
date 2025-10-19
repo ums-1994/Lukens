@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../widgets/analytics_charts.dart';
+import '../../widgets/liquid_glass_card.dart';
+import '../../widgets/footer.dart';
+import '../../services/currency_service.dart';
+import '../../widgets/currency_picker.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -13,570 +18,433 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
-      body: Column(
-        children: [
-          // Header
-          Container(
-            height: 60,
-            decoration: const BoxDecoration(
-              color: Color(0xFF2C3E50),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Proposal & SOW Builder',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+      backgroundColor: Colors.transparent,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Analytics Dashboard',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1,
+                      ),
                     ),
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 35,
-                        height: 35,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF3498DB),
-                          shape: BoxShape.circle,
+                    SizedBox(height: 8),
+                    Text(
+                      'Comprehensive business intelligence and performance metrics',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFFB0B6BB),
+                        fontWeight: FontWeight.w300,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    LiquidGlassCard(
+                      borderRadius: 12,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedPeriod,
+                          dropdownColor: const Color(0xFF121212),
+                          style: const TextStyle(color: Colors.white),
+                          items: [
+                            'Last 7 Days',
+                            'Last 30 Days',
+                            'Last 90 Days',
+                            'This Year'
+                          ].map((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(value, style: const TextStyle(color: Colors.white)),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _selectedPeriod = newValue!;
+                            });
+                          },
                         ),
-                        child: const Center(
-                          child: Text(
-                            'U',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    LiquidGlassCard(
+                      borderRadius: 12,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.download, color: Colors.white, size: 16),
+                          SizedBox(width: 8),
+                          Text(
+                            'Export',
+                            style: TextStyle(color: Colors.white, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+
+            // Key Metrics Row
+            Row(
+              children: [
+                Expanded(
+                  child: LiquidGlassCard(
+                    borderRadius: 16,
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Total Revenue',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text(
-                        'User',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      const SizedBox(width: 10),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert, color: Colors.white),
-                        onSelected: (value) {
-                          if (value == 'logout') {
-                            Navigator.pushNamed(context, '/login');
-                          }
-                        },
-                        itemBuilder: (BuildContext context) => [
-                          const PopupMenuItem<String>(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout),
-                                SizedBox(width: 8),
-                                Text('Logout'),
-                              ],
+                        const SizedBox(height: 8),
+                        CurrencyDisplay(
+                          amount: 2847392,
+                          largeAmount: true,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.trending_up, color: Color(0xFF14B3BB), size: 16),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '+12.5%',
+                              style: TextStyle(
+                                color: Color(0xFF14B3BB),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Text(
+                              ' vs last month',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: LiquidGlassCard(
+                    borderRadius: 16,
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Active Proposals',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '47',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.trending_up, color: Color(0xFF14B3BB), size: 16),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '+8.2%',
+                              style: TextStyle(
+                                color: Color(0xFF14B3BB),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Text(
+                              ' vs last month',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: LiquidGlassCard(
+                    borderRadius: 16,
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Conversion Rate',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '73.2%',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.trending_down, color: Color(0xFFE9293A), size: 16),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '-2.1%',
+                              style: TextStyle(
+                                color: Color(0xFFE9293A),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Text(
+                              ' vs last month',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: LiquidGlassCard(
+                    borderRadius: 16,
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Avg Deal Size',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        CurrencyDisplay(
+                          amount: 60583,
+                          largeAmount: true,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.trending_up, color: Color(0xFF14B3BB), size: 16),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '+5.7%',
+                              style: TextStyle(
+                                color: Color(0xFF14B3BB),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Text(
+                              ' vs last month',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+
+            // Charts Section
+            const AnalyticsCharts(),
+            const SizedBox(height: 32),
+
+            // Performance Table
+            LiquidGlassCard(
+              borderRadius: 16,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Top Performing Proposals',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(3),
+                      1: FlexColumnWidth(2),
+                      2: FlexColumnWidth(2),
+                      3: FlexColumnWidth(2),
+                      4: FlexColumnWidth(1),
+                    },
+                    children: [
+                      TableRow(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
+                          ),
+                        ),
+                        children: const [
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              'Proposal',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              'Client',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              'Value',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              'Status',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              'Score',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ],
                       ),
+                      _buildTableRow('Enterprise Cloud Migration', 'TechCorp Inc.', '\$125,000', 'Signed', '98'),
+                      _buildTableRow('Digital Marketing Campaign', 'RetailMax', '\$85,000', 'Approved', '95'),
+                      _buildTableRow('Financial System Integration', 'BankFlow', '\$200,000', 'Pending', '92'),
+                      _buildTableRow('Healthcare Platform', 'MediCare Plus', '\$150,000', 'Draft', '88'),
+                      _buildTableRow('E-commerce Solution', 'ShopSmart', '\$75,000', 'Signed', '96'),
                     ],
                   ),
                 ],
               ),
             ),
-          ),
-
-          // Main Content
-          Expanded(
-            child: Row(
-              children: [
-                // Sidebar
-                Container(
-                  width: 250,
-                  color: const Color(0xFF34495E),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        // Title
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C3E50),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: const Color(0xFF34495E), width: 1),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                Icons.person_outline,
-                                color: Color(0xFF3498DB),
-                                size: 20,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Business Developer',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildNavItem('📊', 'Dashboard', false, context),
-                        _buildNavItem('📝', 'My Proposals', false, context),
-                        _buildNavItem('📂', 'Templates', false, context),
-                        _buildNavItem('🧩', 'Content Library', false, context),
-                        _buildNavItem('👥', 'Collaboration', false, context),
-                        _buildNavItem('📋', 'Approvals Status', false, context),
-                        _buildNavItem(
-                            '🔍', 'Analytics (My Pipeline)', true, context),
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Content Area
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Header Section
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Analytics & Pipeline',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF2C3E50),
-                                    ),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    'Track your proposal performance and pipeline metrics',
-                                    style: TextStyle(
-                                      color: Color(0xFF718096),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                      color: const Color(0xFFE2E8F0)),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12.0),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<String>(
-                                      value: _selectedPeriod,
-                                      items: [
-                                        'Last 7 Days',
-                                        'Last 30 Days',
-                                        'Last 90 Days',
-                                        'This Year'
-                                      ].map((String value) {
-                                        return DropdownMenuItem<String>(
-                                          value: value,
-                                          child: Text(value),
-                                        );
-                                      }).toList(),
-                                      onChanged: (String? newValue) {
-                                        setState(() {
-                                          _selectedPeriod = newValue!;
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Key Metrics Row
-                          Row(
-                            children: [
-                              Expanded(
-                                  child: _buildMetricCard('Total Proposals',
-                                      '24', '+12%', const Color(0xFF3498DB))),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                  child: _buildMetricCard('Win Rate', '68%',
-                                      '+5%', const Color(0xFF2ECC71))),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                  child: _buildMetricCard('Avg. Value', '\$45K',
-                                      '+8%', const Color(0xFFE74C3C))),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                  child: _buildMetricCard(
-                                      'Pipeline Value',
-                                      '\$1.2M',
-                                      '+15%',
-                                      const Color(0xFFF39C12))),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Charts Row
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: _buildChartCard(
-                                    'Proposal Pipeline', _buildPipelineChart()),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                flex: 1,
-                                child: _buildChartCard(
-                                    'Win Rate by Type', _buildWinRateChart()),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-
-                          // Performance Table
-                          _buildPerformanceTable(),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Footer
-          Container(
-            height: 50,
-            decoration: const BoxDecoration(
-              border: Border(
-                  top: BorderSide(
-                      color: Color(0xFFDDD), style: BorderStyle.solid)),
-            ),
-            child: const Center(
-              child: Text(
-                'Khonology Proposal & SOW Builder | End-to-End Proposal Generation and Sign-Off',
-                style: TextStyle(
-                  color: Color(0xFF7F8C8D),
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-      String icon, String label, bool isActive, BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        border: isActive
-            ? Border.all(color: const Color(0xFF2980B9), width: 1)
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            _navigateToPage(context, label);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 54,
-                  height: 54,
-                  child: _navIconFor(label, isActive),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                      fontSize: 14,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-                if (isActive)
-                  const Icon(
-                    Icons.arrow_forward_ios,
-                    size: 12,
-                    color: Colors.white,
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMetricCard(
-      String title, String value, String change, Color color) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Color(0xFF718096),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              change,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Color(0xFF2ECC71),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            const SizedBox(height: 20),
+            const Footer(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildChartCard(String title, Widget chart) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 16),
-            chart,
-          ],
-        ),
-      ),
-    );
-  }
+  TableRow _buildTableRow(String proposal, String client, String value, String status, String score) {
+    Color statusColor;
+    switch (status) {
+      case 'Signed':
+        statusColor = const Color(0xFF14B3BB);
+        break;
+      case 'Approved':
+        statusColor = const Color(0xFFFFD700);
+        break;
+      case 'Pending':
+        statusColor = const Color(0xFFE9293A);
+        break;
+      default:
+        statusColor = const Color(0xFF6B7280);
+    }
 
-  Widget _buildPipelineChart() {
-    return Container(
-      height: 200,
-      child: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.bar_chart,
-              size: 48,
-              color: Color(0xFFBDC3C7),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Pipeline Chart',
-              style: TextStyle(
-                color: Color(0xFF718096),
-                fontSize: 14,
-              ),
-            ),
-            Text(
-              'Coming Soon',
-              style: TextStyle(
-                color: Color(0xFF95A5A6),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWinRateChart() {
-    return Container(
-      height: 200,
-      child: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.pie_chart,
-              size: 48,
-              color: Color(0xFFBDC3C7),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Win Rate Chart',
-              style: TextStyle(
-                color: Color(0xFF718096),
-                fontSize: 14,
-              ),
-            ),
-            Text(
-              'Coming Soon',
-              style: TextStyle(
-                color: Color(0xFF95A5A6),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPerformanceTable() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Recent Proposals Performance',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Table(
-              columnWidths: const {
-                0: FlexColumnWidth(3),
-                1: FlexColumnWidth(1),
-                2: FlexColumnWidth(1),
-                3: FlexColumnWidth(1),
-                4: FlexColumnWidth(1),
-              },
-              children: [
-                const TableRow(
-                  decoration: BoxDecoration(
-                    border:
-                        Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-                  ),
-                  children: [
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Proposal',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2C3E50),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Value',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2C3E50),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Status',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2C3E50),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Days',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2C3E50),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        'Win Rate',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2C3E50),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                _buildTableRow('Software Development Proposal', '\$75K', 'Won',
-                    '12', '100%', const Color(0xFF2ECC71)),
-                _buildTableRow('Cloud Migration SOW', '\$45K', 'Pending', '8',
-                    '75%', const Color(0xFFF39C12)),
-                _buildTableRow('Data Analytics Contract', '\$32K', 'Lost', '15',
-                    '0%', const Color(0xFFE74C3C)),
-                _buildTableRow('Maintenance Agreement', '\$18K', 'Won', '5',
-                    '100%', const Color(0xFF2ECC71)),
-                _buildTableRow('Consulting Services', '\$60K', 'In Review',
-                    '10', '60%', const Color(0xFF3498DB)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  TableRow _buildTableRow(String proposal, String value, String status,
-      String days, String winRate, Color statusColor) {
     return TableRow(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF8F9FA))),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withOpacity(0.05)),
+        ),
       ),
       children: [
         Padding(
@@ -584,8 +452,18 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           child: Text(
             proposal,
             style: const TextStyle(
+              color: Colors.white,
               fontSize: 14,
-              color: Color(0xFF2C3E50),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            client,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
             ),
           ),
         ),
@@ -594,8 +472,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           child: Text(
             value,
             style: const TextStyle(
+              color: Colors.white,
               fontSize: 14,
-              color: Color(0xFF2C3E50),
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -604,15 +483,16 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.1),
+              color: statusColor.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: statusColor.withOpacity(0.5)),
             ),
             child: Text(
               status,
               style: TextStyle(
-                fontSize: 12,
                 color: statusColor,
-                fontWeight: FontWeight.w500,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -620,79 +500,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Text(
-            days,
+            score,
             style: const TextStyle(
+              color: Color(0xFF00D4FF),
               fontSize: 14,
-              color: Color(0xFF2C3E50),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-            winRate,
-            style: TextStyle(
-              fontSize: 14,
-              color: statusColor,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
       ],
     );
-  }
-
-  Widget _navIconFor(String label, bool isActive) {
-    String path;
-    switch (label) {
-      case 'Dashboard':
-        path = 'assets/images/Dahboard.png';
-        break;
-      case 'My Proposals':
-        path = 'assets/images/My_Proposals.png';
-        break;
-      case 'Templates':
-      case 'Content Library':
-        path = 'assets/images/content_library.png';
-        break;
-      case 'Collaboration':
-        path = 'assets/images/collaborations.png';
-        break;
-      case 'Approvals Status':
-      case 'Analytics (My Pipeline)':
-        path = 'assets/images/analytics.png';
-        break;
-      default:
-        path = 'assets/images/Dahboard.png';
-    }
-    return Image.asset(path, fit: BoxFit.contain);
-  }
-
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushNamed(context, '/creator_dashboard');
-        break;
-      case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        Navigator.pushNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        Navigator.pushNamed(context, '/content_library');
-        break;
-      case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
-        break;
-      case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
-        break;
-      case 'Analytics (My Pipeline)':
-        // Already on analytics page
-        break;
-      default:
-        Navigator.pushNamed(context, '/creator_dashboard');
-    }
   }
 }
