@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../api.dart';
+import 'template_editor_page.dart' as editor;
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -15,19 +16,14 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
   final keyCtrl = TextEditingController();
   final labelCtrl = TextEditingController();
   final contentCtrl = TextEditingController();
-  String selectedCategory = "Templates";
+  String selectedCategory = "Sections";
   String sortBy = "Last Edited (Newest First)";
   int currentPage = 1;
   int itemsPerPage = 10;
   int _currentNavIdx = 3; // Content Library is index 3
   int? currentFolderId; // Track current folder being viewed
 
-  final List<String> categories = [
-    "Templates",
-    "Sections",
-    "Images",
-    "Snippets"
-  ];
+  final List<String> categories = ["Sections", "Images", "Snippets"];
 
   final List<String> sortOptions = [
     "Last Edited (Newest First)",
@@ -37,12 +33,24 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // Fetch content if empty
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final app = context.read<AppState>();
+      if (app.contentBlocks.isEmpty) {
+        await app.fetchContent();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
 
     // Filter items by selected category and current folder
     final filteredItems = app.contentBlocks.where((item) {
-      final category = item["category"] ?? "Templates";
+      final category = item["category"] ?? "Sections";
       final categoryMatch =
           category.toLowerCase() == selectedCategory.toLowerCase();
 
@@ -114,7 +122,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                   ...categories.map((category) {
                     final count = app.contentBlocks
                         .where((item) =>
-                            (item["category"] ?? "Templates").toLowerCase() ==
+                            (item["category"] ?? "Sections").toLowerCase() ==
                             category.toLowerCase())
                         .length;
 
@@ -125,6 +133,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                           setState(() {
                             selectedCategory = category;
                             currentPage = 1;
+                            currentFolderId = null;
                           });
                         },
                         child: Container(
@@ -573,63 +582,6 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
     }
   }
 
-  void _showCreateDialog(BuildContext context, AppState app) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Create New Template"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildCreateOption(
-                context: ctx,
-                app: app,
-                title: "Start from Scratch",
-                icon: Icons.edit_note,
-                description: "Create a new template from blank",
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showScratchTemplateDialog(context, app);
-                },
-              ),
-              const SizedBox(height: 12),
-              _buildCreateOption(
-                context: ctx,
-                app: app,
-                title: "Choose from Templates Gallery",
-                icon: Icons.collections,
-                description: "Select from pre-built templates",
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showTemplateGalleryDialog(context, app);
-                },
-              ),
-              const SizedBox(height: 12),
-              _buildCreateOption(
-                context: ctx,
-                app: app,
-                title: "Upload Template",
-                icon: Icons.cloud_upload_outlined,
-                description: "Upload a template from your computer",
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showUploadTemplateDialog(context, app);
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildCreateOption({
     required BuildContext context,
     required AppState app,
@@ -684,9 +636,34 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
 
   void _uploadFile(BuildContext context, AppState app) async {
     try {
+      // Determine allowed file types based on category
+      List<String> allowedExtensions;
+      String fileTypeLabel;
+
+      if (selectedCategory == "Images") {
+        allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+        fileTypeLabel = "image";
+      } else if (selectedCategory == "Sections") {
+        allowedExtensions = [
+          'pdf',
+          'doc',
+          'docx',
+          'txt',
+          'rtf',
+          'odt',
+          'jpg',
+          'jpeg',
+          'png'
+        ];
+        fileTypeLabel = "document";
+      } else {
+        allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+        fileTypeLabel = "file";
+      }
+
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
+        allowedExtensions: allowedExtensions,
         allowMultiple: false,
       );
 
@@ -696,8 +673,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
         if (file.bytes != null || file.path != null) {
           final fileName = file.name;
 
-          // Create a unique key for the image
-          final imageKey = fileName
+          // Create a unique key for the file
+          final fileKey = fileName
               .replaceAll(RegExp(r'\.[^.]+$'), '')
               .toLowerCase()
               .replaceAll(RegExp(r'[^a-z0-9_]'), '_');
@@ -709,11 +686,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
               barrierDismissible: false,
               builder: (ctx) => AlertDialog(
                 title: const Text("Uploading"),
-                content: const Row(
+                content: Row(
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(width: 16),
-                    Text("Uploading image to Cloudinary..."),
+                    const CircularProgressIndicator(),
+                    const SizedBox(width: 16),
+                    Text("Uploading $fileTypeLabel to Cloudinary..."),
                   ],
                 ),
               ),
@@ -734,25 +711,24 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
               final cloudinaryUrl = uploadResult['url'];
               final publicId = uploadResult['public_id'];
 
-              // Add to content blocks
-              app.contentBlocks.add({
-                "id": DateTime.now().millisecondsSinceEpoch,
-                "key": imageKey,
-                "label": fileName,
-                "content": cloudinaryUrl,
-                "category": selectedCategory,
-                "created_at": DateTime.now().toIso8601String(),
-                "public_id": publicId,
-                "is_folder": false,
-                if (currentFolderId != null) "parent_id": currentFolderId,
-              });
+              // Save to backend database
+              // If we're inside a folder, set parent_id to link the file to the folder
+              await app.createContentWithCloudinary(
+                fileKey,
+                fileName,
+                cloudinaryUrl,
+                publicId,
+                selectedCategory,
+                parentId: currentFolderId,
+              );
 
-              app.notifyListeners();
-
+              // Force UI refresh
               if (mounted) {
+                setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text("Image '$fileName' uploaded successfully"),
+                    content: Text(
+                        "${fileTypeLabel[0].toUpperCase()}${fileTypeLabel.substring(1)} '$fileName' uploaded successfully to $selectedCategory"),
                     backgroundColor: Colors.green,
                   ),
                 );
@@ -762,7 +738,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text("Error uploading image: $errorMsg"),
+                    content: Text("Error uploading $fileTypeLabel: $errorMsg"),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -773,7 +749,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
               Navigator.pop(context); // Close loading dialog
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text("Error uploading image: ${e.toString()}"),
+                  content:
+                      Text("Error uploading $fileTypeLabel: ${e.toString()}"),
                   backgroundColor: Colors.red,
                 ),
               );
@@ -793,7 +770,56 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
     }
   }
 
-  List<Widget> _buildHeaderButtons(BuildContext context, AppState app) {
+  // DUPLICATE - Kept for reference, actual implementation below
+  /*
+  List<Widget> _buildHeaderButtons_DUPLICATE(BuildContext context, AppState app) {
+    return [
+      ElevatedButton.icon(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (ctx) => const editor.TemplateEditorPage(),
+            ),
+          );
+        },
+        icon: const Icon(Icons.add),
+        label: const Text("Create from Scratch"),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF0066CC),
+          foregroundColor: Colors.white,
+        ),
+      ),
+      const SizedBox(width: 8),
+      ElevatedButton.icon(
+        onPressed: () => _showImportDialog(context, app),
+        icon: const Icon(Icons.upload_file),
+        label: const Text("Import Template"),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.grey[600],
+          foregroundColor: Colors.white,
+        ),
+      ),
+    ];
+  }
+
+  void _showImportDialog_DUPLICATE(BuildContext context, AppState app) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Import Template"),
+        content: const Text("Import template functionality coming soon"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+  */
+
+  List<Widget> _buildHeaderButtons_OLD(BuildContext context, AppState app) {
     List<Widget> buttons = [];
 
     switch (selectedCategory) {
@@ -822,7 +848,28 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
         break;
 
       case "Sections":
-        // Only "New Folder" button
+        // Both "Upload" and "New Folder" buttons
+        buttons.add(
+          ElevatedButton(
+            onPressed: () => _uploadFile(context, app),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0F172A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.upload_file, size: 18),
+                SizedBox(width: 8),
+                Text("Upload"),
+              ],
+            ),
+          ),
+        );
+        buttons.add(const SizedBox(width: 12));
         buttons.add(
           ElevatedButton(
             onPressed: () => _showNewFolderDialog(context, app),
@@ -916,6 +963,64 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
     }
 
     return buttons;
+  }
+
+  void _showCreateDialog(BuildContext context, AppState app) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Create Template"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.description, color: Color(0xFF4a6cf7)),
+                title: const Text("Create from Scratch"),
+                subtitle: const Text("Start with a blank document"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const editor.TemplateEditorPage(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.style, color: Color(0xFF4a6cf7)),
+                title: const Text("From Template Gallery"),
+                subtitle: const Text("Choose from predefined templates"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showTemplateGalleryDialog(context, app);
+                },
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading:
+                    const Icon(Icons.upload_file, color: Color(0xFF4a6cf7)),
+                title: const Text("Upload Template"),
+                subtitle: const Text("Import from a file"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showUploadTemplateDialog(context, app);
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showScratchTemplateDialog(BuildContext context, AppState app) {
@@ -1340,7 +1445,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
     );
   }
 
-  Widget _buildModernNavbar() {
+  // DUPLICATE - Commented out, using version below instead
+  /*
+  Widget _buildModernNavbar_DUPLICATE() {
     return Container(
       width: 80,
       decoration: BoxDecoration(
@@ -1515,8 +1622,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
       ),
     );
   }
+  */
 
-  Widget _buildNavItem({
+  // DUPLICATE - Commented out, using version below instead
+  /*
+  Widget _buildNavItem_DUPLICATE({
     required IconData icon,
     required String label,
     required bool isActive,
@@ -1563,6 +1673,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
       ),
     );
   }
+  */
 
   void _deleteItem(BuildContext context, AppState app, int itemId) {
     showDialog(
@@ -1739,6 +1850,434 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
               }
             },
             child: const Text("Create"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build header buttons (varies by category)
+  List<Widget> _buildHeaderButtons(BuildContext context, AppState app) {
+    List<Widget> buttons = [];
+
+    switch (selectedCategory) {
+      case "Sections":
+        // Both "Upload" and "New Folder" buttons
+        buttons.add(
+          ElevatedButton(
+            onPressed: () => _uploadFile(context, app),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0F172A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.upload_file, size: 18),
+                SizedBox(width: 8),
+                Text("Upload"),
+              ],
+            ),
+          ),
+        );
+        buttons.add(const SizedBox(width: 12));
+        buttons.add(
+          ElevatedButton(
+            onPressed: () => _showNewFolderDialog(context, app),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00CED1),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.create_new_folder, size: 18),
+                SizedBox(width: 8),
+                Text("New Folder"),
+              ],
+            ),
+          ),
+        );
+        break;
+
+      case "Images":
+        // Both "Upload" and "New Folder" buttons
+        buttons.add(
+          ElevatedButton(
+            onPressed: () => _uploadFile(context, app),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0F172A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.upload_file, size: 18),
+                SizedBox(width: 8),
+                Text("Upload"),
+              ],
+            ),
+          ),
+        );
+        buttons.add(const SizedBox(width: 12));
+        buttons.add(
+          ElevatedButton(
+            onPressed: () => _showNewFolderDialog(context, app),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00CED1),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.create_new_folder, size: 18),
+                SizedBox(width: 8),
+                Text("New Folder"),
+              ],
+            ),
+          ),
+        );
+        break;
+
+      case "Snippets":
+        // Only "New Folder" button
+        buttons.add(
+          ElevatedButton(
+            onPressed: () => _showNewFolderDialog(context, app),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00CED1),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.create_new_folder, size: 18),
+                SizedBox(width: 8),
+                Text("New Folder"),
+              ],
+            ),
+          ),
+        );
+        break;
+    }
+
+    return buttons;
+  }
+
+  // Build modern navigation sidebar
+  Widget _buildModernNavbar() {
+    return Container(
+      width: 80,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E3A8A),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.auto_awesome,
+                color: Color(0xFF1E3A8A),
+                size: 28,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                _buildNavItem(
+                  icon: Icons.home_outlined,
+                  label: 'Home',
+                  isActive: _currentNavIdx == 0,
+                  onTap: () {
+                    setState(() => _currentNavIdx = 0);
+                  },
+                ),
+                _buildNavItem(
+                  icon: Icons.description_outlined,
+                  label: 'My Proposals',
+                  isActive: _currentNavIdx == 1,
+                  onTap: () {
+                    setState(() => _currentNavIdx = 1);
+                  },
+                ),
+                _buildNavItem(
+                  icon: Icons.note_outlined,
+                  label: 'Templates',
+                  isActive: _currentNavIdx == 2,
+                  onTap: () {
+                    setState(() => _currentNavIdx = 2);
+                  },
+                ),
+                _buildNavItem(
+                  icon: Icons.collections,
+                  label: 'Content Library',
+                  isActive: _currentNavIdx == 3,
+                  onTap: () {
+                    setState(() => _currentNavIdx = 3);
+                  },
+                ),
+                _buildNavItem(
+                  icon: Icons.people_outline,
+                  label: 'Collaboration',
+                  isActive: _currentNavIdx == 4,
+                  onTap: () {
+                    setState(() => _currentNavIdx = 4);
+                  },
+                ),
+                _buildNavItem(
+                  icon: Icons.check_circle_outline,
+                  label: 'Approvals',
+                  isActive: _currentNavIdx == 5,
+                  onTap: () {
+                    setState(() => _currentNavIdx = 5);
+                  },
+                ),
+                _buildNavItem(
+                  icon: Icons.trending_up,
+                  label: 'Analytics',
+                  isActive: _currentNavIdx == 6,
+                  onTap: () {
+                    setState(() => _currentNavIdx = 6);
+                  },
+                ),
+              ],
+            ),
+          ),
+          // Help & Logout
+          Tooltip(
+            message: 'Help',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Help is on the way!")),
+                  );
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.help_outline,
+                    color: Colors.grey[400],
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Tooltip(
+            message: 'Logout',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Confirm Logout'),
+                      content: const Text('Are you sure you want to logout?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            Navigator.of(context).pushNamedAndRemoveUntil(
+                              '/',
+                              (route) => false,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          child: const Text('Logout'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.logout,
+                    color: Colors.grey[400],
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  // Build individual navigation item
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color:
+                  isActive ? Colors.white.withOpacity(0.2) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: isActive ? Colors.white : Colors.grey[400],
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _addImageUrl(BuildContext context, AppState app) {
+    final labelCtrl = TextEditingController();
+    final contentCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Add Image URL"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: labelCtrl,
+                decoration: const InputDecoration(
+                  labelText: "Image Name",
+                  hintText: "Enter image name",
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: contentCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: "Image URL",
+                  hintText: "Enter image URL",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (labelCtrl.text.isEmpty || contentCtrl.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Please fill all fields")),
+                );
+                return;
+              }
+
+              try {
+                await app.createContent(
+                  labelCtrl.text.toLowerCase().replaceAll(" ", "_"),
+                  labelCtrl.text.trim(),
+                  contentCtrl.text.trim(),
+                  category: selectedCategory,
+                  parentId: currentFolderId,
+                );
+
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Image uploaded successfully"),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                setState(() {});
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Failed to upload image: $e"),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0F172A),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Upload"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showImportDialog(BuildContext context, AppState app) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Import Template"),
+        content: const Text("Import template functionality coming soon"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Close"),
           ),
         ],
       ),

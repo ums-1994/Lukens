@@ -65,6 +65,7 @@ def init_pg_content_table():
                     category TEXT DEFAULT 'Templates',
                     is_folder BOOLEAN DEFAULT FALSE,
                     parent_id INTEGER REFERENCES content_blocks(id) ON DELETE CASCADE,
+                    public_id TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -78,6 +79,11 @@ def init_pg_content_table():
                 # Update existing NULL categories to default 'Templates'
                 cur.execute("""
                     UPDATE content_blocks SET category = 'Templates' WHERE category IS NULL
+                """)
+                conn.commit()
+                # Add public_id column if it doesn't exist
+                cur.execute("""
+                    ALTER TABLE content_blocks ADD COLUMN IF NOT EXISTS public_id TEXT
                 """)
                 conn.commit()
         print("✓ PostgreSQL content_blocks table initialized")
@@ -512,7 +518,140 @@ def save_proposal(p: Proposal):
     save_db(db)
 
 # ---------- Routes: Content Library (PostgreSQL) ----------
-# Old content endpoints removed - replaced with new async endpoints below at /content
+
+@app.get("/content")
+def get_content(category: Optional[str] = Query(None)):
+    """Get all content blocks, optionally filtered by category"""
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if category:
+                    cur.execute("""
+                        SELECT id, key, label, content, category, is_folder, parent_id, public_id, created_at, updated_at
+                        FROM content_blocks 
+                        WHERE category = %s
+                        ORDER BY updated_at DESC
+                    """, (category,))
+                else:
+                    cur.execute("""
+                        SELECT id, key, label, content, category, is_folder, parent_id, public_id, created_at, updated_at
+                        FROM content_blocks 
+                        ORDER BY updated_at DESC
+                    """)
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching content: {str(e)}")
+
+@app.post("/content")
+def create_content(
+    key: str = Body(...),
+    label: str = Body(...),
+    content: str = Body(""),
+    category: Optional[str] = Body("Templates"),
+    is_folder: bool = Body(False),
+    parent_id: Optional[int] = Body(None),
+    public_id: Optional[str] = Body(None),
+):
+    """Create a new content block"""
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO content_blocks (key, label, content, category, is_folder, parent_id, public_id, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    RETURNING id, key, label, content, category, is_folder, parent_id, public_id, created_at, updated_at
+                """, (key, label, content, category, is_folder, parent_id, public_id))
+                result = cur.fetchone()
+                conn.commit()
+                return {
+                    "id": result[0],
+                    "key": result[1],
+                    "label": result[2],
+                    "content": result[3],
+                    "category": result[4],
+                    "is_folder": result[5],
+                    "parent_id": result[6],
+                    "public_id": result[7],
+                    "created_at": result[8],
+                    "updated_at": result[9],
+                }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error creating content: {str(e)}")
+
+@app.put("/content/{content_id}")
+def update_content(
+    content_id: int,
+    label: Optional[str] = Body(None),
+    content: Optional[str] = Body(None),
+    category: Optional[str] = Body(None),
+    public_id: Optional[str] = Body(None),
+):
+    """Update a content block"""
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor() as cur:
+                # Build dynamic update query
+                updates = []
+                params = []
+                if label is not None:
+                    updates.append("label=%s")
+                    params.append(label)
+                if content is not None:
+                    updates.append("content=%s")
+                    params.append(content)
+                if category is not None:
+                    updates.append("category=%s")
+                    params.append(category)
+                if public_id is not None:
+                    updates.append("public_id=%s")
+                    params.append(public_id)
+                
+                if not updates:
+                    raise HTTPException(status_code=400, detail="No fields to update")
+                
+                updates.append("updated_at=NOW()")
+                params.append(content_id)
+                
+                query = f"UPDATE content_blocks SET {', '.join(updates)} WHERE id=%s RETURNING id, key, label, content, category, is_folder, parent_id, public_id, created_at, updated_at"
+                cur.execute(query, params)
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Content block not found")
+                conn.commit()
+                
+                return {
+                    "id": result[0],
+                    "key": result[1],
+                    "label": result[2],
+                    "content": result[3],
+                    "category": result[4],
+                    "is_folder": result[5],
+                    "parent_id": result[6],
+                    "public_id": result[7],
+                    "created_at": result[8],
+                    "updated_at": result[9],
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating content: {str(e)}")
+
+@app.delete("/content/{content_id}")
+def delete_content(content_id: int):
+    """Delete a content block"""
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM content_blocks WHERE id=%s", (content_id,))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Content block not found")
+                conn.commit()
+                return {"message": "deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting content: {str(e)}")
 
 # ---------- New Routes: Content Modules (PostgreSQL) ----------
 @app.get("/api/modules/")

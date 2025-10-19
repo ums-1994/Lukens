@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'services/auth_service.dart';
 
 const String baseUrl = "http://localhost:8000";
 
@@ -13,7 +14,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     // Only fetch data if user is authenticated
-    if (authToken != null) {
+    if (AuthService.token != null) {
       await Future.wait([
         fetchTemplates(),
         fetchContent(),
@@ -26,8 +27,8 @@ class AppState extends ChangeNotifier {
 
   Map<String, String> get _headers {
     final headers = {"Content-Type": "application/json"};
-    if (authToken != null) {
-      headers["Authorization"] = "Bearer $authToken";
+    if (AuthService.token != null) {
+      headers["Authorization"] = "Bearer ${AuthService.token}";
     }
     return headers;
   }
@@ -448,6 +449,26 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<bool> deleteContent(int contentId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/content/$contentId"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200 || r.statusCode == 204) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error deleting content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error deleting content: $e');
+      return false;
+    }
+  }
+
   Future<void> addContentToProposal(int contentId) async {
     // find block by id in cached contentBlocks and add its content to current proposal sections
     if (currentProposal == null) return;
@@ -736,46 +757,32 @@ class AppState extends ChangeNotifier {
 
   // Create content with Cloudinary URL
   Future<void> createContentWithCloudinary(String key, String label,
-      String cloudinaryUrl, String publicId, String category) async {
+      String cloudinaryUrl, String publicId, String category,
+      {int? parentId}) async {
     try {
+      final Map<String, dynamic> body = {
+        "key": key,
+        "label": label,
+        "content": cloudinaryUrl, // Store Cloudinary URL
+        "public_id": publicId,
+        "category": category,
+        "created_at": DateTime.now().toIso8601String(),
+      };
+
+      // Add parent_id if provided (for files inside folders)
+      if (parentId != null) {
+        body["parent_id"] = parentId;
+      }
+
       await http.post(
         Uri.parse("$baseUrl/content"),
         headers: _headers,
-        body: jsonEncode({
-          "key": key,
-          "label": label,
-          "content": cloudinaryUrl, // Store Cloudinary URL
-          "public_id": publicId,
-          "category": category,
-          "created_at": DateTime.now().toIso8601String(),
-        }),
+        body: jsonEncode(body),
       );
       await fetchContent();
       notifyListeners();
     } catch (e) {
       print('Error creating content: $e');
-    }
-  }
-
-  // Delete content item
-  Future<bool> deleteContent(int itemId) async {
-    try {
-      final response = await http.delete(
-        Uri.parse("$baseUrl/content/$itemId"),
-        headers: _headers,
-      );
-
-      if (response.statusCode == 200) {
-        await fetchContent();
-        notifyListeners();
-        return true;
-      } else {
-        print('Error deleting content: ${response.statusCode}');
-        return false;
-      }
-    } catch (e) {
-      print('Error deleting content: $e');
-      return false;
     }
   }
 }

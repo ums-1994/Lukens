@@ -30,7 +30,7 @@ def upload_to_cloudinary(file_path: str, resource_type: str = "auto", folder: st
             file_path,
             resource_type=resource_type,
             folder=folder,
-            access_mode="token"  # Private access - requires auth token
+            access_mode="public"  # Public access - visible to all
         )
         return {
             "success": True,
@@ -61,7 +61,7 @@ def get_cloudinary_upload_signature(public_id: str):
         "public_id": public_id,
         "timestamp": timestamp,
         "folder": "proposal_builder",
-        "access_mode": "token"
+        "access_mode": "public"
     }
     
     # Create signing string
