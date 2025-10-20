@@ -315,14 +315,15 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                               style: TextStyle(color: Colors.grey[600]),
                             ),
                           )
-                        : selectedCategory == "Images"
+                        : (selectedCategory == "Images" ||
+                                selectedCategory == "Sections")
                             ? GridView.builder(
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 4,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                  childAspectRatio: 0.85,
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                  childAspectRatio: 0.8,
                                 ),
                                 itemCount: pagedItems.length,
                                 itemBuilder: (ctx, i) {
@@ -330,7 +331,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                                   final isFolder = item["is_folder"] ?? false;
 
                                   if (isFolder) {
-                                    // Folder in Images category - show as list-like item
+                                    // Folder - show as card with folder icon
                                     return GestureDetector(
                                       onTap: () => setState(
                                           () => currentFolderId = item["id"]),
@@ -338,9 +339,18 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                                         decoration: BoxDecoration(
                                           color: Colors.white,
                                           borderRadius:
-                                              BorderRadius.circular(8),
+                                              BorderRadius.circular(12),
                                           border: Border.all(
-                                              color: Colors.grey[300]!),
+                                              color: Colors.grey[300]!,
+                                              width: 1.5),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withOpacity(0.05),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 2),
+                                            )
+                                          ],
                                         ),
                                         child: Column(
                                           mainAxisAlignment:
@@ -348,12 +358,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                                           children: [
                                             Icon(Icons.folder,
                                                 color: const Color(0xFF4A90E2),
-                                                size: 32),
-                                            const SizedBox(height: 8),
+                                                size: 48),
+                                            const SizedBox(height: 12),
                                             Padding(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                      horizontal: 4),
+                                                      horizontal: 8),
                                               child: Text(
                                                 item["label"] ??
                                                     item["key"] ??
@@ -362,7 +372,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                                                 overflow: TextOverflow.ellipsis,
                                                 textAlign: TextAlign.center,
                                                 style: const TextStyle(
-                                                  fontSize: 11,
+                                                  fontSize: 12,
                                                   fontWeight: FontWeight.w600,
                                                   color: Color(0xFF0066CC),
                                                 ),
@@ -374,7 +384,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                                     );
                                   }
 
-                                  // Image grid item
+                                  // File/Image card item
+                                  bool isImage = selectedCategory == "Images";
+                                  String? imageUrl =
+                                      isImage ? item["content"] : null;
+
                                   return GestureDetector(
                                     onLongPress: () {
                                       showDialog(
@@ -405,9 +419,18 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                                     child: Container(
                                       decoration: BoxDecoration(
                                         color: Colors.white,
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                            color: Colors.grey[300]!),
+                                            color: Colors.grey[300]!,
+                                            width: 1.5),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.05),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          )
+                                        ],
                                       ),
                                       child: Column(
                                         crossAxisAlignment:
@@ -417,55 +440,109 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                                             child: ClipRRect(
                                               borderRadius:
                                                   const BorderRadius.only(
-                                                topLeft: Radius.circular(8),
-                                                topRight: Radius.circular(8),
+                                                topLeft: Radius.circular(12),
+                                                topRight: Radius.circular(12),
                                               ),
-                                              child: Image.network(
-                                                item["content"] ?? "",
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (context, error,
-                                                    stackTrace) {
-                                                  return Container(
-                                                    color: Colors.grey[300],
-                                                    child: const Icon(Icons
-                                                        .image_not_supported),
-                                                  );
-                                                },
-                                                loadingBuilder: (context, child,
-                                                    loadingProgress) {
-                                                  if (loadingProgress == null)
-                                                    return child;
-                                                  return Container(
-                                                    color: Colors.grey[300],
-                                                    child: const Center(
-                                                      child: SizedBox(
-                                                        width: 16,
-                                                        height: 16,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                          strokeWidth: 2,
+                                              child: isImage && imageUrl != null
+                                                  ? Image.network(
+                                                      imageUrl,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (context,
+                                                          error, stackTrace) {
+                                                        return Container(
+                                                          color:
+                                                              Colors.grey[200],
+                                                          child: const Icon(
+                                                              Icons
+                                                                  .image_not_supported,
+                                                              color:
+                                                                  Colors.grey),
+                                                        );
+                                                      },
+                                                      loadingBuilder: (context,
+                                                          child,
+                                                          loadingProgress) {
+                                                        if (loadingProgress ==
+                                                            null) return child;
+                                                        return Container(
+                                                          color:
+                                                              Colors.grey[200],
+                                                          child: const Center(
+                                                            child: SizedBox(
+                                                              width: 20,
+                                                              height: 20,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                strokeWidth: 2,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        );
+                                                      },
+                                                    )
+                                                  : Container(
+                                                      color: Colors.grey[100],
+                                                      child: Center(
+                                                        child: Column(
+                                                          mainAxisAlignment:
+                                                              MainAxisAlignment
+                                                                  .center,
+                                                          children: [
+                                                            Icon(
+                                                              _getFileIcon(item[
+                                                                      "label"] ??
+                                                                  ""),
+                                                              size: 48,
+                                                              color: const Color(
+                                                                  0xFF4A90E2),
+                                                            ),
+                                                            const SizedBox(
+                                                                height: 8),
+                                                            Text(
+                                                              _getFileExtension(
+                                                                  item["label"] ??
+                                                                      ""),
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                color: Colors
+                                                                    .grey[600],
+                                                              ),
+                                                            ),
+                                                          ],
                                                         ),
                                                       ),
                                                     ),
-                                                  );
-                                                },
-                                              ),
                                             ),
                                           ),
                                           Padding(
-                                            padding: const EdgeInsets.all(8),
-                                            child: Text(
-                                              item["label"] ??
-                                                  item["key"] ??
-                                                  "",
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              textAlign: TextAlign.center,
-                                              style: const TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.w500,
-                                                color: Color(0xFF0066CC),
-                                              ),
+                                            padding: const EdgeInsets.all(12),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  item["label"] ??
+                                                      item["key"] ??
+                                                      "",
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF0066CC),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  _formatDate(
+                                                      item["created_at"] ?? ""),
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.grey[500],
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
@@ -579,6 +656,58 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
         return Icons.code;
       default:
         return Icons.folder;
+    }
+  }
+
+  IconData _getFileIcon(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'pdf':
+        return Icons.picture_as_pdf;
+      case 'doc':
+      case 'docx':
+        return Icons.description;
+      case 'txt':
+        return Icons.text_snippet;
+      case 'rtf':
+      case 'odt':
+        return Icons.file_present;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+        return Icons.image;
+      default:
+        return Icons.insert_drive_file;
+    }
+  }
+
+  String _getFileExtension(String fileName) {
+    final parts = fileName.split('.');
+    return parts.length > 1 ? parts.last.toUpperCase() : 'FILE';
+  }
+
+  String _formatDate(String dateString) {
+    if (dateString.isEmpty) return '';
+    try {
+      final date = DateTime.parse(dateString);
+      final now = DateTime.now();
+      final difference = now.difference(date);
+
+      if (difference.inDays == 0) {
+        return 'Today';
+      } else if (difference.inDays == 1) {
+        return 'Yesterday';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays} days ago';
+      } else if (difference.inDays < 30) {
+        final weeks = (difference.inDays / 7).floor();
+        return '$weeks week${weeks > 1 ? 's' : ''} ago';
+      } else {
+        return '${date.day}/${date.month}/${date.year}';
+      }
+    } catch (e) {
+      return dateString;
     }
   }
 
