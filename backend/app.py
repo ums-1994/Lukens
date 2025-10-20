@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Body, Query, Depends, status
+from fastapi import FastAPI, HTTPException, Body, Query, Depends, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr, field_validator, ValidationError
@@ -19,6 +19,7 @@ import tempfile
 from contextlib import contextmanager
 from settings import router as settings_router
 from dotenv import load_dotenv
+from cloudinary_config import upload_to_cloudinary
 
 # Load environment variables
 load_dotenv()
@@ -3339,6 +3340,111 @@ async def delete_content(content_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ---------- File Upload Endpoints ----------
+
+@app.post("/upload/image")
+async def upload_image(file: UploadFile = File(...)):
+    """Upload an image to Cloudinary"""
+    try:
+        # Validate file extension
+        allowed_extensions = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff'}
+        file_ext = file.filename.split('.')[-1].lower() if file.filename else ""
+        
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        # Save temporarily to upload via Cloudinary SDK
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        try:
+            # Upload to Cloudinary
+            result = upload_to_cloudinary(temp_path, resource_type="image", folder="proposal_builder/images")
+            
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "url": result.get("url"),
+                    "public_id": result.get("public_id"),
+                    "resource_type": result.get("resource_type")
+                }
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Cloudinary upload failed: {result.get('error', 'Unknown error')}"
+                )
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@app.post("/upload/template")
+async def upload_template(file: UploadFile = File(...)):
+    """Upload a document/template to Cloudinary"""
+    try:
+        # Validate file extension
+        allowed_extensions = {
+            'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt',  # Documents
+            'jpg', 'jpeg', 'png'  # Images for sections
+        }
+        file_ext = file.filename.split('.')[-1].lower() if file.filename else ""
+        
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed types: {', '.join(sorted(allowed_extensions))}"
+            )
+        
+        # Read file content
+        content = await file.read()
+        
+        # Save temporarily to upload via Cloudinary SDK
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        try:
+            # Determine resource type based on file extension
+            resource_type = "image" if file_ext in {'jpg', 'jpeg', 'png'} else "raw"
+            
+            # Upload to Cloudinary
+            result = upload_to_cloudinary(temp_path, resource_type=resource_type, folder="proposal_builder/documents")
+            
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "url": result.get("url"),
+                    "public_id": result.get("public_id"),
+                    "resource_type": result.get("resource_type")
+                }
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Cloudinary upload failed: {result.get('error', 'Unknown error')}"
+                )
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

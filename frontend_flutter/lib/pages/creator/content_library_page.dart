@@ -699,11 +699,17 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
 
           try {
             // Upload to Cloudinary via backend
+            // Use appropriate upload method based on category
             // Use bytes on web, path on native platforms
-            final uploadResult = file.bytes != null
-                ? await app.uploadImageToCloudinary("",
-                    fileBytes: file.bytes, fileName: fileName)
-                : await app.uploadImageToCloudinary(file.path!);
+            final uploadResult = selectedCategory == "Sections"
+                ? (file.bytes != null
+                    ? await app.uploadTemplateToCloudinary("",
+                        fileBytes: file.bytes, fileName: fileName)
+                    : await app.uploadTemplateToCloudinary(file.path!))
+                : (file.bytes != null
+                    ? await app.uploadImageToCloudinary("",
+                        fileBytes: file.bytes, fileName: fileName)
+                    : await app.uploadImageToCloudinary(file.path!));
 
             if (mounted) Navigator.pop(context); // Close loading dialog
 
