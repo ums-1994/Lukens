@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr, field_validator, ValidationError
 from typing import List, Optional, Dict, Any, Literal
 import json, os, uuid, time, sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import io
@@ -123,7 +123,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def now_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "") + "Z"
 
 # ---------- Authentication Functions ----------
 def verify_password(plain_password, hashed_password):
@@ -200,9 +200,9 @@ def authenticate_user(username: str, password: str):
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -3292,160 +3292,7 @@ async def create_content(block: ContentBlockIn):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/content/{content_id}", response_model=ContentBlockOut)
-async def update_content(content_id: int, block: ContentBlockIn):
-    """Update an existing content block"""
-    try:
-        with _pg_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """UPDATE content_blocks 
-                    SET key = %s, label = %s, content = %s, category = %s, is_folder = %s, parent_id = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                    RETURNING id, key, label, content, COALESCE(category, 'Templates'), is_folder, parent_id, created_at, updated_at""",
-                    (block.key, block.label, block.content, block.category, block.is_folder, block.parent_id, content_id)
-                )
-                row = cur.fetchone()
-                conn.commit()
-                if not row:
-                    raise HTTPException(status_code=404, detail="Content block not found")
-                return {
-                    "id": row[0],
-                    "key": row[1],
-                    "label": row[2],
-                    "content": row[3],
-                    "category": row[4],
-                    "is_folder": row[5],
-                    "parent_id": row[6],
-                    "created_at": row[7].isoformat() if hasattr(row[7], 'isoformat') else str(row[7]),
-                    "updated_at": row[8].isoformat() if hasattr(row[8], 'isoformat') else str(row[8])
-                }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/content/{content_id}")
-async def delete_content(content_id: int):
-    """Delete a content block"""
-    try:
-        with _pg_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM content_blocks WHERE id = %s", (content_id,))
-                if cur.rowcount == 0:
-                    raise HTTPException(status_code=404, detail="Content block not found")
-                conn.commit()
-                return {"message": "Content block deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ---------- File Upload Endpoints ----------
-
-@app.post("/upload/image")
-async def upload_image(file: UploadFile = File(...)):
-    """Upload an image to Cloudinary"""
-    try:
-        # Validate file extension
-        allowed_extensions = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff'}
-        file_ext = file.filename.split('.')[-1].lower() if file.filename else ""
-        
-        if file_ext not in allowed_extensions:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}"
-            )
-        
-        # Read file content
-        content = await file.read()
-        
-        # Save temporarily to upload via Cloudinary SDK
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as temp_file:
-            temp_file.write(content)
-            temp_path = temp_file.name
-        
-        try:
-            # Upload to Cloudinary
-            result = upload_to_cloudinary(temp_path, resource_type="image", folder="proposal_builder/images")
-            
-            if result.get("success"):
-                return {
-                    "success": True,
-                    "url": result.get("url"),
-                    "public_id": result.get("public_id"),
-                    "resource_type": result.get("resource_type")
-                }
-            else:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Cloudinary upload failed: {result.get('error', 'Unknown error')}"
-                )
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
-
-
-@app.post("/upload/template")
-async def upload_template(file: UploadFile = File(...)):
-    """Upload a document/template to Cloudinary"""
-    try:
-        # Validate file extension
-        allowed_extensions = {
-            'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt',  # Documents
-            'jpg', 'jpeg', 'png'  # Images for sections
-        }
-        file_ext = file.filename.split('.')[-1].lower() if file.filename else ""
-        
-        if file_ext not in allowed_extensions:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file type. Allowed types: {', '.join(sorted(allowed_extensions))}"
-            )
-        
-        # Read file content
-        content = await file.read()
-        
-        # Save temporarily to upload via Cloudinary SDK
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as temp_file:
-            temp_file.write(content)
-            temp_path = temp_file.name
-        
-        try:
-            # Determine resource type based on file extension
-            resource_type = "image" if file_ext in {'jpg', 'jpeg', 'png'} else "raw"
-            
-            # Upload to Cloudinary
-            result = upload_to_cloudinary(temp_path, resource_type=resource_type, folder="proposal_builder/documents")
-            
-            if result.get("success"):
-                return {
-                    "success": True,
-                    "url": result.get("url"),
-                    "public_id": result.get("public_id"),
-                    "resource_type": result.get("resource_type")
-                }
-            else:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Cloudinary upload failed: {result.get('error', 'Unknown error')}"
-                )
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host='0.0.0.0', port=8000)

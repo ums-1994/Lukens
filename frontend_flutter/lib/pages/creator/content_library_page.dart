@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../api.dart';
-import 'template_editor_page.dart' as editor;
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -23,7 +22,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
   int _currentNavIdx = 3; // Content Library is index 3
   int? currentFolderId; // Track current folder being viewed
 
-  final List<String> categories = ["Sections", "Images", "Snippets"];
+  final List<String> categories = ["Sections", "Images", "Snippets", "Trash"];
 
   final List<String> sortOptions = [
     "Last Edited (Newest First)",
@@ -44,26 +43,43 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
     });
   }
 
+  Future<List<dynamic>> _loadDisplayItems() async {
+    final app = context.read<AppState>();
+    if (selectedCategory == "Trash") {
+      return await app.fetchTrash();
+    }
+    return [];
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
 
     // Filter items by selected category and current folder
-    final filteredItems = app.contentBlocks.where((item) {
-      final category = item["category"] ?? "Sections";
-      final categoryMatch =
-          category.toLowerCase() == selectedCategory.toLowerCase();
+    List<dynamic> displayItems = [];
 
-      // If in a folder, only show items in that folder
-      if (currentFolderId != null) {
+    if (selectedCategory == "Trash") {
+      // For trash, we'll load items in real-time
+      displayItems = []; // Placeholder - will be fetched when needed
+    } else {
+      displayItems = app.contentBlocks.where((item) {
+        final category = item["category"] ?? "Sections";
+        final categoryMatch =
+            category.toLowerCase() == selectedCategory.toLowerCase();
+
+        // If in a folder, only show items in that folder
+        if (currentFolderId != null) {
+          final parentId = item["parent_id"];
+          return categoryMatch && parentId == currentFolderId;
+        }
+
+        // Show root items (no parent_id or parent_id is null)
         final parentId = item["parent_id"];
-        return categoryMatch && parentId == currentFolderId;
-      }
+        return categoryMatch && (parentId == null || parentId == "");
+      }).toList();
+    }
 
-      // Show root items (no parent_id or parent_id is null)
-      final parentId = item["parent_id"];
-      return categoryMatch && (parentId == null || parentId == "");
-    }).toList();
+    final filteredItems = displayItems;
 
     // Sort items
     switch (sortBy) {
@@ -1113,15 +1129,10 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                 leading:
                     const Icon(Icons.description, color: Color(0xFF4a6cf7)),
                 title: const Text("Create from Scratch"),
-                subtitle: const Text("Start with a blank document"),
+                subtitle: const Text("Start with a blank proposal"),
                 onTap: () {
                   Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const editor.TemplateEditorPage(),
-                    ),
-                  );
+                  Navigator.pushNamed(context, '/new-proposal');
                 },
               ),
               const SizedBox(height: 12),
@@ -1214,9 +1225,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
               }
               try {
                 await app.createContent(
-                  keyCtrl.text.trim(),
-                  labelCtrl.text.trim(),
-                  contentCtrl.text.trim(),
+                  key: keyCtrl.text.trim(),
+                  label: labelCtrl.text.trim(),
+                  content: contentCtrl.text.trim(),
                   category: selectedCategory,
                   parentId: currentFolderId,
                 );
@@ -1543,9 +1554,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
                         final templateName = labelCtrl.text;
 
                         await app.createContent(
-                          keyCtrl.text,
-                          labelCtrl.text,
-                          fileContent ?? contentCtrl.text,
+                          key: keyCtrl.text,
+                          label: labelCtrl.text,
+                          content: fileContent ?? contentCtrl.text,
                           category: selectedCategory,
                           parentId: currentFolderId,
                         );
@@ -1809,187 +1820,6 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
     );
   }
   */
-
-  void _deleteItem(BuildContext context, AppState app, int itemId) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Confirm Delete"),
-        content: const Text("Are you sure you want to delete this item?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-
-              // Show loading
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Deleting...")),
-              );
-
-              // Delete the item
-              final success = await app.deleteContent(itemId);
-
-              if (mounted) {
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Item deleted successfully"),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Error deleting item"),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text("Delete"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEditDialog(
-      BuildContext context, AppState app, Map<String, dynamic> item) {
-    final editLabelCtrl = TextEditingController(text: item["label"] ?? "");
-    final editContentCtrl = TextEditingController(text: item["content"] ?? "");
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Edit Item"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: editLabelCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Label",
-                  hintText: "Item label",
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: editContentCtrl,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  labelText: "Content",
-                  hintText: "Item content",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-
-              // Update the item
-              item["label"] = editLabelCtrl.text;
-              item["content"] = editContentCtrl.text;
-
-              app.notifyListeners();
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Item updated"),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-            ),
-            child: const Text("Update"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showNewFolderDialog(BuildContext context, AppState app) {
-    final folderNameCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Create New Folder"),
-        content: TextField(
-          controller: folderNameCtrl,
-          decoration: const InputDecoration(
-            labelText: "Folder Name",
-            hintText: "Enter folder name",
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (folderNameCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Please enter a folder name")),
-                );
-                return;
-              }
-
-              try {
-                // Create folder with parent_id if inside a folder
-                await app.createContent(
-                  folderNameCtrl.text.toLowerCase().replaceAll(" ", "_"),
-                  folderNameCtrl.text.trim(),
-                  "", // Folders have empty content
-                  category: selectedCategory,
-                  parentId: currentFolderId,
-                  isFolder: true,
-                );
-
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("Folder created successfully"),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-                setState(() {});
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("Failed to create folder: $e"),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text("Create"),
-          ),
-        ],
-      ),
-    );
-  }
 
   // Build header buttons (varies by category)
   List<Widget> _buildHeaderButtons(BuildContext context, AppState app) {
@@ -2368,9 +2198,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
 
               try {
                 await app.createContent(
-                  labelCtrl.text.toLowerCase().replaceAll(" ", "_"),
-                  labelCtrl.text.trim(),
-                  contentCtrl.text.trim(),
+                  key: labelCtrl.text.toLowerCase().replaceAll(" ", "_"),
+                  label: labelCtrl.text.trim(),
+                  content: contentCtrl.text.trim(),
                   category: selectedCategory,
                   parentId: currentFolderId,
                 );
@@ -2413,6 +2243,271 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Delete item handler
+  void _deleteItem(BuildContext context, AppState app, int itemId) async {
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Item"),
+        content: const Text(
+            "Are you sure you want to delete this item? It will be moved to Trash."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // Close dialog
+
+              // Show loading state
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Deleting item..."),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+
+              try {
+                final result = await app.deleteContent(itemId);
+
+                if (result) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Item moved to Trash"),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    setState(() {}); // Refresh UI
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Failed to delete item"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Error deleting item: ${e.toString()}"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Edit item handler
+  void _showEditDialog(
+      BuildContext context, AppState app, Map<String, dynamic> item) {
+    final labelCtrl = TextEditingController(text: item["label"] ?? "");
+    final contentCtrl = TextEditingController(text: item["content"] ?? "");
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Edit Item"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: labelCtrl,
+                decoration: const InputDecoration(
+                  labelText: "Label",
+                  hintText: "Enter item label",
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: contentCtrl,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                  labelText: "Content",
+                  hintText: "Enter item content",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (labelCtrl.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Please enter a label")),
+                );
+                return;
+              }
+
+              try {
+                Navigator.pop(ctx);
+
+                // Show loading message
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Updating item..."),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+
+                // Update the item
+                final result = await app.updateContent(
+                  item["id"],
+                  label: labelCtrl.text,
+                  content: contentCtrl.text,
+                );
+
+                if (result) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Item updated successfully"),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    setState(() {});
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Failed to update item"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Error updating item: ${e.toString()}"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0066CC),
+            ),
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show new folder dialog
+  void _showNewFolderDialog(BuildContext context, AppState app) {
+    final folderNameCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Create New Folder"),
+        content: TextField(
+          controller: folderNameCtrl,
+          decoration: const InputDecoration(
+            labelText: "Folder Name",
+            hintText: "Enter folder name",
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (folderNameCtrl.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Please enter a folder name")),
+                );
+                return;
+              }
+
+              try {
+                final folderKey = folderNameCtrl.text
+                    .toLowerCase()
+                    .replaceAll(" ", "_")
+                    .replaceAll(RegExp(r'[^a-z0-9_]'), '');
+
+                final result = await app.createContent(
+                  key: folderKey,
+                  label: folderNameCtrl.text.trim(),
+                  content: "",
+                  category: selectedCategory,
+                  parentId: currentFolderId,
+                  isFolder: true,
+                );
+
+                Navigator.pop(ctx);
+
+                if (result) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            "Folder '${folderNameCtrl.text}' created successfully"),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    setState(() {});
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Failed to create folder"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Error creating folder: ${e.toString()}"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00CED1),
+            ),
+            child: const Text("Create"),
           ),
         ],
       ),

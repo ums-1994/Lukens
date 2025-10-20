@@ -4,11 +4,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
-import 'widgets/app_side_nav.dart';
 import 'pages/creator/compose_page.dart';
 import 'pages/creator/proposal_wizard.dart';
 import 'pages/creator/new_proposal_page.dart';
 import 'pages/creator/enhanced_compose_page.dart';
+import 'pages/creator/blank_document_editor_page.dart';
 import 'pages/admin/govern_page.dart';
 import 'pages/approver/approvals_page.dart';
 import 'pages/shared/preview_page.dart';
@@ -21,7 +21,6 @@ import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
-import 'pages/creator/templates_page.dart';
 import 'pages/creator/collaboration_page.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
@@ -113,6 +112,14 @@ class MyApp extends StatelessWidget {
           '/compose': (context) => const ComposePage(),
           '/proposal-wizard': (context) => const ProposalWizard(),
           '/new-proposal': (context) => const NewProposalPage(),
+          '/blank-document': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
+            return BlankDocumentEditorPage(
+              proposalId: args?['proposalId'],
+              proposalTitle: args?['proposalTitle'] ?? 'Untitled Document',
+            );
+          },
           '/enhanced-compose': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
                 as Map<String, dynamic>?;
@@ -134,7 +141,6 @@ class MyApp extends StatelessWidget {
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
-          '/templates': (context) => const TemplatesPage(),
           '/collaboration': (context) => const CollaborationPage(),
           '/analytics': (context) => const AnalyticsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
@@ -228,16 +234,15 @@ class _HomeShellState extends State<HomeShell> {
   final pages = [
     DashboardPage(), // 0
     ProposalsPage(), // 1
-    TemplatesPage(), // 2
-    ContentLibraryPage(), // 3
-    CollaborationPage(), // 4
-    ApprovalsPage(), // 5
-    AnalyticsPage(), // 6
-    PreviewPage(), // 7 (optional)
-    ComposePage(), // 8 (optional)
-    GovernPage(), // 9 (optional)
-    ApproverDashboardPage(), // 10 (optional)
-    AdminDashboardPage(), // 11 (optional)
+    ContentLibraryPage(), // 2
+    CollaborationPage(), // 3
+    ApprovalsPage(), // 4
+    AnalyticsPage(), // 5
+    PreviewPage(), // 6 (optional)
+    ComposePage(), // 7 (optional)
+    GovernPage(), // 8 (optional)
+    ApproverDashboardPage(), // 9 (optional)
+    AdminDashboardPage(), // 10 (optional)
   ];
 
   @override
@@ -284,7 +289,7 @@ class _HomeShellState extends State<HomeShell> {
                     leading: const Icon(Icons.approval_outlined),
                     title: const Text('Reviewer / Approver'),
                     onTap: () {
-                      setState(() => idx = 7);
+                      setState(() => idx = 9);
                       Navigator.pop(context);
                     },
                   ),
@@ -292,7 +297,7 @@ class _HomeShellState extends State<HomeShell> {
                     leading: const Icon(Icons.admin_panel_settings_outlined),
                     title: const Text('Admin'),
                     onTap: () {
-                      setState(() => idx = 8);
+                      setState(() => idx = 10);
                       Navigator.pop(context);
                     },
                   ),
@@ -300,7 +305,7 @@ class _HomeShellState extends State<HomeShell> {
                     leading: const Icon(Icons.business_outlined),
                     title: const Text('Client Portal'),
                     onTap: () {
-                      setState(() => idx = 9);
+                      setState(() => idx = 1);
                       Navigator.pop(context);
                     },
                   ),

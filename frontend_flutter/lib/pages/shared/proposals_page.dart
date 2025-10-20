@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../services/api_service.dart';
 import '../../services/firebase_service.dart';
+import '../../api.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -40,6 +42,199 @@ class _ProposalsPageState extends State<ProposalsPage> {
       proposals = [];
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  void _showCreateNewDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Container(
+          width: 400,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.add_circle_outline,
+                  color: Color(0xFF2563EB),
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Create New',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2c3e50),
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Start from scratch option
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () async {
+                    Navigator.pop(context);
+                    _navigateToBlankProposal();
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFFe2e8f0)),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey[50],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3498DB).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.edit_outlined,
+                            color: Color(0xFF3498DB),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                'Start from scratch',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2c3e50),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Create a blank proposal',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF718096),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            color: Color(0xFF718096)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Choose from template gallery option
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/proposal-wizard');
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFFe2e8f0)),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey[50],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2ECC71).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.library_books_outlined,
+                            color: Color(0xFF2ECC71),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                'Choose from Template Gallery',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2c3e50),
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Select a template to get started',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF718096),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            color: Color(0xFF718096)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _navigateToBlankProposal() async {
+    try {
+      // Navigate directly to blank document editor
+      if (mounted) {
+        Navigator.pushNamed(
+          context,
+          '/blank-document',
+          arguments: {
+            'proposalId': 'temp-${DateTime.now().millisecondsSinceEpoch}',
+            'proposalTitle': 'Untitled Document',
+          },
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error opening blank document: $e')),
+        );
+      }
     }
   }
 
@@ -172,8 +367,7 @@ class _ProposalsPageState extends State<ProposalsPage> {
                           children: [
                             const SizedBox(width: 8),
                             ElevatedButton.icon(
-                              onPressed: () => Navigator.pushNamed(
-                                  context, '/proposal-wizard'),
+                              onPressed: _showCreateNewDialog,
                               icon: const Icon(Icons.add, size: 18),
                               label: const Text('New Proposal'),
                               style: ElevatedButton.styleFrom(
@@ -283,8 +477,7 @@ class _ProposalsPageState extends State<ProposalsPage> {
                                             TextStyle(color: Colors.grey[600])),
                                     const SizedBox(height: 20),
                                     ElevatedButton.icon(
-                                      onPressed: () => Navigator.pushNamed(
-                                          context, '/proposal-wizard'),
+                                      onPressed: _showCreateNewDialog,
                                       icon: const Icon(Icons.add),
                                       label: const Text(
                                           'Create Your First Proposal'),

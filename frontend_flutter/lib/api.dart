@@ -64,6 +64,160 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<List<dynamic>> fetchTrash() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/content/trash"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is List) {
+          return data;
+        }
+      } else {
+        print('Error fetching trash: ${r.statusCode} - ${r.body}');
+      }
+    } catch (e) {
+      print('Error fetching trash: $e');
+    }
+    return [];
+  }
+
+  Future<bool> restoreContent(int contentId) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/content/$contentId/restore"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error restoring content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error restoring content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteContent(int contentId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/content/$contentId"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200 || r.statusCode == 204) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error deleting content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error deleting content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> createContent({
+    required String key,
+    required String label,
+    String content = "",
+    String category = "Templates",
+    bool isFolder = false,
+    int? parentId,
+    String? publicId,
+  }) async {
+    try {
+      final body = {
+        "key": key,
+        "label": label,
+        "content": content,
+        "category": category,
+        "is_folder": isFolder,
+        if (parentId != null) "parent_id": parentId,
+        if (publicId != null) "public_id": publicId,
+      };
+
+      final r = await http.post(
+        Uri.parse("$baseUrl/content"),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error creating content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error creating content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateContent(
+    int contentId, {
+    String? label,
+    String? content,
+    String? category,
+    String? publicId,
+  }) async {
+    try {
+      final body = {
+        if (label != null) "label": label,
+        if (content != null) "content": content,
+        if (category != null) "category": category,
+        if (publicId != null) "public_id": publicId,
+      };
+
+      if (body.isEmpty) return false;
+
+      final r = await http.put(
+        Uri.parse("$baseUrl/content/$contentId"),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error updating content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error updating content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> permanentlyDeleteContent(int contentId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/content/$contentId/permanent"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return true;
+      } else {
+        print(
+            'Error permanently deleting content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error permanently deleting content: $e');
+      return false;
+    }
+  }
+
   Future<void> fetchProposals() async {
     try {
       final r = await http.get(
@@ -103,19 +257,25 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> createProposal(String title, String client,
+  Future<Map<String, dynamic>?> createProposal(String title, String client,
       {String? templateKey}) async {
-    final r = await http.post(
-      Uri.parse("$baseUrl/proposals"),
-      headers: _headers,
-      body: jsonEncode(
-          {"title": title, "client": client, "template_key": templateKey}),
-    );
-    final p = jsonDecode(r.body);
-    currentProposal = p;
-    await fetchProposals();
-    await fetchDashboard();
-    notifyListeners();
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals"),
+        headers: _headers,
+        body: jsonEncode(
+            {"title": title, "client": client, "template_key": templateKey}),
+      );
+      final p = jsonDecode(r.body);
+      currentProposal = p;
+      await fetchProposals();
+      await fetchDashboard();
+      notifyListeners();
+      return p;
+    } catch (e) {
+      print('Error creating proposal: $e');
+      return null;
+    }
   }
 
   Future<void> updateProposal(
@@ -407,66 +567,6 @@ class AppState extends ChangeNotifier {
   void selectProposal(Map<String, dynamic> p) {
     currentProposal = p;
     notifyListeners();
-  }
-
-  // Content library operations
-  Future<void> createContent(String key, String label, String content,
-      {int? parentId, bool? isFolder, String? category}) async {
-    final body = <String, dynamic>{
-      "key": key,
-      "label": label,
-      "content": content,
-    };
-    if (category != null) {
-      body["category"] = category;
-    }
-    if (parentId != null) {
-      body["parent_id"] = parentId;
-    }
-    if (isFolder != null) {
-      body["is_folder"] = isFolder;
-    }
-
-    final r = await http.post(
-      Uri.parse("$baseUrl/content"),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
-    if (r.statusCode == 200 || r.statusCode == 201) {
-      await fetchContent();
-      notifyListeners();
-      return;
-    } else {
-      // Parse error message from backend
-      try {
-        final errorData = jsonDecode(r.body);
-        final detail = errorData["detail"] ?? "Unknown error";
-        throw Exception(detail);
-      } catch (e) {
-        throw Exception(
-            "Failed to create content block: ${r.statusCode} - ${r.body}");
-      }
-    }
-  }
-
-  Future<bool> deleteContent(int contentId) async {
-    try {
-      final r = await http.delete(
-        Uri.parse("$baseUrl/content/$contentId"),
-        headers: _headers,
-      );
-      if (r.statusCode == 200 || r.statusCode == 204) {
-        await fetchContent();
-        notifyListeners();
-        return true;
-      } else {
-        print('Error deleting content: ${r.statusCode} - ${r.body}');
-        return false;
-      }
-    } catch (e) {
-      print('Error deleting content: $e');
-      return false;
-    }
   }
 
   Future<void> addContentToProposal(int contentId) async {
