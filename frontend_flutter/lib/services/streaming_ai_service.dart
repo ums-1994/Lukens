@@ -6,9 +6,8 @@ class StreamingAIService {
   static GenerativeModel? _model;
 
   static void initialize() {
-    final apiKey = dotenv.env['YOUR_GOOGLE_AI_STUDIO_API_KEY'] ?? 'AIzaSyD4pGgtq5ImBIclXz4Y4Bc9uHvNoXdM4U0';
-    print('🔑 API Key from .env: ${apiKey?.substring(0, 10)}...');
-    print('🔑 Full API Key: $apiKey');
+    final apiKey = dotenv.env['YOUR_GOOGLE_AI_STUDIO_API_KEY'];
+    print('🔑 API Key loaded: ${apiKey != null ? '${apiKey.substring(0, 10)}...' : 'Not found'}');
     
     if (apiKey == null || apiKey.isEmpty || apiKey == 'your_actual_api_key_here') {
       print('⚠️ Please set your Google AI Studio API key in the .env file');
