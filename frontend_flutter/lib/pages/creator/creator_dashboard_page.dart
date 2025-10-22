@@ -16,7 +16,6 @@ class _DashboardPageState extends State<DashboardPage>
     with TickerProviderStateMixin {
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
-  late Animation<double> _widthAnimation;
   String _currentPage = 'Dashboard';
 
   @override
@@ -26,13 +25,6 @@ class _DashboardPageState extends State<DashboardPage>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _widthAnimation = Tween<double>(
-      begin: 250.0,
-      end: 90.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
     // Start collapsed
     _animationController.value = 1.0;
   }
@@ -907,26 +899,6 @@ class _DashboardPageState extends State<DashboardPage>
     if (date == null) return 'Unknown';
     // Simple date formatting - you might want to use intl package for better formatting
     return date.toString();
-  }
-
-  String _getUserInitials(Map<String, dynamic>? user) {
-    if (user == null) return 'U';
-
-    // Try different possible field names for the user's name
-    String? name = user['full_name'] ??
-        user['first_name'] ??
-        user['name'] ??
-        user['email']?.split('@')[0];
-
-    if (name == null || name.isEmpty) return 'U';
-
-    // Extract initials from the name
-    List<String> nameParts = name.split(' ');
-    if (nameParts.length >= 2) {
-      return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
-    } else {
-      return name.substring(0, 2).toUpperCase();
-    }
   }
 
   String _getUserName(Map<String, dynamic>? user) {

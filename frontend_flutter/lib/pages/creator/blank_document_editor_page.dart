@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:provider/provider.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
+import '../../api.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -44,11 +49,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   List<Map<String, dynamic>> _collaborators = [];
   bool _isCollaborating = false;
 
+  // Auto-save and versioning
+  Timer? _autoSaveTimer;
+  bool _hasUnsavedChanges = false;
+  List<Map<String, dynamic>> _versionHistory = [];
+  int _currentVersionNumber = 1;
+
+  // Backend integration
+  int? _savedProposalId; // Store the actual backend proposal ID
+  String? _authToken;
+
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(
-      text: widget.proposalTitle ?? 'Untitled Template',
+      text: widget.proposalTitle ?? 'Untitled Document',
     );
     _commentController = TextEditingController();
     // Create initial section
@@ -59,10 +74,80 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Load user profile for proper commenter name
     _loadUserProfile();
+
+    // Setup auto-save listeners
+    _setupAutoSaveListeners();
+
+    // Create initial version
+    _createVersion('Initial version');
+
+    // Get auth token
+    _initializeAuth();
+  }
+
+  Future<void> _initializeAuth() async {
+    try {
+      // Get token from AuthService (backend JWT auth)
+      final token = AuthService.token;
+      if (token != null && token.isNotEmpty) {
+        _authToken = token;
+        print('✅ Auth token initialized successfully from AuthService');
+        print('Token length: ${token.length}');
+      } else {
+        print('⚠️ No token in AuthService - user may not be logged in');
+
+        // Try to get from AppState as fallback
+        if (mounted) {
+          final appState = context.read<AppState>();
+          if (appState.authToken != null) {
+            _authToken = appState.authToken;
+            print('✅ Auth token retrieved from AppState');
+          } else {
+            print('❌ No auth token found in AppState either');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error initializing auth: $e');
+    }
+  }
+
+  Future<String?> _getAuthToken() async {
+    // Try to get cached token first
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      print('Using cached auth token');
+      return _authToken;
+    }
+
+    // Try to get from AuthService
+    final token = AuthService.token;
+    if (token != null && token.isNotEmpty) {
+      _authToken = token;
+      print('✅ Got auth token from AuthService');
+      return _authToken;
+    }
+
+    // Try to get from AppState as fallback
+    if (mounted) {
+      try {
+        final appState = context.read<AppState>();
+        if (appState.authToken != null && appState.authToken!.isNotEmpty) {
+          _authToken = appState.authToken;
+          print('✅ Got auth token from AppState');
+          return _authToken;
+        }
+      } catch (e) {
+        print('Error getting token from AppState: $e');
+      }
+    }
+
+    print('❌ Cannot get auth token - user not logged in');
+    return null;
   }
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
     _titleController.dispose();
     _commentController.dispose();
     for (var section in _sections) {
@@ -81,6 +166,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         content: '',
       );
       _sections.insert(afterIndex + 1, newSection);
+
+      // Add listeners to new section
+      newSection.controller.addListener(_onContentChanged);
+      newSection.titleController.addListener(_onContentChanged);
     });
   }
 
@@ -372,6 +461,497 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  // Auto-save and versioning methods
+  void _setupAutoSaveListeners() {
+    // Listen to title changes
+    _titleController.addListener(_onContentChanged);
+
+    // Listen to all section changes
+    for (var section in _sections) {
+      section.controller.addListener(_onContentChanged);
+      section.titleController.addListener(_onContentChanged);
+    }
+  }
+
+  void _onContentChanged() {
+    setState(() {
+      _hasUnsavedChanges = true;
+    });
+
+    // Cancel existing timer
+    _autoSaveTimer?.cancel();
+
+    // Start new timer (debounced auto-save after 3 seconds of inactivity)
+    _autoSaveTimer = Timer(const Duration(seconds: 3), () {
+      if (_hasUnsavedChanges) {
+        _autoSaveDocument();
+      }
+    });
+  }
+
+  String _serializeDocumentContent() {
+    // Serialize sections into JSON format for backend storage
+    final documentData = {
+      'title': _titleController.text,
+      'sections': _sections
+          .map((section) => {
+                'title': section.titleController.text,
+                'content': section.controller.text,
+              })
+          .toList(),
+      'metadata': {
+        'currency': _selectedCurrency,
+        'version': _currentVersionNumber,
+        'last_modified': DateTime.now().toIso8601String(),
+      }
+    };
+    return json.encode(documentData);
+  }
+
+  Future<void> _autoSaveDocument() async {
+    if (!_hasUnsavedChanges) return;
+
+    setState(() => _isSaving = true);
+    try {
+      // Save to backend
+      await _saveToBackend();
+
+      // Create a new version
+      _createVersion('Auto-saved');
+
+      setState(() {
+        _lastSaved = DateTime.now();
+        _hasUnsavedChanges = false;
+      });
+
+      // Show subtle notification
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text('Auto-saved • Version $_currentVersionNumber'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+            width: 250,
+          ),
+        );
+      }
+    } catch (e) {
+      final errorMessage = e.toString();
+      print('Auto-save error: $errorMessage');
+
+      if (mounted) {
+        // Check if it's an authentication error
+        if (errorMessage.contains('Not authenticated') ||
+            errorMessage.contains('authentication') ||
+            errorMessage.contains('Unauthorized')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.warning, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Not authenticated. Please log in to save your document.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'Login',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushReplacementNamed(context, '/login');
+                },
+              ),
+            ),
+          );
+        } else {
+          // Other errors
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline,
+                      color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Auto-save failed. Your work is saved locally.',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Future<void> _saveToBackend() async {
+    // Get auth token (fresh or cached)
+    final token = await _getAuthToken();
+
+    if (token == null) {
+      throw Exception(
+          'Not authenticated - Please log in to save your document');
+    }
+
+    final title = _titleController.text.isEmpty
+        ? 'Untitled Document'
+        : _titleController.text;
+    final content = _serializeDocumentContent();
+
+    try {
+      if (_savedProposalId == null) {
+        // Create new proposal
+        print('Creating new proposal...');
+        final result = await ApiService.createProposal(
+          token: token,
+          title: title,
+          content: content,
+          status: 'draft',
+        );
+
+        if (result != null && result['id'] != null) {
+          setState(() {
+            _savedProposalId = result['id'] is int
+                ? result['id']
+                : int.tryParse(result['id'].toString());
+          });
+          print('✅ Proposal created with ID: $_savedProposalId');
+        } else {
+          print('⚠️ Proposal creation returned null or no ID');
+        }
+      } else {
+        // Update existing proposal
+        print('Updating proposal ID: $_savedProposalId...');
+        await ApiService.updateProposal(
+          token: token,
+          id: _savedProposalId!,
+          title: title,
+          content: content,
+          status: 'draft',
+        );
+        print('✅ Proposal updated: $_savedProposalId');
+      }
+    } catch (e) {
+      print('❌ Error saving to backend: $e');
+      rethrow;
+    }
+  }
+
+  void _createVersion(String changeDescription) {
+    final version = {
+      'version_number': _currentVersionNumber,
+      'timestamp': DateTime.now().toIso8601String(),
+      'title': _titleController.text,
+      'sections': _sections
+          .map((section) => {
+                'title': section.titleController.text,
+                'content': section.controller.text,
+              })
+          .toList(),
+      'change_description': changeDescription,
+      'author': _getCommenterName(),
+    };
+
+    setState(() {
+      _versionHistory.add(version);
+      _currentVersionNumber++;
+    });
+  }
+
+  Future<void> _restoreVersion(int versionNumber) async {
+    final version = _versionHistory.firstWhere(
+      (v) => v['version_number'] == versionNumber,
+      orElse: () => {},
+    );
+
+    if (version.isEmpty) return;
+
+    // Restore title
+    _titleController.text = version['title'] ?? 'Untitled Template';
+
+    // Clear existing sections
+    for (var section in _sections) {
+      section.controller.dispose();
+      section.titleController.dispose();
+      section.contentFocus.dispose();
+      section.titleFocus.dispose();
+    }
+    _sections.clear();
+
+    // Restore sections
+    final List<dynamic> savedSections = version['sections'] ?? [];
+    for (var sectionData in savedSections) {
+      final newSection = _DocumentSection(
+        title: sectionData['title'] ?? 'Untitled Section',
+        content: sectionData['content'] ?? '',
+      );
+      _sections.add(newSection);
+    }
+
+    // Setup listeners for new sections
+    for (var section in _sections) {
+      section.controller.addListener(_onContentChanged);
+      section.titleController.addListener(_onContentChanged);
+    }
+
+    setState(() {
+      _selectedSectionIndex = 0;
+      _hasUnsavedChanges = true;
+    });
+
+    // Create a new version for the restoration
+    _createVersion('Restored from version $versionNumber');
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Restored to version $versionNumber'),
+          backgroundColor: const Color(0xFF00BCD4),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _showVersionHistory() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: SizedBox(
+            width: 600,
+            height: 500,
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    border:
+                        Border(bottom: BorderSide(color: Colors.grey[200]!)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.history,
+                          color: Color(0xFF00BCD4), size: 24),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Version History',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${_versionHistory.length} version${_versionHistory.length != 1 ? 's' : ''}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Version list
+                Expanded(
+                  child: _versionHistory.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.history,
+                                  size: 48, color: Colors.grey[400]),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No version history yet',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _versionHistory.length,
+                          reverse: true,
+                          itemBuilder: (context, index) {
+                            final version = _versionHistory[
+                                _versionHistory.length - 1 - index];
+                            final isCurrentVersion =
+                                version['version_number'] ==
+                                    _currentVersionNumber - 1;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isCurrentVersion
+                                    ? const Color(0xFF00BCD4).withOpacity(0.1)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isCurrentVersion
+                                      ? const Color(0xFF00BCD4)
+                                      : Colors.grey[300]!,
+                                  width: isCurrentVersion ? 2 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: isCurrentVersion
+                                              ? const Color(0xFF00BCD4)
+                                              : Colors.grey[600],
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          'v${version['version_number']}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      if (isCurrentVersion)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green[100],
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            'CURRENT',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.green[700],
+                                            ),
+                                          ),
+                                        ),
+                                      const Spacer(),
+                                      Text(
+                                        _formatTimestamp(version['timestamp']),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    version['change_description'] ??
+                                        'No description',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF1A1A1A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'By ${version['author'] ?? 'Unknown'}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    version['title'] ?? 'Untitled',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                  if (!isCurrentVersion) ...[
+                                    const SizedBox(height: 12),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: ElevatedButton.icon(
+                                        onPressed: () {
+                                          Navigator.pop(context);
+                                          _restoreVersion(
+                                              version['version_number']);
+                                        },
+                                        icon:
+                                            const Icon(Icons.restore, size: 16),
+                                        label: const Text('Restore'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              const Color(0xFF00BCD4),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   String _getCurrencySymbol() {
     final currencyMap = {
       'USD': '\$',
@@ -398,26 +978,195 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _saveDocument() async {
     setState(() => _isSaving = true);
     try {
-      await Future.delayed(const Duration(milliseconds: 500));
-      setState(() => _lastSaved = DateTime.now());
+      // Save to backend
+      await _saveToBackend();
+
+      // Create a new version for manual save
+      _createVersion('Manual save');
+
+      setState(() {
+        _lastSaved = DateTime.now();
+        _hasUnsavedChanges = false;
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Document saved successfully'),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _savedProposalId != null
+                        ? 'Document saved successfully • Version $_currentVersionNumber'
+                        : 'Document created and saved • Version $_currentVersionNumber',
+                  ),
+                ),
+              ],
+            ),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
+      final errorMessage = e.toString();
+      print('Manual save error: $errorMessage');
+
       if (mounted) {
+        // Check if it's an authentication error
+        if (errorMessage.contains('Not authenticated') ||
+            errorMessage.contains('authentication') ||
+            errorMessage.contains('Unauthorized')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.warning, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Not authenticated. Please log in to save your document.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'Login',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushReplacementNamed(context, '/login');
+                },
+              ),
+            ),
+          );
+        } else {
+          // Other errors
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Error saving document: ${errorMessage.length > 50 ? errorMessage.substring(0, 50) + "..." : errorMessage}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Future<void> _saveAndClose() async {
+    setState(() => _isSaving = true);
+    try {
+      // Save to backend
+      await _saveToBackend();
+
+      // Create a new version
+      _createVersion('Manual save');
+
+      setState(() {
+        _lastSaved = DateTime.now();
+        _hasUnsavedChanges = false;
+      });
+
+      if (mounted) {
+        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error saving document: $e'),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Document saved successfully!'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
           ),
         );
+
+        // Navigate back to proposals page after a brief delay
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/proposals');
+        }
+      }
+    } catch (e) {
+      final errorMessage = e.toString();
+      print('Save and close error: $errorMessage');
+
+      if (mounted) {
+        // Check if it's an authentication error
+        if (errorMessage.contains('Not authenticated') ||
+            errorMessage.contains('authentication') ||
+            errorMessage.contains('Unauthorized')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.warning, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Not authenticated. Please log in to save your document.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'Login',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushReplacementNamed(context, '/login');
+                },
+              ),
+            ),
+          );
+        } else {
+          // Other errors
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Error saving document: ${errorMessage.length > 50 ? errorMessage.substring(0, 50) + "..." : errorMessage}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -795,15 +1544,62 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ],
           ),
           const SizedBox(width: 16),
-          Text(
-            _lastSaved == null ? 'Not Saved' : 'Saved',
-            style: TextStyle(
-              fontSize: 13,
-              color: _lastSaved == null ? Colors.orange : Colors.green,
-              fontWeight: FontWeight.w500,
+          // Save status with version info
+          GestureDetector(
+            onTap: _showVersionHistory,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _hasUnsavedChanges
+                    ? Colors.orange.withOpacity(0.1)
+                    : Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
+                    size: 14,
+                    color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _hasUnsavedChanges
+                        ? 'Unsaved changes'
+                        : (_lastSaved == null ? 'Not Saved' : 'Saved'),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _hasUnsavedChanges
+                          ? Colors.orange[800]
+                          : Colors.green[800],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 32),
+          const SizedBox(width: 12),
+          // Version history button
+          OutlinedButton.icon(
+            onPressed: _showVersionHistory,
+            icon: const Icon(Icons.history, size: 16),
+            label: Text('v$_currentVersionNumber'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF00BCD4)),
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
           // Sections toggle button
           OutlinedButton.icon(
             onPressed: () {
@@ -892,9 +1688,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                   )
                 : const Icon(Icons.save, size: 16),
-            label: const Text('Generate Document'),
+            label: const Text('Save'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF27AE60),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Save & Close button
+          ElevatedButton.icon(
+            onPressed: _isSaving ? null : _saveAndClose,
+            icon: const Icon(Icons.check, size: 16),
+            label: const Text('Save & Close'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00BCD4),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
@@ -1148,6 +1959,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               setState(() {
                 _sections.add(newSection);
                 _selectedSectionIndex = _sections.length - 1;
+
+                // Add listeners to new section
+                newSection.controller.addListener(_onContentChanged);
+                newSection.titleController.addListener(_onContentChanged);
               });
             },
             customBorder: CircleBorder(),
@@ -1553,6 +2368,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() {
       _sections.add(newSection);
       _selectedSectionIndex = _sections.length - 1;
+
+      // Add listeners to new section
+      newSection.controller.addListener(_onContentChanged);
+      newSection.titleController.addListener(_onContentChanged);
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -2725,7 +3544,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
-                      value: _selectedSectionForComment ?? 0,
+                      initialValue: _selectedSectionForComment ?? 0,
                       decoration: InputDecoration(
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),

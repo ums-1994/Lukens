@@ -107,7 +107,8 @@ class MyApp extends StatelessWidget {
             final token = uri.queryParameters['token'];
             return EmailVerificationPage(token: token);
           },
-          '/home': (context) => const HomeShell(),
+          '/home': (context) => const DashboardPage(),
+          '/creator_dashboard': (context) => const DashboardPage(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) => const ComposePage(),
           '/proposal-wizard': (context) => const ProposalWizard(),
@@ -133,7 +134,6 @@ class MyApp extends StatelessWidget {
           },
           '/govern': (context) => const GovernPage(),
           '/preview': (context) => const PreviewPage(),
-          '/creator_dashboard': (context) => const DashboardPage(),
           '/content_library': (context) => const ContentLibraryPage(),
           '/content': (context) =>
               const ContentLibraryPage(), // Add missing route
