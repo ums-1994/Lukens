@@ -49,6 +49,39 @@ class _CEODashboardPageState extends State<CEODashboardPage> {
         const SizedBox(height: 8),
         const SizedBox(height: 32),
 
+        // Create New Proposal Button
+        Center(
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 24),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/proposal_wizard');
+              },
+              icon: const Icon(Icons.auto_awesome, size: 24),
+              label: const Text(
+                'Create New Proposal with AI',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF9B59B6),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 8,
+                shadowColor: const Color(0xFF9B59B6).withOpacity(0.3),
+              ),
+            ),
+          ),
+        ),
+
         // Premium Metrics Grid
         Row(
           children: [

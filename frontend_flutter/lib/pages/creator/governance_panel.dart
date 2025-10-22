@@ -694,9 +694,12 @@ class _GovernancePanelState extends State<GovernancePanel>
 
   Future<void> _submitForApproval() async {
     try {
-      // Update proposal status
+      // Submit for review using existing AppState API
       final app = context.read<AppState>();
-      await app.updateProposalStatus(widget.proposalId, 'In Review');
+      final error = await app.submitForReview();
+      if (error != null) {
+        throw Exception(error);
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

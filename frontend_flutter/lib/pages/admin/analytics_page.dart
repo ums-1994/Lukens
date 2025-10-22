@@ -20,66 +20,66 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+                    padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
             // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
                       'Analytics Dashboard',
-                      style: TextStyle(
+                                    style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w900,
                         color: Colors.white,
                         letterSpacing: 1,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
+                                    ),
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
                       'Comprehensive business intelligence and performance metrics',
-                      style: TextStyle(
+                                    style: TextStyle(
                         fontSize: 16,
                         color: Color(0xFFB0B6BB),
                         fontWeight: FontWeight.w300,
-                      ),
-                    ),
-                  ],
-                ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                 Row(
                   children: [
                     LiquidGlassCard(
                       borderRadius: 12,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedPeriod,
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<String>(
+                                      value: _selectedPeriod,
                           dropdownColor: const Color(0xFF121212),
                           style: const TextStyle(color: Colors.white),
-                          items: [
-                            'Last 7 Days',
-                            'Last 30 Days',
-                            'Last 90 Days',
-                            'This Year'
-                          ].map((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
+                                      items: [
+                                        'Last 7 Days',
+                                        'Last 30 Days',
+                                        'Last 90 Days',
+                                        'This Year'
+                                      ].map((String value) {
+                                        return DropdownMenuItem<String>(
+                                          value: value,
                               child: Text(value, style: const TextStyle(color: Colors.white)),
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              _selectedPeriod = newValue!;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
+                                        );
+                                      }).toList(),
+                                      onChanged: (String? newValue) {
+                                        setState(() {
+                                          _selectedPeriod = newValue!;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ),
                     const SizedBox(width: 12),
                     LiquidGlassCard(
                       borderRadius: 12,
@@ -96,15 +96,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       ),
                     ),
                   ],
-                ),
-              ],
-            ),
+                              ),
+                            ],
+                          ),
             const SizedBox(height: 32),
 
-            // Key Metrics Row
-            Row(
-              children: [
-                Expanded(
+                          // Key Metrics Row
+                          Row(
+                            children: [
+                              Expanded(
                   child: LiquidGlassCard(
                     borderRadius: 16,
                     padding: const EdgeInsets.all(20),
@@ -130,8 +130,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Row(
-                          children: [
+                          Row(
+                            children: [
                             const Icon(Icons.trending_up, color: Color(0xFF14B3BB), size: 16),
                             const SizedBox(width: 4),
                             const Text(
@@ -148,12 +148,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                                 color: Colors.white70,
                                 fontSize: 12,
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ),
                 const SizedBox(width: 20),
                 Expanded(
@@ -187,42 +187,42 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                             const SizedBox(width: 4),
                             const Text(
                               '+8.2%',
-                              style: TextStyle(
+                style: TextStyle(
                                 color: Color(0xFF14B3BB),
-                                fontSize: 14,
+                  fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                ),
+              ),
                             const Text(
                               ' vs last month',
                               style: TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+            ),
+          ),
+        ],
                   ),
-                ),
+              ],
+            ),
+          ),
+        ),
                 const SizedBox(width: 20),
                 Expanded(
                   child: LiquidGlassCard(
                     borderRadius: 16,
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                         const Text(
                           'Conversion Rate',
                           style: TextStyle(
                             color: Colors.white70,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
                         const Text(
                           '73.2%',
                           style: TextStyle(
@@ -238,7 +238,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                             const SizedBox(width: 4),
                             const Text(
                               '-2.1%',
-                              style: TextStyle(
+              style: TextStyle(
                                 color: Color(0xFFE9293A),
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -248,10 +248,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                               ' vs last month',
                               style: TextStyle(
                                 color: Colors.white70,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
+                fontSize: 12,
+              ),
+            ),
+          ],
                         ),
                       ],
                     ),
@@ -261,10 +261,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 Expanded(
                   child: LiquidGlassCard(
                     borderRadius: 16,
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                         const Text(
                           'Avg Deal Size',
                           style: TextStyle(
@@ -285,32 +285,32 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                         ),
                         const SizedBox(height: 8),
                         Row(
-                          children: [
+          children: [
                             const Icon(Icons.trending_up, color: Color(0xFF14B3BB), size: 16),
                             const SizedBox(width: 4),
                             const Text(
                               '+5.7%',
-                              style: TextStyle(
+              style: TextStyle(
                                 color: Color(0xFF14B3BB),
-                                fontSize: 14,
+                fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                              ),
-                            ),
+              ),
+            ),
                             const Text(
                               ' vs last month',
-                              style: TextStyle(
+              style: TextStyle(
                                 color: Colors.white70,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
                       ],
                     ),
-                  ),
-                ),
-              ],
+              ),
             ),
+          ],
+        ),
             const SizedBox(height: 32),
 
             // Charts Section
@@ -320,40 +320,40 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             // Performance Table
             LiquidGlassCard(
               borderRadius: 16,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
                     'Top Performing Proposals',
-                    style: TextStyle(
+              style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
                   const SizedBox(height: 20),
-                  Table(
-                    columnWidths: const {
-                      0: FlexColumnWidth(3),
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(3),
                       1: FlexColumnWidth(2),
                       2: FlexColumnWidth(2),
                       3: FlexColumnWidth(2),
-                      4: FlexColumnWidth(1),
-                    },
-                    children: [
+                4: FlexColumnWidth(1),
+              },
+              children: [
                       TableRow(
-                        decoration: BoxDecoration(
+                  decoration: BoxDecoration(
                           border: Border(
                             bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
                           ),
-                        ),
+                  ),
                         children: const [
-                          Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Text(
-                              'Proposal',
-                              style: TextStyle(
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Proposal',
+                        style: TextStyle(
                                 color: Colors.white70,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
@@ -366,46 +366,46 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                               'Client',
                               style: TextStyle(
                                 color: Colors.white70,
-                                fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w600,
                                 fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Text(
-                              'Value',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Text(
-                              'Status',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Text(
-                              'Score',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Value',
+                        style: TextStyle(
+                                color: Colors.white70,
+                          fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Status',
+                        style: TextStyle(
+                                color: Colors.white70,
+                          fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                              'Score',
+                        style: TextStyle(
+                                color: Colors.white70,
+                          fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                       _buildTableRow('Enterprise Cloud Migration', 'TechCorp Inc.', '\$125,000', 'Signed', '98'),
                       _buildTableRow('Digital Marketing Campaign', 'RetailMax', '\$85,000', 'Approved', '95'),
                       _buildTableRow('Financial System Integration', 'BankFlow', '\$200,000', 'Pending', '92'),

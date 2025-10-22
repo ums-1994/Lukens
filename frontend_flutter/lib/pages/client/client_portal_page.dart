@@ -16,7 +16,7 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
+            decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -24,20 +24,20 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
             Color(0xFF0A0A0A),
             Color(0xFF1A1A2E),
             Color(0xFF16213E),
-          ],
-        ),
-      ),
-      child: SingleChildScrollView(
+                ],
+              ),
+            ),
+                  child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
               'Client Portal',
-              style: TextStyle(
+                style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.w900,
-                color: Colors.white,
+                  color: Colors.white,
                 letterSpacing: 1,
               ),
             ),
@@ -45,7 +45,7 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
             
             // Client Status Overview
             Row(
-              children: [
+          children: [
                 Expanded(child: _buildStatusCard('Active Proposals', '3', const Color(0xFF2196F3))),
                 const SizedBox(width: 16),
                 Expanded(child: _buildStatusCard('Signed Contracts', '7', const Color(0xFF4CAF50))),
@@ -59,12 +59,12 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
             LiquidGlassCard(
               borderRadius: 16,
               padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
                       const Text(
                         'My Proposals',
                         style: TextStyle(
@@ -76,9 +76,9 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
                       TextButton(
                         onPressed: () => Navigator.pushNamed(context, '/proposals'),
                         child: const Text('View All'),
-                      ),
-                    ],
-                  ),
+              ),
+            ],
+          ),
                   const SizedBox(height: 16),
                   _buildProposalItem('Website Development Proposal', 'Under Review', '2 days ago', Icons.web),
                   _buildProposalItem('Mobile App Contract', 'Draft', '1 week ago', Icons.phone_android),
@@ -92,11 +92,11 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
             LiquidGlassCard(
               borderRadius: 16,
               padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
                         'Signed Documents',
@@ -116,18 +116,18 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
                   _buildDocumentItem('Service Agreement v2.1', 'Signed', '3 days ago', Icons.description),
                   _buildDocumentItem('NDA Contract', 'Signed', '1 week ago', Icons.security),
                   _buildDocumentItem('Payment Terms', 'Signed', '2 weeks ago', Icons.payment),
-                ],
-              ),
-            ),
+            ],
+          ),
+        ),
             const SizedBox(height: 24),
             
             // Quick Actions
             LiquidGlassCard(
               borderRadius: 16,
               padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
                   const Text(
                     'Quick Actions',
                     style: TextStyle(
@@ -143,29 +143,29 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
                       const SizedBox(width: 12),
                       Expanded(child: _buildActionButton('Request Support', Icons.support_agent, () => Navigator.pushNamed(context, '/support'))),
                     ],
-                  ),
-                ],
               ),
-            ),
+            ],
+          ),
+        ),
             const SizedBox(height: 24),
-            
+        
             // Role Testing Section - MOVED TO BOTTOM OUTSIDE MAIN CARDS
-            Container(
+        Container(
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
+          decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.white30),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
                     'Role Testing (Debug)',
-                    style: TextStyle(
+                style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
-                      fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -208,15 +208,15 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
                         },
                         child: const Text('Set Approver'),
                       ),
-                      ElevatedButton(
+              ElevatedButton(
                         onPressed: () {
                           AuthService.setTestRole('Admin');
                           Navigator.pushReplacementNamed(context, '/creator_dashboard');
                         },
                         child: const Text('Set Admin'),
-                      ),
-                    ],
-                  ),
+              ),
+            ],
+          ),
                   const SizedBox(height: 8),
                   Text(
                     'Current Role: ${AuthService.currentUser?['role'] ?? 'None'}',
@@ -230,9 +230,9 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
             ),
             const SizedBox(height: 32),
             const Footer(),
-          ],
+            ],
+          ),
         ),
-      ),
     );
   }
 
@@ -242,12 +242,12 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
       child: LiquidGlassCard(
         borderRadius: 16,
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
                 Icon(Icons.description, color: color, size: 32),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -281,7 +281,7 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
               style: const TextStyle(
                 color: Colors.white70,
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -298,17 +298,17 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
           Icon(icon, color: Colors.white70, size: 20),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
-                  ),
-                ),
-                Text(
+            ),
+          ),
+          Text(
                   '$status • $time',
                   style: const TextStyle(
                     color: Colors.white60,
@@ -331,21 +331,21 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
           Icon(icon, color: Colors.white70, size: 20),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
                   title,
-                  style: const TextStyle(
+            style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
-                  ),
-                ),
-                Text(
+            ),
+          ),
+          Text(
                   '$status • $time',
-                  style: const TextStyle(
+            style: const TextStyle(
                     color: Colors.green,
-                    fontSize: 12,
+              fontSize: 12,
                   ),
                 ),
               ],
@@ -367,7 +367,7 @@ class _ClientPortalPageState extends State<ClientPortalPage> {
           border: Border.all(color: Colors.white30),
         ),
         child: Column(
-          children: [
+        children: [
             Icon(icon, color: Colors.white, size: 32),
             const SizedBox(height: 8),
             Text(

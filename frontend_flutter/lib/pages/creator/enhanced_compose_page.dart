@@ -119,7 +119,8 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
 
     try {
       final app = context.read<AppState>();
-      await app.updateProposal(widget.proposalId, _proposalData);
+      // Persist edited sections using existing API
+      await app.updateSections(_proposalData);
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
