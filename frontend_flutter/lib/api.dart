@@ -704,12 +704,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void logout() {
-    authToken = null;
-    currentUser = null;
-    notifyListeners();
-  }
-
   Future<Map<String, dynamic>> verifyEmail(String token) async {
     final r = await http.post(
       Uri.parse("$baseUrl/verify-email"),
@@ -884,5 +878,15 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       print('Error creating content: $e');
     }
+  }
+
+  void logout() {
+    // Clear app state on logout
+    templates = [];
+    contentBlocks = [];
+    proposals = [];
+    currentProposal = null;
+    dashboardCounts = {};
+    notifyListeners();
   }
 }

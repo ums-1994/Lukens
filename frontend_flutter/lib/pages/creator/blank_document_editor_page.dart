@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'content_library_dialog.dart';
+import '../../services/auth_service.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -35,6 +36,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     'Authorized By',
     'Manager Approval'
   ];
+  List<Map<String, dynamic>> _comments = [];
+  late TextEditingController _commentController;
+  bool _isLoadingComments = false;
+  String _commentFilterStatus = 'all';
+  String _highlightedText = '';
+  int? _selectedSectionForComment;
 
   @override
   void initState() {
@@ -42,6 +49,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _titleController = TextEditingController(
       text: widget.proposalTitle ?? 'Untitled Template',
     );
+    _commentController = TextEditingController();
     // Create initial section
     _sections.add(_DocumentSection(
       title: 'Untitled Section',
@@ -52,6 +60,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   @override
   void dispose() {
     _titleController.dispose();
+    _commentController.dispose();
     for (var section in _sections) {
       section.controller.dispose();
       section.titleController.dispose();
@@ -174,6 +183,160 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
       }
     });
+  }
+
+  String _getCommenterName() {
+    final user = AuthService.currentUser;
+
+    if (user == null) return 'Anonymous User';
+
+    // Try different possible field names for the user's name
+    String? name = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email']?.split('@')[0];
+
+    return name ?? 'User';
+  }
+
+  Future<void> _addComment() async {
+    if (_commentController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a comment'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final commentText = _commentController.text;
+    final commenterName = _getCommenterName();
+    _commentController.clear();
+
+    final newComment = {
+      'id': DateTime.now().millisecondsSinceEpoch,
+      'commenter_name': commenterName,
+      'comment_text': commentText,
+      'section_index': _selectedSectionForComment,
+      'section_title': _selectedSectionForComment != null &&
+              _selectedSectionForComment! < _sections.length
+          ? _sections[_selectedSectionForComment!].title
+          : null,
+      'highlighted_text': _highlightedText.isNotEmpty ? _highlightedText : null,
+      'timestamp': DateTime.now().toIso8601String(),
+      'status': 'open',
+    };
+
+    setState(() {
+      _comments.insert(0, newComment);
+      _highlightedText = '';
+      _selectedSectionForComment = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Comment added by $commenterName'),
+        backgroundColor: const Color(0xFF1A3A52),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _captureHighlightedText(int sectionIndex) {
+    final controller = _sections[sectionIndex].controller;
+    final selection = controller.selection;
+
+    if (selection.baseOffset != selection.extentOffset) {
+      setState(() {
+        _highlightedText = controller.text.substring(
+          selection.baseOffset,
+          selection.extentOffset,
+        );
+        _selectedSectionForComment = sectionIndex;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Text selected: "${_highlightedText.substring(0, _highlightedText.length > 30 ? 30 : _highlightedText.length)}${_highlightedText.length > 30 ? '...' : ''}"'),
+          backgroundColor: const Color(0xFF00BCD4),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'Clear',
+            textColor: Colors.white,
+            onPressed: () {
+              setState(() {
+                _highlightedText = '';
+                _selectedSectionForComment = null;
+              });
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  void _updateCommentStatus(int commentId, String newStatus) {
+    setState(() {
+      final comment =
+          _comments.firstWhere((c) => c['id'] == commentId, orElse: () => {});
+      if (comment.isNotEmpty) {
+        comment['status'] = newStatus;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Comment marked as $newStatus'),
+        backgroundColor: const Color(0xFF27AE60),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _deleteComment(int commentId) {
+    setState(() {
+      _comments.removeWhere((c) => c['id'] == commentId);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Comment deleted'),
+        backgroundColor: Color(0xFF1A3A52),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _getFilteredComments() {
+    if (_commentFilterStatus == 'all') {
+      return _comments;
+    }
+    return _comments.where((c) => c['status'] == _commentFilterStatus).toList();
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return '';
+    try {
+      final DateTime dt = DateTime.parse(timestamp.toString());
+      final now = DateTime.now();
+      final difference = now.difference(dt);
+
+      if (difference.inMinutes < 1) {
+        return 'Just now';
+      } else if (difference.inHours < 1) {
+        return '${difference.inMinutes}m ago';
+      } else if (difference.inHours < 24) {
+        return '${difference.inHours}h ago';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays}d ago';
+      } else {
+        return '${dt.day}/${dt.month}/${dt.year}';
+      }
+    } catch (e) {
+      return 'Invalid date';
+    }
   }
 
   String _getCurrencySymbol() {
