@@ -41,11 +41,6 @@ transporter.verify((error, success) => {
   }
 });
 
-// Generate verification token
-const generateVerificationToken = () => {
-  return crypto.randomBytes(32).toString('hex');
-};
-
 // Send verification email
 const sendVerificationEmail = async (email, token) => {
   const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/verify-email?token=${token}`;
@@ -170,28 +165,15 @@ app.post('/api/auth/register', async (req, res) => {
       first_name: firstName,
       last_name: lastName,
       role: role || 'creator',
-      is_email_verified: false,
+      is_email_verified: true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
     users.push(user);
 
-    // Generate verification token
-    const verificationToken = generateVerificationToken();
-    verificationTokens.set(verificationToken, {
-      email,
-      userId: user.id,
-      expires: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
-    });
-
-    // Send verification email
-    if (process.env.SMTP_USER) {
-      await sendVerificationEmail(email, verificationToken);
-    }
-
     res.json({
-      message: 'User registered successfully. Please check your email to verify your account.',
+      message: 'User registered successfully. You can now login.',
       user: {
         id: user.id,
         email: user.email,

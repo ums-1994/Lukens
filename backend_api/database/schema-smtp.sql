@@ -15,19 +15,11 @@ CREATE TABLE IF NOT EXISTS users (
     first_name VARCHAR(100),
     last_name VARCHAR(100),
     role VARCHAR(50) NOT NULL CHECK (role IN ('creator', 'approver', 'admin', 'client', 'business_developer', 'reviewer_approver')),
-    is_email_verified BOOLEAN DEFAULT FALSE,
+    is_email_verified BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create verification tokens table
-CREATE TABLE IF NOT EXISTS verification_tokens (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
 -- Create password reset tokens table
 CREATE TABLE IF NOT EXISTS password_reset_tokens (

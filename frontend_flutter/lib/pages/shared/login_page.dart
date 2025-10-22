@@ -16,8 +16,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  bool _showResendVerification = false;
-  bool _isResending = false;
   bool _passwordVisible = false;
 
   late final AnimationController _frameController;
@@ -102,7 +100,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             token: result['access_token'],
           );
 
-          if (userProfile != null && userProfile['is_verified'] == true) {
+          if (userProfile != null) {
             final appState = context.read<AppState>();
             appState.authToken = result['access_token'];
             appState.currentUser = userProfile;
@@ -114,13 +112,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               (route) => false,
             );
           } else {
-            setState(() {
-              _showResendVerification = true;
-            });
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Please verify your email before logging in.'),
-                backgroundColor: Colors.orange,
+                content: Text('Failed to get user profile.'),
+                backgroundColor: Colors.red,
               ),
             );
           }
@@ -137,17 +132,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       if (mounted) {
         setState(() => _isLoading = false);
 
-        if (e.toString().contains('Email not verified')) {
-          setState(() {
-            _showResendVerification = true;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please verify your email before logging in.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        } else {
+        {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(e.toString()),
@@ -155,49 +140,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             ),
           );
         }
-      }
-    }
-  }
-
-  Future<void> _resendVerification() async {
-    if (_emailController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your email address')),
-      );
-      return;
-    }
-
-    setState(() => _isResending = true);
-
-    try {
-      final result = await SmtpAuthService.resendVerificationEmail(
-        email: _emailController.text.trim(),
-      );
-
-      if (mounted) {
-        setState(() => _isResending = false);
-
-        if (result != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Verification email sent successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          setState(() {
-            _showResendVerification = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isResending = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     }
   }
@@ -513,89 +455,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 ),
               ],
             ),
-
-            // Resend Verification (if needed)
-            if (_showResendVerification) ...[
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: const Color(0xFFF59E0B).withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Email not verified!',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFF59E0B),
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Please check your email and click the verification link, or resend it below.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xFFF59E0B),
-                            Color(0xFFD97706),
-                          ],
-                        ),
-                      ),
-                      child: ElevatedButton(
-                        onPressed: _isResending ? null : _resendVerification,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _isResending
-                            ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text(
-                                'Resend Verification Email',
-                                style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),

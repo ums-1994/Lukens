@@ -188,8 +188,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final uri = Uri.parse(currentUrl);
 
     // Check if this is a verification URL
-    if (uri.queryParameters.containsKey('verify') &&
-        uri.queryParameters.containsKey('token')) {
+    if (uri.queryParameters.containsKey('token')) {
       final token = uri.queryParameters['token'];
       if (token != null && token.isNotEmpty) {
         // Navigate to verification page

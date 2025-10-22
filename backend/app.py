@@ -6,10 +6,13 @@ import base64
 import hashlib
 import hmac
 import secrets
+import smtplib
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse, parse_qs
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import traceback
 
 import psycopg2
@@ -130,17 +133,11 @@ def init_pg_schema():
         role VARCHAR(50) DEFAULT 'user',
         department VARCHAR(255),
         is_active BOOLEAN DEFAULT true,
+        is_email_verified BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
         
-        cursor.execute('''CREATE TABLE IF NOT EXISTS verify_tokens (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        token VARCHAR(255) UNIQUE NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        expires_at TIMESTAMP NOT NULL
-        )''')
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
         id SERIAL PRIMARY KEY,
@@ -271,6 +268,67 @@ def verify_token(token):
         return None
     return token_data['username']
 
+
+def send_email(to_email, subject, html_content):
+    """Send email using SMTP"""
+    try:
+        smtp_host = os.getenv('SMTP_HOST')
+        smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        smtp_user = os.getenv('SMTP_USER')
+        smtp_pass = os.getenv('SMTP_PASS')
+        
+        if not all([smtp_host, smtp_user, smtp_pass]):
+            print(f"❌ SMTP configuration incomplete")
+            return False
+        
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = smtp_user
+        msg['To'] = to_email
+        
+        # Attach HTML content
+        html_part = MIMEText(html_content, 'html')
+        msg.attach(html_part)
+        
+        # Send email
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        
+        print(f"✅ Email sent to {to_email}")
+        return True
+    except Exception as e:
+        print(f"❌ Error sending email: {e}")
+        traceback.print_exc()
+        return False
+
+
+def send_password_reset_email(email, reset_token):
+    """Send password reset email"""
+    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+    reset_link = f"{frontend_url}/verify.html?token={reset_token}"
+    
+    subject = "Reset Your Password"
+    html_content = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 10px;">
+                <h1 style="color: #333;">Password Reset Request</h1>
+                <p style="color: #666; font-size: 16px;">We received a request to reset your password. Click the link below to reset it.</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{reset_link}" style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">Reset Password</a>
+                </div>
+                <p style="color: #999; font-size: 12px;">If you didn't request this, you can ignore this email.</p>
+                <p style="color: #999; font-size: 12px;">This link will expire in 24 hours.</p>
+            </div>
+        </body>
+    </html>
+    """
+    
+    return send_email(email, subject, html_content)
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -311,9 +369,12 @@ def admin_required(f):
 # Authentication endpoints
 
 @app.post("/register")
-async def register(body: dict):
+def register():
     try:
         data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
         username = data.get('username')
         email = data.get('email')
         password = data.get('password')
@@ -340,12 +401,18 @@ async def register(body: dict):
         finally:
             release_pg_conn(conn)
         
-        return {'detail': 'Registration successful, please verify your email'}, 201
+        # Email verification disabled - users can login immediately
+        # verification_token = generate_verification_token(email)
+        # send_verification_email(email, verification_token)
+        
+        return {'detail': 'Registration successful. You can now login.', 'email': email}, 200
     except Exception as e:
+        print(f'Registration error: {e}')
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/login")
-async def login():
+def login():
     try:
         data = request.form
         username = data.get('username')
@@ -360,7 +427,7 @@ async def login():
         result = cursor.fetchone()
         release_pg_conn(conn)
         
-        if not result or not verify_password(result[0], password):
+        if not result or not result[0] or not verify_password(result[0], password):
             return {'detail': 'Invalid credentials'}, 401
         
         token = generate_token(username)
@@ -369,9 +436,12 @@ async def login():
         return {'detail': str(e)}, 500
 
 @app.post("/login-email")
-async def login_email():
+def login_email():
     try:
         data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
         email = data.get('email')
         password = data.get('password')
         
@@ -384,37 +454,74 @@ async def login_email():
         result = cursor.fetchone()
         release_pg_conn(conn)
         
-        if not result or not verify_password(result[0], password):
+        if not result or not result[0] or not verify_password(result[0], password):
             return {'detail': 'Invalid credentials'}, 401
         
         token = generate_token(email)
         return {'access_token': token, 'token_type': 'bearer'}, 200
     except Exception as e:
+        print(f'Login error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/forgot-password")
+def forgot_password():
+    try:
+        data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
+        email = data.get('email')
+        if not email:
+            return {'detail': 'Missing email'}, 400
+        
+        # Check if user exists
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if not result:
+            # For security, don't reveal whether email exists
+            return {'detail': 'If this email exists, a password reset link will be sent'}, 200
+        
+        # Generate reset token
+        reset_token = generate_verification_token(email)
+        
+        # Send password reset email
+        send_password_reset_email(email, reset_token)
+        
+        return {'detail': 'If this email exists, a password reset link will be sent', 'message': 'Password reset link has been sent to your email'}, 200
+    except Exception as e:
+        print(f'Forgot password error: {e}')
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.get("/me")
 @token_required
-async def get_current_user(username):
+def get_current_user(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
         cursor.execute(
-        '''SELECT id, username, email, full_name, role, department, is_active
-           FROM users WHERE username = %s''',
-        (username,)
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users WHERE username = %s''',
+            (username,)
         )
         result = cursor.fetchone()
         release_pg_conn(conn)
         if result:
             return {
-            'id': result[0],
-            'username': result[1],
-            'email': result[2],
-            'full_name': result[3],
-            'role': result[4],
-            'department': result[5],
-            'is_active': result[6]
-        }
+                'id': result[0],
+                'username': result[1],
+                'email': result[2],
+                'full_name': result[3],
+                'role': result[4],
+                'department': result[5],
+                'is_active': result[6]
+            }
         
         return {'detail': 'User not found'}, 404
     except Exception as e:
@@ -422,7 +529,7 @@ async def get_current_user(username):
 
 @app.get("/user/profile")
 @token_required
-async def get_user_profile(username):
+def get_user_profile(username):
     """Alias for /me endpoint for Flutter compatibility"""
     try:
         conn = _pg_conn()
@@ -435,7 +542,7 @@ async def get_user_profile(username):
         result = cursor.fetchone()
         release_pg_conn(conn)
         if result:
-                return {
+            return {
                 'id': result[0],
                 'username': result[1],
                 'email': result[2],
@@ -448,53 +555,11 @@ async def get_user_profile(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/verify-email")
-async def verify_email():
-    try:
-        data = request.get_json()
-        token = data.get('token')
-        
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute('SELECT email FROM verify_tokens WHERE token = %s AND expires_at > NOW()', (token,))
-        result = cursor.fetchone()
-        if result:
-            cursor.execute('UPDATE users SET is_active = true WHERE email = %s', (result[0],))
-            cursor.execute('DELETE FROM verify_tokens WHERE token = %s', (token,))
-            conn.commit()
-            release_pg_conn(conn)
-            return {'verified': True, 'message': 'Email verified successfully'}, 200
-        release_pg_conn(conn)
-        return {'verified': False, 'detail': 'Invalid or expired token'}, 400
-    except Exception as e:
-        return {'detail': str(e)}, 500
-
-@app.post("/resend-verification")
-async def resend_verification():
-    try:
-        data = request.get_json()
-        email = data.get('email')
-        
-        token = secrets.token_urlsafe(32)
-        expires_at = datetime.now() + timedelta(hours=24)
-        
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''INSERT INTO verify_tokens (email, token, expires_at) VALUES (%s, %s, %s)''',
-            (email, token, expires_at)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'message': 'Verification email sent'}, 200
-    except Exception as e:
-        return {'detail': str(e)}, 500
-
 # Content library endpoints
 
 @app.get("/content")
 @token_required
-async def get_content(username):
+def get_content(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -520,7 +585,7 @@ async def get_content(username):
 
 @app.post("/content")
 @token_required
-async def create_content(username):
+def create_content(username):
     try:
         data = request.get_json()
         
@@ -542,7 +607,7 @@ async def create_content(username):
 
 @app.put("/content/<int:content_id>")
 @token_required
-async def update_content(username, content_id):
+def update_content(username, content_id):
     try:
         data = request.get_json()
         
@@ -576,7 +641,7 @@ async def update_content(username, content_id):
 
 @app.delete("/content/<int:content_id>")
 @token_required
-async def delete_content(username, content_id):
+def delete_content(username, content_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -589,7 +654,7 @@ async def delete_content(username, content_id):
 
 @app.post("/content/<int:content_id>/restore")
 @token_required
-async def restore_content(username, content_id):
+def restore_content(username, content_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -602,7 +667,7 @@ async def restore_content(username, content_id):
 
 @app.delete("/content/<int:content_id>/permanent")
 @token_required
-async def permanently_delete_content(username, content_id):
+def permanently_delete_content(username, content_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -615,7 +680,7 @@ async def permanently_delete_content(username, content_id):
 
 @app.get("/content/trash")
 @token_required
-async def get_trash(username):
+def get_trash(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -643,7 +708,7 @@ async def get_trash(username):
 
 @app.get("/proposals")
 @token_required
-async def get_proposals(username):
+def get_proposals(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -676,7 +741,7 @@ async def get_proposals(username):
 
 @app.post("/proposals")
 @token_required
-async def create_proposal(username):
+def create_proposal(username):
     try:
         data = request.get_json()
         
@@ -709,7 +774,7 @@ async def create_proposal(username):
 
 @app.put("/proposals/<int:proposal_id>")
 @token_required
-async def update_proposal(username, proposal_id):
+def update_proposal(username, proposal_id):
     try:
         data = request.get_json()
         
@@ -747,7 +812,7 @@ async def update_proposal(username, proposal_id):
 
 @app.delete("/proposals/<int:proposal_id>")
 @token_required
-async def delete_proposal(username, proposal_id):
+def delete_proposal(username, proposal_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -760,7 +825,7 @@ async def delete_proposal(username, proposal_id):
 
 @app.get("/proposals/<int:proposal_id>")
 @token_required
-async def get_proposal(username, proposal_id):
+def get_proposal(username, proposal_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -792,7 +857,7 @@ async def get_proposal(username, proposal_id):
 
 @app.post("/proposals/<int:proposal_id>/submit")
 @token_required
-async def submit_for_review(username, proposal_id):
+def submit_for_review(username, proposal_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -832,7 +897,7 @@ async def submit_for_review(username, proposal_id):
 
 @app.post("/proposals/<int:proposal_id>/approve")
 @token_required
-async def approve_proposal(username, proposal_id):
+def approve_proposal(username, proposal_id):
     try:
         comments = request.args.get('comments', '')
         
@@ -850,7 +915,7 @@ async def approve_proposal(username, proposal_id):
 
 @app.post("/proposals/<int:proposal_id>/reject")
 @token_required
-async def reject_proposal(username, proposal_id):
+def reject_proposal(username, proposal_id):
     try:
         comments = request.args.get('comments', '')
         
@@ -868,7 +933,7 @@ async def reject_proposal(username, proposal_id):
 
 @app.patch("/proposals/<int:proposal_id>/status")
 @token_required
-async def update_proposal_status(username, proposal_id):
+def update_proposal_status(username, proposal_id):
     try:
         data = request.get_json()
         status = data.get('status')
@@ -890,7 +955,7 @@ async def update_proposal_status(username, proposal_id):
 
 @app.post("/proposals/<int:proposal_id>/send_to_client")
 @token_required
-async def send_to_client(username, proposal_id):
+def send_to_client(username, proposal_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -906,7 +971,7 @@ async def send_to_client(username, proposal_id):
 
 @app.post("/proposals/<int:proposal_id>/client_decline")
 @token_required
-async def client_decline_proposal(username, proposal_id):
+def client_decline_proposal(username, proposal_id):
     try:
         comments = request.args.get('comments', '')
         
@@ -924,7 +989,7 @@ async def client_decline_proposal(username, proposal_id):
 
 @app.post("/proposals/<int:proposal_id>/client_view")
 @token_required
-async def track_client_view(username, proposal_id):
+def track_client_view(username, proposal_id):
     try:
         return {'detail': 'View tracked'}, 200
     except Exception as e:
@@ -932,7 +997,7 @@ async def track_client_view(username, proposal_id):
 
 @app.get("/proposals/pending_approval")
 @token_required
-async def get_pending_approvals(username):
+def get_pending_approvals(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -958,7 +1023,7 @@ async def get_pending_approvals(username):
 
 @app.get("/proposals/my_proposals")
 @token_required
-async def get_my_proposals(username):
+def get_my_proposals(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -986,7 +1051,7 @@ async def get_my_proposals(username):
 
 @app.post("/proposals/<int:proposal_id>/sign")
 @token_required
-async def sign_off(username, proposal_id):
+def sign_off(username, proposal_id):
     try:
         data = request.get_json()
         signer_name = data.get('signer_name')
@@ -1009,7 +1074,7 @@ async def sign_off(username, proposal_id):
 @app.post("/proposals/<int:proposal_id>/approve")
 @token_required
 @admin_required
-async def approve_stage(username, proposal_id):
+def approve_stage(username, proposal_id):
     try:
         stage = request.args.get('stage')
         
@@ -1030,7 +1095,7 @@ async def approve_stage(username, proposal_id):
 
 @app.post("/proposals/<int:proposal_id>/create_esign_request")
 @token_required
-async def request_esign(username, proposal_id):
+def request_esign(username, proposal_id):
     try:
         # This would normally interact with an e-signature service
         sign_url = f"https://example.com/sign/{proposal_id}"
@@ -1041,7 +1106,7 @@ async def request_esign(username, proposal_id):
 
 @app.get("/client/proposals")
 @token_required
-async def fetch_client_proposals(username):
+def fetch_client_proposals(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -1067,7 +1132,7 @@ async def fetch_client_proposals(username):
 
 @app.get("/client/proposals/<int:proposal_id>")
 @token_required
-async def get_client_proposal(username, proposal_id):
+def get_client_proposal(username, proposal_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -1095,7 +1160,7 @@ async def get_client_proposal(username, proposal_id):
 
 @app.post("/client/proposals/<int:proposal_id>/sign")
 @token_required
-async def client_sign_proposal(username, proposal_id):
+def client_sign_proposal(username, proposal_id):
     try:
         data = request.get_json()
         signer_name = data.get('signer_name')
@@ -1117,7 +1182,7 @@ async def client_sign_proposal(username, proposal_id):
 
 @app.post("/upload/image")
 @token_required
-async def upload_image(username):
+def upload_image(username):
     try:
         if 'file' not in request.files:
             return {'detail': 'No file provided'}, 400
@@ -1130,7 +1195,7 @@ async def upload_image(username):
 
 @app.post("/upload/template")
 @token_required
-async def upload_template(username):
+def upload_template(username):
     try:
         if 'file' not in request.files:
             return {'detail': 'No file provided'}, 400
@@ -1143,7 +1208,7 @@ async def upload_template(username):
 
 @app.delete("/upload/<public_id>")
 @token_required
-async def delete_from_cloudinary(username, public_id):
+def delete_from_cloudinary(username, public_id):
     try:
         cloudinary.uploader.destroy(public_id)
         return {'detail': 'File deleted'}, 200
@@ -1152,7 +1217,7 @@ async def delete_from_cloudinary(username, public_id):
 
 @app.post("/upload/signature")
 @token_required
-async def get_upload_signature(username):
+def get_upload_signature(username):
     try:
         data = request.get_json()
         public_id = data.get('public_id')
@@ -1165,7 +1230,7 @@ async def get_upload_signature(username):
 
 @app.get("/client/dashboard_stats")
 @token_required
-async def get_client_dashboard_stats(username):
+def get_client_dashboard_stats(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -1181,7 +1246,7 @@ async def get_client_dashboard_stats(username):
         return {'detail': str(e)}, 500
 
 @app.post("/api/comments/document/<int:proposal_id>")
-async def create_comment(proposal_id: int):
+def create_comment(proposal_id: int):
     """Create a new comment on a document"""
     try:
         data = request.get_json()
@@ -1225,7 +1290,7 @@ async def create_comment(proposal_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/comments/proposal/{proposal_id}")
-async def get_proposal_comments(proposal_id: int):
+def get_proposal_comments(proposal_id: int):
     """Get all comments for a proposal"""
     try:
         with _pg_conn() as conn:

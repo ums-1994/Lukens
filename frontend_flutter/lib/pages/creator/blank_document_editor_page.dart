@@ -38,10 +38,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   ];
   List<Map<String, dynamic>> _comments = [];
   late TextEditingController _commentController;
-  bool _isLoadingComments = false;
   String _commentFilterStatus = 'all';
   String _highlightedText = '';
   int? _selectedSectionForComment;
+  List<Map<String, dynamic>> _collaborators = [];
+  bool _isCollaborating = false;
 
   @override
   void initState() {
@@ -55,6 +56,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       title: 'Untitled Section',
       content: '',
     ));
+
+    // Load user profile for proper commenter name
+    _loadUserProfile();
   }
 
   @override
@@ -72,13 +76,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   void _insertSection(int afterIndex) {
     setState(() {
-      _sections.insert(
-        afterIndex + 1,
-        _DocumentSection(
-          title: 'Untitled Section',
-          content: '',
-        ),
+      final newSection = _DocumentSection(
+        title: 'Untitled Section',
+        content: '',
       );
+      _sections.insert(afterIndex + 1, newSection);
     });
   }
 
@@ -194,9 +196,69 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     String? name = user['full_name'] ??
         user['first_name'] ??
         user['name'] ??
-        user['email']?.split('@')[0];
+        user['username'];
+
+    // If still no name, try to extract from email
+    if (name == null || name.isEmpty) {
+      final email = user['email'] as String?;
+      if (email != null && email.isNotEmpty) {
+        name = email.split('@')[0];
+      }
+    }
 
     return name ?? 'User';
+  }
+
+  String _getUserInitials() {
+    final user = AuthService.currentUser;
+
+    if (user == null) return 'U';
+
+    // Try to get full name first
+    final fullName = user['full_name'] as String?;
+    if (fullName != null && fullName.isNotEmpty) {
+      final parts = fullName.trim().split(' ');
+      if (parts.length >= 2) {
+        // First and last name initials
+        return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+      } else if (parts.length == 1) {
+        // Just first letter if single name
+        return parts.first[0].toUpperCase();
+      }
+    }
+
+    // Try first name
+    final firstName = user['first_name'] as String?;
+    if (firstName != null && firstName.isNotEmpty) {
+      return firstName[0].toUpperCase();
+    }
+
+    // Try username
+    final username = user['username'] as String?;
+    if (username != null && username.isNotEmpty) {
+      return username[0].toUpperCase();
+    }
+
+    // Try email
+    final email = user['email'] as String?;
+    if (email != null && email.isNotEmpty) {
+      return email[0].toUpperCase();
+    }
+
+    return 'U';
+  }
+
+  Future<void> _loadUserProfile() async {
+    try {
+      final profile = await AuthService.getUserProfile();
+      if (profile != null) {
+        setState(() {
+          // User profile loaded, comments will now use proper name
+        });
+      }
+    } catch (e) {
+      print('Error loading user profile: $e');
+    }
   }
 
   Future<void> _addComment() async {
@@ -221,7 +283,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       'section_index': _selectedSectionForComment,
       'section_title': _selectedSectionForComment != null &&
               _selectedSectionForComment! < _sections.length
-          ? _sections[_selectedSectionForComment!].title
+          ? (_sections[_selectedSectionForComment!]
+                  .titleController
+                  .text
+                  .isNotEmpty
+              ? _sections[_selectedSectionForComment!].titleController.text
+              : 'Untitled Section')
           : null,
       'highlighted_text': _highlightedText.isNotEmpty ? _highlightedText : null,
       'timestamp': DateTime.now().toIso8601String(),
@@ -241,40 +308,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         duration: const Duration(seconds: 2),
       ),
     );
-  }
-
-  void _captureHighlightedText(int sectionIndex) {
-    final controller = _sections[sectionIndex].controller;
-    final selection = controller.selection;
-
-    if (selection.baseOffset != selection.extentOffset) {
-      setState(() {
-        _highlightedText = controller.text.substring(
-          selection.baseOffset,
-          selection.extentOffset,
-        );
-        _selectedSectionForComment = sectionIndex;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Text selected: "${_highlightedText.substring(0, _highlightedText.length > 30 ? 30 : _highlightedText.length)}${_highlightedText.length > 30 ? '...' : ''}"'),
-          backgroundColor: const Color(0xFF00BCD4),
-          duration: const Duration(seconds: 3),
-          action: SnackBarAction(
-            label: 'Clear',
-            textColor: Colors.white,
-            onPressed: () {
-              setState(() {
-                _highlightedText = '';
-                _selectedSectionForComment = null;
-              });
-            },
-          ),
-        ),
-      );
-    }
   }
 
   void _updateCommentStatus(int commentId, String newStatus) {
@@ -420,20 +453,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         child: Stack(
                           children: [
                             SingleChildScrollView(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 30,
-                                  vertical: 40,
-                                ),
-                                child: Column(
-                                  children: [
-                                    // Generate A4 pages
-                                    ..._buildA4Pages(),
-                                    // Plus button to add new page
-                                    const SizedBox(height: 24),
-                                    _buildAddPageButton(),
-                                    const SizedBox(height: 40),
-                                  ],
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 40,
+                                    vertical: 50,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      // Generate A4 pages
+                                      ..._buildA4Pages(),
+                                      // Plus button to add new page
+                                      const SizedBox(height: 24),
+                                      _buildAddPageButton(),
+                                      const SizedBox(height: 40),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -792,15 +827,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Action buttons
-          TextButton(
-            onPressed: () {},
-            child: const Text(
-              'Submit feedback',
-              style: TextStyle(fontSize: 13),
+          // Collaboration button
+          OutlinedButton.icon(
+            onPressed: () => _showCollaborationDialog(),
+            icon: Icon(
+              _isCollaborating ? Icons.people : Icons.person_add,
+              size: 16,
+            ),
+            label: Text(_isCollaborating
+                ? 'Collaborators (${_collaborators.length})'
+                : 'Share'),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: _isCollaborating ? Colors.green : Colors.grey,
+              ),
+              foregroundColor: _isCollaborating ? Colors.green : Colors.black87,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
           ),
           const SizedBox(width: 12),
+          // Comments button
+          OutlinedButton.icon(
+            onPressed: () => _showCommentsPanel(),
+            icon: const Icon(Icons.comment, size: 16),
+            label: Text('Comments (${_comments.length})'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF00BCD4)),
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Action buttons
           OutlinedButton.icon(
             onPressed: () {},
             icon: const Icon(Icons.visibility, size: 16),
@@ -839,13 +903,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.help_outline),
-            iconSize: 20,
-            tooltip: 'Help',
-          ),
-          const SizedBox(width: 12),
           // User initials
           Container(
             width: 32,
@@ -854,10 +911,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               color: const Color(0xFF00BCD4),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: const Center(
+            child: Center(
               child: Text(
-                'LS',
-                style: TextStyle(
+                _getUserInitials(),
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
@@ -876,20 +933,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
       child: Row(
         children: [
-          // Sections button
-          OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.layers, size: 16),
-            label: const Text('Sections'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.grey),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
           // Undo/Redo
           IconButton(
             icon: const Icon(Icons.undo),
@@ -1055,9 +1098,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   List<Widget> _buildA4Pages() {
     // A4 dimensions: 210mm x 297mm (aspect ratio 0.707)
-    // Using fixed width of 600px, height will be 600 / 0.707 ≈ 848px
-    const double pageWidth = 600;
-    const double pageHeight = 848; // A4 aspect ratio
+    // Using fixed width of 794px (approx 210mm at 96 DPI)
+    // Height: 1123px (approx 297mm at 96 DPI)
+    const double pageWidth = 794;
+    const double pageHeight = 1123; // A4 aspect ratio
 
     return List.generate(
       _sections.length,
@@ -1083,7 +1127,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(60),
             child: _buildSectionContent(index),
           ),
         ),
@@ -1097,11 +1141,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         children: [
           InkWell(
             onTap: () {
+              final newSection = _DocumentSection(
+                title: 'Untitled Section',
+                content: '',
+              );
               setState(() {
-                _sections.add(_DocumentSection(
-                  title: 'Untitled Section',
-                  content: '',
-                ));
+                _sections.add(newSection);
                 _selectedSectionIndex = _sections.length - 1;
               });
             },
@@ -1450,12 +1495,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               Icons.edit_note,
               'Add Comment',
               () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Add Comment feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                  ),
-                );
+                _showCommentDialog();
               },
             ),
             const SizedBox(height: 8),
@@ -2637,6 +2677,697 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showCommentDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: SizedBox(
+            width: 500,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.comment,
+                          color: Color(0xFF00BCD4), size: 24),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Add Comment',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Section selection
+                  if (_sections.isNotEmpty) ...[
+                    Text(
+                      'Target Section',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: _selectedSectionForComment ?? 0,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                      ),
+                      items: _sections.asMap().entries.map((entry) {
+                        return DropdownMenuItem<int>(
+                          value: entry.key,
+                          child: Text(
+                            entry.value.titleController.text.isNotEmpty
+                                ? entry.value.titleController.text
+                                : 'Untitled Section',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSectionForComment = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Highlighted text display
+                  if (_highlightedText.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE3F2FD),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                            color: const Color(0xFF00BCD4).withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Highlighted Text:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _highlightedText.length > 100
+                                ? '${_highlightedText.substring(0, 100)}...'
+                                : _highlightedText,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Comment input
+                  TextField(
+                    controller: _commentController,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      labelText: 'Comment',
+                      hintText: 'Enter your comment here...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Action buttons
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          _commentController.clear();
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await _addComment();
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                        ),
+                        child: const Text('Add Comment'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCommentsPanel() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: SizedBox(
+            width: 600,
+            height: 500,
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    border:
+                        Border(bottom: BorderSide(color: Colors.grey[200]!)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.comment,
+                          color: Color(0xFF00BCD4), size: 24),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Comments',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Filter dropdown
+                      DropdownButton<String>(
+                        value: _commentFilterStatus,
+                        items: ['all', 'open', 'resolved'].map((status) {
+                          return DropdownMenuItem<String>(
+                            value: status,
+                            child: Text(status.toUpperCase()),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _commentFilterStatus = value!;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Comments list
+                Expanded(
+                  child: _comments.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.comment_outlined,
+                                  size: 48, color: Colors.grey[400]),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No comments yet',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Add comments to collaborate with your team',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _getFilteredComments().length,
+                          itemBuilder: (context, index) {
+                            final comment = _getFilteredComments()[index];
+                            return _buildCommentCard(comment);
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCommentCard(Map<String, dynamic> comment) {
+    final isResolved = comment['status'] == 'resolved';
+    final hasHighlightedText = comment['highlighted_text'] != null &&
+        comment['highlighted_text'].toString().isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isResolved ? Colors.grey[50] : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isResolved
+              ? Colors.grey[300]!
+              : const Color(0xFF00BCD4).withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Comment header
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: const Color(0xFF00BCD4),
+                child: Text(
+                  comment['commenter_name']
+                          ?.toString()
+                          .substring(0, 1)
+                          .toUpperCase() ??
+                      'U',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      comment['commenter_name'] ?? 'Unknown User',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    Text(
+                      _formatTimestamp(comment['timestamp']),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Status badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isResolved ? Colors.green[100] : Colors.orange[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isResolved ? 'RESOLVED' : 'OPEN',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: isResolved ? Colors.green[700] : Colors.orange[700],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Section info
+          if (comment['section_title'] != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE3F2FD),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Section: ${comment['section_title']}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF00BCD4),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Highlighted text
+          if (hasHighlightedText) ...[
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Text(
+                comment['highlighted_text'],
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Comment text
+          Text(
+            comment['comment_text'] ?? '',
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF1A1A1A),
+              height: 1.4,
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Action buttons
+          Row(
+            children: [
+              if (!isResolved)
+                TextButton.icon(
+                  onPressed: () =>
+                      _updateCommentStatus(comment['id'], 'resolved'),
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('Resolve'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.green[700],
+                  ),
+                )
+              else
+                TextButton.icon(
+                  onPressed: () => _updateCommentStatus(comment['id'], 'open'),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Reopen'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.orange[700],
+                  ),
+                ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => _deleteComment(comment['id']),
+                icon: const Icon(Icons.delete, size: 16),
+                label: const Text('Delete'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.red[700],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCollaborationDialog() {
+    final emailController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              child: SizedBox(
+                width: 500,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.people,
+                              color: Color(0xFF27AE60), size: 24),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Collaborate on Proposal',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 20),
+
+                      Text(
+                        'Invite others to collaborate on this proposal. They will be able to view, comment, and edit.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          height: 1.4,
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Add collaborator section
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: emailController,
+                              decoration: InputDecoration(
+                                labelText: 'Email Address',
+                                hintText: 'colleague@example.com',
+                                prefixIcon: const Icon(Icons.email, size: 20),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              if (emailController.text.isNotEmpty) {
+                                setDialogState(() {
+                                  _collaborators.add({
+                                    'email': emailController.text,
+                                    'name': emailController.text.split('@')[0],
+                                    'role': 'Editor',
+                                    'added_at':
+                                        DateTime.now().toIso8601String(),
+                                  });
+                                  _isCollaborating = true;
+                                });
+                                setState(() {});
+                                emailController.clear();
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        'Invitation sent to ${emailController.text}'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Invite'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF27AE60),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Collaborators list
+                      if (_collaborators.isNotEmpty) ...[
+                        const Divider(),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Current Collaborators (${_collaborators.length})',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 200),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _collaborators.length,
+                            itemBuilder: (context, index) {
+                              final collaborator = _collaborators[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: const Color(0xFF27AE60),
+                                      child: Text(
+                                        collaborator['name']
+                                            .toString()
+                                            .substring(0, 1)
+                                            .toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            collaborator['name'],
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          Text(
+                                            collaborator['email'],
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue[50],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        collaborator['role'],
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.blue[700],
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () {
+                                        setDialogState(() {
+                                          _collaborators.removeAt(index);
+                                          if (_collaborators.isEmpty) {
+                                            _isCollaborating = false;
+                                          }
+                                        });
+                                        setState(() {});
+
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              '${collaborator['name']} removed from collaborators',
+                                            ),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ] else ...[
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: Column(
+                              children: [
+                                Icon(Icons.people_outline,
+                                    size: 48, color: Colors.grey[400]),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No collaborators yet',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 20),
+
+                      // Close button
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Close'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
