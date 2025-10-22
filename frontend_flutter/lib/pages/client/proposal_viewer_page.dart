@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
 
 class ProposalViewerPage extends StatefulWidget {
   final String documentName;
@@ -19,6 +21,77 @@ class ProposalViewerPage extends StatefulWidget {
 }
 
 class _ProposalViewerPageState extends State<ProposalViewerPage> {
+  List<dynamic> _versions = [];
+  bool _loadingVersions = false;
+
+  Future<void> _openVersionHistory() async {
+    final token = AuthService.token;
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login to view versions')),
+      );
+      return;
+    }
+    setState(() { _loadingVersions = true; });
+    try {
+      // NOTE: In this demo we don't have a real proposalId bound here.
+      // If you pass the proposalId into this page, replace 'demo' accordingly.
+      // For now, show empty with hint.
+      _versions = await ApiService.listProposalVersions('demo-proposal-id', token);
+    } catch (_) {
+      _versions = [];
+    } finally {
+      setState(() { _loadingVersions = false; });
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Version History'),
+          content: SizedBox(
+            width: 480,
+            child: _loadingVersions
+                ? const Center(child: CircularProgressIndicator())
+                : _versions.isEmpty
+                    ? const Text('No versions found. (Bind proposalId to enable)')
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Latest first',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 300,
+                            child: ListView.builder(
+                              itemCount: _versions.length,
+                              itemBuilder: (context, i) {
+                                final v = _versions[i] as Map<String,dynamic>;
+                                return ListTile(
+                                  dense: true,
+                                  title: Text('v${v['version_number']}  •  ${v['created_at'] ?? ''}')
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,6 +124,11 @@ class _ProposalViewerPageState extends State<ProposalViewerPage> {
                           Navigator.pop(context);
                         },
                         icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                      IconButton(
+                        onPressed: _openVersionHistory,
+                        icon: const Icon(Icons.history, color: Colors.white),
+                        tooltip: 'Version History',
                       ),
                       IconButton(
                         onPressed: () {

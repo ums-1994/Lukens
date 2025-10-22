@@ -260,4 +260,50 @@ class ApiService {
       return false;
     }
   }
+
+  // -------- Proposal Versioning --------
+  static Future<List<dynamic>> listProposalVersions(String proposalId, String token) async {
+    final resp = await http.get(
+      Uri.parse('$baseUrl/proposals/$proposalId/versions'),
+      headers: _getHeaders(token),
+    );
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return json.decode(resp.body) as List<dynamic>;
+    }
+    throw Exception('Failed to fetch versions');
+  }
+
+  static Future<Map<String,dynamic>> createProposalVersion(String proposalId, String token, {String? changeSummary}) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/proposals/$proposalId/versions'),
+      headers: _getHeaders(token),
+      body: json.encode({'change_summary': changeSummary}),
+    );
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return json.decode(resp.body) as Map<String,dynamic>;
+    }
+    throw Exception('Failed to create version');
+  }
+
+  static Future<Map<String,dynamic>> restoreVersion(String versionId, String token) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/versions/$versionId/restore'),
+      headers: _getHeaders(token),
+    );
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return json.decode(resp.body) as Map<String,dynamic>;
+    }
+    throw Exception('Failed to restore version');
+  }
+
+  static Future<Map<String,dynamic>> compareVersions(String leftId, String rightId, String token) async {
+    final resp = await http.get(
+      Uri.parse('$baseUrl/versions/$leftId/compare/$rightId'),
+      headers: _getHeaders(token),
+    );
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return json.decode(resp.body) as Map<String,dynamic>;
+    }
+    throw Exception('Failed to compare versions');
+  }
 }
