@@ -642,13 +642,14 @@ class DashboardPage extends StatelessWidget {
           status,
           statusColor,
           textColor,
+          proposalId: proposal['id'],
         );
       }).toList(),
     );
   }
 
   Widget _buildProposalItem(String title, String subtitle, String status,
-      Color statusColor, Color textColor) {
+      Color statusColor, Color textColor, {String? proposalId}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -658,48 +659,82 @@ class DashboardPage extends StatelessWidget {
         border:
             Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF7F8C8D),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  status,
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Color(0xFF7F8C8D),
+                    fontWeight: FontWeight.w500,
+                    color: textColor,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: textColor,
+          if (status == 'Draft' && proposalId != null) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _submitForApproval(proposalId, title),
+                icon: const Icon(Icons.send, size: 16),
+                label: const Text('Submit for Approval'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2C3E50),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
+    );
+  }
+
+  void _submitForApproval(String proposalId, String proposalTitle) {
+    Navigator.pushNamed(
+      context,
+      '/submit_for_approval',
+      arguments: {
+        'proposalId': proposalId,
+        'proposalTitle': proposalTitle,
+      },
     );
   }
 

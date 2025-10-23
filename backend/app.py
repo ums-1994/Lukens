@@ -207,14 +207,68 @@ def seed_content_blocks():
 seed_content_blocks()
 
 # ---------- Data Models ----------
-Status = Literal["Draft","In Review","Released","Signed","Archived"]
-Stage = Literal["Delivery","Legal","Exec"]
+Status = Literal["Draft","In Review","Released","Signed","Archived","Rejected","Pending Approval"]
+Stage = Literal["Delivery","Legal","Exec","Financial","Technical","Client Review"]
 DocType = Literal["Proposal","SOW","RFI"]
+ApprovalAction = Literal["approve","reject","request_changes","delegate"]
+ApprovalStatus = Literal["pending","approved","rejected","delegated","expired"]
+
+class ApprovalRequest(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    proposal_id: str
+    stage: Stage
+    requested_by: str
+    requested_at: str = Field(default_factory=now_iso)
+    assigned_to: str
+    due_date: Optional[str] = None
+    priority: Literal["low","medium","high","urgent"] = "medium"
+    comments: Optional[str] = None
+    status: ApprovalStatus = "pending"
+    action_taken: Optional[ApprovalAction] = None
+    action_comments: Optional[str] = None
+    action_taken_at: Optional[str] = None
+    action_taken_by: Optional[str] = None
+    delegated_to: Optional[str] = None
+    reminder_sent: bool = False
+    reminder_count: int = 0
+
+class ApprovalWorkflow(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    description: Optional[str] = None
+    stages: List[Stage]
+    mode: Literal["sequential","parallel","conditional"] = "sequential"
+    conditions: Optional[Dict[str, Any]] = None  # For conditional workflows
+    auto_assign: bool = True
+    escalation_enabled: bool = True
+    escalation_timeout_hours: int = 48
+    created_by: str
+    created_at: str = Field(default_factory=now_iso)
+    is_active: bool = True
+
+class ApprovalRule(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_id: str
+    stage: Stage
+    approver_role: str
+    approver_user_id: Optional[str] = None
+    min_amount: Optional[float] = None
+    max_amount: Optional[float] = None
+    client_types: Optional[List[str]] = None
+    proposal_types: Optional[List[str]] = None
+    conditions: Optional[Dict[str, Any]] = None
 
 class ApprovalState(BaseModel):
-    mode: Literal["sequential","parallel"] = "sequential"
+    mode: Literal["sequential","parallel","conditional"] = "sequential"
     order: List[Stage] = ["Delivery","Legal","Exec"]
     approvals: Dict[Stage, Dict[str, Any]] = {}
+    workflow_id: Optional[str] = None
+    current_stage: Optional[Stage] = None
+    pending_approvals: List[str] = []  # List of approval request IDs
+    completed_approvals: List[str] = []  # List of completed approval request IDs
+    rejected_approvals: List[str] = []  # List of rejected approval request IDs
+    escalation_level: int = 0
+    last_escalation_at: Optional[str] = None
 
 class Proposal(BaseModel):
     id: str
@@ -414,6 +468,187 @@ def save_proposal(p: Proposal):
             return
     db["proposals"].append(p.model_dump())
     save_db(db)
+
+# ---------- Approval Workflow Helper Functions ----------
+
+def load_approval_requests():
+    """Load all approval requests from storage"""
+    db = load_db()
+    return db.get("approval_requests", [])
+
+def save_approval_requests(requests):
+    """Save approval requests to storage"""
+    db = load_db()
+    db["approval_requests"] = requests
+    save_db(db)
+
+def load_approval_workflows():
+    """Load all approval workflows from storage"""
+    db = load_db()
+    return db.get("approval_workflows", [])
+
+def save_approval_workflows(workflows):
+    """Save approval workflows to storage"""
+    db = load_db()
+    db["approval_workflows"] = workflows
+    save_db(db)
+
+def load_approval_rules():
+    """Load all approval rules from storage"""
+    db = load_db()
+    return db.get("approval_rules", [])
+
+def save_approval_rules(rules):
+    """Save approval rules to storage"""
+    db = load_db()
+    db["approval_rules"] = rules
+    save_db(db)
+
+def get_approval_request_or_404(request_id: str):
+    """Get approval request by ID or raise 404"""
+    requests = load_approval_requests()
+    for req in requests:
+        if req["id"] == request_id:
+            return ApprovalRequest(**req)
+    raise HTTPException(status_code=404, detail="Approval request not found")
+
+def get_approval_workflow_or_404(workflow_id: str):
+    """Get approval workflow by ID or raise 404"""
+    workflows = load_approval_workflows()
+    for wf in workflows:
+        if wf["id"] == workflow_id:
+            return ApprovalWorkflow(**wf)
+    raise HTTPException(status_code=404, detail="Approval workflow not found")
+
+def create_approval_request(proposal_id: str, stage: Stage, assigned_to: str, requested_by: str, 
+                          due_date: Optional[str] = None, priority: str = "medium", comments: Optional[str] = None):
+    """Create a new approval request"""
+    request = ApprovalRequest(
+        proposal_id=proposal_id,
+        stage=stage,
+        requested_by=requested_by,
+        assigned_to=assigned_to,
+        due_date=due_date,
+        priority=priority,
+        comments=comments
+    )
+    
+    requests = load_approval_requests()
+    requests.append(request.model_dump())
+    save_approval_requests(requests)
+    
+    return request
+
+def update_approval_request(request_id: str, action: ApprovalAction, action_comments: Optional[str] = None, 
+                           action_taken_by: str = None, delegated_to: Optional[str] = None):
+    """Update an approval request with action taken"""
+    requests = load_approval_requests()
+    for i, req in enumerate(requests):
+        if req["id"] == request_id:
+            requests[i]["action_taken"] = action
+            requests[i]["action_comments"] = action_comments
+            requests[i]["action_taken_at"] = now_iso()
+            requests[i]["action_taken_by"] = action_taken_by
+            requests[i]["status"] = "approved" if action == "approve" else "rejected" if action == "reject" else "delegated"
+            if delegated_to:
+                requests[i]["delegated_to"] = delegated_to
+            save_approval_requests(requests)
+            return ApprovalRequest(**requests[i])
+    
+    raise HTTPException(status_code=404, detail="Approval request not found")
+
+def get_pending_approvals_for_user(user_id: str):
+    """Get all pending approval requests for a specific user"""
+    requests = load_approval_requests()
+    pending = []
+    for req in requests:
+        if req["assigned_to"] == user_id and req["status"] == "pending":
+            pending.append(ApprovalRequest(**req))
+    return pending
+
+def get_approval_history_for_proposal(proposal_id: str):
+    """Get all approval requests for a specific proposal"""
+    requests = load_approval_requests()
+    proposal_requests = []
+    for req in requests:
+        if req["proposal_id"] == proposal_id:
+            proposal_requests.append(ApprovalRequest(**req))
+    return proposal_requests
+
+def check_workflow_completion(proposal_id: str):
+    """Check if all required approvals for a proposal are completed"""
+    proposal = get_proposal_or_404(proposal_id)
+    requests = get_approval_history_for_proposal(proposal_id)
+    
+    # Get workflow stages
+    workflow_stages = proposal.approval.order
+    completed_stages = set()
+    
+    for req in requests:
+        if req.status == "approved":
+            completed_stages.add(req.stage)
+    
+    # Check if all stages are completed
+    return len(completed_stages) == len(workflow_stages)
+
+def send_approval_notification(request: ApprovalRequest, action: str = "created"):
+    """Send email notification for approval request"""
+    try:
+        # Get user details
+        users_data = load_users()
+        assigned_user = None
+        for user in users_data["users"]:
+            if user["username"] == request.assigned_to:
+                assigned_user = user
+                break
+        
+        if not assigned_user:
+            print(f"User {request.assigned_to} not found for notification")
+            return
+        
+        # Get proposal details
+        proposal = get_proposal_or_404(request.proposal_id)
+        
+        # Prepare email content
+        if action == "created":
+            subject = f"New Approval Request: {proposal.title}"
+            body = f"""
+            <h2>New Approval Request</h2>
+            <p><strong>Proposal:</strong> {proposal.title}</p>
+            <p><strong>Client:</strong> {proposal.client}</p>
+            <p><strong>Stage:</strong> {request.stage}</p>
+            <p><strong>Priority:</strong> {request.priority}</p>
+            <p><strong>Due Date:</strong> {request.due_date or 'Not specified'}</p>
+            <p><strong>Comments:</strong> {request.comments or 'None'}</p>
+            <p>Please review and take action on this approval request.</p>
+            """
+        elif action == "reminder":
+            subject = f"Reminder: Pending Approval Request - {proposal.title}"
+            body = f"""
+            <h2>Approval Request Reminder</h2>
+            <p>This is a reminder that you have a pending approval request:</p>
+            <p><strong>Proposal:</strong> {proposal.title}</p>
+            <p><strong>Client:</strong> {proposal.client}</p>
+            <p><strong>Stage:</strong> {request.stage}</p>
+            <p><strong>Priority:</strong> {request.priority}</p>
+            <p><strong>Due Date:</strong> {request.due_date or 'Not specified'}</p>
+            <p>Please review and take action as soon as possible.</p>
+            """
+        
+        message = MessageSchema(
+            subject=subject,
+            recipients=[assigned_user["email"]],
+            body=body,
+            subtype=MessageType.html
+        )
+        
+        fm = FastMail(conf)
+        # Note: In production, you'd want to send this asynchronously
+        # await fm.send_message(message)
+        print(f"Approval notification sent to {assigned_user['email']}")
+        
+    except Exception as e:
+        print(f"Error sending approval notification: {e}")
 
 # ---------- Routes: Content Library (SQLite) ----------
 @app.get("/content", response_model=List[ContentBlockOut])
@@ -712,10 +947,253 @@ def sign_proposal(pid: str, payload: SignPayload):
 @app.get("/dashboard_stats")
 def dashboard_stats():
     db = load_db()
-    counts = {"Draft":0,"In Review":0,"Released":0,"Signed":0,"Archived":0}
+    counts = {"Draft":0,"In Review":0,"Released":0,"Signed":0,"Archived":0,"Rejected":0,"Pending Approval":0}
     for pr in db["proposals"]:
         counts[pr["status"]] = counts.get(pr["status"],0)+1
     return {"counts":counts,"total":sum(counts.values())}
+
+# ---------- Approval Workflow Endpoints ----------
+
+@app.post("/approval-workflows", response_model=ApprovalWorkflow)
+def create_approval_workflow(workflow: ApprovalWorkflow):
+    """Create a new approval workflow"""
+    workflows = load_approval_workflows()
+    workflows.append(workflow.model_dump())
+    save_approval_workflows(workflows)
+    return workflow
+
+@app.get("/approval-workflows", response_model=List[ApprovalWorkflow])
+def list_approval_workflows():
+    """List all approval workflows"""
+    workflows = load_approval_workflows()
+    return [ApprovalWorkflow(**wf) for wf in workflows]
+
+@app.get("/approval-workflows/{workflow_id}", response_model=ApprovalWorkflow)
+def get_approval_workflow(workflow_id: str):
+    """Get a specific approval workflow"""
+    return get_approval_workflow_or_404(workflow_id)
+
+@app.put("/approval-workflows/{workflow_id}", response_model=ApprovalWorkflow)
+def update_approval_workflow(workflow_id: str, workflow: ApprovalWorkflow):
+    """Update an approval workflow"""
+    workflows = load_approval_workflows()
+    for i, wf in enumerate(workflows):
+        if wf["id"] == workflow_id:
+            workflows[i] = workflow.model_dump()
+            save_approval_workflows(workflows)
+            return workflow
+    raise HTTPException(status_code=404, detail="Approval workflow not found")
+
+@app.delete("/approval-workflows/{workflow_id}")
+def delete_approval_workflow(workflow_id: str):
+    """Delete an approval workflow"""
+    workflows = load_approval_workflows()
+    workflows = [wf for wf in workflows if wf["id"] != workflow_id]
+    save_approval_workflows(workflows)
+    return {"message": "Workflow deleted successfully"}
+
+@app.post("/approval-rules", response_model=ApprovalRule)
+def create_approval_rule(rule: ApprovalRule):
+    """Create a new approval rule"""
+    rules = load_approval_rules()
+    rules.append(rule.model_dump())
+    save_approval_rules(rules)
+    return rule
+
+@app.get("/approval-rules", response_model=List[ApprovalRule])
+def list_approval_rules():
+    """List all approval rules"""
+    rules = load_approval_rules()
+    return [ApprovalRule(**rule) for rule in rules]
+
+@app.get("/approval-rules/workflow/{workflow_id}", response_model=List[ApprovalRule])
+def get_approval_rules_for_workflow(workflow_id: str):
+    """Get approval rules for a specific workflow"""
+    rules = load_approval_rules()
+    workflow_rules = [ApprovalRule(**rule) for rule in rules if rule["workflow_id"] == workflow_id]
+    return workflow_rules
+
+@app.post("/proposals/{pid}/submit-for-approval")
+def submit_proposal_for_approval(pid: str, workflow_id: Optional[str] = None):
+    """Submit a proposal for approval workflow"""
+    p = get_proposal_or_404(pid)
+    
+    if p.status != "Draft":
+        raise HTTPException(status_code=400, detail="Proposal must be in Draft status to submit for approval")
+    
+    # Get workflow
+    if workflow_id:
+        workflow = get_approval_workflow_or_404(workflow_id)
+    else:
+        # Use default workflow or create one
+        workflows = load_approval_workflows()
+        if workflows:
+            workflow = ApprovalWorkflow(**workflows[0])
+        else:
+            # Create default workflow
+            workflow = ApprovalWorkflow(
+                name="Default Workflow",
+                description="Default approval workflow",
+                stages=["Delivery", "Legal", "Exec"],
+                mode="sequential",
+                created_by="system"
+            )
+            workflows = load_approval_workflows()
+            workflows.append(workflow.model_dump())
+            save_approval_workflows(workflows)
+    
+    # Update proposal status and workflow
+    p.status = "Pending Approval"
+    p.approval.workflow_id = workflow.id
+    p.approval.current_stage = workflow.stages[0] if workflow.stages else None
+    p.approval.order = workflow.stages
+    
+    # Create approval requests for each stage
+    approval_requests = []
+    for stage in workflow.stages:
+        # Find appropriate approver (simplified - in production, use rules)
+        approver = "admin"  # Default approver
+        
+        request = create_approval_request(
+            proposal_id=pid,
+            stage=stage,
+            assigned_to=approver,
+            requested_by="system",  # In production, use current user
+            priority="medium"
+        )
+        approval_requests.append(request)
+        
+        # Send notification
+        send_approval_notification(request, "created")
+    
+    # Update proposal with pending approvals
+    p.approval.pending_approvals = [req.id for req in approval_requests]
+    p.updated_at = now_iso()
+    save_proposal(p)
+    
+    return {
+        "message": "Proposal submitted for approval",
+        "workflow_id": workflow.id,
+        "approval_requests": [req.model_dump() for req in approval_requests]
+    }
+
+@app.get("/approval-requests", response_model=List[ApprovalRequest])
+def list_approval_requests():
+    """List all approval requests"""
+    requests = load_approval_requests()
+    return [ApprovalRequest(**req) for req in requests]
+
+@app.get("/approval-requests/pending/{user_id}", response_model=List[ApprovalRequest])
+def get_pending_approvals(user_id: str):
+    """Get pending approval requests for a specific user"""
+    return get_pending_approvals_for_user(user_id)
+
+@app.get("/approval-requests/proposal/{proposal_id}", response_model=List[ApprovalRequest])
+def get_proposal_approval_requests(proposal_id: str):
+    """Get all approval requests for a specific proposal"""
+    return get_approval_history_for_proposal(proposal_id)
+
+@app.post("/approval-requests/{request_id}/action")
+def take_approval_action(request_id: str, action: ApprovalAction, 
+                        action_comments: Optional[str] = None,
+                        delegated_to: Optional[str] = None,
+                        action_taken_by: str = "system"):
+    """Take action on an approval request"""
+    request = get_approval_request_or_404(request_id)
+    
+    if request.status != "pending":
+        raise HTTPException(status_code=400, detail="Request is not pending")
+    
+    # Update the request
+    updated_request = update_approval_request(
+        request_id=request_id,
+        action=action,
+        action_comments=action_comments,
+        action_taken_by=action_taken_by,
+        delegated_to=delegated_to
+    )
+    
+    # Check if workflow is complete
+    if action == "approve":
+        if check_workflow_completion(request.proposal_id):
+            # All approvals completed, update proposal status
+            proposal = get_proposal_or_404(request.proposal_id)
+            proposal.status = "Released"
+            proposal.updated_at = now_iso()
+            save_proposal(proposal)
+    
+    elif action == "reject":
+        # Reject the proposal
+        proposal = get_proposal_or_404(request.proposal_id)
+        proposal.status = "Rejected"
+        proposal.updated_at = now_iso()
+        save_proposal(proposal)
+    
+    return {
+        "message": f"Approval request {action}d successfully",
+        "request": updated_request.model_dump()
+    }
+
+@app.get("/approval-requests/{request_id}", response_model=ApprovalRequest)
+def get_approval_request(request_id: str):
+    """Get a specific approval request"""
+    return get_approval_request_or_404(request_id)
+
+@app.post("/approval-requests/{request_id}/remind")
+def send_approval_reminder(request_id: str):
+    """Send reminder for pending approval request"""
+    request = get_approval_request_or_404(request_id)
+    
+    if request.status != "pending":
+        raise HTTPException(status_code=400, detail="Request is not pending")
+    
+    # Update reminder count
+    requests = load_approval_requests()
+    for i, req in enumerate(requests):
+        if req["id"] == request_id:
+            requests[i]["reminder_count"] += 1
+            requests[i]["reminder_sent"] = True
+            save_approval_requests(requests)
+            break
+    
+    # Send reminder notification
+    send_approval_notification(request, "reminder")
+    
+    return {"message": "Reminder sent successfully"}
+
+@app.get("/approval-analytics")
+def get_approval_analytics():
+    """Get approval workflow analytics"""
+    requests = load_approval_requests()
+    
+    total_requests = len(requests)
+    pending_requests = len([r for r in requests if r["status"] == "pending"])
+    approved_requests = len([r for r in requests if r["status"] == "approved"])
+    rejected_requests = len([r for r in requests if r["status"] == "rejected"])
+    
+    # Calculate average approval time (simplified)
+    avg_approval_time = 0
+    completed_requests = [r for r in requests if r["status"] in ["approved", "rejected"] and r.get("action_taken_at")]
+    
+    if completed_requests:
+        total_time = 0
+        for req in completed_requests:
+            try:
+                requested_at = datetime.fromisoformat(req["requested_at"].replace('Z', '+00:00'))
+                action_at = datetime.fromisoformat(req["action_taken_at"].replace('Z', '+00:00'))
+                total_time += (action_at - requested_at).total_seconds() / 3600  # Convert to hours
+            except:
+                continue
+        avg_approval_time = total_time / len(completed_requests)
+    
+    return {
+        "total_requests": total_requests,
+        "pending_requests": pending_requests,
+        "approved_requests": approved_requests,
+        "rejected_requests": rejected_requests,
+        "approval_rate": approved_requests / total_requests if total_requests > 0 else 0,
+        "average_approval_time_hours": round(avg_approval_time, 2)
+    }
 
 # ---------- Authentication Routes ----------
 @app.post("/register", response_model=User)

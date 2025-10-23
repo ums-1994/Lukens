@@ -12,8 +12,10 @@ import 'widgets/app_side_nav.dart';
 import 'pages/creator/compose_page.dart';
 import 'pages/admin/govern_page.dart';
 import 'pages/approver/approvals_page.dart';
+import 'pages/approver/approval_workflow_page.dart';
 import 'pages/shared/preview_page.dart';
 import 'pages/creator/content_library_page.dart';
+import 'pages/creator/submit_for_approval_page.dart';
 import 'pages/approver/approver_dashboard_page.dart';
 import 'pages/admin/admin_dashboard_page.dart';
 import 'pages/client/client_portal_page.dart';
@@ -153,6 +155,14 @@ class MyApp extends StatelessWidget {
           '/messages': (context) => const HomeShell(initialIdx: 4),
           '/support': (context) => const HomeShell(initialIdx: 5),
           '/approval_history': (context) => const HomeShell(initialIdx: 3),
+          '/approval_workflow': (context) => const ApprovalWorkflowPage(),
+          '/submit_for_approval': (context) {
+            final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+            return SubmitForApprovalPage(
+              proposalId: args?['proposalId'] ?? '',
+              proposalTitle: args?['proposalTitle'] ?? 'Unknown Proposal',
+            );
+          },
         },
       ),
     );

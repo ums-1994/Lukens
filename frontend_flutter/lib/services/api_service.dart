@@ -306,4 +306,158 @@ class ApiService {
     }
     throw Exception('Failed to compare versions');
   }
+
+  // -------- Approval Workflow --------
+  static Future<List<dynamic>> getApprovalWorkflows(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/approval-workflows'),
+        headers: _getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Error getting approval workflows: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> createApprovalWorkflow({
+    required String token,
+    required Map<String, dynamic> workflow,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/approval-workflows'),
+        headers: _getHeaders(token),
+        body: json.encode(workflow),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error creating approval workflow: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> submitProposalForApproval({
+    required String token,
+    required String proposalId,
+    String? workflowId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/proposals/$proposalId/submit-for-approval'),
+        headers: _getHeaders(token),
+        body: json.encode({'workflow_id': workflowId}),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error submitting proposal for approval: $e');
+      return null;
+    }
+  }
+
+  static Future<List<dynamic>> getPendingApprovals(String token, String userId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/approval-requests/pending/$userId'),
+        headers: _getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Error getting pending approvals: $e');
+      return [];
+    }
+  }
+
+  static Future<List<dynamic>> getProposalApprovalRequests(String token, String proposalId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/approval-requests/proposal/$proposalId'),
+        headers: _getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Error getting proposal approval requests: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> takeApprovalAction({
+    required String token,
+    required String requestId,
+    required String action,
+    String? actionComments,
+    String? delegatedTo,
+    String? actionTakenBy,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/approval-requests/$requestId/action'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'action': action,
+          'action_comments': actionComments,
+          'delegated_to': delegatedTo,
+          'action_taken_by': actionTakenBy,
+        }),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error taking approval action: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> sendApprovalReminder({
+    required String token,
+    required String requestId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/approval-requests/$requestId/remind'),
+        headers: _getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error sending approval reminder: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getApprovalAnalytics(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/approval-analytics'),
+        headers: _getHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error getting approval analytics: $e');
+      return null;
+    }
+  }
 }
