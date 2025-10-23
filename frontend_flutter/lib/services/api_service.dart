@@ -94,9 +94,11 @@ class ApiService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      print(
+          'Error creating proposal: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating proposal: $e');
@@ -196,9 +198,10 @@ class ApiService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      print('Error creating SOW: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating SOW: $e');

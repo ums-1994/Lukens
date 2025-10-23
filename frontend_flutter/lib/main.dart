@@ -110,7 +110,21 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const DashboardPage(),
           '/creator_dashboard': (context) => const DashboardPage(),
           '/proposals': (context) => ProposalsPage(),
-          '/compose': (context) => const ComposePage(),
+          '/compose': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
+
+            // If proposal data is passed, open it in the editor
+            if (args != null) {
+              return BlankDocumentEditorPage(
+                proposalId: args['id']?.toString(),
+                proposalTitle: args['title']?.toString(),
+              );
+            }
+
+            // Otherwise, show the old compose page
+            return const ComposePage();
+          },
           '/proposal-wizard': (context) => const ProposalWizard(),
           '/new-proposal': (context) => const NewProposalPage(),
           '/blank-document': (context) {

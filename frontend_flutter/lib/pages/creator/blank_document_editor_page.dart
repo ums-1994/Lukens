@@ -66,19 +66,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       text: widget.proposalTitle ?? 'Untitled Document',
     );
     _commentController = TextEditingController();
-    // Create initial section
-    _sections.add(_DocumentSection(
-      title: 'Untitled Section',
-      content: '',
-    ));
+
+    // Only create initial section for new documents
+    if (widget.proposalId == null) {
+      _sections.add(_DocumentSection(
+        title: 'Untitled Section',
+        content: '',
+      ));
+    }
 
     // Setup auto-save listeners
     _setupAutoSaveListeners();
 
-    // Create initial version
-    _createVersion('Initial version');
+    // Only create initial version for new documents
+    if (widget.proposalId == null) {
+      _createVersion('Initial version');
+    }
 
-    // Get auth token
+    // Get auth token and load existing data if editing
     _initializeAuth();
   }
 
@@ -110,12 +115,94 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         final proposalId = int.tryParse(widget.proposalId!);
         if (proposalId != null) {
           _savedProposalId = proposalId;
+          await _loadProposalFromDatabase(proposalId);
           await _loadVersionsFromDatabase(proposalId);
           await _loadCommentsFromDatabase(proposalId);
         }
       }
     } catch (e) {
       print('❌ Error initializing auth: $e');
+    }
+  }
+
+  Future<void> _loadProposalFromDatabase(int proposalId) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      print('🔄 Loading proposal content for ID $proposalId...');
+
+      // Get all proposals and find the one we need
+      final proposals = await ApiService.getProposals(token);
+      final proposal = proposals.firstWhere(
+        (p) => p['id'] == proposalId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (proposal.isEmpty) {
+        print('⚠️ Proposal $proposalId not found');
+        return;
+      }
+
+      // Parse the content JSON
+      if (proposal['content'] != null) {
+        try {
+          final contentData = json.decode(proposal['content']);
+
+          setState(() {
+            // Set title
+            _titleController.text = contentData['title'] ??
+                proposal['title'] ??
+                'Untitled Document';
+
+            // Clear existing sections
+            for (var section in _sections) {
+              section.controller.dispose();
+              section.titleController.dispose();
+              section.contentFocus.dispose();
+              section.titleFocus.dispose();
+            }
+            _sections.clear();
+
+            // Load sections from content
+            final List<dynamic> savedSections = contentData['sections'] ?? [];
+            if (savedSections.isNotEmpty) {
+              for (var sectionData in savedSections) {
+                final newSection = _DocumentSection(
+                  title: sectionData['title'] ?? 'Untitled Section',
+                  content: sectionData['content'] ?? '',
+                );
+                _sections.add(newSection);
+
+                // Add listeners
+                newSection.controller.addListener(_onContentChanged);
+                newSection.titleController.addListener(_onContentChanged);
+              }
+            } else {
+              // If no sections, create a default one
+              final defaultSection = _DocumentSection(
+                title: 'Untitled Section',
+                content: '',
+              );
+              _sections.add(defaultSection);
+              defaultSection.controller.addListener(_onContentChanged);
+              defaultSection.titleController.addListener(_onContentChanged);
+            }
+
+            // Load metadata if available
+            if (contentData['metadata'] != null) {
+              final metadata = contentData['metadata'];
+              _selectedCurrency = metadata['currency'] ?? _selectedCurrency;
+            }
+          });
+
+          print('✅ Loaded proposal content with ${_sections.length} sections');
+        } catch (e) {
+          print('⚠️ Error parsing proposal content: $e');
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error loading proposal: $e');
     }
   }
 
@@ -730,13 +817,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     try {
       if (_savedProposalId == null) {
         // Create new proposal
-        print('Creating new proposal...');
+        print('📝 Creating new proposal...');
         final result = await ApiService.createProposal(
           token: token,
           title: title,
           content: content,
           status: 'draft',
         );
+
+        print('🔍 Create proposal result: $result');
 
         if (result != null && result['id'] != null) {
           setState(() {
@@ -745,13 +834,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 : int.tryParse(result['id'].toString());
           });
           print('✅ Proposal created with ID: $_savedProposalId');
+          print(
+              '💾 Proposal ID saved in state - future saves will UPDATE this proposal');
         } else {
           print('⚠️ Proposal creation returned null or no ID');
+          print('🔍 Full result: $result');
         }
       } else {
         // Update existing proposal
-        print('Updating proposal ID: $_savedProposalId...');
-        await ApiService.updateProposal(
+        print('🔄 Updating existing proposal ID: $_savedProposalId...');
+        final result = await ApiService.updateProposal(
           token: token,
           id: _savedProposalId!,
           title: title,
@@ -759,6 +851,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           status: 'draft',
         );
         print('✅ Proposal updated: $_savedProposalId');
+        print('🔍 Update result: $result');
       }
     } catch (e) {
       print('❌ Error saving to backend: $e');
