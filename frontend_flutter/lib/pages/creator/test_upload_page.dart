@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../widgets/document_upload_widget.dart';
 import '../../services/content_library_service.dart';
+import '../../services/auth_service.dart';
 
 class TestUploadPage extends StatefulWidget {
   const TestUploadPage({Key? key}) : super(key: key);
@@ -22,9 +23,13 @@ class _TestUploadPageState extends State<TestUploadPage> {
 
   Future<void> _loadDocuments() async {
     setState(() => _loading = true);
-    final docs = await _service.getContentModules(category: 'Documents');
+    final token = AuthService.token;
+    final docs = await _service.getContentModules(
+      category: 'Documents',
+      token: token,
+    );
     setState(() {
-      _uploadedDocs = docs ?? [];
+      _uploadedDocs = docs;
       _loading = false;
     });
   }

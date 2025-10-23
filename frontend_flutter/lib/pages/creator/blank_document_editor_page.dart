@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/asset_service.dart';
 import '../../api.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
@@ -36,6 +37,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _signatureSearchQuery = '';
   String _uploadTabSelected = 'this_document'; // 'this_document' or 'library'
   bool _showSectionsSidebar = false; // Toggle sections sidebar visibility
+
+  // Formatting state
+  String _selectedTextStyle = 'Normal Text';
+  String _selectedFont = 'Plus Jakarta Sans';
+  String _selectedFontSize = '12px';
+  String _selectedAlignment = 'left';
+  bool _isBold = false;
+  bool _isItalic = false;
+  bool _isUnderlined = false;
+
+  // Sidebar state
+  bool _isSidebarCollapsed = false;
+  String _currentPage = 'Editor';
+
   List<String> _signatures = [
     'Client Signature',
     'Authorized By',
@@ -69,10 +84,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Only create initial section for new documents
     if (widget.proposalId == null) {
-      _sections.add(_DocumentSection(
+      final initialSection = _DocumentSection(
         title: 'Untitled Section',
         content: '',
-      ));
+      );
+      _sections.add(initialSection);
+
+      // Add focus listeners for UI updates
+      initialSection.contentFocus.addListener(() => setState(() {}));
+      initialSection.titleFocus.addListener(() => setState(() {}));
     }
 
     // Setup auto-save listeners
@@ -177,6 +197,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 // Add listeners
                 newSection.controller.addListener(_onContentChanged);
                 newSection.titleController.addListener(_onContentChanged);
+
+                // Add focus listeners for UI updates
+                newSection.contentFocus.addListener(() => setState(() {}));
+                newSection.titleFocus.addListener(() => setState(() {}));
               }
             } else {
               // If no sections, create a default one
@@ -187,6 +211,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               _sections.add(defaultSection);
               defaultSection.controller.addListener(_onContentChanged);
               defaultSection.titleController.addListener(_onContentChanged);
+
+              // Add focus listeners for UI updates
+              defaultSection.contentFocus.addListener(() => setState(() {}));
+              defaultSection.titleFocus.addListener(() => setState(() {}));
             }
 
             // Load metadata if available
@@ -338,6 +366,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Add listeners to new section
       newSection.controller.addListener(_onContentChanged);
       newSection.titleController.addListener(_onContentChanged);
+
+      // Add focus listeners for UI updates
+      newSection.contentFocus.addListener(() => setState(() {}));
+      newSection.titleFocus.addListener(() => setState(() {}));
     });
   }
 
@@ -935,6 +967,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     for (var section in _sections) {
       section.controller.addListener(_onContentChanged);
       section.titleController.addListener(_onContentChanged);
+
+      // Add focus listeners for UI updates
+      section.contentFocus.addListener(() => setState(() {}));
+      section.titleFocus.addListener(() => setState(() {}));
     }
 
     setState(() {
@@ -1170,6 +1206,74 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         );
       },
+    );
+  }
+
+  // Get text alignment based on current selection
+  TextAlign _getTextAlignment() {
+    switch (_selectedAlignment) {
+      case 'left':
+        return TextAlign.left;
+      case 'center':
+        return TextAlign.center;
+      case 'right':
+        return TextAlign.right;
+      default:
+        return TextAlign.left;
+    }
+  }
+
+  // Get font family name
+  String _getFontFamily() {
+    return _selectedFont;
+  }
+
+  // Get font size as double
+  double _getFontSize() {
+    final sizeStr = _selectedFontSize.replaceAll('px', '');
+    return double.tryParse(sizeStr) ?? 13.0;
+  }
+
+  // Get content text style with all formatting applied
+  TextStyle _getContentTextStyle() {
+    double fontSize = _getFontSize();
+
+    // Adjust font size based on text style
+    if (_selectedTextStyle == 'Heading 1') {
+      fontSize = 24.0;
+    } else if (_selectedTextStyle == 'Heading 2') {
+      fontSize = 20.0;
+    } else if (_selectedTextStyle == 'Heading 3') {
+      fontSize = 16.0;
+    } else if (_selectedTextStyle == 'Title') {
+      fontSize = 28.0;
+    }
+
+    return TextStyle(
+      fontSize: fontSize,
+      fontFamily: _getFontFamily(),
+      fontWeight: _isBold ||
+              _selectedTextStyle.contains('Heading') ||
+              _selectedTextStyle == 'Title'
+          ? FontWeight.w700
+          : FontWeight.normal,
+      fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
+      decoration:
+          _isUnderlined ? TextDecoration.underline : TextDecoration.none,
+      color: const Color(0xFF1A1A1A),
+      height: 1.8,
+      letterSpacing: 0.2,
+    );
+  }
+
+  // Get title text style
+  TextStyle _getTitleTextStyle() {
+    return TextStyle(
+      fontSize: 18,
+      fontWeight: FontWeight.w700,
+      fontFamily: _getFontFamily(),
+      color: const Color(0xFF1A1A1A),
+      height: 1.4,
     );
   }
 
@@ -1466,64 +1570,223 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildLeftSidebar() {
-    return Container(
-      width: 80,
-      color: const Color(0xFF1A3A52),
-      child: Column(
-        children: [
-          // Logo area
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: const Color(0xFF00BCD4),
-                borderRadius: BorderRadius.circular(8),
+    return GestureDetector(
+      onTap: () {
+        if (_isSidebarCollapsed) {
+          setState(() => _isSidebarCollapsed = false);
+        }
+      },
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: _isSidebarCollapsed ? 90.0 : 250.0,
+        color: const Color(0xFF34495E),
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              // Toggle button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: InkWell(
+                  onTap: _toggleSidebar,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2C3E50),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: _isSidebarCollapsed
+                          ? MainAxisAlignment.center
+                          : MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (!_isSidebarCollapsed)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'Navigation',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: _isSidebarCollapsed ? 0 : 8,
+                          ),
+                          child: Icon(
+                            _isSidebarCollapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_left,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-              child: const Icon(
-                Icons.description,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
+              const SizedBox(height: 12),
+              // Navigation items
+              _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+                  _currentPage == 'Dashboard'),
+              _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
+                  _currentPage == 'My Proposals'),
+              _buildNavItem(
+                  'Content Library',
+                  'assets/images/content_library.png',
+                  _currentPage == 'Content Library'),
+              const SizedBox(height: 20),
+              // Divider
+              if (!_isSidebarCollapsed)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  height: 1,
+                  color: const Color(0xFF2C3E50),
+                ),
+              const SizedBox(height: 12),
+              // Logout button
+              _buildNavItem(
+                  'Logout', 'assets/images/Logout_KhonoBuzz.png', false),
+              const SizedBox(height: 20),
+            ],
           ),
-          const Divider(color: Color(0xFF2C3E50), height: 1),
-          // Navigation icons
-          Expanded(
-            child: Column(
-              children: [
-                _buildNavIcon(Icons.home, 'Home'),
-                _buildNavIcon(Icons.star, 'Favorites'),
-                _buildNavIcon(Icons.folder, 'Documents'),
-                _buildNavIcon(Icons.people, 'Team'),
-                _buildNavIcon(Icons.trending_up, 'Analytics'),
-                _buildNavIcon(Icons.settings, 'Settings'),
-              ],
-            ),
-          ),
-          // Bottom logout icon
-          Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: _buildNavIcon(Icons.logout, 'Logout'),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildNavIcon(IconData icon, String label) {
-    return Tooltip(
-      message: label,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Icon(
-          icon,
-          color: Colors.white54,
-          size: 24,
+  void _toggleSidebar() {
+    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+  }
+
+  Widget _buildNavItem(String label, String assetPath, bool isActive) {
+    if (_isSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: () {
+              setState(() => _currentPage = label);
+              _navigateToPage(label);
+            },
+            borderRadius: BorderRadius.circular(30),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isActive
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFFCBD5E1),
+                  width: isActive ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: ClipOval(
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() => _currentPage = label);
+          _navigateToPage(label);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isActive
+                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isActive
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFFCBD5E1),
+                    width: isActive ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(6),
+                child: ClipOval(
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (isActive)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _navigateToPage(String pageName) {
+    switch (pageName) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content-library');
+        break;
+      case 'Logout':
+        Navigator.pushReplacementNamed(context, '/login');
+        break;
+    }
   }
 
   Widget _buildSectionsSidebar() {
@@ -1670,37 +1933,55 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _titleController,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A1A),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.grey[300]!, width: 1),
                     ),
-                    decoration: const InputDecoration(
-                      hintText: 'Untitled Template',
-                      hintStyle: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFBDC3C7),
-                      ),
-                      border: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                      isDense: true,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.edit,
+                            size: 16, color: Color(0xFF00BCD4)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _titleController,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                            decoration: const InputDecoration(
+                              hintText: 'Click to edit document title...',
+                              hintStyle: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFFBDC3C7),
+                              ),
+                              border: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: const Color(0xFF00BCD4),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Text(
-                    'Template',
+                    'Document',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 11,
@@ -1883,7 +2164,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           const SizedBox(width: 12),
           // Action buttons
           OutlinedButton.icon(
-            onPressed: () {},
+            onPressed: _showPreview,
             icon: const Icon(Icons.visibility, size: 16),
             label: const Text('Preview'),
             style: OutlinedButton.styleFrom(
@@ -1968,14 +2249,30 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Undo/Redo
           IconButton(
             icon: const Icon(Icons.undo),
-            onPressed: () {},
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Undo - Feature coming soon'),
+                  backgroundColor: Color(0xFF00BCD4),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            },
             tooltip: 'Undo',
             iconSize: 18,
             splashRadius: 20,
           ),
           IconButton(
             icon: const Icon(Icons.redo),
-            onPressed: () {},
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Redo - Feature coming soon'),
+                  backgroundColor: Color(0xFF00BCD4),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            },
             tooltip: 'Redo',
             iconSize: 18,
             splashRadius: 20,
@@ -1984,51 +2281,112 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           Container(width: 1, height: 24, color: Colors.grey[300]),
           const SizedBox(width: 12),
           // Style dropdown
-          _buildSmallDropdown(
-              'Normal Text', ['Normal Text', 'Heading 1', 'Heading 2']),
+          _buildSmallDropdown(_selectedTextStyle, [
+            'Normal Text',
+            'Heading 1',
+            'Heading 2',
+            'Heading 3',
+            'Title'
+          ], (value) {
+            setState(() {
+              _selectedTextStyle = value!;
+            });
+          }),
           const SizedBox(width: 8),
           // Font dropdown
-          _buildSmallDropdown('Plus Jakarta Sans',
-              ['Plus Jakarta Sans', 'Arial', 'Times New Roman']),
+          _buildSmallDropdown(_selectedFont, [
+            'Plus Jakarta Sans',
+            'Arial',
+            'Times New Roman',
+            'Georgia',
+            'Courier New'
+          ], (value) {
+            setState(() {
+              _selectedFont = value!;
+            });
+          }),
           const SizedBox(width: 8),
           // Font size dropdown
-          _buildSmallDropdown(
-              '12px', ['10px', '12px', '14px', '16px', '18px', '20px']),
+          _buildSmallDropdown(_selectedFontSize, [
+            '10px',
+            '12px',
+            '14px',
+            '16px',
+            '18px',
+            '20px',
+            '24px',
+            '28px'
+          ], (value) {
+            setState(() {
+              _selectedFontSize = value!;
+            });
+          }),
           const SizedBox(width: 12),
           Container(width: 1, height: 24, color: Colors.grey[300]),
           const SizedBox(width: 12),
           // Text formatting
           IconButton(
-            icon: const Icon(Icons.format_bold),
-            onPressed: () {},
+            icon: Icon(Icons.format_bold,
+                color: _isBold ? const Color(0xFF00BCD4) : null),
+            onPressed: () {
+              setState(() {
+                _isBold = !_isBold;
+              });
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Bold',
           ),
           IconButton(
-            icon: const Icon(Icons.format_italic),
-            onPressed: () {},
+            icon: Icon(Icons.format_italic,
+                color: _isItalic ? const Color(0xFF00BCD4) : null),
+            onPressed: () {
+              setState(() {
+                _isItalic = !_isItalic;
+              });
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Italic',
           ),
           IconButton(
-            icon: const Icon(Icons.format_underlined),
-            onPressed: () {},
+            icon: Icon(Icons.format_underlined,
+                color: _isUnderlined ? const Color(0xFF00BCD4) : null),
+            onPressed: () {
+              setState(() {
+                _isUnderlined = !_isUnderlined;
+              });
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Underline',
           ),
           IconButton(
             icon: const Icon(Icons.format_color_text),
-            onPressed: () {},
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Text color picker - Feature coming soon'),
+                  backgroundColor: Color(0xFF00BCD4),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Text Color',
           ),
           IconButton(
             icon: const Icon(Icons.link),
-            onPressed: () {},
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Insert link - Feature coming soon'),
+                  backgroundColor: Color(0xFF00BCD4),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Link',
@@ -2038,22 +2396,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           const SizedBox(width: 12),
           // Alignment
           IconButton(
-            icon: const Icon(Icons.format_align_left),
-            onPressed: () {},
+            icon: Icon(Icons.format_align_left,
+                color: _selectedAlignment == 'left'
+                    ? const Color(0xFF00BCD4)
+                    : null),
+            onPressed: () {
+              setState(() {
+                _selectedAlignment = 'left';
+              });
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Align Left',
           ),
           IconButton(
-            icon: const Icon(Icons.format_align_center),
-            onPressed: () {},
+            icon: Icon(Icons.format_align_center,
+                color: _selectedAlignment == 'center'
+                    ? const Color(0xFF00BCD4)
+                    : null),
+            onPressed: () {
+              setState(() {
+                _selectedAlignment = 'center';
+              });
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Align Center',
           ),
           IconButton(
-            icon: const Icon(Icons.format_align_right),
-            onPressed: () {},
+            icon: Icon(Icons.format_align_right,
+                color: _selectedAlignment == 'right'
+                    ? const Color(0xFF00BCD4)
+                    : null),
+            onPressed: () {
+              setState(() {
+                _selectedAlignment = 'right';
+              });
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Align Right',
@@ -2064,14 +2443,34 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Lists
           IconButton(
             icon: const Icon(Icons.format_list_bulleted),
-            onPressed: () {},
+            onPressed: () {
+              if (_sections.isNotEmpty &&
+                  _selectedSectionIndex < _sections.length) {
+                setState(() {
+                  final section = _sections[_selectedSectionIndex];
+                  final currentText = section.controller.text;
+                  section.controller.text =
+                      currentText + '\n• Item 1\n• Item 2\n• Item 3';
+                });
+              }
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Bullet List',
           ),
           IconButton(
             icon: const Icon(Icons.format_list_numbered),
-            onPressed: () {},
+            onPressed: () {
+              if (_sections.isNotEmpty &&
+                  _selectedSectionIndex < _sections.length) {
+                setState(() {
+                  final section = _sections[_selectedSectionIndex];
+                  final currentText = section.controller.text;
+                  section.controller.text =
+                      currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
+                });
+              }
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Numbered List',
@@ -2082,21 +2481,49 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Insert
           IconButton(
             icon: const Icon(Icons.link),
-            onPressed: () {},
+            onPressed: () {
+              if (_sections.isNotEmpty &&
+                  _selectedSectionIndex < _sections.length) {
+                setState(() {
+                  final section = _sections[_selectedSectionIndex];
+                  final currentText = section.controller.text;
+                  section.controller.text =
+                      currentText + '\n[Link Text](https://example.com)';
+                });
+              }
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Insert Link',
           ),
           IconButton(
             icon: const Icon(Icons.table_chart),
-            onPressed: () {},
+            onPressed: () {
+              if (_sections.isNotEmpty &&
+                  _selectedSectionIndex < _sections.length) {
+                setState(() {
+                  final section = _sections[_selectedSectionIndex];
+                  final currentText = section.controller.text;
+                  section.controller.text = currentText +
+                      '\n\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| Data 1   | Data 2   | Data 3   |';
+                });
+              }
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Insert Table',
           ),
           IconButton(
             icon: const Icon(Icons.auto_awesome),
-            onPressed: () {},
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('AI Assistant - Feature coming soon'),
+                  backgroundColor: Color(0xFF00BCD4),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'AI Assistant',
@@ -2106,7 +2533,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  Widget _buildSmallDropdown(String label, List<String> items) {
+  Widget _buildSmallDropdown(
+      String label, List<String> items, Function(String?) onChanged) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -2123,47 +2551,88 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             child: Text(item, style: const TextStyle(fontSize: 12)),
           );
         }).toList(),
-        onChanged: (_) {},
+        onChanged: onChanged,
       ),
     );
   }
 
   List<Widget> _buildA4Pages() {
     // A4 dimensions: 210mm x 297mm (aspect ratio 0.707)
-    // Using fixed width of 794px (approx 210mm at 96 DPI)
-    // Height: 1123px (approx 297mm at 96 DPI)
-    const double pageWidth = 794;
-    const double pageHeight = 1123; // A4 aspect ratio
+    // Using larger width of 900px for better visibility
+    // Height: 1273px (A4 aspect ratio maintained)
+    const double pageWidth = 900;
+    const double pageHeight = 1273; // A4 aspect ratio
 
     return List.generate(
       _sections.length,
-      (index) => Container(
-        width: pageWidth,
-        constraints: const BoxConstraints(maxHeight: pageHeight),
-        margin: const EdgeInsets.only(bottom: 24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(60),
-            child: _buildSectionContent(index),
+      (index) {
+        final section = _sections[index];
+        return Container(
+          width: pageWidth,
+          constraints: const BoxConstraints(
+            minHeight: 600,
+            maxHeight: pageHeight,
           ),
-        ),
-      ),
+          margin: const EdgeInsets.only(bottom: 32),
+          decoration: BoxDecoration(
+            color: section.backgroundImageUrl == null
+                ? section.backgroundColor
+                : Colors.white,
+            image: section.backgroundImageUrl != null
+                ? DecorationImage(
+                    image: NetworkImage(section.backgroundImageUrl!),
+                    fit: BoxFit.cover,
+                    opacity: 0.7, // Background image visibility
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 5),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(60),
+                  child: _buildSectionContent(index),
+                ),
+              ),
+              // Page number indicator at bottom
+              Positioned(
+                bottom: 20,
+                right: 60,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100]!.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Text(
+                    'Page ${index + 1} of ${_sections.length}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -2184,9 +2653,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 // Add listeners to new section
                 newSection.controller.addListener(_onContentChanged);
                 newSection.titleController.addListener(_onContentChanged);
+
+                // Add focus listeners for UI updates
+                newSection.contentFocus.addListener(() => setState(() {}));
+                newSection.titleFocus.addListener(() => setState(() {}));
               });
             },
-            customBorder: CircleBorder(),
+            customBorder: const CircleBorder(),
             child: Container(
               width: 60,
               height: 60,
@@ -2258,28 +2731,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               Row(
                 children: [
                   Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        // Allow TextField to capture taps for focus
-                        section.titleFocus.requestFocus();
-                      },
-                      child: TextField(
-                        focusNode: section.titleFocus,
-                        controller: section.titleController,
-                        enabled: true,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1A1A1A),
-                          height: 1.4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: section.titleFocus.hasFocus
+                              ? const Color(0xFF00BCD4)
+                              : Colors.grey[200]!,
+                          width: 1,
                         ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
-                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.title, size: 14, color: Colors.grey[600]),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: TextField(
+                              focusNode: section.titleFocus,
+                              controller: section.titleController,
+                              enabled: true,
+                              style: _getTitleTextStyle(),
+                              decoration: const InputDecoration(
+                                hintText: 'Section title...',
+                                hintStyle: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFFBDC3C7),
+                                ),
+                                border: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -2431,26 +2920,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
               const SizedBox(height: 16),
               // Content area
-              GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  // Allow TextField to capture taps for focus
-                  section.contentFocus.requestFocus();
-                },
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: section.contentFocus.hasFocus
+                        ? const Color(0xFF00BCD4)
+                        : Colors.grey[200]!,
+                    width: 1,
+                  ),
+                ),
                 child: TextField(
                   focusNode: section.contentFocus,
                   controller: section.controller,
                   enabled: true,
                   maxLines: null,
+                  textAlign: _getTextAlignment(),
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF1A1A1A),
-                    height: 1.8,
-                    letterSpacing: 0.2,
-                  ),
+                  style: _getContentTextStyle(),
                   decoration: InputDecoration(
-                    hintText: 'Start typing or insert content from library...',
+                    hintText:
+                        'Click here to start typing or insert content from library...',
                     hintStyle: TextStyle(
                       fontSize: 13,
                       color: Colors.grey[400],
@@ -2593,6 +3085,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Add listeners to new section
       newSection.controller.addListener(_onContentChanged);
       newSection.titleController.addListener(_onContentChanged);
+
+      // Add focus listeners for UI updates
+      newSection.contentFocus.addListener(() => setState(() {}));
+      newSection.titleFocus.addListener(() => setState(() {}));
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -2877,6 +3373,127 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  Widget _buildColorOption(Color color, String label) {
+    if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
+      return const SizedBox.shrink();
+    }
+    final section = _sections[_selectedSectionIndex];
+    final isSelected = section.backgroundColor == color;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          section.backgroundColor = color;
+          section.backgroundImageUrl =
+              null; // Clear image when color is selected
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Page ${_selectedSectionIndex + 1} background changed to $label'),
+            backgroundColor: const Color(0xFF00BCD4),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: color,
+              border: Border.all(
+                color: isSelected ? const Color(0xFF00BCD4) : Colors.grey[300]!,
+                width: isSelected ? 3 : 1,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF00BCD4).withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: isSelected
+                ? const Center(
+                    child: Icon(
+                      Icons.check,
+                      color: Color(0xFF00BCD4),
+                      size: 24,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: isSelected ? const Color(0xFF00BCD4) : Colors.grey[600],
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _selectBackgroundImageFromLibrary() async {
+    if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a page first'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final selectedModule = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const ContentLibrarySelectionDialog(),
+    );
+
+    if (selectedModule != null) {
+      final content = selectedModule['content'] ?? '';
+      final title = selectedModule['title'] ?? 'Background';
+
+      // Check if it's an image URL
+      final isUrl =
+          content.startsWith('http://') || content.startsWith('https://');
+
+      if (isUrl) {
+        setState(() {
+          final section = _sections[_selectedSectionIndex];
+          section.backgroundImageUrl = content;
+          section.backgroundColor =
+              Colors.white; // Reset color when image is selected
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Background image "$title" applied to Page ${_selectedSectionIndex + 1}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select an image from the library'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   void _showTemplateStyleDialog() {
     showDialog(
       context: context,
@@ -2891,13 +3508,36 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Template Style Settings',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A1A),
-                    ),
+                  Row(
+                    children: [
+                      const Text(
+                        'Page Style Settings',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00BCD4),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Page ${_selectedSectionIndex + 1}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 20),
                   Text(
@@ -2981,38 +3621,99 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Row(
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
                     children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F5F5),
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
+                      _buildColorOption(Colors.white, 'White'),
+                      _buildColorOption(const Color(0xFFF5F5F5), 'Light Gray'),
+                      _buildColorOption(const Color(0xFFFFF8DC), 'Cream'),
+                      _buildColorOption(
+                          const Color(0xFFFFF9E6), 'Light Yellow'),
+                      _buildColorOption(const Color(0xFFE8F5E9), 'Light Green'),
+                      _buildColorOption(const Color(0xFFE3F2FD), 'Light Blue'),
+                      _buildColorOption(const Color(0xFFFCE4EC), 'Light Pink'),
+                      _buildColorOption(
+                          const Color(0xFFF3E5F5), 'Light Purple'),
                     ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Background Image',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _selectBackgroundImageFromLibrary(),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey[300]!),
+                          borderRadius: BorderRadius.circular(6),
+                          color: (_sections.isNotEmpty &&
+                                  _selectedSectionIndex < _sections.length &&
+                                  _sections[_selectedSectionIndex]
+                                          .backgroundImageUrl !=
+                                      null)
+                              ? Colors.blue[50]
+                              : Colors.grey[50],
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              (_sections.isNotEmpty &&
+                                      _selectedSectionIndex <
+                                          _sections.length &&
+                                      _sections[_selectedSectionIndex]
+                                              .backgroundImageUrl !=
+                                          null)
+                                  ? Icons.image
+                                  : Icons.add_photo_alternate,
+                              color: const Color(0xFF00BCD4),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                (_sections.isNotEmpty &&
+                                        _selectedSectionIndex <
+                                            _sections.length &&
+                                        _sections[_selectedSectionIndex]
+                                                .backgroundImageUrl !=
+                                            null)
+                                    ? 'Background image selected'
+                                    : 'Select from Content Library',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            if (_sections.isNotEmpty &&
+                                _selectedSectionIndex < _sections.length &&
+                                _sections[_selectedSectionIndex]
+                                        .backgroundImageUrl !=
+                                    null)
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: () {
+                                  setState(() {
+                                    _sections[_selectedSectionIndex]
+                                        .backgroundImageUrl = null;
+                                  });
+                                },
+                                tooltip: 'Remove background',
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Row(
@@ -4152,6 +4853,211 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  void _showPreview() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: SizedBox(
+            width: 900,
+            height: 700,
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3A52),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(8),
+                      topRight: Radius.circular(8),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.visibility,
+                          color: Colors.white, size: 24),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Document Preview',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Preview content - Multiple Pages
+                Expanded(
+                  child: Container(
+                    color: const Color(0xFFF5F5F5),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(40),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            // Each section is a separate page
+                            ..._sections.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final section = entry.value;
+                              return Container(
+                                width: 850,
+                                margin: const EdgeInsets.only(bottom: 40),
+                                padding: const EdgeInsets.all(60),
+                                constraints: const BoxConstraints(
+                                  minHeight: 800,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: section.backgroundImageUrl == null
+                                      ? section.backgroundColor
+                                      : Colors.white,
+                                  image: section.backgroundImageUrl != null
+                                      ? DecorationImage(
+                                          image: NetworkImage(
+                                              section.backgroundImageUrl!),
+                                          fit: BoxFit.cover,
+                                          opacity: 0.7,
+                                        )
+                                      : null,
+                                  borderRadius: BorderRadius.circular(4),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.15),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Section title
+                                    Text(
+                                      section.titleController.text.isEmpty
+                                          ? 'Untitled Section'
+                                          : section.titleController.text,
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF1A3A52),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    // Section content
+                                    Text(
+                                      section.controller.text.isEmpty
+                                          ? '(No content in this section)'
+                                          : section.controller.text,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Color(0xFF1A1A1A),
+                                        height: 1.8,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    // Page indicator
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[100],
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Page ${index + 1} of ${_sections.length}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[600],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Footer with actions
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Export feature coming soon'),
+                              backgroundColor: Color(0xFF00BCD4),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.download, size: 16),
+                        label: const Text('Export PDF'),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF00BCD4)),
+                          foregroundColor: const Color(0xFF00BCD4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A3A52),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: const Text('Close Preview'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showCollaborationDialog() {
     final emailController = TextEditingController();
 
@@ -4421,10 +5327,14 @@ class _DocumentSection {
   final TextEditingController titleController;
   final FocusNode contentFocus;
   final FocusNode titleFocus;
+  Color backgroundColor;
+  String? backgroundImageUrl;
 
   _DocumentSection({
     required this.title,
     required this.content,
+    this.backgroundColor = Colors.white,
+    this.backgroundImageUrl,
   })  : controller = TextEditingController(text: content),
         titleController = TextEditingController(text: title),
         contentFocus = FocusNode(),
