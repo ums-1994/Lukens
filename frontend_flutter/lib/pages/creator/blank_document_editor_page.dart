@@ -72,9 +72,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       content: '',
     ));
 
-    // Load user profile for proper commenter name
-    _loadUserProfile();
-
     // Setup auto-save listeners
     _setupAutoSaveListeners();
 
@@ -107,8 +104,92 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           }
         }
       }
+
+      // Load existing data if editing an existing proposal
+      if (widget.proposalId != null) {
+        final proposalId = int.tryParse(widget.proposalId!);
+        if (proposalId != null) {
+          _savedProposalId = proposalId;
+          await _loadVersionsFromDatabase(proposalId);
+          await _loadCommentsFromDatabase(proposalId);
+        }
+      }
     } catch (e) {
       print('❌ Error initializing auth: $e');
+    }
+  }
+
+  Future<void> _loadVersionsFromDatabase(int proposalId) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      print('🔄 Loading versions for proposal $proposalId...');
+      final versions = await ApiService.getVersions(
+        token: token,
+        proposalId: proposalId,
+      );
+
+      if (versions.isNotEmpty) {
+        setState(() {
+          _versionHistory.clear();
+          for (var version in versions.reversed) {
+            // Parse the content JSON back to title and sections
+            try {
+              final contentMap = json.decode(version['content']);
+              _versionHistory.add({
+                'version_number': version['version_number'],
+                'timestamp': version['created_at'],
+                'title': contentMap['title'] ?? '',
+                'sections': contentMap['sections'] ?? [],
+                'change_description': version['change_description'],
+                'author': version['created_by'],
+              });
+            } catch (e) {
+              print('⚠️ Error parsing version content: $e');
+            }
+          }
+          if (_versionHistory.isNotEmpty) {
+            _currentVersionNumber = _versionHistory.last['version_number'] + 1;
+          }
+        });
+        print('✅ Loaded ${versions.length} versions');
+      }
+    } catch (e) {
+      print('⚠️ Error loading versions: $e');
+    }
+  }
+
+  Future<void> _loadCommentsFromDatabase(int proposalId) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      print('🔄 Loading comments for proposal $proposalId...');
+      final comments = await ApiService.getComments(
+        token: token,
+        proposalId: proposalId,
+      );
+
+      if (comments.isNotEmpty) {
+        setState(() {
+          _comments.clear();
+          for (var comment in comments) {
+            _comments.add({
+              'id': comment['id'],
+              'commenter_name': comment['created_by'],
+              'comment_text': comment['comment_text'],
+              'section_index': comment['section_index'],
+              'highlighted_text': comment['highlighted_text'],
+              'timestamp': comment['created_at'],
+              'status': comment['status'] ?? 'open',
+            });
+          }
+        });
+        print('✅ Loaded ${comments.length} comments');
+      }
+    } catch (e) {
+      print('⚠️ Error loading comments: $e');
     }
   }
 
@@ -277,9 +358,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getCommenterName() {
-    final user = AuthService.currentUser;
+    // Get user from AppState (same as dashboard)
+    if (!mounted) return 'User';
+    final app = context.read<AppState>();
+    final user = app.currentUser;
 
-    if (user == null) return 'Anonymous User';
+    if (user == null) return 'User';
 
     // Try different possible field names for the user's name
     String? name = user['full_name'] ??
@@ -299,7 +383,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getUserInitials() {
-    final user = AuthService.currentUser;
+    // Get user from AppState (same as dashboard)
+    if (!mounted) return 'U';
+    final app = context.read<AppState>();
+    final user = app.currentUser;
 
     if (user == null) return 'U';
 
@@ -335,19 +422,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     return 'U';
-  }
-
-  Future<void> _loadUserProfile() async {
-    try {
-      final profile = await AuthService.getUserProfile();
-      if (profile != null) {
-        setState(() {
-          // User profile loaded, comments will now use proper name
-        });
-      }
-    } catch (e) {
-      print('Error loading user profile: $e');
-    }
   }
 
   Future<void> _addComment() async {
@@ -389,6 +463,39 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _highlightedText = '';
       _selectedSectionForComment = null;
     });
+
+    // Save comment to database if proposal has been saved
+    if (_savedProposalId != null) {
+      try {
+        final token = await _getAuthToken();
+        if (token != null) {
+          final savedComment = await ApiService.createComment(
+            token: token,
+            proposalId: _savedProposalId!,
+            commentText: commentText,
+            createdBy: commenterName,
+            sectionIndex: _selectedSectionForComment,
+            highlightedText:
+                _highlightedText.isNotEmpty ? _highlightedText : null,
+          );
+
+          if (savedComment != null) {
+            // Update the local comment with database ID
+            setState(() {
+              final index =
+                  _comments.indexWhere((c) => c['id'] == newComment['id']);
+              if (index >= 0) {
+                _comments[index]['id'] = savedComment['id'];
+              }
+            });
+            print('✅ Comment saved to database');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error saving comment to database: $e');
+        // Continue silently - comment is still in memory
+      }
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -659,7 +766,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
-  void _createVersion(String changeDescription) {
+  Future<void> _createVersion(String changeDescription) async {
     final version = {
       'version_number': _currentVersionNumber,
       'timestamp': DateTime.now().toIso8601String(),
@@ -678,6 +785,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _versionHistory.add(version);
       _currentVersionNumber++;
     });
+
+    // Save version to database if proposal has been saved
+    if (_savedProposalId != null) {
+      try {
+        final token = await _getAuthToken();
+        if (token != null) {
+          final content = _serializeDocumentContent();
+          await ApiService.createVersion(
+            token: token,
+            proposalId: _savedProposalId!,
+            versionNumber: _currentVersionNumber - 1,
+            content: content,
+            changeDescription: changeDescription,
+          );
+          print('✅ Version $_currentVersionNumber saved to database');
+        }
+      } catch (e) {
+        print('⚠️ Error saving version to database: $e');
+        // Continue silently - version is still in memory
+      }
+    }
   }
 
   Future<void> _restoreVersion(int versionNumber) async {
