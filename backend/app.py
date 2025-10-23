@@ -594,7 +594,7 @@ def get_content(username):
                 'parent_id': row[6],
                 'public_id': row[7]
             })
-            return {'content': content}, 200
+        return {'content': content}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -715,7 +715,7 @@ def get_trash(username):
                 'parent_id': row[6],
                 'public_id': row[7]
             })
-            return trash, 200
+        return trash, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 

@@ -13,8 +13,15 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> dashboardCounts = {};
 
   Future<void> init() async {
+    // IMPORTANT: Sync token from AuthService on startup
+    if (AuthService.token != null && AuthService.currentUser != null) {
+      authToken = AuthService.token;
+      currentUser = AuthService.currentUser;
+      print('✅ Synced token from AuthService on startup');
+    }
+
     // Only fetch data if user is authenticated
-    if (AuthService.token != null) {
+    if (authToken != null) {
       await Future.wait([
         fetchTemplates(),
         fetchContent(),
@@ -27,8 +34,20 @@ class AppState extends ChangeNotifier {
 
   Map<String, String> get _headers {
     final headers = {"Content-Type": "application/json"};
-    if (AuthService.token != null) {
-      headers["Authorization"] = "Bearer ${AuthService.token}";
+    // Use authToken (synced from AuthService) for consistency
+    if (authToken != null) {
+      headers["Authorization"] = "Bearer $authToken";
+    }
+    return headers;
+  }
+
+  // Headers for multipart/form-data requests (file uploads)
+  // Don't include Content-Type - it's set automatically by MultipartRequest
+  Map<String, String> get _multipartHeaders {
+    final headers = <String, String>{};
+    // Use authToken (synced from AuthService) for consistency
+    if (authToken != null) {
+      headers["Authorization"] = "Bearer $authToken";
     }
     return headers;
   }
@@ -648,7 +667,19 @@ class AppState extends ChangeNotifier {
     if (r.statusCode == 200) {
       final data = jsonDecode(r.body);
       authToken = data["access_token"];
+
+      // IMPORTANT: Sync token with AuthService for content library
+      if (currentUser != null) {
+        AuthService.setUserData(currentUser!, authToken!);
+      }
+
       await fetchCurrentUser();
+
+      // IMPORTANT: Sync again after fetching user data
+      if (currentUser != null && authToken != null) {
+        AuthService.setUserData(currentUser!, authToken!);
+      }
+
       // Fetch data after successful login
       await Future.wait([
         fetchTemplates(),
@@ -769,7 +800,7 @@ class AppState extends ChangeNotifier {
 
       final request =
           http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/image"))
-            ..headers.addAll(_headers)
+            ..headers.addAll(_multipartHeaders)
             ..files.add(file);
 
       final response = await request.send();
@@ -801,7 +832,7 @@ class AppState extends ChangeNotifier {
 
       final request =
           http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/template"))
-            ..headers.addAll(_headers)
+            ..headers.addAll(_multipartHeaders)
             ..files.add(file);
 
       final response = await request.send();
@@ -882,11 +913,17 @@ class AppState extends ChangeNotifier {
 
   void logout() {
     // Clear app state on logout
+    authToken = null;
+    currentUser = null;
     templates = [];
     contentBlocks = [];
     proposals = [];
     currentProposal = null;
     dashboardCounts = {};
+
+    // IMPORTANT: Sync logout with AuthService
+    AuthService.logout();
+
     notifyListeners();
   }
 }

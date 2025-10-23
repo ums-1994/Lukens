@@ -5,16 +5,26 @@ import 'package:http/http.dart' as http;
 class ContentLibraryService {
   static const String baseUrl = 'http://localhost:8000';
 
-  // Get headers
-  Map<String, String> _getHeaders() {
+  // Get headers with authentication
+  Map<String, String> _getHeaders({String? token}) {
     return {
       'Content-Type': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  // Get headers for multipart requests
+  Map<String, String> _getMultipartHeaders({String? token}) {
+    return {
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
   }
 
   // Get all content modules from the content library
-  Future<List<Map<String, dynamic>>> getContentModules(
-      {String? category}) async {
+  Future<List<Map<String, dynamic>>> getContentModules({
+    String? category,
+    String? token,
+  }) async {
     try {
       String url = '$baseUrl/content';
       if (category != null && category.isNotEmpty) {
@@ -23,11 +33,18 @@ class ContentLibraryService {
 
       final response = await http.get(
         Uri.parse(url),
-        headers: _getHeaders(),
+        headers: _getHeaders(token: token),
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final responseData = json.decode(response.body);
+
+        // Backend returns {'content': [array]} format
+        final List<dynamic> data =
+            responseData is Map && responseData.containsKey('content')
+                ? responseData['content']
+                : (responseData is List ? responseData : []);
+
         return data
             .map((item) => {
                   'id': item['id'],
@@ -164,12 +181,16 @@ class ContentLibraryService {
   Future<Map<String, dynamic>?> uploadDocument({
     required Uint8List fileBytes,
     required String fileName,
+    String? token,
   }) async {
     try {
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('$baseUrl/upload/template'),
       );
+
+      // Add authentication headers
+      request.headers.addAll(_getMultipartHeaders(token: token));
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -206,12 +227,16 @@ class ContentLibraryService {
   Future<Map<String, dynamic>?> uploadImage({
     required Uint8List fileBytes,
     required String fileName,
+    String? token,
   }) async {
     try {
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('$baseUrl/upload/image'),
       );
+
+      // Add authentication headers
+      request.headers.addAll(_getMultipartHeaders(token: token));
 
       request.files.add(
         http.MultipartFile.fromBytes(

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../api.dart';
+import '../../services/auth_service.dart';
+import '../../services/asset_service.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -11,7 +13,8 @@ class ContentLibraryPage extends StatefulWidget {
   State<ContentLibraryPage> createState() => _ContentLibraryPageState();
 }
 
-class _ContentLibraryPageState extends State<ContentLibraryPage> {
+class _ContentLibraryPageState extends State<ContentLibraryPage>
+    with TickerProviderStateMixin {
   final keyCtrl = TextEditingController();
   final labelCtrl = TextEditingController();
   final contentCtrl = TextEditingController();
@@ -19,7 +22,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
   String sortBy = "Last Edited (Newest First)";
   int currentPage = 1;
   int itemsPerPage = 10;
-  int _currentNavIdx = 3; // Content Library is index 3
+  String _currentPage = 'Content Library';
+  bool _isSidebarCollapsed = true;
+  late AnimationController _animationController;
   int? currentFolderId; // Track current folder being viewed
 
   final List<String> categories = ["Sections", "Images", "Snippets", "Trash"];
@@ -34,11 +39,35 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    // Start collapsed
+    _animationController.value = 1.0;
+    
     // Fetch content if empty
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final app = context.read<AppState>();
       if (app.contentBlocks.isEmpty) {
         await app.fetchContent();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
       }
     });
   }
@@ -116,8 +145,101 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
       backgroundColor: const Color(0xFFF5F7F9),
       body: Row(
         children: [
-          // Modern Navigation Sidebar
-          _buildModernNavbar(),
+          // Collapsible Sidebar (matching dashboard)
+          GestureDetector(
+            onTap: () {
+              if (_isSidebarCollapsed) _toggleSidebar();
+            },
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: _isSidebarCollapsed ? 90.0 : 250.0,
+              color: const Color(0xFF34495E),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 16),
+                    // Toggle button
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: InkWell(
+                        onTap: _toggleSidebar,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2C3E50),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: _isSidebarCollapsed
+                                ? MainAxisAlignment.center
+                                : MainAxisAlignment.spaceBetween,
+                            children: [
+                              if (!_isSidebarCollapsed)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 12),
+                                  child: Text(
+                                    'Navigation',
+                                    style: TextStyle(
+                                        color: Colors.white, fontSize: 12),
+                                  ),
+                                ),
+                              Padding(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: _isSidebarCollapsed ? 0 : 8),
+                                child: Icon(
+                                  _isSidebarCollapsed
+                                      ? Icons.keyboard_arrow_right
+                                      : Icons.keyboard_arrow_left,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Navigation items
+                    _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+                        _currentPage == 'Dashboard', context),
+                    _buildNavItem('My Proposals',
+                        'assets/images/My_Proposals.png',
+                        _currentPage == 'My Proposals', context),
+                    _buildNavItem('Templates',
+                        'assets/images/content_library.png',
+                        _currentPage == 'Templates', context),
+                    _buildNavItem('Content Library',
+                        'assets/images/content_library.png',
+                        _currentPage == 'Content Library', context),
+                    _buildNavItem('Collaboration',
+                        'assets/images/collaborations.png',
+                        _currentPage == 'Collaboration', context),
+                    _buildNavItem('Approvals Status',
+                        'assets/images/Time Allocation_Approval_Blue.png',
+                        _currentPage == 'Approvals Status', context),
+                    _buildNavItem('Analytics (My Pipeline)',
+                        'assets/images/analytics.png',
+                        _currentPage == 'Analytics (My Pipeline)', context),
+                    const SizedBox(height: 20),
+                    // Divider
+                    if (!_isSidebarCollapsed)
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        height: 1,
+                        color: const Color(0xFF2C3E50),
+                      ),
+                    const SizedBox(height: 12),
+                    // Logout button
+                    _buildNavItem('Logout', 'assets/images/Logout_KhonoBuzz.png',
+                        false, context),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+          ),
           // Category Sidebar
           Container(
             width: 280,
@@ -1944,209 +2066,179 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
     return buttons;
   }
 
-  // Build modern navigation sidebar
-  Widget _buildModernNavbar() {
-    return Container(
-      width: 80,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E3A8A),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
+
+  // Build individual navigation item
+  Widget _buildNavItem(
+      String label, String assetPath, bool isActive, BuildContext context) {
+    if (_isSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: () {
+              setState(() => _currentPage = label);
+              _navigateToPage(context, label);
+            },
+            borderRadius: BorderRadius.circular(30),
             child: Container(
-              width: 50,
-              height: 50,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.auto_awesome,
-                color: Color(0xFF1E3A8A),
-                size: 28,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                _buildNavItem(
-                  icon: Icons.home_outlined,
-                  label: 'Home',
-                  isActive: _currentNavIdx == 0,
-                  onTap: () {
-                    setState(() => _currentNavIdx = 0);
-                  },
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isActive
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFFCBD5E1),
+                  width: isActive ? 2 : 1,
                 ),
-                _buildNavItem(
-                  icon: Icons.description_outlined,
-                  label: 'My Proposals',
-                  isActive: _currentNavIdx == 1,
-                  onTap: () {
-                    setState(() => _currentNavIdx = 1);
-                  },
-                ),
-                _buildNavItem(
-                  icon: Icons.note_outlined,
-                  label: 'Templates',
-                  isActive: _currentNavIdx == 2,
-                  onTap: () {
-                    setState(() => _currentNavIdx = 2);
-                  },
-                ),
-                _buildNavItem(
-                  icon: Icons.collections,
-                  label: 'Content Library',
-                  isActive: _currentNavIdx == 3,
-                  onTap: () {
-                    setState(() => _currentNavIdx = 3);
-                  },
-                ),
-                _buildNavItem(
-                  icon: Icons.people_outline,
-                  label: 'Collaboration',
-                  isActive: _currentNavIdx == 4,
-                  onTap: () {
-                    setState(() => _currentNavIdx = 4);
-                  },
-                ),
-                _buildNavItem(
-                  icon: Icons.check_circle_outline,
-                  label: 'Approvals',
-                  isActive: _currentNavIdx == 5,
-                  onTap: () {
-                    setState(() => _currentNavIdx = 5);
-                  },
-                ),
-                _buildNavItem(
-                  icon: Icons.trending_up,
-                  label: 'Analytics',
-                  isActive: _currentNavIdx == 6,
-                  onTap: () {
-                    setState(() => _currentNavIdx = 6);
-                  },
-                ),
-              ],
-            ),
-          ),
-          // Help & Logout
-          Tooltip(
-            message: 'Help',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Help is on the way!")),
-                  );
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
-                  child: Icon(
-                    Icons.help_outline,
-                    color: Colors.grey[400],
-                    size: 24,
-                  ),
-                ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: ClipOval(
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          Tooltip(
-            message: 'Logout',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Confirm Logout'),
-                      content: const Text('Are you sure you want to logout?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Cancel'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            Navigator.of(context).pushNamedAndRemoveUntil(
-                              '/',
-                              (route) => false,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                          ),
-                          child: const Text('Logout'),
-                        ),
-                      ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() => _currentPage = label);
+          _navigateToPage(context, label);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isActive
+                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isActive
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFFCBD5E1),
+                    width: isActive ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
                     ),
-                  );
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.logout,
-                    color: Colors.grey[400],
-                    size: 24,
+                  ],
+                ),
+                padding: const EdgeInsets.all(6),
+                child: ClipOval(
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
               ),
-            ),
+              if (isActive)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
+            ],
           ),
-          const SizedBox(height: 16),
-        ],
+        ),
       ),
     );
   }
 
-  // Build individual navigation item
-  Widget _buildNavItem({
-    required IconData icon,
-    required String label,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: label,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color:
-                  isActive ? Colors.white.withOpacity(0.2) : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushNamed(context, '/dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        // Already on content library
+        break;
+      case 'Collaboration':
+        Navigator.pushNamed(context, '/collaboration');
+        break;
+      case 'Approvals Status':
+        Navigator.pushNamed(context, '/approvals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        _handleLogout(context);
+        break;
+    }
+  }
+
+  void _handleLogout(BuildContext context) {
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
             ),
-            child: Icon(
-              icon,
-              color: isActive ? Colors.white : Colors.grey[400],
-              size: 24,
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                // Perform logout
+                final app = context.read<AppState>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
             ),
-          ),
-        ),
-      ),
+          ],
+        );
+      },
     );
   }
 
