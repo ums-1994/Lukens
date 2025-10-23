@@ -66,22 +66,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       text: widget.proposalTitle ?? 'Untitled Document',
     );
     _commentController = TextEditingController();
-    // Create initial section
-    _sections.add(_DocumentSection(
-      title: 'Untitled Section',
-      content: '',
-    ));
 
-    // Load user profile for proper commenter name
-    _loadUserProfile();
+    // Only create initial section for new documents
+    if (widget.proposalId == null) {
+      _sections.add(_DocumentSection(
+        title: 'Untitled Section',
+        content: '',
+      ));
+    }
 
     // Setup auto-save listeners
     _setupAutoSaveListeners();
 
-    // Create initial version
-    _createVersion('Initial version');
+    // Only create initial version for new documents
+    if (widget.proposalId == null) {
+      _createVersion('Initial version');
+    }
 
-    // Get auth token
+    // Get auth token and load existing data if editing
     _initializeAuth();
   }
 
@@ -107,8 +109,174 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           }
         }
       }
+
+      // Load existing data if editing an existing proposal
+      if (widget.proposalId != null) {
+        final proposalId = int.tryParse(widget.proposalId!);
+        if (proposalId != null) {
+          _savedProposalId = proposalId;
+          await _loadProposalFromDatabase(proposalId);
+          await _loadVersionsFromDatabase(proposalId);
+          await _loadCommentsFromDatabase(proposalId);
+        }
+      }
     } catch (e) {
       print('❌ Error initializing auth: $e');
+    }
+  }
+
+  Future<void> _loadProposalFromDatabase(int proposalId) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      print('🔄 Loading proposal content for ID $proposalId...');
+
+      // Get all proposals and find the one we need
+      final proposals = await ApiService.getProposals(token);
+      final proposal = proposals.firstWhere(
+        (p) => p['id'] == proposalId,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (proposal.isEmpty) {
+        print('⚠️ Proposal $proposalId not found');
+        return;
+      }
+
+      // Parse the content JSON
+      if (proposal['content'] != null) {
+        try {
+          final contentData = json.decode(proposal['content']);
+
+          setState(() {
+            // Set title
+            _titleController.text = contentData['title'] ??
+                proposal['title'] ??
+                'Untitled Document';
+
+            // Clear existing sections
+            for (var section in _sections) {
+              section.controller.dispose();
+              section.titleController.dispose();
+              section.contentFocus.dispose();
+              section.titleFocus.dispose();
+            }
+            _sections.clear();
+
+            // Load sections from content
+            final List<dynamic> savedSections = contentData['sections'] ?? [];
+            if (savedSections.isNotEmpty) {
+              for (var sectionData in savedSections) {
+                final newSection = _DocumentSection(
+                  title: sectionData['title'] ?? 'Untitled Section',
+                  content: sectionData['content'] ?? '',
+                );
+                _sections.add(newSection);
+
+                // Add listeners
+                newSection.controller.addListener(_onContentChanged);
+                newSection.titleController.addListener(_onContentChanged);
+              }
+            } else {
+              // If no sections, create a default one
+              final defaultSection = _DocumentSection(
+                title: 'Untitled Section',
+                content: '',
+              );
+              _sections.add(defaultSection);
+              defaultSection.controller.addListener(_onContentChanged);
+              defaultSection.titleController.addListener(_onContentChanged);
+            }
+
+            // Load metadata if available
+            if (contentData['metadata'] != null) {
+              final metadata = contentData['metadata'];
+              _selectedCurrency = metadata['currency'] ?? _selectedCurrency;
+            }
+          });
+
+          print('✅ Loaded proposal content with ${_sections.length} sections');
+        } catch (e) {
+          print('⚠️ Error parsing proposal content: $e');
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error loading proposal: $e');
+    }
+  }
+
+  Future<void> _loadVersionsFromDatabase(int proposalId) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      print('🔄 Loading versions for proposal $proposalId...');
+      final versions = await ApiService.getVersions(
+        token: token,
+        proposalId: proposalId,
+      );
+
+      if (versions.isNotEmpty) {
+        setState(() {
+          _versionHistory.clear();
+          for (var version in versions.reversed) {
+            // Parse the content JSON back to title and sections
+            try {
+              final contentMap = json.decode(version['content']);
+              _versionHistory.add({
+                'version_number': version['version_number'],
+                'timestamp': version['created_at'],
+                'title': contentMap['title'] ?? '',
+                'sections': contentMap['sections'] ?? [],
+                'change_description': version['change_description'],
+                'author': version['created_by'],
+              });
+            } catch (e) {
+              print('⚠️ Error parsing version content: $e');
+            }
+          }
+          if (_versionHistory.isNotEmpty) {
+            _currentVersionNumber = _versionHistory.last['version_number'] + 1;
+          }
+        });
+        print('✅ Loaded ${versions.length} versions');
+      }
+    } catch (e) {
+      print('⚠️ Error loading versions: $e');
+    }
+  }
+
+  Future<void> _loadCommentsFromDatabase(int proposalId) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      print('🔄 Loading comments for proposal $proposalId...');
+      final comments = await ApiService.getComments(
+        token: token,
+        proposalId: proposalId,
+      );
+
+      if (comments.isNotEmpty) {
+        setState(() {
+          _comments.clear();
+          for (var comment in comments) {
+            _comments.add({
+              'id': comment['id'],
+              'commenter_name': comment['created_by'],
+              'comment_text': comment['comment_text'],
+              'section_index': comment['section_index'],
+              'highlighted_text': comment['highlighted_text'],
+              'timestamp': comment['created_at'],
+              'status': comment['status'] ?? 'open',
+            });
+          }
+        });
+        print('✅ Loaded ${comments.length} comments');
+      }
+    } catch (e) {
+      print('⚠️ Error loading comments: $e');
     }
   }
 
@@ -277,9 +445,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getCommenterName() {
-    final user = AuthService.currentUser;
+    // Get user from AppState (same as dashboard)
+    if (!mounted) return 'User';
+    final app = context.read<AppState>();
+    final user = app.currentUser;
 
-    if (user == null) return 'Anonymous User';
+    if (user == null) return 'User';
 
     // Try different possible field names for the user's name
     String? name = user['full_name'] ??
@@ -299,7 +470,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getUserInitials() {
-    final user = AuthService.currentUser;
+    // Get user from AppState (same as dashboard)
+    if (!mounted) return 'U';
+    final app = context.read<AppState>();
+    final user = app.currentUser;
 
     if (user == null) return 'U';
 
@@ -335,19 +509,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     return 'U';
-  }
-
-  Future<void> _loadUserProfile() async {
-    try {
-      final profile = await AuthService.getUserProfile();
-      if (profile != null) {
-        setState(() {
-          // User profile loaded, comments will now use proper name
-        });
-      }
-    } catch (e) {
-      print('Error loading user profile: $e');
-    }
   }
 
   Future<void> _addComment() async {
@@ -389,6 +550,39 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _highlightedText = '';
       _selectedSectionForComment = null;
     });
+
+    // Save comment to database if proposal has been saved
+    if (_savedProposalId != null) {
+      try {
+        final token = await _getAuthToken();
+        if (token != null) {
+          final savedComment = await ApiService.createComment(
+            token: token,
+            proposalId: _savedProposalId!,
+            commentText: commentText,
+            createdBy: commenterName,
+            sectionIndex: _selectedSectionForComment,
+            highlightedText:
+                _highlightedText.isNotEmpty ? _highlightedText : null,
+          );
+
+          if (savedComment != null) {
+            // Update the local comment with database ID
+            setState(() {
+              final index =
+                  _comments.indexWhere((c) => c['id'] == newComment['id']);
+              if (index >= 0) {
+                _comments[index]['id'] = savedComment['id'];
+              }
+            });
+            print('✅ Comment saved to database');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error saving comment to database: $e');
+        // Continue silently - comment is still in memory
+      }
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -623,13 +817,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     try {
       if (_savedProposalId == null) {
         // Create new proposal
-        print('Creating new proposal...');
+        print('📝 Creating new proposal...');
         final result = await ApiService.createProposal(
           token: token,
           title: title,
           content: content,
           status: 'draft',
         );
+
+        print('🔍 Create proposal result: $result');
 
         if (result != null && result['id'] != null) {
           setState(() {
@@ -638,13 +834,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 : int.tryParse(result['id'].toString());
           });
           print('✅ Proposal created with ID: $_savedProposalId');
+          print(
+              '💾 Proposal ID saved in state - future saves will UPDATE this proposal');
         } else {
           print('⚠️ Proposal creation returned null or no ID');
+          print('🔍 Full result: $result');
         }
       } else {
         // Update existing proposal
-        print('Updating proposal ID: $_savedProposalId...');
-        await ApiService.updateProposal(
+        print('🔄 Updating existing proposal ID: $_savedProposalId...');
+        final result = await ApiService.updateProposal(
           token: token,
           id: _savedProposalId!,
           title: title,
@@ -652,6 +851,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           status: 'draft',
         );
         print('✅ Proposal updated: $_savedProposalId');
+        print('🔍 Update result: $result');
       }
     } catch (e) {
       print('❌ Error saving to backend: $e');
@@ -659,7 +859,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
-  void _createVersion(String changeDescription) {
+  Future<void> _createVersion(String changeDescription) async {
     final version = {
       'version_number': _currentVersionNumber,
       'timestamp': DateTime.now().toIso8601String(),
@@ -678,6 +878,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _versionHistory.add(version);
       _currentVersionNumber++;
     });
+
+    // Save version to database if proposal has been saved
+    if (_savedProposalId != null) {
+      try {
+        final token = await _getAuthToken();
+        if (token != null) {
+          final content = _serializeDocumentContent();
+          await ApiService.createVersion(
+            token: token,
+            proposalId: _savedProposalId!,
+            versionNumber: _currentVersionNumber - 1,
+            content: content,
+            changeDescription: changeDescription,
+          );
+          print('✅ Version $_currentVersionNumber saved to database');
+        }
+      } catch (e) {
+        print('⚠️ Error saving version to database: $e');
+        // Continue silently - version is still in memory
+      }
+    }
   }
 
   Future<void> _restoreVersion(int versionNumber) async {

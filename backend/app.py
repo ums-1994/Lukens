@@ -90,7 +90,7 @@ def get_pg_pool():
             print(f"🔄 Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
                 minconn=1,
-                maxconn=10,
+                maxconn=20,  # Increased max connections
                 **db_config
             )
             print("✅ PostgreSQL connection pool created successfully")
@@ -108,9 +108,24 @@ def _pg_conn():
 
 def release_pg_conn(conn):
     try:
-        get_pg_pool().putconn(conn)
+        if conn:
+            get_pg_pool().putconn(conn)
     except Exception as e:
         print(f"⚠️ Error releasing PostgreSQL connection: {e}")
+
+# Context manager for automatic connection cleanup
+from contextlib import contextmanager
+
+@contextmanager
+def get_db_connection():
+    """Context manager that ensures connections are always returned to pool"""
+    conn = None
+    try:
+        conn = _pg_conn()
+        yield conn
+    finally:
+        if conn:
+            release_pg_conn(conn)
 
 # Token for encryption
 ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', 'dev-key-change-in-production')
@@ -710,33 +725,40 @@ def get_trash(username):
 @token_required
 def get_proposals(username):
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, title, client, owner_id, status, created_at, updated_at, template_key, content, sections, pdf_url
-               FROM proposals WHERE owner_id = (SELECT id FROM users WHERE username = %s)
-               ORDER BY created_at DESC''',
-            (username,)
-        )
-        rows = cursor.fetchall()
-        release_pg_conn(conn)
-        proposals = []
-        for row in rows:
-            proposals.append({
-                'id': row[0],
-                'title': row[1],
-                'client': row[2],
-                'owner_id': row[3],
-                'status': row[4],
-                'created_at': row[5].isoformat() if row[5] else None,
-                'updated_at': row[6].isoformat() if row[6] else None,
-                'template_key': row[7],
-                'content': row[8],
-                'sections': json.loads(row[9]) if row[9] else {},
-                'pdf_url': row[10]
-            })
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT id, title, client_name, user_id, status, created_at, updated_at, content, 
+                          client_email, budget, timeline_days
+                   FROM proposals WHERE user_id = %s
+                   ORDER BY created_at DESC''',
+                (username,)
+            )
+            rows = cursor.fetchall()
+            proposals = []
+            for row in rows:
+                proposals.append({
+                    'id': row[0],
+                    'title': row[1],
+                    'client': row[2],
+                    'client_name': row[2],
+                    'owner_id': row[3],
+                    'user_id': row[3],
+                    'status': row[4],
+                    'created_at': row[5].isoformat() if row[5] else None,
+                    'updated_at': row[6].isoformat() if row[6] else None,
+                    'updatedAt': row[6].isoformat() if row[6] else None,
+                    'content': row[7],
+                    'client_email': row[8],
+                    'budget': float(row[9]) if row[9] else None,
+                    'timeline_days': row[10]
+                })
+            print(f"✅ Found {len(proposals)} proposals for user {username}")
             return proposals, 200
     except Exception as e:
+        print(f"❌ Error getting proposals: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/proposals")
@@ -744,32 +766,53 @@ def get_proposals(username):
 def create_proposal(username):
     try:
         data = request.get_json()
+        print(f"📝 Creating proposal for user {username}: {data.get('title', 'Untitled')}")
         
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-        user_id = cursor.fetchone()[0]
-        
-        cursor.execute(
-            '''INSERT INTO proposals (title, client, owner_id, template_key)
-               VALUES (%s, %s, %s, %s) RETURNING id, title, client, owner_id, status, created_at, updated_at''',
-            (data['title'], data['client'], user_id, data.get('template_key'))
-        )
-        result = cursor.fetchone()
-        conn.commit()
-        release_pg_conn(conn)
-        
-        return {
-            'id': result[0],
-            'title': result[1],
-            'client': result[2],
-            'owner_id': result[3],
-            'status': result[4],
-            'created_at': result[5].isoformat(),
-            'updated_at': result[6].isoformat(),
-            'sections': {}
-        }, 201
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Handle both 'client' and 'client_name' fields
+            client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
+            client_email = data.get('client_email') or ''
+            
+            cursor.execute(
+                '''INSERT INTO proposals (user_id, title, client_name, client_email, content, status, budget, timeline_days)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
+                   RETURNING id, user_id, title, client_name, status, created_at, updated_at, content''',
+                (
+                    username,
+                    data.get('title', 'Untitled Document'),
+                    client_name,
+                    client_email,
+                    data.get('content'),
+                    data.get('status', 'draft'),
+                    data.get('budget'),
+                    data.get('timeline_days')
+                )
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            proposal = {
+                'id': result[0],
+                'user_id': result[1],
+                'owner_id': result[1],  # For compatibility
+                'title': result[2],
+                'client': result[3],
+                'client_name': result[3],
+                'status': result[4],
+                'created_at': result[5].isoformat() if result[5] else None,
+                'updated_at': result[6].isoformat() if result[6] else None,
+                'updatedAt': result[6].isoformat() if result[6] else None,
+                'content': result[7]
+            }
+            
+            print(f"✅ Proposal created successfully with ID: {result[0]}")
+            return proposal, 201
     except Exception as e:
+        print(f"❌ Error creating proposal: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.put("/proposals/<int:proposal_id>")
@@ -777,37 +820,46 @@ def create_proposal(username):
 def update_proposal(username, proposal_id):
     try:
         data = request.get_json()
+        print(f"📝 Updating proposal {proposal_id} for user {username}")
         
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        
-        sections = json.dumps(data.get('sections', {})) if 'sections' in data else None
-        
-        updates = ['updated_at = NOW()']
-        params = []
-        
-        if 'title' in data:
-            updates.append('title = %s')
-            params.append(data['title'])
-        if 'client' in data:
-            updates.append('client = %s')
-            params.append(data['client'])
-        if sections:
-            updates.append('sections = %s')
-            params.append(sections)
-        if 'content' in data:
-            updates.append('content = %s')
-            params.append(data['content'])
-        if 'pdf_url' in data:
-            updates.append('pdf_url = %s')
-            params.append(data['pdf_url'])
-        
-        params.append(proposal_id)
-        cursor.execute(f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s''', params)
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Proposal updated'}, 200
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            updates = ['updated_at = NOW()']
+            params = []
+            
+            if 'title' in data:
+                updates.append('title = %s')
+                params.append(data['title'])
+            if 'client' in data or 'client_name' in data:
+                updates.append('client_name = %s')
+                params.append(data.get('client_name') or data.get('client'))
+            if 'client_email' in data:
+                updates.append('client_email = %s')
+                params.append(data['client_email'])
+            if 'content' in data:
+                updates.append('content = %s')
+                params.append(data['content'])
+            if 'status' in data:
+                updates.append('status = %s')
+                params.append(data['status'])
+            if 'budget' in data:
+                updates.append('budget = %s')
+                params.append(data['budget'])
+            if 'timeline_days' in data:
+                updates.append('timeline_days = %s')
+                params.append(data['timeline_days'])
+            
+            params.append(proposal_id)
+            cursor.execute(f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s''', params)
+            conn.commit()
+            
+            print(f"✅ Proposal {proposal_id} updated successfully")
+            return {'detail': 'Proposal updated'}, 200
     except Exception as e:
+        print(f"❌ Error updating proposal {proposal_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.delete("/proposals/<int:proposal_id>")
@@ -1327,11 +1379,152 @@ def get_proposal_comments(proposal_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Proposal Versions endpoints
+@app.post("/api/proposals/<int:proposal_id>/versions")
+@token_required
+def create_version(username, proposal_id):
+    """Create a new version of a proposal"""
+    try:
+        data = request.get_json()
+        print(f"📝 Creating version {data.get('version_number')} for proposal {proposal_id}")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''INSERT INTO proposal_versions 
+                   (proposal_id, version_number, content, created_by, change_description)
+                   VALUES (%s, %s, %s, %s, %s)
+                   RETURNING id, proposal_id, version_number, content, created_by, created_at, change_description''',
+                (
+                    proposal_id,
+                    data.get('version_number', 1),
+                    data.get('content', ''),
+                    username,
+                    data.get('change_description', 'Version created')
+                )
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            version = {
+                'id': result[0],
+                'proposal_id': result[1],
+                'version_number': result[2],
+                'content': result[3],
+                'created_by': result[4],
+                'created_at': result[5].isoformat() if result[5] else None,
+                'change_description': result[6]
+            }
+            
+            print(f"✅ Version {result[2]} created for proposal {proposal_id}")
+            return version, 201
+    except Exception as e:
+        print(f"❌ Error creating version: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/versions")
+@token_required
+def get_versions(username, proposal_id):
+    """Get all versions of a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
+                   FROM proposal_versions
+                   WHERE proposal_id = %s
+                   ORDER BY version_number DESC''',
+                (proposal_id,)
+            )
+            rows = cursor.fetchall()
+            
+            versions = []
+            for row in rows:
+                versions.append({
+                    'id': row[0],
+                    'proposal_id': row[1],
+                    'version_number': row[2],
+                    'content': row[3],
+                    'created_by': row[4],
+                    'created_at': row[5].isoformat() if row[5] else None,
+                    'change_description': row[6]
+                })
+            
+            print(f"✅ Found {len(versions)} versions for proposal {proposal_id}")
+            return versions, 200
+    except Exception as e:
+        print(f"❌ Error getting versions: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/versions/<int:version_number>")
+@token_required
+def get_version(username, proposal_id, version_number):
+    """Get a specific version of a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
+                   FROM proposal_versions
+                   WHERE proposal_id = %s AND version_number = %s''',
+                (proposal_id, version_number)
+            )
+            row = cursor.fetchone()
+            
+            if not row:
+                return {'detail': 'Version not found'}, 404
+            
+            version = {
+                'id': row[0],
+                'proposal_id': row[1],
+                'version_number': row[2],
+                'content': row[3],
+                'created_by': row[4],
+                'created_at': row[5].isoformat() if row[5] else None,
+                'change_description': row[6]
+            }
+            
+            return version, 200
+    except Exception as e:
+        print(f"❌ Error getting version: {e}")
+        return {'detail': str(e)}, 500
+
 # Health check endpoint (no auth required)
 @app.get("/health")
 def health_check():
-    """Health check endpoint"""
-    return {"status": "ok", "db_initialized": _db_initialized}, 200
+    """Health check endpoint with connection pool info"""
+    pool_info = {
+        "status": "ok",
+        "db_initialized": _db_initialized
+    }
+    
+    # Add connection pool status if available
+    try:
+        if _pg_pool:
+            # Try to get pool stats (note: SimpleConnectionPool doesn't expose all stats)
+            pool_info["database"] = "postgresql"
+            pool_info["pool_type"] = "SimpleConnectionPool"
+            pool_info["pool_configured"] = True
+            
+            # Test connection
+            try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT 1")
+                    cursor.fetchone()
+                pool_info["database_connection"] = "ok"
+            except Exception as e:
+                pool_info["database_connection"] = f"error: {str(e)}"
+        else:
+            pool_info["pool_configured"] = False
+    except Exception as e:
+        pool_info["pool_error"] = str(e)
+    
+    return pool_info, 200
 
 # Initialize database on app startup
 @app.get("/api/init")

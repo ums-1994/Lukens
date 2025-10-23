@@ -94,9 +94,11 @@ class ApiService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      print(
+          'Error creating proposal: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating proposal: $e');
@@ -196,9 +198,10 @@ class ApiService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      print('Error creating SOW: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating SOW: $e');
@@ -315,6 +318,131 @@ class ApiService {
     } catch (e) {
       print('Error getting signed PDF URL: $e');
       return null;
+    }
+  }
+
+  // Proposal Versions
+  static Future<Map<String, dynamic>?> createVersion({
+    required String token,
+    required int proposalId,
+    required int versionNumber,
+    required String content,
+    String? changeDescription,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'version_number': versionNumber,
+          'content': content,
+          'change_description': changeDescription ?? 'Version created',
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error creating version: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error creating version: $e');
+      return null;
+    }
+  }
+
+  static Future<List<dynamic>> getVersions({
+    required String token,
+    required int proposalId,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching versions: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getVersion({
+    required String token,
+    required int proposalId,
+    required int versionNumber,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/proposals/$proposalId/versions/$versionNumber'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching version: $e');
+      return null;
+    }
+  }
+
+  // Document Comments
+  static Future<Map<String, dynamic>?> createComment({
+    required String token,
+    required int proposalId,
+    required String commentText,
+    required String createdBy,
+    int? sectionIndex,
+    String? highlightedText,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/comments/document/$proposalId'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'comment_text': commentText,
+          'created_by': createdBy,
+          'section_index': sectionIndex,
+          'highlighted_text': highlightedText,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error creating comment: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error creating comment: $e');
+      return null;
+    }
+  }
+
+  static Future<List<dynamic>> getComments({
+    required String token,
+    required int proposalId,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/comments/proposal/$proposalId'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching comments: $e');
+      return [];
     }
   }
 }
