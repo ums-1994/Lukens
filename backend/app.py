@@ -772,10 +772,10 @@ def submit_for_review(pid: str):
     return p
 
 # Import the new service
-from proposal_versions_service import ProposalVersionsService
+# from proposal_versions_service import ProposalVersionsService  # Not needed - functionality in app.py
 
 # Initialize the service
-versions_service = ProposalVersionsService()
+# versions_service = ProposalVersionsService()  # Not needed - functionality in app.py
 
 # Auto-draft endpoints
 @app.put("/proposals/{pid}/draft")
