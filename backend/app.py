@@ -272,6 +272,8 @@ def generate_token(username):
         'created_at': datetime.now(),
         'expires_at': datetime.now() + timedelta(days=7)
     }
+    print(f"🎫 Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
+    print(f"📋 Total valid tokens: {len(valid_tokens)}")
     return token
 
 def verify_token(token):
@@ -353,16 +355,23 @@ def token_required(f):
             if auth_header:
                 try:
                     token = auth_header.split(" ")[1]
+                    print(f"🔑 Token received: {token[:20]}...{token[-10:]}")
                 except (IndexError, AttributeError):
+                    print(f"❌ Invalid token format in header: {auth_header}")
                     return {'detail': 'Invalid token format'}, 401
         
         if not token:
+            print(f"❌ No token found in Authorization header")
             return {'detail': 'Token is missing'}, 401
         
+        print(f"🔍 Validating token... (valid_tokens has {len(valid_tokens)} tokens)")
         username = verify_token(token)
         if not username:
+            print(f"❌ Token validation failed - token not found or expired")
+            print(f"📋 Current valid tokens: {list(valid_tokens.keys())[:3]}...")
             return {'detail': 'Invalid or expired token'}, 401
         
+        print(f"✅ Token validated for user: {username}")
         return f(username=username, *args, **kwargs)
     return decorated
 
@@ -1491,6 +1500,138 @@ def get_version(username, proposal_id, version_number):
             return version, 200
     except Exception as e:
         print(f"❌ Error getting version: {e}")
+        return {'detail': str(e)}, 500
+
+# ============================================================
+# AI ASSISTANT ENDPOINTS
+# ============================================================
+
+@app.post("/ai/generate")
+@token_required
+def ai_generate_content(username):
+    """Generate proposal content using AI"""
+    try:
+        data = request.get_json()
+        prompt = data.get('prompt', '')
+        context = data.get('context', {})
+        section_type = data.get('section_type', 'general')
+        
+        if not prompt:
+            return {'detail': 'Prompt is required'}, 400
+        
+        # Import AI service
+        from ai_service import ai_service
+        
+        # Create enhanced prompt with context
+        full_context = {
+            'user_request': prompt,
+            'section_type': section_type,
+            **context
+        }
+        
+        # Generate content
+        generated_content = ai_service.generate_proposal_section(section_type, full_context)
+        
+        return {
+            'content': generated_content,
+            'section_type': section_type
+        }, 200
+        
+    except Exception as e:
+        print(f"❌ Error generating AI content: {e}")
+        return {'detail': str(e)}, 500
+
+@app.post("/ai/improve")
+@token_required
+def ai_improve_content(username):
+    """Improve existing content using AI"""
+    try:
+        data = request.get_json()
+        content = data.get('content', '')
+        section_type = data.get('section_type', 'general')
+        
+        if not content:
+            return {'detail': 'Content is required'}, 400
+        
+        # Import AI service
+        from ai_service import ai_service
+        
+        # Get improvement suggestions
+        result = ai_service.improve_content(content, section_type)
+        
+        return result, 200
+        
+    except Exception as e:
+        print(f"❌ Error improving content: {e}")
+        return {'detail': str(e)}, 500
+
+@app.post("/ai/generate-full-proposal")
+@token_required
+def ai_generate_full_proposal(username):
+    """Generate a complete multi-section proposal"""
+    try:
+        data = request.get_json()
+        prompt = data.get('prompt', '')
+        context = data.get('context', {})
+        
+        if not prompt:
+            return {'detail': 'Prompt is required'}, 400
+        
+        # Import AI service
+        from ai_service import ai_service
+        
+        # Create enhanced context
+        full_context = {
+            'user_request': prompt,
+            'company': 'Khonology',
+            **context
+        }
+        
+        # Generate full proposal
+        sections = ai_service.generate_full_proposal(full_context)
+        
+        return {
+            'sections': sections,
+            'section_count': len(sections)
+        }, 200
+        
+    except Exception as e:
+        print(f"❌ Error generating full proposal: {e}")
+        return {'detail': str(e)}, 500
+
+@app.post("/ai/analyze-risks")
+@token_required
+def ai_analyze_risks(username):
+    """Analyze proposal for risks"""
+    try:
+        data = request.get_json()
+        proposal_id = data.get('proposal_id')
+        
+        if not proposal_id:
+            return {'detail': 'Proposal ID is required'}, 400
+        
+        # Get proposal data
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT * FROM proposals WHERE id = %s",
+                (proposal_id,)
+            )
+            proposal = cursor.fetchone()
+            
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            # Import AI service
+            from ai_service import ai_service
+            
+            # Analyze risks
+            risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
+            
+            return risk_analysis, 200
+        
+    except Exception as e:
+        print(f"❌ Error analyzing risks: {e}")
         return {'detail': str(e)}, 500
 
 # Health check endpoint (no auth required)
