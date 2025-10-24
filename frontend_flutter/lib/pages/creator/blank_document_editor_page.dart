@@ -1159,7 +1159,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: isCurrentVersion
-                                    ? const Color(0xFF00BCD4).withOpacity(0.1)
+                                    ? const Color(0xFF00BCD4)
+                                        .withValues(alpha: 0.1)
                                     : Colors.white,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
@@ -1951,132 +1952,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const Divider(height: 1),
-          // Section metadata panel (for selected section)
-          if (_selectedSectionIndex >= 0 &&
-              _selectedSectionIndex < _sections.length)
-            Container(
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFB),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: const Color(0xFF00BCD4).withValues(alpha: 0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.settings,
-                          size: 14, color: Color(0xFF00BCD4)),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'Page Settings',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A3A52),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Section Name:',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: TextEditingController(
-                      text: _sections[_selectedSectionIndex].sectionType,
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _sections[_selectedSectionIndex].sectionType = value;
-                        _sections[_selectedSectionIndex].isCoverPage =
-                            value.toLowerCase() == 'cover' ||
-                                value.toLowerCase() == 'cover page';
-                      });
-                    },
-                    style:
-                        const TextStyle(fontSize: 11, color: Color(0xFF1A3A52)),
-                    decoration: InputDecoration(
-                      hintText:
-                          'Type section name (e.g., Cover, Introduction...)',
-                      hintStyle:
-                          TextStyle(fontSize: 11, color: Colors.grey[400]),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                        borderSide: const BorderSide(color: Color(0xFF00BCD4)),
-                      ),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _sections[_selectedSectionIndex].isCoverPage =
-                            !_sections[_selectedSectionIndex].isCoverPage;
-                        if (_sections[_selectedSectionIndex].isCoverPage) {
-                          _sections[_selectedSectionIndex].sectionType =
-                              'cover';
-                        }
-                      });
-                    },
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: Checkbox(
-                            value: _sections[_selectedSectionIndex].isCoverPage,
-                            onChanged: (value) {
-                              setState(() {
-                                _sections[_selectedSectionIndex].isCoverPage =
-                                    value ?? false;
-                                if (value == true) {
-                                  _sections[_selectedSectionIndex].sectionType =
-                                      'cover';
-                                }
-                              });
-                            },
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Is Cover Page',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          const Divider(height: 1),
           Expanded(
             child: ListView.builder(
               itemCount: _sections.length,
@@ -2342,33 +2217,51 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: _hasUnsavedChanges
-                    ? Colors.orange.withOpacity(0.1)
-                    : Colors.green.withOpacity(0.1),
+                color: _isSaving
+                    ? Colors.blue.withOpacity(0.1)
+                    : (_hasUnsavedChanges
+                        ? Colors.orange.withOpacity(0.1)
+                        : Colors.green.withOpacity(0.1)),
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
-                  color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                  color: _isSaving
+                      ? Colors.blue
+                      : (_hasUnsavedChanges ? Colors.orange : Colors.green),
                   width: 1,
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
-                    size: 14,
-                    color: _hasUnsavedChanges ? Colors.orange : Colors.green,
-                  ),
+                  if (_isSaving)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                      ),
+                    )
+                  else
+                    Icon(
+                      _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
+                      size: 14,
+                      color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                    ),
                   const SizedBox(width: 4),
                   Text(
-                    _hasUnsavedChanges
-                        ? 'Unsaved changes'
-                        : (_lastSaved == null ? 'Not Saved' : 'Saved'),
+                    _isSaving
+                        ? 'Saving...'
+                        : (_hasUnsavedChanges
+                            ? 'Unsaved changes'
+                            : (_lastSaved == null ? 'Not Saved' : 'Saved')),
                     style: TextStyle(
                       fontSize: 12,
-                      color: _hasUnsavedChanges
-                          ? Colors.orange[800]
-                          : Colors.green[800],
+                      color: _isSaving
+                          ? Colors.blue[800]
+                          : (_hasUnsavedChanges
+                              ? Colors.orange[800]
+                              : Colors.green[800]),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -2459,46 +2352,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             label: const Text('Preview'),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Colors.grey),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            onPressed: _isSaving ? null : _saveDocument,
-            icon: _isSaving
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.white,
-                      ),
-                    ),
-                  )
-                : const Icon(Icons.save, size: 16),
-            label: const Text('Save'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF27AE60),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Save & Close button
-          ElevatedButton.icon(
-            onPressed: _isSaving ? null : _saveAndClose,
-            icon: const Icon(Icons.check, size: 16),
-            label: const Text('Save & Close'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00BCD4),
-              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
@@ -2770,35 +2623,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           const SizedBox(width: 12),
           // Insert
           IconButton(
-            icon: const Icon(Icons.link),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text =
-                      currentText + '\n[Link Text](https://example.com)';
-                });
-              }
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Insert Link',
-          ),
-          IconButton(
             icon: const Icon(Icons.table_chart),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text = currentText +
-                      '\n\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| Data 1   | Data 2   | Data 3   |';
-                });
-              }
-            },
+            onPressed: () => _showTableTypeDialog(),
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Insert Table',
@@ -3018,13 +2844,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Clean content area - NO UI elements inside the page
+              // Clean content area - text field for writing
               TextField(
                 focusNode: section.contentFocus,
                 controller: section.controller,
                 maxLines: null,
+                minLines: 15,
                 style: _getContentTextStyle(),
                 textAlign: _getTextAlignment(),
+                textAlignVertical: TextAlignVertical.top,
                 decoration: const InputDecoration(
                   hintText: 'Start writing your content here...',
                   hintStyle: TextStyle(
@@ -3033,18 +2861,68 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   ),
                   border: InputBorder.none,
                   focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: EdgeInsets.all(8),
                 ),
               ),
-              // Display inline images with resize handles
-              if (section.inlineImages.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                ...section.inlineImages.asMap().entries.map((entry) {
-                  final imageIndex = entry.key;
-                  final image = entry.value;
-                  return _buildResizableImage(index, imageIndex, image);
-                }).toList(),
-              ],
+              // Display tables below text
+              ...section.tables.asMap().entries.map((entry) {
+                final tableIndex = entry.key;
+                final table = entry.value;
+                return _buildInteractiveTable(index, tableIndex, table);
+              }).toList(),
+              // Display images below tables
+              ...section.inlineImages.asMap().entries.map((entry) {
+                final imageIndex = entry.key;
+                final image = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Container(
+                    width: image.width,
+                    height: image.height,
+                    decoration: BoxDecoration(
+                      border:
+                          Border.all(color: const Color(0xFF00BCD4), width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(
+                            image.url,
+                            width: image.width,
+                            height: image.height,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        // Delete button
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Material(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _sections[index]
+                                      .inlineImages
+                                      .removeAt(imageIndex);
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(Icons.close,
+                                    size: 16, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
             ],
           ),
         ),
@@ -3055,110 +2933,340 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   // Build resizable inline image
   Widget _buildResizableImage(
       int sectionIndex, int imageIndex, InlineImage image) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Stack(
-        children: [
-          // The image itself
-          Container(
-            width: image.width,
-            height: image.height,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!, width: 2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                image.url,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Center(
-                    child: CircularProgressIndicator(
-                      value: loadingProgress.expectedTotalBytes != null
-                          ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
-                          : null,
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.broken_image,
-                            size: 48, color: Colors.grey[400]),
-                        const SizedBox(height: 8),
-                        Text('Failed to load image',
-                            style: TextStyle(
-                                color: Colors.grey[600], fontSize: 12)),
-                      ],
-                    ),
-                  );
-                },
+    return Positioned(
+      left: image.x,
+      top: image.y,
+      child: GestureDetector(
+        // Drag to move the image
+        onPanUpdate: (details) {
+          setState(() {
+            image.x = (image.x + details.delta.dx).clamp(0.0, 700.0);
+            image.y = (image.y + details.delta.dy).clamp(0.0, 1000.0);
+          });
+        },
+        child: Container(
+          width: image.width,
+          height: image.height,
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF00BCD4), width: 2),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-            ),
+            ],
           ),
-          // Delete button
-          Positioned(
-            top: 4,
-            right: 4,
-            child: Material(
-              color: Colors.red,
-              borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                onTap: () {
-                  setState(() {
-                    _sections[sectionIndex].inlineImages.removeAt(imageIndex);
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Image removed'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                },
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close, size: 16, color: Colors.white),
+          child: Stack(
+            children: [
+              // The image itself
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  image.url,
+                  width: image.width,
+                  height: image.height,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.grey[200],
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.broken_image,
+                                size: 48, color: Colors.grey[400]),
+                            const SizedBox(height: 8),
+                            Text('Failed to load image',
+                                style: TextStyle(
+                                    color: Colors.grey[600], fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
-            ),
-          ),
-          // Resize handle (bottom-right corner)
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: GestureDetector(
-              onPanUpdate: (details) {
-                setState(() {
-                  // Update width and height based on drag
-                  image.width =
-                      (image.width + details.delta.dx).clamp(100.0, 800.0);
-                  image.height =
-                      (image.height + details.delta.dy).clamp(100.0, 600.0);
-                });
-              },
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF00BCD4),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(4),
-                    bottomRight: Radius.circular(6),
+              // Move indicator (top-left)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00BCD4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(Icons.drag_indicator,
+                      size: 16, color: Colors.white),
+                ),
+              ),
+              // Delete button (top-right)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Material(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _sections[sectionIndex]
+                            .inlineImages
+                            .removeAt(imageIndex);
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Image removed'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close, size: 16, color: Colors.white),
+                    ),
                   ),
                 ),
-                child: const Icon(
-                  Icons.zoom_out_map,
-                  size: 16,
-                  color: Colors.white,
+              ),
+              // Resize handle (bottom-right corner)
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      // Update width and height based on drag
+                      image.width =
+                          (image.width + details.delta.dx).clamp(100.0, 800.0);
+                      image.height =
+                          (image.height + details.delta.dy).clamp(100.0, 600.0);
+                    });
+                  },
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF00BCD4),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(4),
+                        bottomRight: Radius.circular(6),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.zoom_out_map,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Build interactive editable table
+  Widget _buildInteractiveTable(
+      int sectionIndex, int tableIndex, DocumentTable table) {
+    // Get currency symbol
+    String currencySymbol = '\$';
+    switch (_selectedCurrency) {
+      case 'ZAR':
+        currencySymbol = 'R';
+        break;
+      case 'EUR':
+        currencySymbol = '€';
+        break;
+      case 'GBP':
+        currencySymbol = '£';
+        break;
+      default:
+        currencySymbol = '\$';
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Table header with controls
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4).withOpacity(0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${table.type == 'price' ? 'Price' : 'Text'} Table',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline, size: 18),
+                      onPressed: () => setState(() => table.addRow()),
+                      tooltip: 'Add Row',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 8),
+                    // Disable add column for price tables (fixed structure)
+                    IconButton(
+                      icon: const Icon(Icons.view_column, size: 18),
+                      onPressed: table.type == 'price'
+                          ? null
+                          : () => setState(() => table.addColumn()),
+                      tooltip: table.type == 'price'
+                          ? 'Price tables have fixed columns'
+                          : 'Add Column',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline,
+                          size: 18, color: Colors.red),
+                      onPressed: () {
+                        setState(() {
+                          _sections[sectionIndex].tables.removeAt(tableIndex);
+                        });
+                      },
+                      tooltip: 'Delete Table',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Table content
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
+              border: TableBorder.all(color: Colors.grey[300]!),
+              columns: List.generate(
+                table.cells[0].length,
+                (colIndex) => DataColumn(
+                  label: Expanded(
+                    child: Text(
+                      table.cells[0][colIndex],
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+              rows: List.generate(
+                table.cells.length - 1,
+                (rowIndex) => DataRow(
+                  cells: List.generate(
+                    table.cells[rowIndex + 1].length,
+                    (colIndex) => DataCell(
+                      TextField(
+                        controller: TextEditingController(
+                          text: table.cells[rowIndex + 1][colIndex],
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            table.cells[rowIndex + 1][colIndex] = value;
+                            // Auto-calculate total for price tables
+                            if (table.type == 'price' && colIndex == 2 ||
+                                colIndex == 3) {
+                              final qty = double.tryParse(
+                                      table.cells[rowIndex + 1][2]) ??
+                                  0;
+                              final price = double.tryParse(
+                                      table.cells[rowIndex + 1][3]) ??
+                                  0;
+                              table.cells[rowIndex + 1][4] =
+                                  (qty * price).toStringAsFixed(2);
+                            }
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.all(8),
+                        ),
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
+          // Price table footer
+          if (table.type == 'price') ...[
+            const Divider(height: 1),
+            Container(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text('Subtotal: ',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                          '$currencySymbol${table.getSubtotal().toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                          'VAT (${(table.vatRate * 100).toStringAsFixed(0)}%): ',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                          '$currencySymbol${table.getVAT().toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text('Total: ',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                          '$currencySymbol${table.getTotal().toStringAsFixed(2)}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -3625,6 +3733,52 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
         backgroundColor: const Color(0xFF27AE60),
         duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showTableTypeDialog() async {
+    final tableType = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Insert Table'),
+        content: const Text('What type of table would you like to insert?'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.table_chart),
+            label: const Text('Text Table'),
+            onPressed: () => Navigator.pop(context, 'text'),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.attach_money),
+            label: const Text('Price Table'),
+            onPressed: () => Navigator.pop(context, 'price'),
+          ),
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+
+    if (tableType == null || _sections.isEmpty) return;
+
+    setState(() {
+      final section = _sections[_selectedSectionIndex];
+      if (tableType == 'price') {
+        section.tables.add(DocumentTable.priceTable());
+      } else {
+        section.tables.add(DocumentTable());
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content:
+            Text('${tableType == 'price' ? 'Price' : 'Text'} table inserted'),
+        backgroundColor: const Color(0xFF27AE60),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -5973,6 +6127,7 @@ class _DocumentSection {
   String sectionType; // 'cover', 'content', 'appendix', etc.
   bool isCoverPage;
   List<InlineImage> inlineImages; // Inline content images (not backgrounds)
+  List<DocumentTable> tables; // Tables in this section
 
   _DocumentSection({
     required this.title,
@@ -5982,33 +6137,138 @@ class _DocumentSection {
     this.sectionType = 'content',
     this.isCoverPage = false,
     List<InlineImage>? inlineImages,
+    List<DocumentTable>? tables,
   })  : controller = TextEditingController(text: content),
         titleController = TextEditingController(text: title),
         contentFocus = FocusNode(),
         titleFocus = FocusNode(),
-        inlineImages = inlineImages ?? [];
+        inlineImages = inlineImages ?? [],
+        tables = tables ?? [];
 }
 
 class InlineImage {
   String url;
   double width;
   double height;
+  double x; // X position
+  double y; // Y position
 
   InlineImage({
     required this.url,
     this.width = 300,
     this.height = 200,
+    this.x = 0,
+    this.y = 0,
   });
 
   Map<String, dynamic> toJson() => {
         'url': url,
         'width': width,
         'height': height,
+        'x': x,
+        'y': y,
       };
 
   factory InlineImage.fromJson(Map<String, dynamic> json) => InlineImage(
         url: json['url'] as String,
         width: (json['width'] as num?)?.toDouble() ?? 300,
         height: (json['height'] as num?)?.toDouble() ?? 200,
+        x: (json['x'] as num?)?.toDouble() ?? 0,
+        y: (json['y'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class DocumentTable {
+  String type; // 'text' or 'price'
+  List<List<String>> cells;
+  double vatRate; // For price tables (default 15%)
+
+  DocumentTable({
+    this.type = 'text',
+    List<List<String>>? cells,
+    this.vatRate = 0.15,
+  }) : cells = cells ??
+            [
+              ['Header 1', 'Header 2', 'Header 3'],
+              ['Row 1 Col 1', 'Row 1 Col 2', 'Row 1 Col 3'],
+              ['Row 2 Col 1', 'Row 2 Col 2', 'Row 2 Col 3'],
+            ];
+
+  factory DocumentTable.priceTable({double vatRate = 0.15}) {
+    return DocumentTable(
+      type: 'price',
+      vatRate: vatRate,
+      cells: [
+        ['Item', 'Description', 'Quantity', 'Unit Price', 'Total'],
+        ['', '', '1', '0.00', '0.00'],
+        ['', '', '1', '0.00', '0.00'],
+      ],
+    );
+  }
+
+  void addRow() {
+    final newRow = List.generate(cells[0].length, (_) => '');
+    cells.add(newRow);
+  }
+
+  void addColumn() {
+    for (var row in cells) {
+      row.add('');
+    }
+  }
+
+  void removeRow(int index) {
+    if (cells.length > 2 && index > 0) {
+      // Keep at least header + 1 row
+      cells.removeAt(index);
+    }
+  }
+
+  void removeColumn(int index) {
+    if (cells[0].length > 2) {
+      // Keep at least 2 columns
+      for (var row in cells) {
+        if (index < row.length) {
+          row.removeAt(index);
+        }
+      }
+    }
+  }
+
+  double getSubtotal() {
+    if (type != 'price' || cells.length < 2) return 0.0;
+
+    double subtotal = 0.0;
+    for (var i = 1; i < cells.length; i++) {
+      final row = cells[i];
+      if (row.length >= 5) {
+        final total = double.tryParse(row[4]) ?? 0.0;
+        subtotal += total;
+      }
+    }
+    return subtotal;
+  }
+
+  double getVAT() {
+    return getSubtotal() * vatRate;
+  }
+
+  double getTotal() {
+    return getSubtotal() + getVAT();
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'cells': cells,
+        'vatRate': vatRate,
+      };
+
+  factory DocumentTable.fromJson(Map<String, dynamic> json) => DocumentTable(
+        type: json['type'] as String? ?? 'text',
+        cells: (json['cells'] as List<dynamic>?)
+            ?.map((row) =>
+                (row as List<dynamic>).map((cell) => cell.toString()).toList())
+            .toList(),
+        vatRate: (json['vatRate'] as num?)?.toDouble() ?? 0.15,
       );
 }
