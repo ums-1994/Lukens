@@ -13,11 +13,15 @@ import '../../api.dart';
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
   final String? proposalTitle;
+  final String? initialTitle;
+  final Map<String, dynamic>? aiGeneratedSections;
 
   const BlankDocumentEditorPage({
     super.key,
     this.proposalId,
     this.proposalTitle,
+    this.initialTitle,
+    this.aiGeneratedSections,
   });
 
   @override
@@ -82,12 +86,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void initState() {
     super.initState();
     _titleController = TextEditingController(
-      text: widget.proposalTitle ?? 'Untitled Document',
+      text: widget.initialTitle ?? widget.proposalTitle ?? 'Untitled Document',
     );
     _commentController = TextEditingController();
 
-    // Only create initial section for new documents
-    if (widget.proposalId == null) {
+    // Check if AI-generated sections are provided
+    if (widget.aiGeneratedSections != null &&
+        widget.aiGeneratedSections!.isNotEmpty) {
+      // Populate sections from AI-generated content
+      widget.aiGeneratedSections!.forEach((title, content) {
+        final section = _DocumentSection(
+          title: title,
+          content: content as String,
+        );
+        _sections.add(section);
+
+        // Add focus listeners
+        section.contentFocus.addListener(() => setState(() {}));
+        section.titleFocus.addListener(() => setState(() {}));
+
+        // Add auto-save listeners
+        section.controller.addListener(_onContentChanged);
+        section.titleController.addListener(_onContentChanged);
+      });
+
+      _selectedSectionIndex = 0; // Select first section
+    } else if (widget.proposalId == null) {
+      // Only create initial section for new documents without AI content
       final initialSection = _DocumentSection(
         title: 'Untitled Section',
         content: '',
@@ -104,7 +129,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Only create initial version for new documents
     if (widget.proposalId == null) {
-      _createVersion('Initial version');
+      _createVersion(widget.aiGeneratedSections != null
+          ? 'AI-generated initial version'
+          : 'Initial version');
     }
 
     // Get auth token and load existing data if editing
@@ -5289,7 +5316,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         color: const Color(0xFFE3F2FD),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                            color: const Color(0xFF00BCD4).withOpacity(0.3)),
+                            color:
+                                const Color(0xFF00BCD4).withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6086,7 +6114,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
-                          value: selectedSectionType,
+                          initialValue: selectedSectionType,
                           decoration: InputDecoration(
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),

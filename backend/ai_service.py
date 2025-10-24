@@ -19,6 +19,8 @@ load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "ZAR")  # Default to South African Rands
+DEFAULT_CURRENCY_SYMBOL = os.getenv("DEFAULT_CURRENCY_SYMBOL", "R")  # Default to R
 
 
 class AIService:
@@ -28,6 +30,8 @@ class AIService:
         self.api_key = OPENROUTER_API_KEY
         self.base_url = OPENROUTER_BASE_URL
         self.model = OPENROUTER_MODEL
+        self.currency = DEFAULT_CURRENCY  # Default: South African Rands
+        self.currency_symbol = DEFAULT_CURRENCY_SYMBOL  # Default: R
         
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY not found in environment variables")
@@ -36,6 +40,7 @@ class AIService:
         if self.api_key:
             print(f"✅ OpenRouter API Key loaded: {self.api_key[:10]}...{self.api_key[-4:]}")
             print(f"✅ Using model: {self.model}")
+            print(f"💰 Currency set to: {self.currency} ({self.currency_symbol})")
         else:
             print("❌ OpenRouter API Key is empty!")
     
@@ -154,20 +159,24 @@ Be thorough and flag even small deviations that could compound into larger risks
             "introduction": "Write an engaging introduction that sets the context and purpose of the proposal.",
             "solution_overview": "Describe the proposed solution and how it addresses the client's needs.",
             "timeline": "Create a detailed timeline with phases and milestones.",
-            "budget": "Present the budget breakdown in a clear and professional manner.",
+            "budget": f"Present the budget breakdown in a clear and professional manner. Use South African Rands (ZAR) with the {self.currency_symbol} symbol for all pricing.",
+            "pricing_budget": f"Create a detailed pricing breakdown. Use South African Rands (ZAR) with the {self.currency_symbol} symbol for all amounts. Include line items, subtotals, and total.",
             "team": "Describe the team members and their relevant expertise.",
             "conclusion": "Write a strong closing that reinforces value and encourages action."
         }
         
         section_prompt = section_prompts.get(section_type, "Generate professional content for this section.")
         
-        prompt = f"""You are writing a proposal section for Khonology.
+        prompt = f"""You are writing a proposal section for Khonology, a South African company.
 
 Section Type: {section_type}
 Task: {section_prompt}
 
 Context:
 {json.dumps(context, indent=2)}
+
+IMPORTANT: All monetary amounts must be in South African Rands (ZAR) using the {self.currency_symbol} symbol (e.g., {self.currency_symbol}50,000).
+Do NOT use dollars ($), euros (€), or any other currency.
 
 Write professional, clear, and compelling content. Use proper formatting with paragraphs and bullet points where appropriate.
 Keep it concise but comprehensive (200-400 words)."""
@@ -183,7 +192,7 @@ Keep it concise but comprehensive (200-400 words)."""
         """
         Generate a complete multi-section proposal
         """
-        prompt = f"""You are writing a complete business proposal for Khonology.
+        prompt = f"""You are writing a complete business proposal for Khonology, a South African company.
 
 Context:
 {json.dumps(context, indent=2)}
@@ -202,6 +211,9 @@ Generate a comprehensive proposal with the following sections:
 10. Assumptions & Dependencies
 11. Risks & Mitigation
 12. Terms & Conditions
+
+IMPORTANT: All monetary amounts MUST be in South African Rands (ZAR) using the {self.currency_symbol} symbol (e.g., {self.currency_symbol}150,000, {self.currency_symbol}2.5 million).
+Do NOT use dollars ($), euros (€), or any other currency.
 
 For each section, write professional, detailed content (150-300 words per section).
 Use proper formatting with headings, paragraphs, and bullet points.
@@ -237,11 +249,14 @@ Return a JSON object with section titles as keys and content as values:
         """
         Analyze and suggest improvements for existing content
         """
-        prompt = f"""You are an expert proposal editor. Review this content and suggest improvements.
+        prompt = f"""You are an expert proposal editor for Khonology, a South African company. Review this content and suggest improvements.
 
 Section Type: {section_type}
 Current Content:
 {content}
+
+IMPORTANT: If the content contains pricing/monetary amounts, ensure they are in South African Rands (ZAR) using the {self.currency_symbol} symbol.
+Convert any dollars ($), euros (€), or other currencies to Rands (e.g., ${self.currency_symbol}150,000).
 
 Analyze for:
 1. Clarity and readability
@@ -249,6 +264,7 @@ Analyze for:
 3. Completeness
 4. Grammar and style
 5. Persuasiveness
+6. Currency usage (must be ZAR/{self.currency_symbol})
 
 Provide a JSON response with:
 {{

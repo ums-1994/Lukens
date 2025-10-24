@@ -1510,6 +1510,9 @@ def get_version(username, proposal_id, version_number):
 @token_required
 def ai_generate_content(username):
     """Generate proposal content using AI"""
+    import time
+    start_time = time.time()
+    
     try:
         data = request.get_json()
         prompt = data.get('prompt', '')
@@ -1532,6 +1535,23 @@ def ai_generate_content(username):
         # Generate content
         generated_content = ai_service.generate_proposal_section(section_type, full_context)
         
+        # Track AI usage
+        response_time_ms = int((time.time() - start_time) * 1000)
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO ai_usage (username, endpoint, prompt_text, section_type, 
+                                         response_tokens, response_time_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (username, 'generate', prompt[:500], section_type, 
+                      len(generated_content.split()), response_time_ms))
+                conn.commit()
+                print(f"📊 AI usage tracked for {username}")
+        except Exception as track_error:
+            print(f"⚠️ Failed to track AI usage: {track_error}")
+        
         return {
             'content': generated_content,
             'section_type': section_type
@@ -1545,6 +1565,9 @@ def ai_generate_content(username):
 @token_required
 def ai_improve_content(username):
     """Improve existing content using AI"""
+    import time
+    start_time = time.time()
+    
     try:
         data = request.get_json()
         content = data.get('content', '')
@@ -1559,6 +1582,23 @@ def ai_improve_content(username):
         # Get improvement suggestions
         result = ai_service.improve_content(content, section_type)
         
+        # Track AI usage
+        response_time_ms = int((time.time() - start_time) * 1000)
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO ai_usage (username, endpoint, section_type, 
+                                         response_tokens, response_time_ms)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (username, 'improve', section_type, 
+                      len(result.get('improved_version', '').split()), response_time_ms))
+                conn.commit()
+                print(f"📊 AI improve tracked for {username}")
+        except Exception as track_error:
+            print(f"⚠️ Failed to track AI usage: {track_error}")
+        
         return result, 200
         
     except Exception as e:
@@ -1569,6 +1609,9 @@ def ai_improve_content(username):
 @token_required
 def ai_generate_full_proposal(username):
     """Generate a complete multi-section proposal"""
+    import time
+    start_time = time.time()
+    
     try:
         data = request.get_json()
         prompt = data.get('prompt', '')
@@ -1589,6 +1632,25 @@ def ai_generate_full_proposal(username):
         
         # Generate full proposal
         sections = ai_service.generate_full_proposal(full_context)
+        
+        # Track AI usage
+        response_time_ms = int((time.time() - start_time) * 1000)
+        total_tokens = sum(len(str(content).split()) for content in sections.values())
+        
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO ai_usage (username, endpoint, prompt_text, section_type, 
+                                         response_tokens, response_time_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (username, 'full_proposal', prompt[:500], 'full_proposal', 
+                      total_tokens, response_time_ms))
+                conn.commit()
+                print(f"📊 AI full proposal tracked for {username}")
+        except Exception as track_error:
+            print(f"⚠️ Failed to track AI usage: {track_error}")
         
         return {
             'sections': sections,
@@ -1632,6 +1694,153 @@ def ai_analyze_risks(username):
         
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")
+        return {'detail': str(e)}, 500
+
+# ============================================================
+# AI ANALYTICS ENDPOINTS
+# ============================================================
+
+@app.get("/ai/analytics/summary")
+@token_required
+def get_ai_analytics_summary(username):
+    """Get AI usage analytics summary"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Overall stats
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_requests,
+                    COUNT(DISTINCT username) as unique_users,
+                    AVG(response_time_ms) as avg_response_time,
+                    SUM(response_tokens) as total_tokens,
+                    COUNT(CASE WHEN was_accepted = TRUE THEN 1 END) as accepted_count,
+                    COUNT(CASE WHEN was_accepted = FALSE THEN 1 END) as rejected_count
+                FROM ai_usage
+                WHERE created_at >= NOW() - INTERVAL '30 days'
+            """)
+            overall_stats = cursor.fetchone()
+            
+            # By endpoint
+            cursor.execute("""
+                SELECT 
+                    endpoint,
+                    COUNT(*) as count,
+                    AVG(response_time_ms) as avg_response_time
+                FROM ai_usage
+                WHERE created_at >= NOW() - INTERVAL '30 days'
+                GROUP BY endpoint
+                ORDER BY count DESC
+            """)
+            by_endpoint = cursor.fetchall()
+            
+            # Daily usage trend
+            cursor.execute("""
+                SELECT 
+                    DATE(created_at) as date,
+                    COUNT(*) as requests
+                FROM ai_usage
+                WHERE created_at >= NOW() - INTERVAL '30 days'
+                GROUP BY DATE(created_at)
+                ORDER BY date DESC
+                LIMIT 30
+            """)
+            daily_trend = cursor.fetchall()
+            
+            return {
+                'overall': dict(overall_stats) if overall_stats else {},
+                'by_endpoint': [dict(row) for row in by_endpoint],
+                'daily_trend': [dict(row) for row in daily_trend]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error fetching AI analytics: {e}")
+        return {'detail': str(e)}, 500
+
+@app.get("/ai/analytics/user-stats")
+@token_required
+def get_user_ai_stats(username):
+    """Get current user's AI usage statistics"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_requests,
+                    COUNT(DISTINCT endpoint) as endpoints_used,
+                    COUNT(CASE WHEN was_accepted = TRUE THEN 1 END) as content_accepted,
+                    COUNT(CASE WHEN endpoint = 'full_proposal' THEN 1 END) as full_proposals_generated,
+                    AVG(response_time_ms) as avg_response_time,
+                    MAX(created_at) as last_used
+                FROM ai_usage
+                WHERE username = %s
+            """, (username,))
+            
+            stats = cursor.fetchone()
+            
+            # Recent activity
+            cursor.execute("""
+                SELECT 
+                    endpoint,
+                    section_type,
+                    response_time_ms,
+                    created_at
+                FROM ai_usage
+                WHERE username = %s
+                ORDER BY created_at DESC
+                LIMIT 10
+            """, (username,))
+            
+            recent_activity = cursor.fetchall()
+            
+            return {
+                'stats': dict(stats) if stats else {},
+                'recent_activity': [dict(row) for row in recent_activity]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error fetching user AI stats: {e}")
+        return {'detail': str(e)}, 500
+
+@app.post("/ai/feedback")
+@token_required
+def submit_ai_feedback(username):
+    """Submit feedback for AI-generated content"""
+    try:
+        data = request.get_json()
+        ai_usage_id = data.get('ai_usage_id')
+        rating = data.get('rating')  # 1-5
+        feedback_text = data.get('feedback_text', '')
+        was_edited = data.get('was_edited', False)
+        
+        if not ai_usage_id:
+            return {'detail': 'AI usage ID is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Update ai_usage was_accepted status
+            cursor.execute("""
+                UPDATE ai_usage 
+                SET was_accepted = TRUE 
+                WHERE id = %s
+            """, (ai_usage_id,))
+            
+            # Insert feedback
+            cursor.execute("""
+                INSERT INTO ai_content_feedback 
+                (ai_usage_id, rating, feedback_text, was_edited)
+                VALUES (%s, %s, %s, %s)
+            """, (ai_usage_id, rating, feedback_text, was_edited))
+            
+            conn.commit()
+            
+            return {'message': 'Feedback submitted successfully'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error submitting feedback: {e}")
         return {'detail': str(e)}, 500
 
 # Health check endpoint (no auth required)
