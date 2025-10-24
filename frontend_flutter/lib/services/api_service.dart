@@ -445,4 +445,112 @@ class ApiService {
       return [];
     }
   }
+
+  // AI Assistant Methods
+  static Future<Map<String, dynamic>?> generateAIContent({
+    required String token,
+    required String prompt,
+    Map<String, dynamic>? context,
+    String sectionType = 'general',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/generate'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'prompt': prompt,
+          'context': context ?? {},
+          'section_type': sectionType,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error generating AI content: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error generating AI content: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> improveContent({
+    required String token,
+    required String content,
+    String sectionType = 'general',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/improve'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'content': content,
+          'section_type': sectionType,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error improving content: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error improving content: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> analyzeRisks({
+    required String token,
+    required int proposalId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/analyze-risks'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'proposal_id': proposalId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print('Error analyzing risks: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error analyzing risks: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> generateFullProposal({
+    required String token,
+    required String prompt,
+    Map<String, dynamic>? context,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/generate-full-proposal'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'prompt': prompt,
+          'context': context ?? {},
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error generating full proposal: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error generating full proposal: $e');
+      return null;
+    }
+  }
 }

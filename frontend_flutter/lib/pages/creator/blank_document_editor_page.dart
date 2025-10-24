@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -11,11 +13,15 @@ import '../../api.dart';
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
   final String? proposalTitle;
+  final String? initialTitle;
+  final Map<String, dynamic>? aiGeneratedSections;
 
   const BlankDocumentEditorPage({
     super.key,
     this.proposalId,
     this.proposalTitle,
+    this.initialTitle,
+    this.aiGeneratedSections,
   });
 
   @override
@@ -34,6 +40,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       0; // Track which section is selected for content insertion
   String _selectedCurrency = 'Rand (ZAR)';
   List<String> _uploadedImages = [];
+  List<Map<String, dynamic>> _libraryImages = [];
+  bool _isLoadingLibraryImages = false;
   String _signatureSearchQuery = '';
   String _uploadTabSelected = 'this_document'; // 'this_document' or 'library'
   bool _showSectionsSidebar = false; // Toggle sections sidebar visibility
@@ -78,12 +86,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void initState() {
     super.initState();
     _titleController = TextEditingController(
-      text: widget.proposalTitle ?? 'Untitled Document',
+      text: widget.initialTitle ?? widget.proposalTitle ?? 'Untitled Document',
     );
     _commentController = TextEditingController();
 
-    // Only create initial section for new documents
-    if (widget.proposalId == null) {
+    // Check if AI-generated sections are provided
+    if (widget.aiGeneratedSections != null &&
+        widget.aiGeneratedSections!.isNotEmpty) {
+      // Populate sections from AI-generated content
+      widget.aiGeneratedSections!.forEach((title, content) {
+        final section = _DocumentSection(
+          title: title,
+          content: content as String,
+        );
+        _sections.add(section);
+
+        // Add focus listeners
+        section.contentFocus.addListener(() => setState(() {}));
+        section.titleFocus.addListener(() => setState(() {}));
+
+        // Add auto-save listeners
+        section.controller.addListener(_onContentChanged);
+        section.titleController.addListener(_onContentChanged);
+      });
+
+      _selectedSectionIndex = 0; // Select first section
+    } else if (widget.proposalId == null) {
+      // Only create initial section for new documents without AI content
       final initialSection = _DocumentSection(
         title: 'Untitled Section',
         content: '',
@@ -100,7 +129,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Only create initial version for new documents
     if (widget.proposalId == null) {
-      _createVersion('Initial version');
+      _createVersion(widget.aiGeneratedSections != null
+          ? 'AI-generated initial version'
+          : 'Initial version');
     }
 
     // Get auth token and load existing data if editing
@@ -140,8 +171,60 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           await _loadCommentsFromDatabase(proposalId);
         }
       }
+
+      // Load images from content library
+      _loadLibraryImages();
     } catch (e) {
       print('❌ Error initializing auth: $e');
+    }
+  }
+
+  Future<void> _loadLibraryImages() async {
+    if (_isLoadingLibraryImages) return;
+
+    setState(() => _isLoadingLibraryImages = true);
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) {
+        print('⚠️ No token available for loading library images');
+        return;
+      }
+
+      final response = await http.get(
+        Uri.parse('http://localhost:8000/content?category=Images'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> content = data is Map && data.containsKey('content')
+            ? data['content']
+            : (data is List ? data : []);
+
+        setState(() {
+          _libraryImages = content
+              .map((item) => {
+                    'id': item['id'],
+                    'label': item['label'] ?? 'Untitled',
+                    'content': item['content'] ?? '',
+                    'public_id': item['public_id'],
+                  })
+              .toList();
+          _isLoadingLibraryImages = false;
+        });
+
+        print('✅ Loaded ${_libraryImages.length} images from library');
+      } else {
+        print('⚠️ Failed to load library images: ${response.statusCode}');
+        setState(() => _isLoadingLibraryImages = false);
+      }
+    } catch (e) {
+      print('❌ Error loading library images: $e');
+      setState(() => _isLoadingLibraryImages = false);
     }
   }
 
@@ -191,6 +274,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 final newSection = _DocumentSection(
                   title: sectionData['title'] ?? 'Untitled Section',
                   content: sectionData['content'] ?? '',
+                  backgroundColor: sectionData['backgroundColor'] != null
+                      ? Color(sectionData['backgroundColor'] as int)
+                      : Colors.white,
+                  backgroundImageUrl:
+                      sectionData['backgroundImageUrl'] as String?,
+                  sectionType:
+                      sectionData['sectionType'] as String? ?? 'content',
+                  isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+                  inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
+                      ?.map((img) =>
+                          InlineImage.fromJson(img as Map<String, dynamic>))
+                      .toList(),
                 );
                 _sections.add(newSection);
 
@@ -723,6 +818,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           .map((section) => {
                 'title': section.titleController.text,
                 'content': section.controller.text,
+                'backgroundColor': section.backgroundColor.value,
+                'backgroundImageUrl': section.backgroundImageUrl,
+                'sectionType': section.sectionType,
+                'isCoverPage': section.isCoverPage,
+                'inlineImages':
+                    section.inlineImages.map((img) => img.toJson()).toList(),
               })
           .toList(),
       'metadata': {
@@ -959,6 +1060,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final newSection = _DocumentSection(
         title: sectionData['title'] ?? 'Untitled Section',
         content: sectionData['content'] ?? '',
+        backgroundColor: sectionData['backgroundColor'] != null
+            ? Color(sectionData['backgroundColor'] as int)
+            : Colors.white,
+        backgroundImageUrl: sectionData['backgroundImageUrl'] as String?,
+        sectionType: sectionData['sectionType'] as String? ?? 'content',
+        isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+        inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
+            ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
+            .toList(),
       );
       _sections.add(newSection);
     }
@@ -1076,7 +1186,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: isCurrentVersion
-                                    ? const Color(0xFF00BCD4).withOpacity(0.1)
+                                    ? const Color(0xFF00BCD4)
+                                        .withValues(alpha: 0.1)
                                     : Colors.white,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
@@ -1635,10 +1746,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   _currentPage == 'Dashboard'),
               _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
                   _currentPage == 'My Proposals'),
+              _buildNavItem('Templates', 'assets/images/content_library.png',
+                  _currentPage == 'Templates'),
               _buildNavItem(
                   'Content Library',
                   'assets/images/content_library.png',
                   _currentPage == 'Content Library'),
+              _buildNavItem('Collaboration', 'assets/images/collaborations.png',
+                  _currentPage == 'Collaboration'),
+              _buildNavItem(
+                  'Approvals Status',
+                  'assets/images/Time Allocation_Approval_Blue.png',
+                  _currentPage == 'Approvals Status'),
+              _buildNavItem(
+                  'Analytics (My Pipeline)',
+                  'assets/images/analytics.png',
+                  _currentPage == 'Analytics (My Pipeline)'),
               const SizedBox(height: 20),
               // Divider
               if (!_isSidebarCollapsed)
@@ -1780,8 +1903,40 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
+      case 'Templates':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Templates - Coming soon'),
+            backgroundColor: Color(0xFF00BCD4),
+          ),
+        );
+        break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content-library');
+        break;
+      case 'Collaboration':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Collaboration - Coming soon'),
+            backgroundColor: Color(0xFF00BCD4),
+          ),
+        );
+        break;
+      case 'Approvals Status':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Approvals Status - Coming soon'),
+            backgroundColor: Color(0xFF00BCD4),
+          ),
+        );
+        break;
+      case 'Analytics (My Pipeline)':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Analytics - Coming soon'),
+            backgroundColor: Color(0xFF00BCD4),
+          ),
+        );
         break;
       case 'Logout':
         Navigator.pushReplacementNamed(context, '/login');
@@ -1830,6 +1985,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemBuilder: (context, index) {
                 bool isSelected = _selectedSectionIndex == index;
+                final section = _sections[index];
                 return Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1863,17 +2019,53 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              _sections[index].title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: isSelected
-                                    ? const Color(0xFF00BCD4)
-                                    : const Color(0xFF1A1A1A),
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    section.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: isSelected
+                                          ? const Color(0xFF00BCD4)
+                                          : const Color(0xFF1A1A1A),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Section type badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: section.isCoverPage
+                                        ? const Color(0xFF00BCD4)
+                                            .withValues(alpha: 0.1)
+                                        : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    section.sectionType == 'cover'
+                                        ? 'Cover'
+                                        : section.sectionType == 'appendix'
+                                            ? 'Appendix'
+                                            : section.sectionType ==
+                                                    'references'
+                                                ? 'Refs'
+                                                : 'Page',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w500,
+                                      color: section.isCoverPage
+                                          ? const Color(0xFF00BCD4)
+                                          : Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -2052,33 +2244,51 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: _hasUnsavedChanges
-                    ? Colors.orange.withOpacity(0.1)
-                    : Colors.green.withOpacity(0.1),
+                color: _isSaving
+                    ? Colors.blue.withOpacity(0.1)
+                    : (_hasUnsavedChanges
+                        ? Colors.orange.withOpacity(0.1)
+                        : Colors.green.withOpacity(0.1)),
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
-                  color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                  color: _isSaving
+                      ? Colors.blue
+                      : (_hasUnsavedChanges ? Colors.orange : Colors.green),
                   width: 1,
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
-                    size: 14,
-                    color: _hasUnsavedChanges ? Colors.orange : Colors.green,
-                  ),
+                  if (_isSaving)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                      ),
+                    )
+                  else
+                    Icon(
+                      _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
+                      size: 14,
+                      color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                    ),
                   const SizedBox(width: 4),
                   Text(
-                    _hasUnsavedChanges
-                        ? 'Unsaved changes'
-                        : (_lastSaved == null ? 'Not Saved' : 'Saved'),
+                    _isSaving
+                        ? 'Saving...'
+                        : (_hasUnsavedChanges
+                            ? 'Unsaved changes'
+                            : (_lastSaved == null ? 'Not Saved' : 'Saved')),
                     style: TextStyle(
                       fontSize: 12,
-                      color: _hasUnsavedChanges
-                          ? Colors.orange[800]
-                          : Colors.green[800],
+                      color: _isSaving
+                          ? Colors.blue[800]
+                          : (_hasUnsavedChanges
+                              ? Colors.orange[800]
+                              : Colors.green[800]),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -2169,46 +2379,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             label: const Text('Preview'),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Colors.grey),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            onPressed: _isSaving ? null : _saveDocument,
-            icon: _isSaving
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.white,
-                      ),
-                    ),
-                  )
-                : const Icon(Icons.save, size: 16),
-            label: const Text('Save'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF27AE60),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Save & Close button
-          ElevatedButton.icon(
-            onPressed: _isSaving ? null : _saveAndClose,
-            icon: const Icon(Icons.check, size: 16),
-            label: const Text('Save & Close'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00BCD4),
-              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
@@ -2480,50 +2650,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           const SizedBox(width: 12),
           // Insert
           IconButton(
-            icon: const Icon(Icons.link),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text =
-                      currentText + '\n[Link Text](https://example.com)';
-                });
-              }
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Insert Link',
-          ),
-          IconButton(
             icon: const Icon(Icons.table_chart),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text = currentText +
-                      '\n\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| Data 1   | Data 2   | Data 3   |';
-                });
-              }
-            },
+            onPressed: () => _showTableTypeDialog(),
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'Insert Table',
           ),
           IconButton(
             icon: const Icon(Icons.auto_awesome),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('AI Assistant - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
+            onPressed: _showAIAssistantDialog,
             iconSize: 18,
             splashRadius: 20,
             tooltip: 'AI Assistant',
@@ -2728,69 +2863,471 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: section.titleFocus.hasFocus
-                              ? const Color(0xFF00BCD4)
-                              : Colors.grey[200]!,
-                          width: 1,
+              // Clean content area - text field for writing
+              TextField(
+                focusNode: section.contentFocus,
+                controller: section.controller,
+                maxLines: null,
+                minLines: 15,
+                style: _getContentTextStyle(),
+                textAlign: _getTextAlignment(),
+                textAlignVertical: TextAlignVertical.top,
+                decoration: const InputDecoration(
+                  hintText: 'Start writing your content here...',
+                  hintStyle: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFFBDC3C7),
+                  ),
+                  border: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.all(8),
+                ),
+              ),
+              // Display tables below text
+              ...section.tables.asMap().entries.map((entry) {
+                final tableIndex = entry.key;
+                final table = entry.value;
+                return _buildInteractiveTable(index, tableIndex, table);
+              }).toList(),
+              // Display images below tables
+              ...section.inlineImages.asMap().entries.map((entry) {
+                final imageIndex = entry.key;
+                final image = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Container(
+                    width: image.width,
+                    height: image.height,
+                    decoration: BoxDecoration(
+                      border:
+                          Border.all(color: const Color(0xFF00BCD4), width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(
+                            image.url,
+                            width: image.width,
+                            height: image.height,
+                            fit: BoxFit.cover,
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.title, size: 14, color: Colors.grey[600]),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: TextField(
-                              focusNode: section.titleFocus,
-                              controller: section.titleController,
-                              enabled: true,
-                              style: _getTitleTextStyle(),
-                              decoration: const InputDecoration(
-                                hintText: 'Section title...',
-                                hintStyle: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFFBDC3C7),
-                                ),
-                                border: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                contentPadding: EdgeInsets.zero,
-                                isDense: true,
+                        // Delete button
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Material(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _sections[index]
+                                      .inlineImages
+                                      .removeAt(imageIndex);
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(Icons.close,
+                                    size: 16, color: Colors.white),
                               ),
                             ),
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Build resizable inline image
+  Widget _buildResizableImage(
+      int sectionIndex, int imageIndex, InlineImage image) {
+    return Positioned(
+      left: image.x,
+      top: image.y,
+      child: GestureDetector(
+        // Drag to move the image
+        onPanUpdate: (details) {
+          setState(() {
+            image.x = (image.x + details.delta.dx).clamp(0.0, 700.0);
+            image.y = (image.y + details.delta.dy).clamp(0.0, 1000.0);
+          });
+        },
+        child: Container(
+          width: image.width,
+          height: image.height,
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF00BCD4), width: 2),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // The image itself
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  image.url,
+                  width: image.width,
+                  height: image.height,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.grey[200],
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.broken_image,
+                                size: 48, color: Colors.grey[400]),
+                            const SizedBox(height: 8),
+                            Text('Failed to load image',
+                                style: TextStyle(
+                                    color: Colors.grey[600], fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // Move indicator (top-left)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00BCD4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(Icons.drag_indicator,
+                      size: 16, color: Colors.white),
+                ),
+              ),
+              // Delete button (top-right)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Material(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _sections[sectionIndex]
+                            .inlineImages
+                            .removeAt(imageIndex);
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Image removed'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close, size: 16, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+              // Resize handle (bottom-right corner)
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      // Update width and height based on drag
+                      image.width =
+                          (image.width + details.delta.dx).clamp(100.0, 800.0);
+                      image.height =
+                          (image.height + details.delta.dy).clamp(100.0, 600.0);
+                    });
+                  },
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF00BCD4),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(4),
+                        bottomRight: Radius.circular(6),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.zoom_out_map,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Build interactive editable table
+  Widget _buildInteractiveTable(
+      int sectionIndex, int tableIndex, DocumentTable table) {
+    // Get currency symbol
+    String currencySymbol = '\$';
+    switch (_selectedCurrency) {
+      case 'ZAR':
+        currencySymbol = 'R';
+        break;
+      case 'EUR':
+        currencySymbol = '€';
+        break;
+      case 'GBP':
+        currencySymbol = '£';
+        break;
+      default:
+        currencySymbol = '\$';
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Table header with controls
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4).withOpacity(0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${table.type == 'price' ? 'Price' : 'Text'} Table',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline, size: 18),
+                      onPressed: () => setState(() => table.addRow()),
+                      tooltip: 'Add Row',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 8),
+                    // Disable add column for price tables (fixed structure)
+                    IconButton(
+                      icon: const Icon(Icons.view_column, size: 18),
+                      onPressed: table.type == 'price'
+                          ? null
+                          : () => setState(() => table.addColumn()),
+                      tooltip: table.type == 'price'
+                          ? 'Price tables have fixed columns'
+                          : 'Add Column',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline,
+                          size: 18, color: Colors.red),
+                      onPressed: () {
+                        setState(() {
+                          _sections[sectionIndex].tables.removeAt(tableIndex);
+                        });
+                      },
+                      tooltip: 'Delete Table',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Table content
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
+              border: TableBorder.all(color: Colors.grey[300]!),
+              columns: List.generate(
+                table.cells[0].length,
+                (colIndex) => DataColumn(
+                  label: Expanded(
+                    child: Text(
+                      table.cells[0][colIndex],
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+              rows: List.generate(
+                table.cells.length - 1,
+                (rowIndex) => DataRow(
+                  cells: List.generate(
+                    table.cells[rowIndex + 1].length,
+                    (colIndex) => DataCell(
+                      TextField(
+                        controller: TextEditingController(
+                          text: table.cells[rowIndex + 1][colIndex],
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            table.cells[rowIndex + 1][colIndex] = value;
+                            // Auto-calculate total for price tables
+                            if (table.type == 'price' && colIndex == 2 ||
+                                colIndex == 3) {
+                              final qty = double.tryParse(
+                                      table.cells[rowIndex + 1][2]) ??
+                                  0;
+                              final price = double.tryParse(
+                                      table.cells[rowIndex + 1][3]) ??
+                                  0;
+                              table.cells[rowIndex + 1][4] =
+                                  (qty * price).toStringAsFixed(2);
+                            }
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.all(8),
+                        ),
+                        style: const TextStyle(fontSize: 13),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  // Selection indicator
-                  if (isSelected)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF00BCD4),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'Selected',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+                ),
+              ),
+            ),
+          ),
+          // Price table footer
+          if (table.type == 'price') ...[
+            const Divider(height: 1),
+            Container(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text('Subtotal: ',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                          '$currencySymbol${table.getSubtotal().toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                          'VAT (${(table.vatRate * 100).toStringAsFixed(0)}%): ',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                          '$currencySymbol${table.getVAT().toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text('Total: ',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                          '$currencySymbol${table.getTotal().toStringAsFixed(2)}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Removed old buttons section - keeping only content
+  Widget _buildSectionContentOld(int index) {
+    final section = _sections[index];
+    final isHovered = _hoveredSectionIndex == index;
+    final isSelected = _selectedSectionIndex == index;
+
+    return MouseRegion(
+      onEnter: (_) {
+        setState(() => _hoveredSectionIndex = index);
+      },
+      onExit: (_) {
+        setState(() => _hoveredSectionIndex = -1);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.deferToChild,
+        onTap: () {
+          setState(() => _selectedSectionIndex = index);
+        },
+        child: Container(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isSelected ? const Color(0xFF00BCD4) : Colors.transparent,
+              width: isSelected ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(4),
+            color: isSelected
+                ? const Color(0xFF00BCD4).withValues(alpha: 0.03)
+                : Colors.transparent,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  // Removed section title from here
                   const SizedBox(width: 8),
                   // Hover buttons
                   if (isHovered) ...[
@@ -3141,20 +3678,124 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  void _addImageToSection(String imageName) {
+  void _addImageToSection(String imageUrl) async {
     if (_sections.isEmpty) return;
 
     final section = _sections[_selectedSectionIndex];
-    String newContent = section.controller.text;
-    newContent += '\n[Image: $imageName]';
+
+    // Ask user: Background or Inline Image?
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Insert Image'),
+        content: const Text('How would you like to use this image?'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.wallpaper),
+            label: const Text('Set as Background'),
+            onPressed: () => Navigator.pop(context, 'background'),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.image),
+            label: const Text('Insert as Image'),
+            onPressed: () => Navigator.pop(context, 'inline'),
+          ),
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null) return;
 
     setState(() {
-      section.controller.text = newContent;
+      if (choice == 'background') {
+        // Set as background image
+        section.backgroundImageUrl = imageUrl;
+        section.backgroundColor = Colors.white;
+      } else if (choice == 'inline') {
+        // Add as inline image
+        section.inlineImages.add(InlineImage(url: imageUrl));
+      }
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Image "$imageName" added to "${section.title}"'),
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    choice == 'background'
+                        ? 'Background image set!'
+                        : 'Image inserted!',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    choice == 'background'
+                        ? 'Image set as background for "${section.title}"'
+                        : 'You can resize the image by dragging the corner handle',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF27AE60),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showTableTypeDialog() async {
+    final tableType = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Insert Table'),
+        content: const Text('What type of table would you like to insert?'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.table_chart),
+            label: const Text('Text Table'),
+            onPressed: () => Navigator.pop(context, 'text'),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.attach_money),
+            label: const Text('Price Table'),
+            onPressed: () => Navigator.pop(context, 'price'),
+          ),
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+
+    if (tableType == null || _sections.isEmpty) return;
+
+    setState(() {
+      final section = _sections[_selectedSectionIndex];
+      if (tableType == 'price') {
+        section.tables.add(DocumentTable.priceTable());
+      } else {
+        section.tables.add(DocumentTable());
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content:
+            Text('${tableType == 'price' ? 'Price' : 'Text'} table inserted'),
         backgroundColor: const Color(0xFF27AE60),
         duration: const Duration(seconds: 2),
       ),
@@ -3944,41 +4585,79 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         const SizedBox(height: 20),
         // Show upload for "This document" tab or library for "Your library" tab
         if (_uploadTabSelected == 'this_document') ...[
-          // Upload button
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                _addSampleImage();
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  border: Border.all(
-                      color: Colors.grey[300]!, style: BorderStyle.solid),
+          // Drag & Drop Upload Area
+          DragTarget<Object>(
+            onWillAcceptWithDetails: (details) => true,
+            onAcceptWithDetails: (details) {
+              _handleFileDrop(details.data);
+            },
+            builder: (context, candidateData, rejectedData) {
+              final isDragging = candidateData.isNotEmpty;
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    _addSampleImage();
+                  },
                   borderRadius: BorderRadius.circular(8),
-                  color: Colors.grey[50],
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.cloud_upload_outlined,
-                        size: 32, color: Colors.grey[600]),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Click to upload images',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey[600],
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isDragging
+                            ? const Color(0xFF00BCD4)
+                            : Colors.grey[300]!,
+                        width: isDragging ? 2 : 1,
+                        style: BorderStyle.solid,
                       ),
+                      borderRadius: BorderRadius.circular(8),
+                      color: isDragging
+                          ? const Color(0xFF00BCD4).withValues(alpha: 0.05)
+                          : Colors.grey[50],
                     ),
-                  ],
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isDragging
+                              ? Icons.file_download
+                              : Icons.cloud_upload_outlined,
+                          size: 32,
+                          color: isDragging
+                              ? const Color(0xFF00BCD4)
+                              : Colors.grey[600],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          isDragging
+                              ? 'Drop images here'
+                              : 'Click to upload from computer',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: isDragging
+                                ? const Color(0xFF00BCD4)
+                                : Colors.grey[600],
+                          ),
+                        ),
+                        if (!isDragging)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Supports JPG, PNG, WebP, GIF',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
           const SizedBox(height: 20),
           // Images list or empty state
@@ -4016,161 +4695,296 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 _uploadedImages.length,
                 (index) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[200]!),
-                      borderRadius: BorderRadius.circular(6),
-                      color: Colors.grey[50],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 50,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Icon(Icons.image, color: Colors.grey),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _uploadedImages[index],
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFF1A1A1A),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Click to insert into document',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        PopupMenuButton(
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              onTap: () {
-                                _addImageToSection(_uploadedImages[index]);
-                              },
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.add, size: 16),
-                                  SizedBox(width: 8),
-                                  Text('Insert'),
-                                ],
-                              ),
+                  child: InkWell(
+                    onTap: () {
+                      _addImageToSection(_uploadedImages[index]);
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[200]!),
+                        borderRadius: BorderRadius.circular(6),
+                        color: Colors.grey[50],
+                      ),
+                      child: Row(
+                        children: [
+                          // Actual image thumbnail
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(4),
+                              image: _uploadedImages[index].isNotEmpty
+                                  ? DecorationImage(
+                                      image:
+                                          NetworkImage(_uploadedImages[index]),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
                             ),
-                            PopupMenuItem(
-                              onTap: () {
-                                setState(() {
-                                  _uploadedImages.removeAt(index);
-                                });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Image deleted'),
-                                    backgroundColor: Colors.red,
+                            child: _uploadedImages[index].isEmpty
+                                ? const Icon(Icons.image,
+                                    color: Colors.grey, size: 30)
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Image ${index + 1}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF1A1A1A),
                                   ),
-                                );
-                              },
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.delete, size: 16),
-                                  SizedBox(width: 8),
-                                  Text('Delete'),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Click to insert',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                          child: Icon(Icons.more_vert,
-                              size: 18, color: Colors.grey[600]),
-                        ),
-                      ],
+                          ),
+                          Icon(Icons.add_circle_outline,
+                              size: 20, color: Colors.green[600]),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-        ] else ...[
-          // Show library content
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: Column(
-                children: [
-                  Icon(Icons.folder_open, size: 48, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Content Library',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF1A1A1A),
+        ] else if (_uploadTabSelected == 'library') ...[
+          // Library images
+          if (_isLoadingLibraryImages)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else if (_libraryImages.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.image, size: 48, color: Colors.grey[400]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No Images in Library',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Browse and manage your content library',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _loadLibraryImages,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Refresh'),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Opening Content Library...'),
-                          backgroundColor: Color(0xFF1A3A52),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
+                  ],
+                ),
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: List.generate(
+                _libraryImages.length,
+                (index) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    onTap: () {
+                      _addImageToSection(_libraryImages[index]['content']);
                     },
-                    icon: const Icon(Icons.library_books),
-                    label: const Text('Open Content Library'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1A3A52),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[200]!),
                         borderRadius: BorderRadius.circular(6),
+                        color: Colors.grey[50],
+                      ),
+                      child: Row(
+                        children: [
+                          // Image thumbnail
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(4),
+                              image: _libraryImages[index]['content'] != null &&
+                                      _libraryImages[index]['content']
+                                          .toString()
+                                          .isNotEmpty
+                                  ? DecorationImage(
+                                      image: NetworkImage(
+                                          _libraryImages[index]['content']),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
+                            ),
+                            child: _libraryImages[index]['content'] == null ||
+                                    _libraryImages[index]['content']
+                                        .toString()
+                                        .isEmpty
+                                ? const Icon(Icons.image,
+                                    color: Colors.grey, size: 30)
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _libraryImages[index]['label'] ?? 'Untitled',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF1A1A1A),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Click to insert',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.add_circle_outline,
+                              size: 20, color: Colors.green[600]),
+                        ],
                       ),
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
         ],
       ],
     );
   }
 
-  void _addSampleImage() {
-    final newImageName = 'image_${DateTime.now().millisecond}.jpg';
+  Future<void> _addSampleImage() async {
+    try {
+      // Pick image file from computer
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true, // Important for web
+      );
+
+      if (result == null || result.files.isEmpty) {
+        // User cancelled the picker
+        return;
+      }
+
+      final file = result.files.first;
+
+      // Show uploading indicator
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+              ),
+              SizedBox(width: 12),
+              Text('Uploading image...'),
+            ],
+          ),
+          backgroundColor: Color(0xFF00BCD4),
+          duration: Duration(seconds: 30),
+        ),
+      );
+
+      // Upload to Cloudinary
+      final appState = Provider.of<AppState>(context, listen: false);
+      Map<String, dynamic>? uploadResult;
+
+      if (file.bytes != null) {
+        // For web, use bytes
+        uploadResult = await appState.uploadImageToCloudinary(
+          '', // Empty path for web
+          fileBytes: file.bytes!,
+          fileName: file.name,
+        );
+      } else {
+        throw Exception('Could not read file data');
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+
+      if (uploadResult != null && uploadResult['url'] != null) {
+        final imageUrl = uploadResult['url'] as String;
+        setState(() {
+          _uploadedImages.add(imageUrl);
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${file.name} uploaded successfully!'),
+            backgroundColor: const Color(0xFF27AE60),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        throw Exception('Failed to upload image');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _handleFileDrop(Object data) {
+    // Handle file drop - for now, we'll simulate adding an image
+    // In a real implementation, you would process the dropped file
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final imageUrl =
+        'https://via.placeholder.com/300x200?text=Dropped+Image+$timestamp';
+
     setState(() {
-      _uploadedImages.add(newImageName);
+      _uploadedImages.add(imageUrl);
     });
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Image "$newImageName" uploaded'),
-        backgroundColor: const Color(0xFF27AE60),
-        duration: const Duration(seconds: 2),
+      const SnackBar(
+        content: Text('Image dropped successfully'),
+        backgroundColor: Color(0xFF27AE60),
+        duration: Duration(seconds: 2),
       ),
     );
   }
@@ -4502,7 +5316,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         color: const Color(0xFFE3F2FD),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                            color: const Color(0xFF00BCD4).withOpacity(0.3)),
+                            color:
+                                const Color(0xFF00BCD4).withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5058,6 +5873,668 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  void _showAIAssistantDialog() {
+    final promptController = TextEditingController();
+    String selectedAction =
+        'generate'; // 'generate', 'improve', or 'full_proposal'
+    String selectedSectionType = 'general';
+    bool isGenerating = false;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              child: SizedBox(
+                width: 600,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF9C27B0).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.auto_awesome,
+                              color: Color(0xFF9C27B0),
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'AI Assistant',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Current section indicator
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE3F2FD),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF2196F3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.description,
+                                color: Color(0xFF2196F3), size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Writing to: Page ${_selectedSectionIndex + 1} - ${_sections[_selectedSectionIndex].titleController.text.isEmpty ? "Untitled Section" : _sections[_selectedSectionIndex].titleController.text}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF2196F3),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Action selector
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedAction = 'generate';
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: selectedAction == 'generate'
+                                      ? const Color(0xFF9C27B0)
+                                      : Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: selectedAction == 'generate'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[300]!,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.create,
+                                      size: 22,
+                                      color: selectedAction == 'generate'
+                                          ? Colors.white
+                                          : Colors.grey[700],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Section',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: selectedAction == 'generate'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedAction = 'full_proposal';
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: selectedAction == 'full_proposal'
+                                      ? const Color(0xFF9C27B0)
+                                      : Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: selectedAction == 'full_proposal'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[300]!,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.description,
+                                      size: 22,
+                                      color: selectedAction == 'full_proposal'
+                                          ? Colors.white
+                                          : Colors.grey[700],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Full Proposal',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: selectedAction == 'full_proposal'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedAction = 'improve';
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: selectedAction == 'improve'
+                                      ? const Color(0xFF9C27B0)
+                                      : Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: selectedAction == 'improve'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[300]!,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.auto_fix_high,
+                                      size: 22,
+                                      color: selectedAction == 'improve'
+                                          ? Colors.white
+                                          : Colors.grey[700],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Improve',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: selectedAction == 'improve'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Section type selector (only for single section generation)
+                      if (selectedAction == 'generate') ...[
+                        Text(
+                          'Section Type',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          initialValue: selectedSectionType,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
+                          items: [
+                            'general',
+                            'executive_summary',
+                            'introduction',
+                            'scope_deliverables',
+                            'solution_overview',
+                            'delivery_approach',
+                            'timeline',
+                            'budget',
+                            'team',
+                            'assumptions',
+                            'risks',
+                            'company_profile',
+                            'conclusion',
+                          ].map((type) {
+                            return DropdownMenuItem(
+                              value: type,
+                              child: Text(
+                                type
+                                    .split('_')
+                                    .map((word) =>
+                                        word[0].toUpperCase() +
+                                        word.substring(1))
+                                    .join(' '),
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedSectionType = value!;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Prompt input
+                      Text(
+                        selectedAction == 'generate'
+                            ? 'What would you like to write?'
+                            : selectedAction == 'full_proposal'
+                                ? 'Describe your proposal requirements'
+                                : 'Current section content will be improved',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: promptController,
+                        maxLines: selectedAction == 'full_proposal' ? 6 : 4,
+                        decoration: InputDecoration(
+                          hintText: selectedAction == 'generate'
+                              ? 'E.g., "Write an executive summary about implementing a new CRM system for a retail company"'
+                              : selectedAction == 'full_proposal'
+                                  ? 'E.g., "Create a proposal for implementing a cloud-based CRM system for a retail company with 50 employees, including data migration, training, and 6-month support"'
+                                  : 'Optional: Add instructions for improvement',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: const EdgeInsets.all(12),
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Action buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: isGenerating
+                                ? null
+                                : () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: isGenerating
+                                ? null
+                                : () async {
+                                    if ((selectedAction == 'generate' ||
+                                            selectedAction ==
+                                                'full_proposal') &&
+                                        promptController.text.isEmpty) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Please describe what you want to write'),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    setDialogState(() {
+                                      isGenerating = true;
+                                    });
+
+                                    try {
+                                      final token = await _getAuthToken();
+                                      if (token == null) {
+                                        throw Exception(
+                                            'Not authenticated. Please log in.');
+                                      }
+
+                                      if (selectedAction == 'generate') {
+                                        // Generate new content
+                                        final result =
+                                            await ApiService.generateAIContent(
+                                          token: token,
+                                          prompt: promptController.text,
+                                          context: {
+                                            'document_title':
+                                                _titleController.text,
+                                            'current_section':
+                                                _selectedSectionIndex,
+                                          },
+                                          sectionType: selectedSectionType,
+                                        );
+
+                                        if (result != null &&
+                                            result['content'] != null) {
+                                          if (mounted) {
+                                            Navigator.pop(context);
+                                          }
+
+                                          // Insert into current section
+                                          if (_selectedSectionIndex <
+                                              _sections.length) {
+                                            setState(() {
+                                              final section = _sections[
+                                                  _selectedSectionIndex];
+                                              if (section
+                                                  .controller.text.isEmpty) {
+                                                section.controller.text =
+                                                    result['content'];
+                                              } else {
+                                                section.controller.text +=
+                                                    '\n\n${result['content']}';
+                                              }
+                                            });
+                                          }
+
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    Icon(Icons.check_circle,
+                                                        color: Colors.white),
+                                                    SizedBox(width: 8),
+                                                    Text(
+                                                        'AI content generated successfully!'),
+                                                  ],
+                                                ),
+                                                backgroundColor: Colors.green,
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          throw Exception(
+                                              'Failed to generate content');
+                                        }
+                                      } else if (selectedAction ==
+                                          'full_proposal') {
+                                        // Generate full multi-section proposal
+                                        final result = await ApiService
+                                            .generateFullProposal(
+                                          token: token,
+                                          prompt: promptController.text,
+                                          context: {
+                                            'document_title':
+                                                _titleController.text,
+                                          },
+                                        );
+
+                                        if (result != null &&
+                                            result['sections'] != null) {
+                                          if (mounted) {
+                                            Navigator.pop(context);
+                                          }
+
+                                          // Clear existing sections and create new ones
+                                          final generatedSections =
+                                              result['sections']
+                                                  as Map<String, dynamic>;
+
+                                          setState(() {
+                                            // Dispose existing sections
+                                            for (var section in _sections) {
+                                              section.controller.dispose();
+                                              section.titleController.dispose();
+                                              section.contentFocus.dispose();
+                                              section.titleFocus.dispose();
+                                            }
+                                            _sections.clear();
+
+                                            // Create new sections from AI response
+                                            generatedSections
+                                                .forEach((title, content) {
+                                              final newSection =
+                                                  _DocumentSection(
+                                                title: title,
+                                                content: content as String,
+                                              );
+                                              _sections.add(newSection);
+
+                                              // Add listeners
+                                              newSection.controller.addListener(
+                                                  _onContentChanged);
+                                              newSection.titleController
+                                                  .addListener(
+                                                      _onContentChanged);
+                                              newSection.contentFocus
+                                                  .addListener(
+                                                      () => setState(() {}));
+                                              newSection.titleFocus.addListener(
+                                                  () => setState(() {}));
+                                            });
+
+                                            _selectedSectionIndex = 0;
+                                          });
+
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    const Icon(
+                                                        Icons.check_circle,
+                                                        color: Colors.white),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                          'Full proposal generated with ${generatedSections.length} sections!'),
+                                                    ),
+                                                  ],
+                                                ),
+                                                backgroundColor: Colors.green,
+                                                duration:
+                                                    const Duration(seconds: 3),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          throw Exception(
+                                              'Failed to generate full proposal');
+                                        }
+                                      } else {
+                                        // Improve existing content
+                                        if (_selectedSectionIndex >=
+                                            _sections.length) {
+                                          throw Exception(
+                                              'No section selected');
+                                        }
+
+                                        final currentContent =
+                                            _sections[_selectedSectionIndex]
+                                                .controller
+                                                .text;
+                                        if (currentContent.isEmpty) {
+                                          throw Exception(
+                                              'Current section is empty. Nothing to improve.');
+                                        }
+
+                                        final result =
+                                            await ApiService.improveContent(
+                                          token: token,
+                                          content: currentContent,
+                                          sectionType: selectedSectionType,
+                                        );
+
+                                        if (result != null &&
+                                            result['improved_version'] !=
+                                                null) {
+                                          if (mounted) {
+                                            Navigator.pop(context);
+                                          }
+
+                                          // Replace with improved content
+                                          setState(() {
+                                            _sections[_selectedSectionIndex]
+                                                    .controller
+                                                    .text =
+                                                result['improved_version'];
+                                          });
+
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Row(
+                                                      children: [
+                                                        Icon(Icons.check_circle,
+                                                            color:
+                                                                Colors.white),
+                                                        SizedBox(width: 8),
+                                                        Text(
+                                                            'Content improved!'),
+                                                      ],
+                                                    ),
+                                                    if (result['summary'] !=
+                                                        null)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .only(top: 4),
+                                                        child: Text(
+                                                          result['summary'],
+                                                          style:
+                                                              const TextStyle(
+                                                                  fontSize: 12),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                                backgroundColor: Colors.green,
+                                                duration:
+                                                    const Duration(seconds: 4),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          throw Exception(
+                                              'Failed to improve content');
+                                        }
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        Navigator.pop(context);
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Row(
+                                              children: [
+                                                const Icon(Icons.error,
+                                                    color: Colors.white),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                      'Error: ${e.toString()}'),
+                                                ),
+                                              ],
+                                            ),
+                                            backgroundColor: Colors.red,
+                                            duration:
+                                                const Duration(seconds: 4),
+                                          ),
+                                        );
+                                      }
+                                    } finally {
+                                      if (mounted) {
+                                        setDialogState(() {
+                                          isGenerating = false;
+                                        });
+                                      }
+                                    }
+                                  },
+                            icon: isGenerating
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                    ),
+                                  )
+                                : const Icon(Icons.auto_awesome, size: 18),
+                            label: Text(isGenerating
+                                ? 'Generating...'
+                                : (selectedAction == 'generate'
+                                    ? 'Generate'
+                                    : selectedAction == 'full_proposal'
+                                        ? 'Generate Proposal'
+                                        : 'Improve')),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF9C27B0),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showCollaborationDialog() {
     final emailController = TextEditingController();
 
@@ -5329,14 +6806,151 @@ class _DocumentSection {
   final FocusNode titleFocus;
   Color backgroundColor;
   String? backgroundImageUrl;
+  String sectionType; // 'cover', 'content', 'appendix', etc.
+  bool isCoverPage;
+  List<InlineImage> inlineImages; // Inline content images (not backgrounds)
+  List<DocumentTable> tables; // Tables in this section
 
   _DocumentSection({
     required this.title,
     required this.content,
     this.backgroundColor = Colors.white,
     this.backgroundImageUrl,
+    this.sectionType = 'content',
+    this.isCoverPage = false,
+    List<InlineImage>? inlineImages,
+    List<DocumentTable>? tables,
   })  : controller = TextEditingController(text: content),
         titleController = TextEditingController(text: title),
         contentFocus = FocusNode(),
-        titleFocus = FocusNode();
+        titleFocus = FocusNode(),
+        inlineImages = inlineImages ?? [],
+        tables = tables ?? [];
+}
+
+class InlineImage {
+  String url;
+  double width;
+  double height;
+  double x; // X position
+  double y; // Y position
+
+  InlineImage({
+    required this.url,
+    this.width = 300,
+    this.height = 200,
+    this.x = 0,
+    this.y = 0,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'url': url,
+        'width': width,
+        'height': height,
+        'x': x,
+        'y': y,
+      };
+
+  factory InlineImage.fromJson(Map<String, dynamic> json) => InlineImage(
+        url: json['url'] as String,
+        width: (json['width'] as num?)?.toDouble() ?? 300,
+        height: (json['height'] as num?)?.toDouble() ?? 200,
+        x: (json['x'] as num?)?.toDouble() ?? 0,
+        y: (json['y'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class DocumentTable {
+  String type; // 'text' or 'price'
+  List<List<String>> cells;
+  double vatRate; // For price tables (default 15%)
+
+  DocumentTable({
+    this.type = 'text',
+    List<List<String>>? cells,
+    this.vatRate = 0.15,
+  }) : cells = cells ??
+            [
+              ['Header 1', 'Header 2', 'Header 3'],
+              ['Row 1 Col 1', 'Row 1 Col 2', 'Row 1 Col 3'],
+              ['Row 2 Col 1', 'Row 2 Col 2', 'Row 2 Col 3'],
+            ];
+
+  factory DocumentTable.priceTable({double vatRate = 0.15}) {
+    return DocumentTable(
+      type: 'price',
+      vatRate: vatRate,
+      cells: [
+        ['Item', 'Description', 'Quantity', 'Unit Price', 'Total'],
+        ['', '', '1', '0.00', '0.00'],
+        ['', '', '1', '0.00', '0.00'],
+      ],
+    );
+  }
+
+  void addRow() {
+    final newRow = List.generate(cells[0].length, (_) => '');
+    cells.add(newRow);
+  }
+
+  void addColumn() {
+    for (var row in cells) {
+      row.add('');
+    }
+  }
+
+  void removeRow(int index) {
+    if (cells.length > 2 && index > 0) {
+      // Keep at least header + 1 row
+      cells.removeAt(index);
+    }
+  }
+
+  void removeColumn(int index) {
+    if (cells[0].length > 2) {
+      // Keep at least 2 columns
+      for (var row in cells) {
+        if (index < row.length) {
+          row.removeAt(index);
+        }
+      }
+    }
+  }
+
+  double getSubtotal() {
+    if (type != 'price' || cells.length < 2) return 0.0;
+
+    double subtotal = 0.0;
+    for (var i = 1; i < cells.length; i++) {
+      final row = cells[i];
+      if (row.length >= 5) {
+        final total = double.tryParse(row[4]) ?? 0.0;
+        subtotal += total;
+      }
+    }
+    return subtotal;
+  }
+
+  double getVAT() {
+    return getSubtotal() * vatRate;
+  }
+
+  double getTotal() {
+    return getSubtotal() + getVAT();
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'cells': cells,
+        'vatRate': vatRate,
+      };
+
+  factory DocumentTable.fromJson(Map<String, dynamic> json) => DocumentTable(
+        type: json['type'] as String? ?? 'text',
+        cells: (json['cells'] as List<dynamic>?)
+            ?.map((row) =>
+                (row as List<dynamic>).map((cell) => cell.toString()).toList())
+            .toList(),
+        vatRate: (json['vatRate'] as num?)?.toDouble() ?? 0.15,
+      );
 }
