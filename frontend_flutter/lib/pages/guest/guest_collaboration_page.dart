@@ -629,7 +629,10 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
   }
 
   Widget _buildCommentItem(Map<String, dynamic> comment) {
-    final commenterName = comment['created_by']?.toString() ?? 'Unknown';
+    // Use created_by_name if available, fall back to created_by_email, then 'Unknown'
+    final commenterName = comment['created_by_name']?.toString() ??
+        comment['created_by_email']?.toString() ??
+        'User #${comment['created_by']?.toString() ?? 'Unknown'}';
     final commentText = comment['comment_text']?.toString() ?? '';
     final timestamp = comment['created_at']?.toString() ?? '';
 

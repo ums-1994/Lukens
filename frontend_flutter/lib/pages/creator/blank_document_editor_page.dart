@@ -373,7 +373,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _loadCommentsFromDatabase(int proposalId) async {
     try {
       final token = await _getAuthToken();
-      if (token == null) return;
+      if (token == null) {
+        print('❌ No auth token available for loading comments');
+        return;
+      }
 
       print('🔄 Loading comments for proposal $proposalId...');
       final comments = await ApiService.getComments(
@@ -381,23 +384,28 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         proposalId: proposalId,
       );
 
-      if (comments.isNotEmpty) {
-        setState(() {
-          _comments.clear();
-          for (var comment in comments) {
-            _comments.add({
-              'id': comment['id'],
-              'commenter_name': comment['created_by'],
-              'comment_text': comment['comment_text'],
-              'section_index': comment['section_index'],
-              'highlighted_text': comment['highlighted_text'],
-              'timestamp': comment['created_at'],
-              'status': comment['status'] ?? 'open',
-            });
-          }
-        });
-        print('✅ Loaded ${comments.length} comments');
-      }
+      print('📦 Received ${comments.length} comments from API');
+
+      // Always update state, even if empty (to clear old comments)
+      setState(() {
+        _comments.clear();
+        for (var comment in comments) {
+          print(
+              '📝 Comment: ${comment['created_by_name'] ?? comment['created_by_email']} - ${comment['comment_text']}');
+          _comments.add({
+            'id': comment['id'],
+            'commenter_name': comment['created_by_name'] ??
+                comment['created_by_email'] ??
+                'User #${comment['created_by']}',
+            'comment_text': comment['comment_text'],
+            'section_index': comment['section_index'],
+            'highlighted_text': comment['highlighted_text'],
+            'timestamp': comment['created_at'],
+            'status': comment['status'] ?? 'open',
+          });
+        }
+      });
+      print('✅ Loaded ${comments.length} comments');
     } catch (e) {
       print('⚠️ Error loading comments: $e');
     }

@@ -1323,48 +1323,62 @@ def get_client_dashboard_stats(username):
         return {'detail': str(e)}, 500
 
 @app.post("/api/comments/document/<int:proposal_id>")
-def create_comment(proposal_id: int):
+@token_required
+def create_comment(username, proposal_id):
     """Create a new comment on a document"""
     try:
         data = request.get_json()
+        comment_text = data.get('comment_text')
+        section_index = data.get('section_index')
+        highlighted_text = data.get('highlighted_text')
         
-        with _pg_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """INSERT INTO document_comments 
-                       (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
-                       VALUES (%s, %s, %s, %s, %s, %s)
-                       RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                                 section_index, highlighted_text, status, updated_at""",
-                    (
-                        proposal_id,
-                        data['comment_text'],
-                        data['created_by'],
-                        data.get('section_index'),
-                        data.get('highlighted_text'),
-                        'open'
-                    )
-                )
-                result = cur.fetchone()
-                conn.commit()
-                
-                return {
-                    "id": result[0],
-                    "proposal_id": result[1],
-                    "comment_text": result[2],
-                    "created_by": result[3],
-                    "created_at": result[4].isoformat() if result[4] else None,
-                    "section_index": result[5],
-                    "highlighted_text": result[6],
-                    "status": result[7],
-                    "updated_at": result[8].isoformat() if result[8] else None,
-                    "resolved_by": None,
-                    "resolved_at": None
-                }
-    except HTTPException:
-        raise
+        if not comment_text:
+            return {'detail': 'Comment text is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user ID
+            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user['id']
+            
+            # Create comment
+            cursor.execute("""
+                INSERT INTO document_comments 
+                (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, proposal_id, comment_text, created_by, created_at, 
+                          section_index, highlighted_text, status, updated_at
+            """, (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open'))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'id': result['id'],
+                'proposal_id': result['proposal_id'],
+                'comment_text': result['comment_text'],
+                'created_by': result['created_by'],
+                'created_by_email': user['email'],
+                'created_by_name': user['full_name'],
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+                'section_index': result['section_index'],
+                'highlighted_text': result['highlighted_text'],
+                'status': result['status'],
+                'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+                'resolved_by': None,
+                'resolved_at': None
+            }, 201
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Error creating comment: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 @app.get("/api/comments/proposal/{proposal_id}")
 def get_proposal_comments(proposal_id: int):
@@ -1373,11 +1387,19 @@ def get_proposal_comments(proposal_id: int):
         with _pg_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
-                    """SELECT id, proposal_id, comment_text, created_by, created_at,
-                              section_index, highlighted_text, status, updated_at, resolved_by, resolved_at
-                       FROM document_comments
-                       WHERE proposal_id = %s
-                       ORDER BY created_at DESC""",
+                    """SELECT 
+                           dc.id, dc.proposal_id, dc.comment_text, dc.created_by, dc.created_at,
+                           dc.section_index, dc.highlighted_text, dc.status, dc.updated_at, 
+                           dc.resolved_by, dc.resolved_at,
+                           u.email as created_by_email,
+                           u.full_name as created_by_name,
+                           r.email as resolved_by_email,
+                           r.full_name as resolved_by_name
+                       FROM document_comments dc
+                       LEFT JOIN users u ON dc.created_by = u.id
+                       LEFT JOIN users r ON dc.resolved_by = r.id
+                       WHERE dc.proposal_id = %s
+                       ORDER BY dc.created_at DESC""",
                     (proposal_id,)
                 )
                 rows = cur.fetchall()
@@ -1390,12 +1412,16 @@ def get_proposal_comments(proposal_id: int):
                         "proposal_id": row["proposal_id"],
                         "comment_text": row["comment_text"],
                         "created_by": row["created_by"],
+                        "created_by_email": row["created_by_email"],
+                        "created_by_name": row["created_by_name"],
                         "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                         "section_index": row["section_index"],
                         "highlighted_text": row["highlighted_text"],
                         "status": row["status"],
                         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
                         "resolved_by": row["resolved_by"],
+                        "resolved_by_email": row["resolved_by_email"],
+                        "resolved_by_name": row["resolved_by_name"],
                         "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
                     })
                 return comments
@@ -2112,19 +2138,22 @@ def get_collaboration_access():
                 """, (invitation['id'],))
                 conn.commit()
             
-            # Get comments for the proposal
+            # Get comments for the proposal with user details
             cursor.execute("""
                 SELECT 
-                    id,
-                    comment_text,
-                    created_by,
-                    created_at,
-                    section_index,
-                    highlighted_text,
-                    status
-                FROM document_comments
-                WHERE proposal_id = %s
-                ORDER BY created_at DESC
+                    dc.id,
+                    dc.comment_text,
+                    dc.created_by,
+                    u.email as created_by_email,
+                    u.full_name as created_by_name,
+                    dc.created_at,
+                    dc.section_index,
+                    dc.highlighted_text,
+                    dc.status
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at DESC
             """, (invitation['proposal_id'],))
             
             comments = cursor.fetchall()
