@@ -13,10 +13,7 @@ class VideoPreloadService {
       final key = await _resolveAssetKey(assetPath);
       print('VideoPreloadService: Resolved asset key: $key');
       resolvedAssetKey = key;
-      final c = VideoPlayerController.asset(
-        key,
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      )
+      final c = VideoPlayerController.asset(key)
         ..setLooping(true)
         ..setVolume(0.0);
       await c.initialize();

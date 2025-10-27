@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'liquid_glass_card.dart';
-import '../services/currency_service.dart';
-import 'currency_picker.dart';
 
 class AnalyticsCharts extends StatelessWidget {
   const AnalyticsCharts({super.key});
@@ -12,8 +9,12 @@ class AnalyticsCharts extends StatelessWidget {
     return Column(
       children: [
         // Revenue Chart
-        LiquidGlassCard(
-          borderRadius: 16,
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            color: Colors.white.withOpacity(0.1),
+            border: Border.all(color: Colors.white.withOpacity(0.2)),
+          ),
           padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -51,10 +52,10 @@ class AnalyticsCharts extends StatelessWidget {
                     ),
                     titlesData: FlTitlesData(
                       show: true,
-                      rightTitles: const AxisTitles(
+                      rightTitles: AxisTitles(
                         sideTitles: SideTitles(showTitles: false),
                       ),
-                      topTitles: const AxisTitles(
+                      topTitles: AxisTitles(
                         sideTitles: SideTitles(showTitles: false),
                       ),
                       bottomTitles: AxisTitles(
@@ -128,12 +129,12 @@ class AnalyticsCharts extends StatelessWidget {
                     lineBarsData: [
                       LineChartBarData(
                         spots: const [
-                          FlSpot(1, 2.5),
-                          FlSpot(2, 3.2),
-                          FlSpot(3, 2.8),
-                          FlSpot(4, 4.1),
-                          FlSpot(5, 3.9),
-                          FlSpot(6, 4.7),
+                          const FlSpot(1, 2.5),
+                          const FlSpot(2, 3.2),
+                          const FlSpot(3, 2.8),
+                          const FlSpot(4, 4.1),
+                          const FlSpot(5, 3.9),
+                          const FlSpot(6, 4.7),
                         ],
                         isCurved: true,
                         gradient: const LinearGradient(
@@ -180,8 +181,12 @@ class AnalyticsCharts extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: LiquidGlassCard(
-                borderRadius: 16,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.white.withOpacity(0.1),
+                  border: Border.all(color: Colors.white.withOpacity(0.2)),
+                ),
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,8 +270,12 @@ class AnalyticsCharts extends StatelessWidget {
             ),
             const SizedBox(width: 20),
             Expanded(
-              child: LiquidGlassCard(
-                borderRadius: 16,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.white.withOpacity(0.1),
+                  border: Border.all(color: Colors.white.withOpacity(0.2)),
+                ),
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -289,10 +298,10 @@ class AnalyticsCharts extends StatelessWidget {
                           barTouchData: BarTouchData(enabled: false),
                           titlesData: FlTitlesData(
                             show: true,
-                            rightTitles: const AxisTitles(
+                            rightTitles: AxisTitles(
                               sideTitles: SideTitles(showTitles: false),
                             ),
-                            topTitles: const AxisTitles(
+                            topTitles: AxisTitles(
                               sideTitles: SideTitles(showTitles: false),
                             ),
                             bottomTitles: AxisTitles(

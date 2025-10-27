@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/footer.dart';
+import '../../widgets/footer.dart';
 import 'package:provider/provider.dart';
 import '../../services/smtp_auth_service.dart';
 import '../../api.dart';
@@ -299,7 +299,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
-      bottomNavigationBar: const Footer(),
+      bottomNavigationBar: Footer(),
     );
   }
 }

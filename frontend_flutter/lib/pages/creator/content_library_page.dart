@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
+import '../../api.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});

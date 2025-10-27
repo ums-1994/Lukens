@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../widgets/footer.dart';
+import '../../widgets/footer.dart';
 import 'package:provider/provider.dart';
-import '../api.dart';
-import '../services/auth_service.dart';
+import '../../api.dart';
+import '../../services/auth_service.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
@@ -221,13 +221,13 @@ class DashboardPage extends StatelessWidget {
                           const SizedBox(height: 20),
 
                           // AI-Powered Compound Risk Gate
-                          _buildAISection(),
+                          _buildAISection(context),
                           const SizedBox(height: 20),
 
                           // Recent Proposals
                           _buildSection(
                             '📝 Recent Proposals',
-                            _buildRecentProposals(app.proposals),
+                            _buildRecentProposals(context, app.proposals),
                           ),
                           const SizedBox(height: 20),
 
@@ -245,7 +245,7 @@ class DashboardPage extends StatelessWidget {
             ),
           ),
 
-          const Footer(),
+          Footer(),
         ],
       ),
     );
@@ -584,7 +584,7 @@ class DashboardPage extends StatelessWidget {
     });
   }
 
-  Widget _buildAISection() {
+  Widget _buildAISection(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFFF4E6),
@@ -617,6 +617,7 @@ class DashboardPage extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _buildProposalItem(
+              context,
               'GlobalTech Cloud Migration',
               '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
               'Review Needed',
@@ -629,7 +630,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildRecentProposals(List<dynamic> proposals) {
+  Widget _buildRecentProposals(BuildContext context, List<dynamic> proposals) {
     return Column(
       children: proposals.take(3).map((proposal) {
         String status = proposal['status'] ?? 'Draft';
@@ -637,6 +638,7 @@ class DashboardPage extends StatelessWidget {
         Color textColor = _getStatusTextColor(status);
 
         return _buildProposalItem(
+          context,
           proposal['title'] ?? 'Untitled',
           'Last modified: ${_formatDate(proposal['updated_at'])}',
           status,
@@ -648,7 +650,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildProposalItem(String title, String subtitle, String status,
+  Widget _buildProposalItem(BuildContext context, String title, String subtitle, String status,
       Color statusColor, Color textColor, {String? proposalId}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -708,7 +710,7 @@ class DashboardPage extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _submitForApproval(proposalId, title),
+                onPressed: () => _submitForApproval(context, proposalId, title),
                 icon: const Icon(Icons.send, size: 16),
                 label: const Text('Submit for Approval'),
                 style: ElevatedButton.styleFrom(
@@ -727,7 +729,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  void _submitForApproval(String proposalId, String proposalTitle) {
+  void _submitForApproval(BuildContext context, String proposalId, String proposalTitle) {
     Navigator.pushNamed(
       context,
       '/submit_for_approval',

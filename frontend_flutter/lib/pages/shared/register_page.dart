@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/footer.dart';
-import '../services/smtp_auth_service.dart';
+import '../../widgets/footer.dart';
+import '../../services/smtp_auth_service.dart';
 import 'email_verification_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -287,7 +287,7 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         ),
       ),
-      bottomNavigationBar: const Footer(),
+      bottomNavigationBar: Footer(),
     );
   }
 }

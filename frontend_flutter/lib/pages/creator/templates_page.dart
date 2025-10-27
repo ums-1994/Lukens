@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
 import 'dart:typed_data';
-import 'document_settings_page.dart';
+import '../shared/document_settings_page.dart';
 
 // ... existing code until line 838 ...
 

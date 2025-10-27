@@ -463,6 +463,114 @@
       ],
       "signed_at": null,
       "signed_by": null
+    },
+    {
+      "id": "5894bbe4-d9de-442f-8865-8a8f4adc6d46",
+      "title": "Test Proposal for Approval",
+      "client": "Test Client",
+      "dtype": "Proposal",
+      "status": "Pending Approval",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-23T18:38:01.235248Z",
+      "updated_at": "2025-10-23T18:38:03.407235Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {},
+        "workflow_id": "e8a63e35-046c-45d5-9074-c019c013183b",
+        "current_stage": "Delivery",
+        "pending_approvals": [
+          "85c3feec-b109-4587-9ff0-2b933a638021",
+          "b0a4fbdd-9f84-4fcf-acf6-ec960549e368",
+          "81d13431-f79a-4d91-9c0e-eecb9b8b0902"
+        ],
+        "completed_approvals": [],
+        "rejected_approvals": [],
+        "escalation_level": 0,
+        "last_escalation_at": null
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
+    },
+    {
+      "id": "9f657bf6-fdb2-41ed-8d4f-01bd693084c8",
+      "title": "Test Proposal for Approval",
+      "client": "Test Client",
+      "dtype": "Proposal",
+      "status": "Pending Approval",
+      "sections": {},
+      "mandatory_sections": [
+        "Executive Summary",
+        "Scope & Deliverables",
+        "Delivery Approach",
+        "Assumptions",
+        "Risks",
+        "References",
+        "Team Bios"
+      ],
+      "created_at": "2025-10-23T18:46:39.414461Z",
+      "updated_at": "2025-10-23T18:46:41.559916Z",
+      "approval": {
+        "mode": "sequential",
+        "order": [
+          "Delivery",
+          "Legal",
+          "Exec"
+        ],
+        "approvals": {},
+        "workflow_id": "e8a63e35-046c-45d5-9074-c019c013183b",
+        "current_stage": "Delivery",
+        "pending_approvals": [
+          "1e98b415-d011-4152-95e6-072cea518e74",
+          "f6ca8e80-4c4a-49d3-83f0-3c6145896eae",
+          "d4c3f5b2-a82a-4e94-a419-c301d318035f"
+        ],
+        "completed_approvals": [],
+        "rejected_approvals": [],
+        "escalation_level": 0,
+        "last_escalation_at": null
+      },
+      "readiness_score": 0.0,
+      "readiness_issues": [
+        "Missing mandatory section: Executive Summary",
+        "Missing mandatory section: Scope & Deliverables",
+        "Missing mandatory section: Delivery Approach",
+        "Missing mandatory section: Assumptions",
+        "Missing mandatory section: Risks",
+        "Missing mandatory section: References",
+        "Missing mandatory section: Team Bios",
+        "Clarify Assumptions (provide specifics and owner responsibilities).",
+        "Complete Team Bios with roles and key experience (>=30 chars).",
+        "Define Risks and associated mitigation actions."
+      ],
+      "signed_at": null,
+      "signed_by": null
     }
   ],
   "templates": [
@@ -518,6 +626,160 @@
       "created_by": "test-user",
       "created_at": "2025-09-29T11:37:33.255042Z",
       "restored_from": null
+    }
+  ],
+  "approval_workflows": [
+    {
+      "id": "e8a63e35-046c-45d5-9074-c019c013183b",
+      "name": "Test Workflow",
+      "description": "Test workflow for approval testing",
+      "stages": [
+        "Delivery",
+        "Legal",
+        "Exec"
+      ],
+      "mode": "sequential",
+      "conditions": null,
+      "auto_assign": true,
+      "escalation_enabled": true,
+      "escalation_timeout_hours": 24,
+      "created_by": "test_user",
+      "created_at": "2025-10-23T18:37:57.044573Z",
+      "is_active": true
+    },
+    {
+      "id": "66374a1f-62ae-40b7-b4f3-2c4d2a536ebf",
+      "name": "Test Workflow",
+      "description": "Test workflow for approval testing",
+      "stages": [
+        "Delivery",
+        "Legal",
+        "Exec"
+      ],
+      "mode": "sequential",
+      "conditions": null,
+      "auto_assign": true,
+      "escalation_enabled": true,
+      "escalation_timeout_hours": 24,
+      "created_by": "test_user",
+      "created_at": "2025-10-23T18:46:35.275427Z",
+      "is_active": true
+    }
+  ],
+  "approval_requests": [
+    {
+      "id": "85c3feec-b109-4587-9ff0-2b933a638021",
+      "proposal_id": "5894bbe4-d9de-442f-8865-8a8f4adc6d46",
+      "stage": "Delivery",
+      "requested_by": "system",
+      "requested_at": "2025-10-23T18:38:03.340312Z",
+      "assigned_to": "admin",
+      "due_date": null,
+      "priority": "medium",
+      "comments": null,
+      "status": "pending",
+      "action_taken": null,
+      "action_comments": null,
+      "action_taken_at": null,
+      "action_taken_by": null,
+      "delegated_to": null,
+      "reminder_sent": false,
+      "reminder_count": 0
+    },
+    {
+      "id": "b0a4fbdd-9f84-4fcf-acf6-ec960549e368",
+      "proposal_id": "5894bbe4-d9de-442f-8865-8a8f4adc6d46",
+      "stage": "Legal",
+      "requested_by": "system",
+      "requested_at": "2025-10-23T18:38:03.366454Z",
+      "assigned_to": "admin",
+      "due_date": null,
+      "priority": "medium",
+      "comments": null,
+      "status": "pending",
+      "action_taken": null,
+      "action_comments": null,
+      "action_taken_at": null,
+      "action_taken_by": null,
+      "delegated_to": null,
+      "reminder_sent": false,
+      "reminder_count": 0
+    },
+    {
+      "id": "81d13431-f79a-4d91-9c0e-eecb9b8b0902",
+      "proposal_id": "5894bbe4-d9de-442f-8865-8a8f4adc6d46",
+      "stage": "Exec",
+      "requested_by": "system",
+      "requested_at": "2025-10-23T18:38:03.386905Z",
+      "assigned_to": "admin",
+      "due_date": null,
+      "priority": "medium",
+      "comments": null,
+      "status": "pending",
+      "action_taken": null,
+      "action_comments": null,
+      "action_taken_at": null,
+      "action_taken_by": null,
+      "delegated_to": null,
+      "reminder_sent": false,
+      "reminder_count": 0
+    },
+    {
+      "id": "1e98b415-d011-4152-95e6-072cea518e74",
+      "proposal_id": "9f657bf6-fdb2-41ed-8d4f-01bd693084c8",
+      "stage": "Delivery",
+      "requested_by": "system",
+      "requested_at": "2025-10-23T18:46:41.504334Z",
+      "assigned_to": "admin",
+      "due_date": null,
+      "priority": "medium",
+      "comments": null,
+      "status": "pending",
+      "action_taken": null,
+      "action_comments": null,
+      "action_taken_at": null,
+      "action_taken_by": null,
+      "delegated_to": null,
+      "reminder_sent": false,
+      "reminder_count": 0
+    },
+    {
+      "id": "f6ca8e80-4c4a-49d3-83f0-3c6145896eae",
+      "proposal_id": "9f657bf6-fdb2-41ed-8d4f-01bd693084c8",
+      "stage": "Legal",
+      "requested_by": "system",
+      "requested_at": "2025-10-23T18:46:41.510943Z",
+      "assigned_to": "admin",
+      "due_date": null,
+      "priority": "medium",
+      "comments": null,
+      "status": "pending",
+      "action_taken": null,
+      "action_comments": null,
+      "action_taken_at": null,
+      "action_taken_by": null,
+      "delegated_to": null,
+      "reminder_sent": false,
+      "reminder_count": 0
+    },
+    {
+      "id": "d4c3f5b2-a82a-4e94-a419-c301d318035f",
+      "proposal_id": "9f657bf6-fdb2-41ed-8d4f-01bd693084c8",
+      "stage": "Exec",
+      "requested_by": "system",
+      "requested_at": "2025-10-23T18:46:41.534449Z",
+      "assigned_to": "admin",
+      "due_date": null,
+      "priority": "medium",
+      "comments": null,
+      "status": "pending",
+      "action_taken": null,
+      "action_comments": null,
+      "action_taken_at": null,
+      "action_taken_by": null,
+      "delegated_to": null,
+      "reminder_sent": false,
+      "reminder_count": 0
     }
   ]
 }
