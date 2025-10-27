@@ -33,7 +33,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage> {
               ElevatedButton(onPressed: () async {
                 // create new block
                 try {
-                  await app.createContent(keyCtrl.text.trim(), labelCtrl.text.trim(), contentCtrl.text.trim());
+                  await app.createContent(
+                    key: keyCtrl.text.trim(),
+                    label: labelCtrl.text.trim(),
+                    content: contentCtrl.text.trim(),
+                  );
                   keyCtrl.clear(); labelCtrl.clear(); contentCtrl.clear();
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Content created")));
                 } catch (e) {
