@@ -17,6 +17,8 @@ class _DashboardPageState extends State<DashboardPage>
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
   String _currentPage = 'Dashboard';
+  bool _isRefreshing = false;
+  String _statusFilter = 'all'; // all, draft, published, pending, approved
 
   @override
   void initState() {
@@ -27,6 +29,64 @@ class _DashboardPageState extends State<DashboardPage>
     );
     // Start collapsed
     _animationController.value = 1.0;
+
+    // Refresh data when dashboard loads (after AppState is ready)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Ensure AppState has the token before refreshing
+      final app = context.read<AppState>();
+      if (app.authToken == null && AuthService.token != null) {
+        print('🔄 Syncing token to AppState...');
+        app.authToken = AuthService.token;
+        app.currentUser = AuthService.currentUser;
+      }
+      await _refreshData();
+    });
+  }
+
+  Future<void> _refreshData() async {
+    if (_isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+
+    try {
+      final app = context.read<AppState>();
+
+      // Double-check auth token is synced
+      if (app.authToken == null && AuthService.token != null) {
+        app.authToken = AuthService.token;
+        app.currentUser = AuthService.currentUser;
+        print(
+            '✅ Synced token from AuthService: ${AuthService.token?.substring(0, 20)}...');
+      }
+
+      if (app.authToken == null) {
+        print('❌ No auth token available - cannot fetch data');
+        return;
+      }
+
+      await Future.wait([
+        app.fetchProposals(),
+        app.fetchDashboard(),
+      ]);
+      print(
+          '✅ Dashboard data refreshed - ${app.proposals.length} proposals loaded');
+    } catch (e) {
+      print('❌ Error refreshing dashboard: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
+    }
+  }
+
+  List<dynamic> _getFilteredProposals(List<dynamic> proposals) {
+    if (_statusFilter == 'all') {
+      return proposals;
+    }
+    return proposals.where((proposal) {
+      final status = proposal['status']?.toString().toLowerCase() ?? 'draft';
+      return status == _statusFilter.toLowerCase();
+    }).toList();
   }
 
   @override
@@ -268,8 +328,13 @@ class _DashboardPageState extends State<DashboardPage>
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: SingleChildScrollView(
-                      child: _buildRoleSpecificContent(userRole, counts, app),
+                    child: RefreshIndicator(
+                      onRefresh: _refreshData,
+                      color: const Color(0xFF3498DB),
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: _buildRoleSpecificContent(userRole, counts, app),
+                      ),
                     ),
                   ),
                 ),
@@ -741,20 +806,146 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildRecentProposals(List<dynamic> proposals) {
-    return Column(
-      children: proposals.take(3).map((proposal) {
-        String status = proposal['status'] ?? 'Draft';
-        Color statusColor = _getStatusColor(status);
-        Color textColor = _getStatusTextColor(status);
+    final filteredProposals = _getFilteredProposals(proposals);
 
-        return _buildProposalItem(
-          proposal['title'] ?? 'Untitled',
-          'Last modified: ${_formatDate(proposal['updated_at'])}',
-          status,
-          statusColor,
-          textColor,
-        );
-      }).toList(),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Status Filter Tabs
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildFilterTab('All', 'all', proposals.length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Draft',
+                  'draft',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? 'draft').toString().toLowerCase() ==
+                          'draft')
+                      .length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Sent to Client',
+                  'sent to client',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'sent to client')
+                      .length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Pending CEO Approval',
+                  'pending ceo approval',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'pending ceo approval')
+                      .length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Signed',
+                  'signed',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'signed')
+                      .length),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Filtered Proposals List
+        if (filteredProposals.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(32),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[400]),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No proposals found',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ...filteredProposals.take(5).map((proposal) {
+            String status = proposal['status'] ?? 'Draft';
+            Color statusColor = _getStatusColor(status);
+            Color textColor = _getStatusTextColor(status);
+
+            return _buildProposalItem(
+              proposal['title'] ?? 'Untitled',
+              'Last modified: ${_formatDate(proposal['updated_at'])}',
+              status,
+              statusColor,
+              textColor,
+            );
+          }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildFilterTab(String label, String value, int count) {
+    final isActive = _statusFilter == value;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _statusFilter = value;
+        });
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFF3498DB) : const Color(0xFFF0F0F0),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? const Color(0xFF2980B9) : const Color(0xFFE0E0E0),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? Colors.white : const Color(0xFF2C3E50),
+                fontSize: 13,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            if (count > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? Colors.white.withOpacity(0.3)
+                      : const Color(0xFF3498DB).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFF3498DB),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 

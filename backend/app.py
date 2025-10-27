@@ -752,9 +752,13 @@ def get_proposals(username):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            print(f"🔍 Looking for proposals for user {username}")
+            
+            # Query all columns that exist in the database
             cursor.execute(
-                '''SELECT id, title, client_name, user_id, status, created_at, updated_at, content, 
-                          client_email, budget, timeline_days
+                '''SELECT id, user_id, title, content, status, client_name, client_email, 
+                          budget, timeline_days, created_at, updated_at
                    FROM proposals WHERE user_id = %s
                    ORDER BY created_at DESC''',
                 (username,)
@@ -764,19 +768,19 @@ def get_proposals(username):
             for row in rows:
                 proposals.append({
                     'id': row[0],
-                    'title': row[1],
-                    'client': row[2],
-                    'client_name': row[2],
-                    'owner_id': row[3],
-                    'user_id': row[3],
+                    'user_id': row[1],
+                    'owner_id': row[1],  # For compatibility
+                    'title': row[2],
+                    'content': row[3],
                     'status': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None,
-                    'updated_at': row[6].isoformat() if row[6] else None,
-                    'updatedAt': row[6].isoformat() if row[6] else None,
-                    'content': row[7],
-                    'client_email': row[8],
-                    'budget': float(row[9]) if row[9] else None,
-                    'timeline_days': row[10]
+                    'client_name': row[5],
+                    'client': row[5],  # For compatibility
+                    'client_email': row[6],
+                    'budget': float(row[7]) if row[7] else None,
+                    'timeline_days': row[8],
+                    'created_at': row[9].isoformat() if row[9] else None,
+                    'updated_at': row[10].isoformat() if row[10] else None,
+                    'updatedAt': row[10].isoformat() if row[10] else None,
                 })
             print(f"✅ Found {len(proposals)} proposals for user {username}")
             return proposals, 200
@@ -796,21 +800,21 @@ def create_proposal(username):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Handle both 'client' and 'client_name' fields
+            # Insert using all available columns
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email') or ''
             
             cursor.execute(
-                '''INSERT INTO proposals (user_id, title, client_name, client_email, content, status, budget, timeline_days)
+                '''INSERT INTO proposals (user_id, title, content, status, client_name, client_email, budget, timeline_days)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, user_id, title, client_name, status, created_at, updated_at, content''',
+                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
                 (
                     username,
                     data.get('title', 'Untitled Document'),
-                    client_name,
-                    client_email,
                     data.get('content'),
                     data.get('status', 'draft'),
+                    client_name,
+                    client_email,
                     data.get('budget'),
                     data.get('timeline_days')
                 )
@@ -823,13 +827,16 @@ def create_proposal(username):
                 'user_id': result[1],
                 'owner_id': result[1],  # For compatibility
                 'title': result[2],
-                'client': result[3],
-                'client_name': result[3],
+                'content': result[3],
                 'status': result[4],
-                'created_at': result[5].isoformat() if result[5] else None,
-                'updated_at': result[6].isoformat() if result[6] else None,
-                'updatedAt': result[6].isoformat() if result[6] else None,
-                'content': result[7]
+                'client_name': result[5],
+                'client': result[5],
+                'client_email': result[6],
+                'budget': float(result[7]) if result[7] else None,
+                'timeline_days': result[8],
+                'created_at': result[9].isoformat() if result[9] else None,
+                'updated_at': result[10].isoformat() if result[10] else None,
+                'updatedAt': result[10].isoformat() if result[10] else None,
             }
             
             print(f"✅ Proposal created successfully with ID: {result[0]}")
@@ -853,21 +860,22 @@ def update_proposal(username, proposal_id):
             updates = ['updated_at = NOW()']
             params = []
             
+            # Update all columns that exist in the database
             if 'title' in data:
                 updates.append('title = %s')
                 params.append(data['title'])
-            if 'client' in data or 'client_name' in data:
-                updates.append('client_name = %s')
-                params.append(data.get('client_name') or data.get('client'))
-            if 'client_email' in data:
-                updates.append('client_email = %s')
-                params.append(data['client_email'])
             if 'content' in data:
                 updates.append('content = %s')
                 params.append(data['content'])
             if 'status' in data:
                 updates.append('status = %s')
                 params.append(data['status'])
+            if 'client_name' in data or 'client' in data:
+                updates.append('client_name = %s')
+                params.append(data.get('client_name') or data.get('client'))
+            if 'client_email' in data:
+                updates.append('client_email = %s')
+                params.append(data['client_email'])
             if 'budget' in data:
                 updates.append('budget = %s')
                 params.append(data['budget'])
@@ -1441,6 +1449,12 @@ def create_version(username, proposal_id):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # Get user ID from username
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            user_id = user_row[0] if user_row else None
+            
             cursor.execute(
                 '''INSERT INTO proposal_versions 
                    (proposal_id, version_number, content, created_by, change_description)
@@ -1450,7 +1464,7 @@ def create_version(username, proposal_id):
                     proposal_id,
                     data.get('version_number', 1),
                     data.get('content', ''),
-                    username,
+                    user_id,
                     data.get('change_description', 'Version created')
                 )
             )
