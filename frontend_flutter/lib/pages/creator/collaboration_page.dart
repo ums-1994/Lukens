@@ -55,10 +55,10 @@ class _CollaborationPageState extends State<CollaborationPage> {
       ]);
       if (!mounted) return;
       setState(() {
-        _teams = results[0] as List<Map<String, dynamic>>;
-        _comments = results[1] as List<Map<String, dynamic>>;
-        _workspaces = results[2] as List<Map<String, dynamic>>;
-        _notifications = results[3] as List<Map<String, dynamic>>;
+        _teams = results[0];
+        _comments = results[1];
+        _workspaces = results[2];
+        _notifications = results[3];
       });
     } finally {
       if (mounted) {

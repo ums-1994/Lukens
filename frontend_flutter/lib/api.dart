@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'services/auth_service.dart';
 
 const String baseUrl = "http://localhost:8000";
 
@@ -12,6 +13,13 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> dashboardCounts = {};
 
   Future<void> init() async {
+    // IMPORTANT: Sync token from AuthService on startup
+    if (AuthService.token != null && AuthService.currentUser != null) {
+      authToken = AuthService.token;
+      currentUser = AuthService.currentUser;
+      print('✅ Synced token from AuthService on startup');
+    }
+
     // Only fetch data if user is authenticated
     if (authToken != null) {
       await Future.wait([
@@ -26,6 +34,18 @@ class AppState extends ChangeNotifier {
 
   Map<String, String> get _headers {
     final headers = {"Content-Type": "application/json"};
+    // Use authToken (synced from AuthService) for consistency
+    if (authToken != null) {
+      headers["Authorization"] = "Bearer $authToken";
+    }
+    return headers;
+  }
+
+  // Headers for multipart/form-data requests (file uploads)
+  // Don't include Content-Type - it's set automatically by MultipartRequest
+  Map<String, String> get _multipartHeaders {
+    final headers = <String, String>{};
+    // Use authToken (synced from AuthService) for consistency
     if (authToken != null) {
       headers["Authorization"] = "Bearer $authToken";
     }
@@ -38,17 +58,199 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchContent() async {
-    // For now, return empty content since backend doesn't have this endpoint yet
-    contentBlocks = [];
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/content"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        // Handle both array response and object with 'content' key
+        if (data is List) {
+          contentBlocks = data;
+        } else if (data is Map && data.containsKey('content')) {
+          contentBlocks = List<dynamic>.from(data['content']);
+        } else {
+          contentBlocks = [];
+        }
+      } else {
+        print('Error fetching content: ${r.statusCode} - ${r.body}');
+        contentBlocks = [];
+      }
+    } catch (e) {
+      print('Error fetching content: $e');
+      contentBlocks = [];
+    }
+  }
+
+  Future<List<dynamic>> fetchTrash() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/content/trash"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        if (data is List) {
+          return data;
+        }
+      } else {
+        print('Error fetching trash: ${r.statusCode} - ${r.body}');
+      }
+    } catch (e) {
+      print('Error fetching trash: $e');
+    }
+    return [];
+  }
+
+  Future<bool> restoreContent(int contentId) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/content/$contentId/restore"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error restoring content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error restoring content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteContent(int contentId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/content/$contentId"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200 || r.statusCode == 204) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error deleting content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error deleting content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> createContent({
+    required String key,
+    required String label,
+    String content = "",
+    String category = "Templates",
+    bool isFolder = false,
+    int? parentId,
+    String? publicId,
+  }) async {
+    try {
+      final body = {
+        "key": key,
+        "label": label,
+        "content": content,
+        "category": category,
+        "is_folder": isFolder,
+        if (parentId != null) "parent_id": parentId,
+        if (publicId != null) "public_id": publicId,
+      };
+
+      final r = await http.post(
+        Uri.parse("$baseUrl/content"),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error creating content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error creating content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateContent(
+    int contentId, {
+    String? label,
+    String? content,
+    String? category,
+    String? publicId,
+  }) async {
+    try {
+      final body = {
+        if (label != null) "label": label,
+        if (content != null) "content": content,
+        if (category != null) "category": category,
+        if (publicId != null) "public_id": publicId,
+      };
+
+      if (body.isEmpty) return false;
+
+      final r = await http.put(
+        Uri.parse("$baseUrl/content/$contentId"),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error updating content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error updating content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> permanentlyDeleteContent(int contentId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/content/$contentId/permanent"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return true;
+      } else {
+        print(
+            'Error permanently deleting content: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error permanently deleting content: $e');
+      return false;
+    }
   }
 
   Future<void> fetchProposals() async {
     try {
-      final r =
-          await http.get(Uri.parse("$baseUrl/proposals"), headers: _headers);
+      final r = await http.get(
+        Uri.parse("$baseUrl/proposals"),
+        headers: _headers,
+      );
       if (r.statusCode == 200) {
-        proposals = jsonDecode(r.body);
+        final data = jsonDecode(r.body);
+        proposals = List<dynamic>.from(data);
+
+        // Calculate dashboard counts from real data
+        _updateDashboardCounts();
       } else {
+        print('Error fetching proposals: ${r.statusCode} - ${r.body}');
         proposals = [];
       }
     } catch (e) {
@@ -57,38 +259,124 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _updateDashboardCounts() {
+    final counts = <String, int>{};
+    for (final proposal in proposals) {
+      final status = proposal['status'] ?? 'Draft';
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+    dashboardCounts = counts;
+  }
+
   Future<void> fetchDashboard() async {
+    // Dashboard counts are now calculated from real proposal data in fetchProposals
+    // This method is kept for compatibility but the real counts come from _updateDashboardCounts()
+    if (proposals.isNotEmpty) {
+      _updateDashboardCounts();
+    }
+  }
+
+  Future<Map<String, dynamic>?> createProposal(String title, String client,
+      {String? templateKey}) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals"),
+        headers: _headers,
+        body: jsonEncode(
+            {"title": title, "client": client, "template_key": templateKey}),
+      );
+      final p = jsonDecode(r.body);
+      currentProposal = p;
+      await fetchProposals();
+      await fetchDashboard();
+      notifyListeners();
+      return p;
+    } catch (e) {
+      print('Error creating proposal: $e');
+      return null;
+    }
+  }
+
+  Future<void> updateProposal(
+      String proposalId, Map<String, dynamic> data) async {
+    try {
+      final r = await http.put(
+        Uri.parse("$baseUrl/proposals/$proposalId"),
+        headers: _headers,
+        body: jsonEncode(data),
+      );
+      if (r.statusCode == 200) {
+        await fetchProposals();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error updating proposal: $e');
+    }
+  }
+
+  Future<void> updateProposalStatus(String proposalId, String status) async {
+    try {
+      final r = await http.patch(
+        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+        headers: _headers,
+        body: jsonEncode({"status": status}),
+      );
+      if (r.statusCode == 200) {
+        await fetchProposals();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error updating proposal status: $e');
+    }
+  }
+
+  Future<List<dynamic>> getTemplates() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/dashboard_stats"),
+        Uri.parse("$baseUrl/templates"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
-        dashboardCounts = Map<String, dynamic>.from(data['counts'] ?? {});
-      } else {
-        // Fallback to empty counts
-        dashboardCounts = {};
+        return data['templates'] ?? [];
       }
     } catch (e) {
-      print('Error fetching dashboard: $e');
-      dashboardCounts = {};
+      print('Error fetching templates: $e');
     }
+    return [];
   }
 
-  Future<void> createProposal(String title, String client,
-      {String? templateKey}) async {
-    final r = await http.post(
-      Uri.parse("$baseUrl/proposals"),
-      headers: _headers,
-      body: jsonEncode(
-          {"title": title, "client": client, "template_key": templateKey}),
-    );
-    final p = jsonDecode(r.body);
-    currentProposal = p;
-    await fetchProposals();
-    await fetchDashboard();
-    notifyListeners();
+  Future<List<dynamic>> getContentModules() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/content-modules"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data['modules'] ?? [];
+      }
+    } catch (e) {
+      print('Error fetching content modules: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> analyzeProposalAI(
+      Map<String, dynamic> proposalData) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/proposals/ai-analysis"),
+        headers: _headers,
+        body: jsonEncode(proposalData),
+      );
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error analyzing proposal with AI: $e');
+    }
+    return null;
   }
 
   Future<void> updateSections(Map<String, dynamic> updates) async {
@@ -152,7 +440,8 @@ class AppState extends ChangeNotifier {
   }
 
   // RBAC Methods
-  Future<String?> approveProposal(String proposalId, {String comments = ""}) async {
+  Future<String?> approveProposal(String proposalId,
+      {String comments = ""}) async {
     try {
       final r = await http.post(
         Uri.parse("$baseUrl/proposals/$proposalId/approve?comments=$comments"),
@@ -171,7 +460,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> rejectProposal(String proposalId, {String comments = ""}) async {
+  Future<String?> rejectProposal(String proposalId,
+      {String comments = ""}) async {
     try {
       final r = await http.post(
         Uri.parse("$baseUrl/proposals/$proposalId/reject?comments=$comments"),
@@ -209,10 +499,12 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> clientDeclineProposal(String proposalId, {String comments = ""}) async {
+  Future<String?> clientDeclineProposal(String proposalId,
+      {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/client_decline?comments=$comments"),
+        Uri.parse(
+            "$baseUrl/proposals/$proposalId/client_decline?comments=$comments"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -296,31 +588,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Content library operations
-  Future<void> createContent(String key, String label, String content) async {
-    final r = await http.post(
-      Uri.parse("$baseUrl/content"),
-      headers: _headers,
-      body: jsonEncode({"key": key, "label": label, "content": content}),
-    );
-    if (r.statusCode == 200 || r.statusCode == 201) {
-      await fetchContent();
-      return;
-    } else {
-      throw Exception("Failed to create content block");
-    }
-  }
-
-  Future<void> deleteContent(int id) async {
-    final r =
-        await http.delete(Uri.parse("$baseUrl/content/$id"), headers: _headers);
-    if (r.statusCode == 200) {
-      await fetchContent();
-    } else {
-      throw Exception("Failed to delete content block");
-    }
-  }
-
   Future<void> addContentToProposal(int contentId) async {
     // find block by id in cached contentBlocks and add its content to current proposal sections
     if (currentProposal == null) return;
@@ -400,7 +667,19 @@ class AppState extends ChangeNotifier {
     if (r.statusCode == 200) {
       final data = jsonDecode(r.body);
       authToken = data["access_token"];
+
+      // IMPORTANT: Sync token with AuthService for content library
+      if (currentUser != null) {
+        AuthService.setUserData(currentUser!, authToken!);
+      }
+
       await fetchCurrentUser();
+
+      // IMPORTANT: Sync again after fetching user data
+      if (currentUser != null && authToken != null) {
+        AuthService.setUserData(currentUser!, authToken!);
+      }
+
       // Fetch data after successful login
       await Future.wait([
         fetchTemplates(),
@@ -456,12 +735,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void logout() {
-    authToken = null;
-    currentUser = null;
-    notifyListeners();
-  }
-
   Future<Map<String, dynamic>> verifyEmail(String token) async {
     final r = await http.post(
       Uri.parse("$baseUrl/verify-email"),
@@ -509,5 +782,148 @@ class AppState extends ChangeNotifier {
         return "Failed to resend verification email";
       }
     }
+  }
+
+  // Cloudinary Upload Methods
+  Future<Map<String, dynamic>?> uploadImageToCloudinary(String filePath,
+      {List<int>? fileBytes, String? fileName}) async {
+    try {
+      http.MultipartFile file;
+
+      // Use bytes on web, path on native platforms
+      if (fileBytes != null && fileName != null) {
+        file =
+            http.MultipartFile.fromBytes('file', fileBytes, filename: fileName);
+      } else {
+        file = await http.MultipartFile.fromPath('file', filePath);
+      }
+
+      final request =
+          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/image"))
+            ..headers.addAll(_multipartHeaders)
+            ..files.add(file);
+
+      final response = await request.send();
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(await response.stream.bytesToString());
+        return data;
+      } else {
+        print('Error uploading image: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Error uploading image to Cloudinary: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> uploadTemplateToCloudinary(String filePath,
+      {List<int>? fileBytes, String? fileName}) async {
+    try {
+      http.MultipartFile file;
+
+      // Use bytes on web, path on native platforms
+      if (fileBytes != null && fileName != null) {
+        file =
+            http.MultipartFile.fromBytes('file', fileBytes, filename: fileName);
+      } else {
+        file = await http.MultipartFile.fromPath('file', filePath);
+      }
+
+      final request =
+          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/template"))
+            ..headers.addAll(_multipartHeaders)
+            ..files.add(file);
+
+      final response = await request.send();
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(await response.stream.bytesToString());
+        return data;
+      } else {
+        print('Error uploading template: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Error uploading template to Cloudinary: $e');
+      return null;
+    }
+  }
+
+  Future<bool> deleteFromCloudinary(String publicId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/upload/$publicId"),
+        headers: _headers,
+      );
+      return r.statusCode == 200;
+    } catch (e) {
+      print('Error deleting from Cloudinary: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getUploadSignature(String publicId) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/upload/signature"),
+        headers: _headers,
+        body: jsonEncode({"public_id": publicId}),
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        return data;
+      }
+      return null;
+    } catch (e) {
+      print('Error getting upload signature: $e');
+      return null;
+    }
+  }
+
+  // Create content with Cloudinary URL
+  Future<void> createContentWithCloudinary(String key, String label,
+      String cloudinaryUrl, String publicId, String category,
+      {int? parentId}) async {
+    try {
+      final Map<String, dynamic> body = {
+        "key": key,
+        "label": label,
+        "content": cloudinaryUrl, // Store Cloudinary URL
+        "public_id": publicId,
+        "category": category,
+        "created_at": DateTime.now().toIso8601String(),
+      };
+
+      // Add parent_id if provided (for files inside folders)
+      if (parentId != null) {
+        body["parent_id"] = parentId;
+      }
+
+      await http.post(
+        Uri.parse("$baseUrl/content"),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      await fetchContent();
+      notifyListeners();
+    } catch (e) {
+      print('Error creating content: $e');
+    }
+  }
+
+  void logout() {
+    // Clear app state on logout
+    authToken = null;
+    currentUser = null;
+    templates = [];
+    contentBlocks = [];
+    proposals = [];
+    currentProposal = null;
+    dashboardCounts = {};
+
+    // IMPORTANT: Sync logout with AuthService
+    AuthService.logout();
+
+    notifyListeners();
   }
 }

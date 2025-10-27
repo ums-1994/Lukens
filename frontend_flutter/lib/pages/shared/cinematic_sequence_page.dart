@@ -141,8 +141,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
             child: Center(
               child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(
-                  horizontal: isMobile ? 16 : 60,
-                  vertical: isMobile ? 32 : 60,
+                  horizontal: isMobile ? 24 : 80,
+                  vertical: isMobile ? 40 : 60,
                 ),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
@@ -349,12 +349,10 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
         scale: Tween<double>(begin: 0.95, end: 1.0).animate(
           CurvedAnimation(parent: _ctaController, curve: Curves.easeOut),
         ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: Wrap(
-            spacing: isMobile ? 12 : 24,
-            runSpacing: 12,
-            children: [
+        child: Wrap(
+          spacing: isMobile ? 16 : 32,
+          runSpacing: 16,
+          children: [
             // Get Started button with gradient
             AnimatedBuilder(
               animation: _parallaxController,
@@ -450,7 +448,6 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               ),
             ),
           ],
-          ),
         ),
       ),
     );

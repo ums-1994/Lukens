@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:async';
-import 'package:intl/intl.dart';
 import '../../api.dart';
-import '../../services/ai_analysis_service.dart';
-import '../../services/streaming_ai_service.dart';
 import 'content_library_dialog.dart';
 
 class ProposalWizard extends StatefulWidget {
@@ -21,16 +17,6 @@ class _ProposalWizardState extends State<ProposalWizard>
   int _currentStep = 0;
   static const int _totalSteps = 5;
   bool _isLoading = false;
-
-  // Persistent controllers for content modules
-  final Map<String, TextEditingController> _controllers = {};
-  
-  // Streaming AI state
-  final Map<String, bool> _isGenerating = {};
-  final Map<String, StreamSubscription<String>?> _streamSubscriptions = {};
-  DateTime? _selectedStartDate;
-  DateTime? _selectedEndDate;
-  int _lastUpdateTime = 0;
 
   // Form data
   final Map<String, dynamic> _formData = {
@@ -189,14 +175,6 @@ class _ProposalWizardState extends State<ProposalWizard>
   void dispose() {
     _pageController.dispose();
     _tabController.dispose();
-    // Dispose all text controllers
-    for (final controller in _controllers.values) {
-      controller.dispose();
-    }
-    // Cancel all streaming subscriptions
-    for (final subscription in _streamSubscriptions.values) {
-      subscription?.cancel();
-    }
     super.dispose();
   }
 
@@ -294,7 +272,7 @@ class _ProposalWizardState extends State<ProposalWizard>
       // Navigate to enhanced compose page
       Navigator.pushReplacementNamed(
         context,
-        '/enhanced_compose',
+        '/enhanced-compose',
         arguments: {
           'proposalId': proposalId,
           'proposalTitle': _formData['opportunityName'],
@@ -650,113 +628,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     );
   }
 
-  Future<void> _generateAIContent(String moduleId) async {
-    // Cancel any existing stream for this module
-    await _streamSubscriptions[moduleId]?.cancel();
-    
-    setState(() {
-      _isGenerating[moduleId] = true;
-    });
-
-    try {
-      // Get module details
-      final module = _contentModules.firstWhere(
-        (m) => m['id'] == moduleId,
-        orElse: () => {'name': moduleId, 'description': ''},
-      );
-
-      // Prepare context for AI generation
-      final aiContext = {
-        'client_name': _formData['clientName'] ?? '',
-        'project_type': _formData['projectType'] ?? '',
-        'opportunity_name': _formData['opportunityName'] ?? '',
-        'template_type': _formData['templateType'] ?? '',
-        'estimated_value': _formData['estimatedValue'] ?? '',
-        'timeline': _formData['timeline'] ?? '',
-      };
-
-      // Clear existing content and ensure controller exists
-      _controllers[moduleId] ??= TextEditingController();
-      _controllers[moduleId]!.text = '';
-
-      // Start streaming generation
-      final stream = StreamingAIService.generateStreamingContent(
-        moduleId,
-        aiContext,
-      );
-
-      String fullContent = '';
-      _streamSubscriptions[moduleId] = stream.listen(
-        (chunk) {
-          fullContent += chunk;
-          print('AI Chunk received for $moduleId: ${chunk.length} chars');
-          print('Full content length: ${fullContent.length}');
-          
-          if (_controllers.containsKey(moduleId)) {
-            _controllers[moduleId]!.text = fullContent;
-            // Move cursor to end
-            _controllers[moduleId]!.selection = TextSelection.fromPosition(
-              TextPosition(offset: fullContent.length),
-            );
-            print('Updated controller for $moduleId with ${fullContent.length} chars');
-            print('Controller text: ${_controllers[moduleId]!.text}');
-          } else {
-            print('Controller not found for $moduleId');
-          }
-          
-          // Update form data
-          final Map<String, String> contents =
-              Map<String, String>.from(_formData['moduleContents'] ?? {});
-          contents[moduleId] = fullContent;
-          _formData['moduleContents'] = contents;
-          
-          // Force UI update with proper state management
-          if (mounted) {
-            setState(() {
-              // Force rebuild by updating a dummy variable
-              _lastUpdateTime = DateTime.now().millisecondsSinceEpoch;
-            });
-          }
-        },
-        onError: (error) {
-          print('Streaming error: $error');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error generating content: $error'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        },
-        onDone: () {
-          setState(() {
-            _isGenerating[moduleId] = false;
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('AI content generated for ${module['name']}'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      setState(() {
-        _isGenerating[moduleId] = false;
-      });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to generate AI content: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-  }
-
   Future<void> _openContentLibraryAndInsert(String moduleId) async {
     // Open content library page as a dialog and return selected content
     final selected = await showDialog<Map<String, dynamic>?>(
@@ -807,12 +678,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                   final module = _contentModules.firstWhere(
                       (m) => m['id'] == moduleId,
                       orElse: () => {'name': moduleId, 'description': ''});
-                  
-                  // Create a persistent controller for this module
-                  if (!_controllers.containsKey(moduleId)) {
-                    _controllers[moduleId] = TextEditingController(text: contents[moduleId] ?? '');
-                  }
-                  
+                  final controller =
+                      TextEditingController(text: contents[moduleId] ?? '');
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 18.0),
                     child: Column(
@@ -831,8 +698,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                           child: Column(
                             children: [
                               TextFormField(
-                                key: ValueKey('${moduleId}_$_lastUpdateTime'), // Add key to force rebuild
-                                controller: _controllers[moduleId] ??= TextEditingController(),
+                                controller: controller,
                                 onChanged: (v) {
                                   final Map<String, String> c =
                                       Map<String, String>.from(
@@ -857,39 +723,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                                     icon: const Icon(
                                         Icons.library_books_outlined),
                                     label: const Text('Insert from Library'),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: const Color(0xFF3498DB),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton.icon(
-                                    onPressed: _isGenerating[moduleId] == true 
-                                        ? null 
-                                        : () => _generateAIContent(moduleId),
-                                    icon: _isGenerating[moduleId] == true
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                            ),
-                                          )
-                                        : const Icon(Icons.auto_awesome),
-                                    label: Text(
-                                      _isGenerating[moduleId] == true 
-                                          ? 'Generating...' 
-                                          : 'Generate with AI',
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF9B59B6),
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
-                                      ),
-                                    ),
-                                  ),
+                                  )
                                 ],
                               )
                             ],
@@ -1110,32 +944,19 @@ class _ProposalWizardState extends State<ProposalWizard>
     // Initialize controllers with current values
     final proposalTitleController = TextEditingController(
         text: _formData['proposalTitle']?.toString() ?? '');
-    proposalTitleController.selection = TextSelection.fromPosition(
-      TextPosition(offset: proposalTitleController.text.length),
-    );
     final clientNameController =
         TextEditingController(text: _formData['clientName']?.toString() ?? '');
-    clientNameController.selection = TextSelection.fromPosition(
-      TextPosition(offset: clientNameController.text.length),
-    );
     final clientEmailController =
         TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
-    clientEmailController.selection = TextSelection.fromPosition(
-      TextPosition(offset: clientEmailController.text.length),
-    );
     final opportunityNameController = TextEditingController(
         text: _formData['opportunityName']?.toString() ?? '');
-    opportunityNameController.selection = TextSelection.fromPosition(
-      TextPosition(offset: opportunityNameController.text.length),
-    );
     final estimatedValueController = TextEditingController(
         text: _formData['estimatedValue']?.toString() ?? '');
-    estimatedValueController.selection = TextSelection.fromPosition(
-      TextPosition(offset: estimatedValueController.text.length),
-    );
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1220,6 +1041,7 @@ class _ProposalWizardState extends State<ProposalWizard>
             ),
           ],
         ),
+      ),
     );
   }
 
@@ -1227,17 +1049,13 @@ class _ProposalWizardState extends State<ProposalWizard>
     // Initialize controllers with current values
     final estimatedValueController = TextEditingController(
         text: _formData['estimatedValue']?.toString() ?? '');
-    estimatedValueController.selection = TextSelection.fromPosition(
-      TextPosition(offset: estimatedValueController.text.length),
-    );
     final timelineController =
         TextEditingController(text: _formData['timeline']?.toString() ?? '');
-    timelineController.selection = TextSelection.fromPosition(
-      TextPosition(offset: timelineController.text.length),
-    );
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1262,10 +1080,6 @@ class _ProposalWizardState extends State<ProposalWizard>
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    // AI Suggestions Section
-                    if (_formData['clientName']?.toString().isNotEmpty == true)
-                      _buildAISuggestions(),
-                    const SizedBox(height: 20),
                     _buildDropdownField(
                       'Project Type',
                       'Select project type',
@@ -1287,10 +1101,12 @@ class _ProposalWizardState extends State<ProposalWizard>
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 20),
-                    _buildDateRangePicker(
+                    _buildTextField(
                       'Timeline',
-                      'Select project start and end dates',
-                      timelineController,
+                      'Enter project timeline',
+                      (value) => setState(() => _formData['timeline'] = value),
+                      Icons.schedule,
+                      controller: timelineController,
                     ),
                   ],
                 ),
@@ -1298,6 +1114,7 @@ class _ProposalWizardState extends State<ProposalWizard>
             ),
           ],
         ),
+      ),
     );
   }
 
@@ -1436,398 +1253,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     );
   }
 
-  Widget _buildAISuggestions() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFF9B59B6).withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.auto_awesome,
-                color: Color(0xFF9B59B6),
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'AI Suggestions',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Based on client "${_formData['clientName']}", we suggest:',
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF64748B),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _getSuggestedProjectTypes().map((suggestion) {
-              return GestureDetector(
-                onTap: () => setState(() {
-                  _formData['projectType'] = suggestion;
-                }),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _formData['projectType'] == suggestion
-                        ? const Color(0xFF9B59B6)
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFF9B59B6),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    suggestion,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: _formData['projectType'] == suggestion
-                          ? Colors.white
-                          : const Color(0xFF9B59B6),
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<String> _getSuggestedProjectTypes() {
-    final clientName = _formData['clientName']?.toString().toLowerCase() ?? '';
-    
-    // Simple AI-like suggestions based on client name patterns
-    if (clientName.contains('tech') || clientName.contains('software')) {
-      return ['Software Development', 'Digital Transformation', 'Cloud Migration'];
-    } else if (clientName.contains('bank') || clientName.contains('finance')) {
-      return ['Digital Transformation', 'Cybersecurity', 'Data Analytics'];
-    } else if (clientName.contains('retail') || clientName.contains('shop')) {
-      return ['Web Development', 'Mobile App Development', 'Digital Transformation'];
-    } else if (clientName.contains('health') || clientName.contains('medical')) {
-      return ['Software Development', 'Data Analytics', 'Cybersecurity'];
-    } else {
-      return ['Software Development', 'Web Development', 'Consulting'];
-    }
-  }
-
-  Widget _buildDateRangePicker(String label, String hint, TextEditingController controller) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF2C3E50),
-          ),
-        ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: () => _showSimpleCalendarPopup(controller),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Image.asset(
-                  'assets/images/Calendar_Date Picker_White Badge_Blue.png',
-                  width: 20,
-                  height: 20,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.calendar_today,
-                      color: Color(0xFF3498DB),
-                      size: 20,
-                    );
-                  },
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    controller.text.isEmpty ? hint : controller.text,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: controller.text.isEmpty ? Colors.grey : const Color(0xFF2C3E50),
-                    ),
-                  ),
-                ),
-                const Icon(
-                  Icons.arrow_drop_down,
-                  color: Color(0xFF3498DB),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showSimpleCalendarPopup(TextEditingController controller) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Container(
-            width: 400,
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Select Timeline',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Start Date',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF2C3E50),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: () async {
-                              final DateTime? picked = await showDatePicker(
-                                context: context,
-                                initialDate: DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: const ColorScheme.light(
-                                        primary: Color(0xFF3498DB),
-                                        onPrimary: Colors.white,
-                                        surface: Colors.white,
-                                        onSurface: Color(0xFF2C3E50),
-                                      ),
-                                    ),
-                                    child: child!,
-                                  );
-                                },
-                              );
-                              if (picked != null) {
-                                setDialogState(() {
-                                  _selectedStartDate = picked;
-                                });
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.grey.shade300),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 2,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.calendar_today, size: 16, color: Color(0xFF3498DB)),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _selectedStartDate != null 
-                                          ? DateFormat('MMM dd, yyyy').format(_selectedStartDate!)
-                                          : 'Select start date',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: _selectedStartDate != null 
-                                            ? const Color(0xFF2C3E50)
-                                            : Colors.grey,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'End Date',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF2C3E50),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: () async {
-                              final DateTime? picked = await showDatePicker(
-                                context: context,
-                                initialDate: _selectedStartDate?.add(const Duration(days: 30)) ?? DateTime.now().add(const Duration(days: 30)),
-                                firstDate: _selectedStartDate ?? DateTime.now(),
-                                lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: const ColorScheme.light(
-                                        primary: Color(0xFF3498DB),
-                                        onPrimary: Colors.white,
-                                        surface: Colors.white,
-                                        onSurface: Color(0xFF2C3E50),
-                                      ),
-                                    ),
-                                    child: child!,
-                                  );
-                                },
-                              );
-                              if (picked != null) {
-                                setDialogState(() {
-                                  _selectedEndDate = picked;
-                                });
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.grey.shade300),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 2,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.calendar_today, size: 16, color: Color(0xFF3498DB)),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _selectedEndDate != null 
-                                          ? DateFormat('MMM dd, yyyy').format(_selectedEndDate!)
-                                          : 'Select end date',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: _selectedEndDate != null 
-                                            ? const Color(0xFF2C3E50)
-                                            : Colors.grey,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _selectedStartDate != null && _selectedEndDate != null
-                            ? () {
-                                final startDate = DateFormat('MMM dd, yyyy').format(_selectedStartDate!);
-                                final endDate = DateFormat('MMM dd, yyyy').format(_selectedEndDate!);
-                                final duration = _selectedEndDate!.difference(_selectedStartDate!).inDays;
-                                
-                                controller.text = '$startDate - $endDate ($duration days)';
-                                setState(() {
-                                  _formData['timeline'] = controller.text;
-                                  _formData['startDate'] = _selectedStartDate!.toIso8601String();
-                                  _formData['endDate'] = _selectedEndDate!.toIso8601String();
-                                });
-                                Navigator.of(context).pop();
-                              }
-                            : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF3498DB),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Apply'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-          },
-        );
-      },
-    );
-  }
-
   Widget _buildTextField(
     String label,
     String hint,
@@ -1836,9 +1261,12 @@ class _ProposalWizardState extends State<ProposalWizard>
     TextInputType keyboardType = TextInputType.text,
     TextEditingController? controller,
   }) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: TextFormField(
+        controller: controller,
+        textDirection: TextDirection.ltr,
+        decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           prefixIcon: Icon(icon, color: const Color(0xFF3498DB)),
@@ -1857,6 +1285,7 @@ class _ProposalWizardState extends State<ProposalWizard>
         ),
         keyboardType: keyboardType,
         onChanged: onChanged,
+      ),
     );
   }
 
@@ -1890,7 +1319,10 @@ class _ProposalWizardState extends State<ProposalWizard>
       items: options.map((option) {
         return DropdownMenuItem<String>(
           value: option,
-          child: Text(option),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Text(option),
+          ),
         );
       }).toList(),
       onChanged: (value) => onChanged(value ?? ''),

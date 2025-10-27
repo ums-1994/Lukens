@@ -19,7 +19,7 @@ class SmtpAuthService {
           'Content-Type': 'application/json',
         },
         body: json.encode({
-          'username': email.split('@')[0], // Use email prefix as username
+          'username': email, // Use full email as username for consistency
           'email': email,
           'password': password,
           'full_name': '$firstName $lastName',

@@ -19,10 +19,10 @@ def main():
     print("\n" + "="*50)
     
     try:
-        # Start the FastAPI server
+        # Start the Flask server with Uvicorn (using ASGI adapter)
         subprocess.run([
             sys.executable, "-m", "uvicorn", 
-            "app:app", 
+            "asgi:app", 
             "--host", "127.0.0.1", 
             "--port", "8000", 
             "--reload"

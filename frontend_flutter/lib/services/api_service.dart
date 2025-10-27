@@ -94,9 +94,11 @@ class ApiService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      print(
+          'Error creating proposal: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating proposal: $e');
@@ -196,9 +198,10 @@ class ApiService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      print('Error creating SOW: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating SOW: $e');
@@ -261,202 +264,292 @@ class ApiService {
     }
   }
 
-  // -------- Proposal Versioning --------
-  static Future<List<dynamic>> listProposalVersions(String proposalId, String token) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/proposals/$proposalId/versions'),
-      headers: _getHeaders(token),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return json.decode(resp.body) as List<dynamic>;
-    }
-    throw Exception('Failed to fetch versions');
-  }
-
-  static Future<Map<String,dynamic>> createProposalVersion(String proposalId, String token, {String? changeSummary}) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/proposals/$proposalId/versions'),
-      headers: _getHeaders(token),
-      body: json.encode({'change_summary': changeSummary}),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return json.decode(resp.body) as Map<String,dynamic>;
-    }
-    throw Exception('Failed to create version');
-  }
-
-  static Future<Map<String,dynamic>> restoreVersion(String versionId, String token) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/versions/$versionId/restore'),
-      headers: _getHeaders(token),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return json.decode(resp.body) as Map<String,dynamic>;
-    }
-    throw Exception('Failed to restore version');
-  }
-
-  static Future<Map<String,dynamic>> compareVersions(String leftId, String rightId, String token) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/versions/$leftId/compare/$rightId'),
-      headers: _getHeaders(token),
-    );
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return json.decode(resp.body) as Map<String,dynamic>;
-    }
-    throw Exception('Failed to compare versions');
-  }
-
-  // -------- Approval Workflow --------
-  static Future<List<dynamic>> getApprovalWorkflows(String token) async {
+  // Client Portal Methods
+  static Future<Map<String, dynamic>?> validateClientToken(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/approval-workflows'),
-        headers: _getHeaders(token),
+        Uri.parse('$baseUrl/client-dashboard/$token'),
+        headers: _getHeaders(null),
       );
+
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
-      return [];
+      return null;
     } catch (e) {
-      print('Error getting approval workflows: $e');
-      return [];
+      print('Error validating client token: $e');
+      return null;
     }
   }
 
-  static Future<Map<String, dynamic>?> createApprovalWorkflow({
-    required String token,
-    required Map<String, dynamic> workflow,
-  }) async {
+  static Future<bool> uploadSignature(
+      String token, List<int> signatureBytes) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/approval-workflows'),
-        headers: _getHeaders(token),
-        body: json.encode(workflow),
-      );
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error creating approval workflow: $e');
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> submitProposalForApproval({
-    required String token,
-    required String proposalId,
-    String? workflowId,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/proposals/$proposalId/submit-for-approval'),
-        headers: _getHeaders(token),
-        body: json.encode({'workflow_id': workflowId}),
-      );
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error submitting proposal for approval: $e');
-      return null;
-    }
-  }
-
-  static Future<List<dynamic>> getPendingApprovals(String token, String userId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/approval-requests/pending/$userId'),
-        headers: _getHeaders(token),
-      );
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return [];
-    } catch (e) {
-      print('Error getting pending approvals: $e');
-      return [];
-    }
-  }
-
-  static Future<List<dynamic>> getProposalApprovalRequests(String token, String proposalId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/approval-requests/proposal/$proposalId'),
-        headers: _getHeaders(token),
-      );
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return [];
-    } catch (e) {
-      print('Error getting proposal approval requests: $e');
-      return [];
-    }
-  }
-
-  static Future<Map<String, dynamic>?> takeApprovalAction({
-    required String token,
-    required String requestId,
-    required String action,
-    String? actionComments,
-    String? delegatedTo,
-    String? actionTakenBy,
-  }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/approval-requests/$requestId/action'),
-        headers: _getHeaders(token),
+        Uri.parse('$baseUrl/client-dashboard/$token/sign'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: json.encode({
-          'action': action,
-          'action_comments': actionComments,
-          'delegated_to': delegatedTo,
-          'action_taken_by': actionTakenBy,
+          'signature': base64Encode(signatureBytes),
+          'signature_type': 'png',
         }),
       );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error uploading signature: $e');
+      return false;
+    }
+  }
+
+  static Future<String?> getSignedPdfUrl(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/client-dashboard/$token/pdf'),
+        headers: _getHeaders(null),
+      );
+
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final data = json.decode(response.body);
+        return data['pdf_url'];
       }
       return null;
     } catch (e) {
-      print('Error taking approval action: $e');
+      print('Error getting signed PDF URL: $e');
       return null;
     }
   }
 
-  static Future<Map<String, dynamic>?> sendApprovalReminder({
+  // Proposal Versions
+  static Future<Map<String, dynamic>?> createVersion({
     required String token,
-    required String requestId,
+    required int proposalId,
+    required int versionNumber,
+    required String content,
+    String? changeDescription,
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/approval-requests/$requestId/remind'),
+        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
         headers: _getHeaders(token),
+        body: json.encode({
+          'version_number': versionNumber,
+          'content': content,
+          'change_description': changeDescription ?? 'Version created',
+        }),
       );
-      if (response.statusCode == 200) {
+
+      if (response.statusCode == 201) {
         return json.decode(response.body);
       }
+      print(
+          'Error creating version: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
-      print('Error sending approval reminder: $e');
+      print('Error creating version: $e');
       return null;
     }
   }
 
-  static Future<Map<String, dynamic>?> getApprovalAnalytics(String token) async {
+  static Future<List<dynamic>> getVersions({
+    required String token,
+    required int proposalId,
+  }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/approval-analytics'),
+        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
         headers: _getHeaders(token),
       );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching versions: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getVersion({
+    required String token,
+    required int proposalId,
+    required int versionNumber,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/proposals/$proposalId/versions/$versionNumber'),
+        headers: _getHeaders(token),
+      );
+
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
       return null;
     } catch (e) {
-      print('Error getting approval analytics: $e');
+      print('Error fetching version: $e');
+      return null;
+    }
+  }
+
+  // Document Comments
+  static Future<Map<String, dynamic>?> createComment({
+    required String token,
+    required int proposalId,
+    required String commentText,
+    required String createdBy,
+    int? sectionIndex,
+    String? highlightedText,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/comments/document/$proposalId'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'comment_text': commentText,
+          'created_by': createdBy,
+          'section_index': sectionIndex,
+          'highlighted_text': highlightedText,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error creating comment: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error creating comment: $e');
+      return null;
+    }
+  }
+
+  static Future<List<dynamic>> getComments({
+    required String token,
+    required int proposalId,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/comments/proposal/$proposalId'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching comments: $e');
+      return [];
+    }
+  }
+
+  // AI Assistant Methods
+  static Future<Map<String, dynamic>?> generateAIContent({
+    required String token,
+    required String prompt,
+    Map<String, dynamic>? context,
+    String sectionType = 'general',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/generate'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'prompt': prompt,
+          'context': context ?? {},
+          'section_type': sectionType,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error generating AI content: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error generating AI content: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> improveContent({
+    required String token,
+    required String content,
+    String sectionType = 'general',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/improve'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'content': content,
+          'section_type': sectionType,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error improving content: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error improving content: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> analyzeRisks({
+    required String token,
+    required int proposalId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/analyze-risks'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'proposal_id': proposalId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print('Error analyzing risks: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error analyzing risks: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> generateFullProposal({
+    required String token,
+    required String prompt,
+    Map<String, dynamic>? context,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/generate-full-proposal'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'prompt': prompt,
+          'context': context ?? {},
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error generating full proposal: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error generating full proposal: $e');
       return null;
     }
   }

@@ -4,49 +4,35 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
-import 'pages/ceo_dashboard_page.dart';
-import 'pages/financial_manager_dashboard_page.dart';
-import 'pages/reviewer_dashboard_page.dart';
-import 'pages/client_dashboard_page.dart';
-import 'widgets/app_side_nav.dart';
 import 'pages/creator/compose_page.dart';
+import 'pages/creator/proposal_wizard.dart';
+import 'pages/creator/new_proposal_page.dart';
+import 'pages/creator/enhanced_compose_page.dart';
+import 'pages/creator/blank_document_editor_page.dart';
 import 'pages/admin/govern_page.dart';
 import 'pages/approver/approvals_page.dart';
-import 'pages/approver/approval_workflow_page.dart';
 import 'pages/shared/preview_page.dart';
 import 'pages/creator/content_library_page.dart';
-import 'pages/creator/submit_for_approval_page.dart';
 import 'pages/approver/approver_dashboard_page.dart';
 import 'pages/admin/admin_dashboard_page.dart';
-import 'pages/client/client_portal_page.dart';
+import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
 import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
-import 'pages/creator/templates_page.dart';
 import 'pages/creator/collaboration_page.dart';
+import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/admin/analytics_page.dart';
+import 'pages/admin/ai_configuration_page.dart';
+import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
-import 'pages/admin/admin_panel_page.dart';
-import 'pages/admin/user_management_page.dart';
-import 'pages/admin/system_settings_page.dart';
-import 'pages/reviewer/pending_reviews_page.dart';
-import 'pages/reviewer/review_queue_page.dart';
-import 'pages/client/signed_documents_page.dart';
-import 'pages/client/messages_page.dart';
 import 'services/auth_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'services/video_preload_service.dart';
-import 'widgets/app_background.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize default role for testing
-  AuthService.initializeDefaultRole();
-  
   try {
     if (kIsWeb) {
       // Initialize Firebase for web using options matching web/firebase-config.js
@@ -70,8 +56,6 @@ Future<void> main() async {
   }
   // Restore persisted auth session on startup (web)
   AuthService.restoreSessionFromStorage();
-  // Pre-initialize 3D earth video for fast first paint on CEO dashboard
-  await VideoPreloadService.init('assets/images/3D earth.mp4');
   runApp(const MyApp());
 }
 
@@ -88,16 +72,52 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
           textTheme: GoogleFonts.poppinsTextTheme(),
-          scaffoldBackgroundColor: Colors.transparent,
-          canvasColor: Colors.transparent,
         ),
-        builder: (context, child) {
-          // Wrap every page with the landing-style background
-          if (child == null) return const SizedBox.shrink();
-          return AppBackground(child: child);
-        },
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
+          print('🔍 onGenerateRoute - Route name: ${settings.name}');
+
+          // Handle collaboration routes with token
+          if (settings.name == '/collaborate' ||
+              (settings.name != null &&
+                  settings.name!.contains('collaborate'))) {
+            print('🔍 Collaboration route detected!');
+
+            // Extract token from settings.name (it includes query params)
+            String? token;
+
+            // Try to get token from the route name itself
+            if (settings.name != null && settings.name!.contains('token=')) {
+              final uri = Uri.parse('http://dummy${settings.name}');
+              token = uri.queryParameters['token'];
+              print('📍 Token from route name: $token');
+            }
+
+            // Fallback: Try current URL
+            if (token == null || token.isEmpty) {
+              final currentUrl = web.window.location.href;
+              print('📍 Trying current URL: $currentUrl');
+              final uri = Uri.parse(currentUrl);
+
+              // Check fragment for token
+              if (uri.fragment.contains('token=')) {
+                final fragmentUri =
+                    Uri.parse('http://dummy?${uri.fragment.split('?').last}');
+                token = fragmentUri.queryParameters['token'];
+                print('📍 Token from fragment: $token');
+              }
+            }
+
+            if (token != null && token.isNotEmpty) {
+              print('✅ Navigating to GuestCollaborationPage with token');
+              return MaterialPageRoute(
+                builder: (context) => const GuestCollaborationPage(),
+              );
+            } else {
+              print('❌ No token found, cannot navigate');
+            }
+          }
+
           // Handle verification routes
           if (settings.name == '/verify-email' ||
               (settings.name != null &&
@@ -110,6 +130,8 @@ class MyApp extends StatelessWidget {
               builder: (context) => EmailVerificationPage(token: token),
             );
           }
+
+          // Handle client portal with token
           return null; // Let other routes be handled normally
         },
         routes: {
@@ -129,38 +151,74 @@ class MyApp extends StatelessWidget {
             final token = uri.queryParameters['token'];
             return EmailVerificationPage(token: token);
           },
-          '/home': (context) => const HomeShell(),
-          '/proposals': (context) => const HomeShell(initialIdx: 1),
-          '/compose': (context) => const HomeShell(initialIdx: 8),
-          '/govern': (context) => const HomeShell(initialIdx: 9),
-          '/preview': (context) => const HomeShell(initialIdx: 7),
-          '/creator_dashboard': (context) => const HomeShell(initialIdx: 0),
-          '/content_library': (context) => const HomeShell(initialIdx: 3),
-          '/content': (context) => const HomeShell(initialIdx: 3),
-          '/approvals': (context) => const HomeShell(initialIdx: 5),
-          '/approver_dashboard': (context) => const HomeShell(initialIdx: 10),
-          '/admin_dashboard': (context) => const HomeShell(initialIdx: 11),
-          '/client_portal': (context) => const HomeShell(initialIdx: 12),
-          '/cinematic': (context) => const CinematicSequencePage(),
-          '/templates': (context) => const HomeShell(initialIdx: 2),
-          '/collaboration': (context) => const HomeShell(initialIdx: 4),
-          '/analytics': (context) => const HomeShell(initialIdx: 6),
-          '/user_management': (context) => const HomeShell(initialIdx: 10),
-          '/system_settings': (context) => const HomeShell(initialIdx: 11),
-          '/review_queue': (context) => const HomeShell(initialIdx: 1),
-          '/pending_reviews': (context) => const HomeShell(initialIdx: 5),
-          '/quality_metrics': (context) => const HomeShell(initialIdx: 6),
-          '/review_history': (context) => const HomeShell(initialIdx: 3),
-          '/signed_documents': (context) => const HomeShell(initialIdx: 3),
-          '/messages': (context) => const HomeShell(initialIdx: 4),
-          '/support': (context) => const HomeShell(initialIdx: 5),
-          '/approval_history': (context) => const HomeShell(initialIdx: 3),
-          '/approval_workflow': (context) => const ApprovalWorkflowPage(),
-          '/submit_for_approval': (context) {
-            final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
-            return SubmitForApprovalPage(
+          '/home': (context) => const DashboardPage(),
+          '/creator_dashboard': (context) => const DashboardPage(),
+          '/proposals': (context) => ProposalsPage(),
+          '/compose': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
+
+            // If proposal data is passed, open it in the editor
+            if (args != null) {
+              return BlankDocumentEditorPage(
+                proposalId: args['id']?.toString(),
+                proposalTitle: args['title']?.toString(),
+              );
+            }
+
+            // Otherwise, show the old compose page
+            return const ComposePage();
+          },
+          '/proposal-wizard': (context) => const ProposalWizard(),
+          '/new-proposal': (context) => const NewProposalPage(),
+          '/blank-document': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
+            return BlankDocumentEditorPage(
+              proposalId: args?['proposalId'],
+              proposalTitle: args?['proposalTitle'] ?? 'Untitled Document',
+            );
+          },
+          '/enhanced-compose': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
+            return EnhancedComposePage(
               proposalId: args?['proposalId'] ?? '',
-              proposalTitle: args?['proposalTitle'] ?? 'Unknown Proposal',
+              proposalTitle: args?['proposalTitle'] ?? 'Untitled Proposal',
+              templateType: args?['templateType'] ?? 'proposal',
+              selectedModules:
+                  List<String>.from(args?['selectedModules'] ?? []),
+            );
+          },
+          '/govern': (context) => const GovernPage(),
+          '/preview': (context) => const PreviewPage(),
+          '/content_library': (context) => const ContentLibraryPage(),
+          '/content': (context) =>
+              const ContentLibraryPage(), // Add missing route
+          '/approvals': (context) => const ApprovalsPage(),
+          '/approver_dashboard': (context) => const ApproverDashboardPage(),
+          '/admin_dashboard': (context) => const AdminDashboardPage(),
+          '/cinematic': (context) => const CinematicSequencePage(),
+          '/collaboration': (context) => const CollaborationPage(),
+          // '/collaborate' is handled by onGenerateRoute to extract token
+          '/analytics': (context) => const AnalyticsPage(),
+          '/ai-configuration': (context) => const AIConfigurationPage(),
+          '/settings': (context) => const SettingsPage(),
+          '/test-signature': (context) => const TestSignaturePage(),
+          '/team_details': (context) {
+            final args = ModalRoute.of(context)!.settings.arguments as Map?;
+            final id = args != null ? (args['teamId'] ?? '') : '';
+            return Scaffold(
+              appBar: AppBar(title: const Text('Team')),
+              body: Center(child: Text('Team: $id')),
+            );
+          },
+          '/workspace': (context) {
+            final args = ModalRoute.of(context)!.settings.arguments as Map?;
+            final name = args != null ? (args['workspaceName'] ?? '') : '';
+            return Scaffold(
+              appBar: AppBar(title: const Text('Workspace')),
+              body: Center(child: Text('Workspace: $name')),
             );
           },
         },
@@ -188,9 +246,26 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
 
-    // Check if this is a verification URL
-    if (uri.queryParameters.containsKey('verify') &&
+    // Check if this is a collaboration URL (has token and contains 'collaborate')
+    if (uri.fragment.contains('/collaborate') &&
         uri.queryParameters.containsKey('token')) {
+      final token = uri.queryParameters['token'];
+      if (token != null && token.isNotEmpty) {
+        // Navigate to guest collaboration page
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const GuestCollaborationPage(),
+            ),
+          );
+        });
+        return;
+      }
+    }
+
+    // Check if this is a verification URL
+    if (uri.queryParameters.containsKey('token')) {
       final token = uri.queryParameters['token'];
       if (token != null && token.isNotEmpty) {
         // Navigate to verification page
@@ -208,6 +283,32 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if this is a collaboration URL (guest access - no auth required)
+    final currentUrl = web.window.location.href;
+    final hash = web.window.location.hash;
+    final search = web.window.location.search;
+
+    print('🔍 AuthWrapper - Full URL: $currentUrl');
+    print('🔍 AuthWrapper - Hash: $hash');
+    print('🔍 AuthWrapper - Search: $search');
+
+    // Check for collaboration in hash or URL
+    final isCollaboration = currentUrl.contains('/collaborate') ||
+        hash.contains('/collaborate') ||
+        currentUrl.contains('collaborate?token=') ||
+        hash.contains('collaborate?token=');
+
+    final hasToken = currentUrl.contains('token=') ||
+        hash.contains('token=') ||
+        search.contains('token=');
+
+    print('🔍 Is Collaboration: $isCollaboration, Has Token: $hasToken');
+
+    if (isCollaboration && hasToken) {
+      print('✅ Detected collaboration URL - showing GuestCollaborationPage');
+      return const GuestCollaborationPage();
+    }
+
     // Check if user is authenticated
     if (AuthService.isLoggedIn) {
       // Initialize AppState when user is logged in
@@ -232,48 +333,19 @@ class _HomeShellState extends State<HomeShell> {
   bool _isCollapsed = true;
   String _current = 'Dashboard';
   int idx = 0;
-  String? _lastRole;
-  List<Widget> get pages {
-    final userRole = AuthService.currentUser?['role'] ?? 'CEO';
-    
-    // Base pages that all roles can access
-    final basePages = [
-      _getDashboardForRole(userRole), // 0 - Role-specific dashboard
-      ProposalsPage(), // 1
-      TemplatesPage(), // 2
-      ContentLibraryPage(), // 3
-      CollaborationPage(), // 4
-      ApprovalsPage(), // 5
-      AnalyticsPage(), // 6
-      PreviewPage(), // 7
-      ComposePage(), // 8
-      GovernPage(), // 9
-      ApproverDashboardPage(), // 10
-      AdminDashboardPage(), // 11
-      ClientPortalPage(), // 12
-    ];
-    
-    return basePages;
-  }
-
-  Widget _getDashboardForRole(String role) {
-    switch (role) {
-      case 'CEO':
-        return const CEODashboardPage();
-      case 'Financial Manager':
-        return const FinancialManagerDashboardPage();
-      case 'Reviewer':
-        return const ReviewerDashboardPage();
-      case 'Client':
-        return const ClientDashboardPage();
-      case 'Approver':
-        return const ApproverDashboardPage();
-      case 'Admin':
-        return const AdminDashboardPage();
-      default:
-        return const CEODashboardPage();
-    }
-  }
+  final pages = [
+    DashboardPage(), // 0
+    ProposalsPage(), // 1
+    ContentLibraryPage(), // 2
+    CollaborationPage(), // 3
+    ApprovalsPage(), // 4
+    AnalyticsPage(), // 5
+    PreviewPage(), // 6 (optional)
+    ComposePage(), // 7 (optional)
+    GovernPage(), // 8 (optional)
+    ApproverDashboardPage(), // 9 (optional)
+    AdminDashboardPage(), // 10 (optional)
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -282,34 +354,11 @@ class _HomeShellState extends State<HomeShell> {
       idx = widget.initialIdx!;
       _current = _labelForIdx(idx);
     }
-    
-    // Force rebuild when role changes
-    final currentRole = AuthService.currentUser?['role'] ?? 'CEO';
-    if (_lastRole != currentRole) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        setState(() {
-          _lastRole = currentRole;
-          _current = 'Dashboard'; // Reset to dashboard when role changes
-          idx = 0;
-        });
-      });
-    }
     return Scaffold(
       body: Row(
         children: [
-          AppSideNav(
-            isCollapsed: _isCollapsed,
-            currentLabel: _current,
-            onToggle: () => setState(() => _isCollapsed = !_isCollapsed),
-            onSelect: (label) {
-              if (label == 'Logout') {
-                _handleLogout();
-                return;
-              }
-              setState(() => _current = label);
-              setState(() => idx = _idxForLabel(label));
-            },
-          ),
+          // Modern Navigation Sidebar
+          _buildModernSidebar(),
           Expanded(child: pages[idx]),
         ],
       ),
@@ -342,7 +391,7 @@ class _HomeShellState extends State<HomeShell> {
                     leading: const Icon(Icons.approval_outlined),
                     title: const Text('Reviewer / Approver'),
                     onTap: () {
-                      setState(() => idx = 7);
+                      setState(() => idx = 9);
                       Navigator.pop(context);
                     },
                   ),
@@ -350,7 +399,7 @@ class _HomeShellState extends State<HomeShell> {
                     leading: const Icon(Icons.admin_panel_settings_outlined),
                     title: const Text('Admin'),
                     onTap: () {
-                      setState(() => idx = 8);
+                      setState(() => idx = 10);
                       Navigator.pop(context);
                     },
                   ),
@@ -358,7 +407,7 @@ class _HomeShellState extends State<HomeShell> {
                     leading: const Icon(Icons.business_outlined),
                     title: const Text('Client Portal'),
                     onTap: () {
-                      setState(() => idx = 9);
+                      setState(() => idx = 1);
                       Navigator.pop(context);
                     },
                   ),
@@ -373,133 +422,212 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  Widget _buildModernSidebar() {
+    return Container(
+      width: 80,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1419),
+        border: Border(right: BorderSide(color: Colors.grey[900]!)),
+      ),
+      child: Column(
+        children: [
+          // Logo Section
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF00CED1),
+                    const Color(0xFF20B2AA),
+                  ],
+                ),
+              ),
+              child: const Icon(Icons.dashboard, color: Colors.white, size: 26),
+            ),
+          ),
+          // Navigation Items
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildModernNavItem(
+                    icon: Icons.dashboard_outlined,
+                    label: 'Dashboard',
+                    index: 0,
+                  ),
+                  _buildModernNavItem(
+                    icon: Icons.description_outlined,
+                    label: 'My Proposals',
+                    index: 1,
+                  ),
+                  _buildModernNavItem(
+                    icon: Icons.library_books,
+                    label: 'Templates',
+                    index: 2,
+                  ),
+                  _buildModernNavItem(
+                    icon: Icons.collections,
+                    label: 'Content Library',
+                    index: 3,
+                  ),
+                  _buildModernNavItem(
+                    icon: Icons.people_outline,
+                    label: 'Collaboration',
+                    index: 4,
+                  ),
+                  _buildModernNavItem(
+                    icon: Icons.done_all_outlined,
+                    label: 'Approvals',
+                    index: 5,
+                  ),
+                  _buildModernNavItem(
+                    icon: Icons.bar_chart_outlined,
+                    label: 'Analytics',
+                    index: 6,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Bottom Section
+          Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: Column(
+              children: [
+                _buildModernNavItem(
+                  icon: Icons.help_outline,
+                  label: 'Help',
+                  index: -1,
+                ),
+                const SizedBox(height: 8),
+                Tooltip(
+                  message: 'Logout',
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _handleLogout,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.logout,
+                          color: Colors.grey[600],
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernNavItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final isActive = idx == index && index != -1;
+    return Tooltip(
+      message: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: index != -1 ? () => setState(() => idx = index) : null,
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              border: isActive
+                  ? Border.all(color: const Color(0xFF00CED1), width: 2)
+                  : null,
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  icon,
+                  color: isActive ? const Color(0xFF00CED1) : Colors.grey[600],
+                  size: 26,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label.split(' ')[0],
+                  style: TextStyle(
+                    fontSize: 9,
+                    color:
+                        isActive ? const Color(0xFF00CED1) : Colors.grey[600],
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   int _idxForLabel(String label) {
-    final userRole = AuthService.currentUser?['role'] ?? 'Financial Manager';
-    
-    // Role-specific label mapping
-    switch (userRole) {
-      case 'CEO':
-        switch (label) {
-          case 'Dashboard': return 0;
-          case 'My Proposals': return 1;
-          case 'Analytics': return 6;
-          case 'User Management': return 10;
-          case 'System Settings': return 11;
-          case 'Govern': return 9;
-          default: return 0;
-        }
-      case 'Reviewer':
-        switch (label) {
-          case 'Dashboard': return 0;
-          case 'Review Queue': return 1;
-          case 'Pending Reviews': return 5;
-          case 'Quality Metrics': return 6;
-          case 'Review History': return 3;
-          default: return 0;
-        }
-      case 'Client':
-        switch (label) {
-          case 'Dashboard': return 0;
-          case 'My Proposals': return 1;
-          case 'Signed Documents': return 3;
-          case 'Messages': return 4;
-          case 'Support': return 5;
-          default: return 0;
-        }
-      case 'Approver':
-        switch (label) {
-          case 'Dashboard': return 0;
-          case 'Approvals': return 5;
-          case 'Approval History': return 3;
-          case 'Analytics': return 6;
-          default: return 0;
-        }
-      case 'Admin':
-        switch (label) {
-          case 'Dashboard': return 0;
-          case 'User Management': return 10;
-          case 'System Settings': return 11;
-          case 'Analytics': return 6;
-          case 'Govern': return 9;
-          default: return 0;
-        }
-      default: // Financial Manager
-        switch (label) {
-          case 'Dashboard': return 0;
-          case 'My Proposals': return 1;
-          case 'Templates': return 2;
-          case 'Content Library': return 3;
-          case 'Collaboration': return 4;
-          case 'Approvals Status': return 5;
-          case 'Analytics': return 6;
-          case 'Preview': return 7;
-          default: return 0;
-        }
+    switch (label) {
+      case 'Dashboard':
+        return 0;
+      case 'My Proposals':
+        return 1;
+      case 'Templates':
+        return 2;
+      case 'Content Library':
+        return 3;
+      case 'Collaboration':
+        return 4;
+      case 'Approvals Status':
+        return 5;
+      case 'Analytics (My Pipeline)':
+        return 6;
+      case 'Preview':
+        return 7;
+      default:
+        return 0;
     }
   }
 
   String _labelForIdx(int i) {
-    final userRole = AuthService.currentUser?['role'] ?? 'Financial Manager';
-    
-    // Role-specific index mapping
-    switch (userRole) {
-      case 'CEO':
-        switch (i) {
-          case 0: return 'Dashboard';
-          case 1: return 'My Proposals';
-          case 6: return 'Analytics';
-          case 10: return 'User Management';
-          case 11: return 'System Settings';
-          case 9: return 'Govern';
-          default: return 'Dashboard';
-        }
-      case 'Reviewer':
-        switch (i) {
-          case 0: return 'Dashboard';
-          case 1: return 'Review Queue';
-          case 5: return 'Pending Reviews';
-          case 6: return 'Quality Metrics';
-          case 3: return 'Review History';
-          default: return 'Dashboard';
-        }
-      case 'Client':
-        switch (i) {
-          case 0: return 'Dashboard';
-          case 1: return 'My Proposals';
-          case 3: return 'Signed Documents';
-          case 4: return 'Messages';
-          case 5: return 'Support';
-          default: return 'Dashboard';
-        }
-      case 'Approver':
-        switch (i) {
-          case 0: return 'Dashboard';
-          case 5: return 'Approvals';
-          case 3: return 'Approval History';
-          case 6: return 'Analytics';
-          default: return 'Dashboard';
-        }
-      case 'Admin':
-        switch (i) {
-          case 0: return 'Dashboard';
-          case 10: return 'User Management';
-          case 11: return 'System Settings';
-          case 6: return 'Analytics';
-          case 9: return 'Govern';
-          default: return 'Dashboard';
-        }
-      default: // Financial Manager
-        switch (i) {
-          case 0: return 'Dashboard';
-          case 1: return 'My Proposals';
-          case 2: return 'Templates';
-          case 3: return 'Content Library';
-          case 4: return 'Collaboration';
-          case 5: return 'Approvals Status';
-          case 6: return 'Analytics';
-          case 7: return 'Preview';
-          default: return 'Dashboard';
-        }
+    switch (i) {
+      case 0:
+        return 'Dashboard';
+      case 1:
+        return 'My Proposals';
+      case 2:
+        return 'Templates';
+      case 3:
+        return 'Content Library';
+      case 4:
+        return 'Collaboration';
+      case 5:
+        return 'Approvals Status';
+      case 6:
+        return 'Analytics (My Pipeline)';
+      case 7:
+        return 'Preview';
+      default:
+        return 'Dashboard';
     }
   }
 

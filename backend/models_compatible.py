@@ -96,3 +96,15 @@ class ProposalFeedback(Base):
     # Relationships
     proposal = relationship("Proposal", back_populates="feedback")
     client = relationship("Client", back_populates="feedback")
+
+class DocumentComment(Base):
+    __tablename__ = "document_comments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    proposal_id = Column(Integer, ForeignKey('proposals.id', ondelete='CASCADE'), nullable=False)
+    comment_text = Column(Text, nullable=False)
+    created_by = Column(String(150))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    proposal = relationship("Proposal")

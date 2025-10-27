@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/asset_service.dart';
-import '../services/auth_service.dart';
 
-class AppSideNav extends StatefulWidget {
+class AppSideNav extends StatelessWidget {
   const AppSideNav({
     super.key,
     required this.isCollapsed,
@@ -16,96 +15,29 @@ class AppSideNav extends StatefulWidget {
   final ValueChanged<String> onSelect;
   final VoidCallback onToggle;
 
-  @override
-  State<AppSideNav> createState() => _AppSideNavState();
-}
-
-class _AppSideNavState extends State<AppSideNav> {
-  @override
-  void initState() {
-    super.initState();
-    // Force rebuild when role changes
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      setState(() {});
-    });
-  }
-
-  @override
-  void didUpdateWidget(AppSideNav oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Rebuild when widget updates
-    setState(() {});
-  }
   static const double collapsedWidth = 90.0;
   static const double expandedWidth = 250.0;
 
-  // Role-specific menu items
-  static const Map<String, List<Map<String, String>>> _roleItems = {
-    'CEO': [
-      {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-      {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
-      {'label': 'Analytics', 'icon': 'assets/images/analytics.png'},
-      {'label': 'User Management', 'icon': 'assets/images/collaborations.png'},
-      {'label': 'System Settings', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Govern', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
-    ],
-    'Financial Manager': [
-      {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-      {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
-      {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Collaboration', 'icon': 'assets/images/collaborations.png'},
-      {'label': 'Approvals Status', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
-      {'label': 'Analytics', 'icon': 'assets/images/analytics.png'},
-    ],
-    'Reviewer': [
-      {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-      {'label': 'Review Queue', 'icon': 'assets/images/My_Proposals.png'},
-      {'label': 'Pending Reviews', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
-      {'label': 'Quality Metrics', 'icon': 'assets/images/analytics.png'},
-      {'label': 'Review History', 'icon': 'assets/images/content_library.png'},
-    ],
-    'Client': [
-      {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-      {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
-      {'label': 'Signed Documents', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Messages', 'icon': 'assets/images/collaborations.png'},
-      {'label': 'Support', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
-    ],
-    'Approver': [
-      {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-      {'label': 'Approvals', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
-      {'label': 'Approval History', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Analytics', 'icon': 'assets/images/analytics.png'},
-    ],
-    'Admin': [
-      {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-      {'label': 'User Management', 'icon': 'assets/images/collaborations.png'},
-      {'label': 'System Settings', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Analytics', 'icon': 'assets/images/analytics.png'},
-      {'label': 'Govern', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
-    ],
-  };
-
-  List<Map<String, String>> get _items {
-    final userRole = AuthService.currentUser?['role'] ?? 'CEO'; // Default to CEO for testing
-    print('Current user role: $userRole'); // Debug print
-    print('Available roles: ${_roleItems.keys}'); // Debug print
-    final items = _roleItems[userRole] ?? _roleItems['CEO']!;
-    print('Returning items for $userRole: ${items.map((e) => e['label']).toList()}'); // Debug print
-    return items;
-  }
+  static const List<Map<String, String>> _items = [
+    {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
+    {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
+    {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
+    {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
+    {'label': 'Collaboration', 'icon': 'assets/images/collaborations.png'},
+    {'label': 'Approvals Status', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
+    {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
+  ];
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        if (widget.isCollapsed) widget.onToggle();
+        if (isCollapsed) onToggle();
       },
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        width: widget.isCollapsed ? collapsedWidth : expandedWidth,
+        width: isCollapsed ? collapsedWidth : expandedWidth,
         color: const Color(0xFF34495E),
         child: SafeArea(
           child: Column(
@@ -115,7 +47,7 @@ class _AppSideNavState extends State<AppSideNav> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: InkWell(
-                  onTap: widget.onToggle,
+                  onTap: onToggle,
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
                     height: 40,
@@ -124,11 +56,11 @@ class _AppSideNavState extends State<AppSideNav> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
-                      mainAxisAlignment: widget.isCollapsed
+                      mainAxisAlignment: isCollapsed
                           ? MainAxisAlignment.center
                           : MainAxisAlignment.spaceBetween,
                       children: [
-                        if (!widget.isCollapsed)
+                        if (!isCollapsed)
                           const Padding(
                             padding: EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
@@ -137,9 +69,9 @@ class _AppSideNavState extends State<AppSideNav> {
                             ),
                           ),
                         Padding(
-                          padding: EdgeInsets.symmetric(horizontal: widget.isCollapsed ? 0 : 8),
+                          padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 0 : 8),
                           child: Icon(
-                            widget.isCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
+                            isCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
                             color: Colors.white,
                           ),
                         ),
@@ -150,26 +82,6 @@ class _AppSideNavState extends State<AppSideNav> {
               ),
 
               const SizedBox(height: 12),
-
-              // Role indicator
-              if (!widget.isCollapsed)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2C3E50),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'Role: ${AuthService.currentUser?['role'] ?? 'CEO'}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 8),
 
               // Main icons
               Expanded(
@@ -187,7 +99,7 @@ class _AppSideNavState extends State<AppSideNav> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Column(
                   children: [
-                    if (!widget.isCollapsed)
+                    if (!isCollapsed)
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         height: 1,
@@ -205,12 +117,12 @@ class _AppSideNavState extends State<AppSideNav> {
   }
 
   Widget _buildItem(String label, String assetPath) {
-    final bool active = label == widget.currentLabel;
-    if (widget.isCollapsed) {
+    final bool active = label == currentLabel;
+    if (isCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: InkWell(
-          onTap: () => widget.onSelect(label),
+          onTap: () => onSelect(label),
           borderRadius: BorderRadius.circular(30),
           child: _buildCollapsedIcon(assetPath, active),
         ),
@@ -220,7 +132,7 @@ class _AppSideNavState extends State<AppSideNav> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => widget.onSelect(label),
+        onTap: () => onSelect(label),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(

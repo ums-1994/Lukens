@@ -93,7 +93,29 @@ CREATE TABLE IF NOT EXISTS proposal_feedback (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 8️⃣ INDEXES for performance
+-- 8️⃣ SNIPPETS TABLE (for saved section snippets)
+CREATE TABLE IF NOT EXISTS snippets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    proposal_id UUID REFERENCES proposals(id) ON DELETE CASCADE,
+    section_index INTEGER NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    content TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 8️⃣.5️⃣ SNIPPET COMMENTS TABLE
+CREATE TABLE IF NOT EXISTS snippet_comments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snippet_id UUID REFERENCES snippets(id) ON DELETE CASCADE,
+    author_name VARCHAR(150) NOT NULL,
+    author_email VARCHAR(150),
+    comment_text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9️⃣ INDEXES for performance
 CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
 CREATE INDEX IF NOT EXISTS idx_clients_token ON clients(token);
 CREATE INDEX IF NOT EXISTS idx_proposals_client_id ON proposals(client_id);
@@ -102,15 +124,17 @@ CREATE INDEX IF NOT EXISTS idx_approvals_proposal_id ON approvals(proposal_id);
 CREATE INDEX IF NOT EXISTS idx_dashboard_tokens_token ON client_dashboard_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_dashboard_tokens_expires ON client_dashboard_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_proposal_id ON proposal_feedback(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_snippets_proposal_id ON snippets(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_snippet_comments_snippet_id ON snippet_comments(snippet_id);
 
--- 9️⃣ SAMPLE DATA (for testing)
+-- 🔟 SAMPLE DATA (for testing)
 INSERT INTO clients (name, email, organization, role) VALUES 
 ('Jane Doe', 'jane.doe@example.com', 'Acme Corp', 'Client'),
 ('John Smith', 'john.smith@techcorp.com', 'Tech Corp', 'Client'),
 ('Admin User', 'admin@khonology.com', 'Khonology', 'Admin')
 ON CONFLICT (email) DO NOTHING;
 
--- 🔟 AUTO-UPDATE TRIGGERS
+-- 1️⃣1️⃣ AUTO-UPDATE TRIGGERS
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -129,7 +153,17 @@ CREATE TRIGGER update_proposals_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- 🔟 VIEWS for common queries
+CREATE TRIGGER update_snippets_updated_at
+    BEFORE UPDATE ON snippets
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_snippet_comments_updated_at
+    BEFORE UPDATE ON snippet_comments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- 1️⃣2️⃣ VIEWS for common queries
 CREATE OR REPLACE VIEW client_proposals_view AS
 SELECT 
     p.id,

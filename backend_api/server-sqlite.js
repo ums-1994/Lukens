@@ -174,11 +174,6 @@ transporter.verify((error, success) => {
   }
 });
 
-// Generate verification token
-const generateVerificationToken = () => {
-  return crypto.randomBytes(32).toString('hex');
-};
-
 // Send verification email
 const sendVerificationEmail = async (email, token) => {
   const verificationUrl = `http://localhost:3000/verify-email?token=${token}`;
@@ -336,31 +331,18 @@ app.post('/api/auth/register', async (req, res) => {
     const result = await dbRun(
       `INSERT INTO users (email, password_hash, first_name, last_name, role, is_email_verified, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-      [email, passwordHash, firstName, lastName, role || 'creator', 0]
+      [email, passwordHash, firstName, lastName, role || 'creator', 1]
     );
-
-    // Generate verification token
-    const verificationToken = generateVerificationToken();
-    await dbRun(
-      `INSERT INTO verification_tokens (user_id, token, expires_at, created_at)
-       VALUES (?, ?, datetime('now', '+24 hours'), datetime('now'))`,
-      [result.id, verificationToken]
-    );
-
-    // Send verification email
-    if (process.env.SMTP_USER) {
-      await sendVerificationEmail(email, verificationToken);
-    }
 
     res.json({
-      message: 'User registered successfully. Please check your email to verify your account.',
+      message: 'User registered successfully. You can now login.',
       user: {
         id: result.id,
         email: email,
         first_name: firstName,
         last_name: lastName,
         role: role || 'creator',
-        is_email_verified: false
+        is_email_verified: true
       }
     });
   } catch (error) {
@@ -476,39 +458,6 @@ app.get('/verify-email', async (req, res) => {
         </body>
       </html>
     `);
-  }
-});
-
-// Verify email (API endpoint)
-app.post('/api/auth/verify-email', async (req, res) => {
-  try {
-    const { token } = req.body;
-    
-    const tokenData = await dbGet(
-      'SELECT * FROM verification_tokens WHERE token = ? AND expires_at > datetime("now")',
-      [token]
-    );
-    
-    if (!tokenData) {
-      return res.status(400).json({ error: 'Invalid or expired token' });
-    }
-
-    // Update user verification status
-    await dbRun(
-      'UPDATE users SET is_email_verified = 1, updated_at = datetime("now") WHERE id = ?',
-      [tokenData.user_id]
-    );
-
-    // Remove used token
-    await dbRun(
-      'DELETE FROM verification_tokens WHERE id = ?',
-      [tokenData.id]
-    );
-
-    res.json({ message: 'Email verified successfully' });
-  } catch (error) {
-    console.error('Error verifying email:', error);
-    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
