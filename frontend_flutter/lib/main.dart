@@ -181,6 +181,7 @@ class MyApp extends StatelessWidget {
             return BlankDocumentEditorPage(
               proposalId: args?['proposalId'],
               proposalTitle: args?['proposalTitle'] ?? 'Untitled Document',
+              readOnly: args?['readOnly'] ?? false,
             );
           },
           '/enhanced-compose': (context) {

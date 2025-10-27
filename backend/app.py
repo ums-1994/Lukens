@@ -281,10 +281,10 @@ def load_tokens():
                 for token, token_data in data.items():
                     token_data['created_at'] = datetime.fromisoformat(token_data['created_at'])
                     token_data['expires_at'] = datetime.fromisoformat(token_data['expires_at'])
-                print(f"🔄 Loaded {len(data)} tokens from file")
+                print(f"[INFO] Loaded {len(data)} tokens from file")
                 return data
     except Exception as e:
-        print(f"⚠️ Could not load tokens from file: {e}")
+        print(f"[WARN] Could not load tokens from file: {e}")
     return {}
 
 def save_tokens():
@@ -300,9 +300,9 @@ def save_tokens():
             }
         with open(TOKEN_FILE, 'w') as f:
             json.dump(data, f, indent=2)
-        print(f"💾 Saved {len(data)} tokens to file")
+        print(f"[INFO] Saved {len(data)} tokens to file")
     except Exception as e:
-        print(f"⚠️ Could not save tokens to file: {e}")
+        print(f"[WARN] Could not save tokens to file: {e}")
 
 valid_tokens = load_tokens()
 
@@ -1066,32 +1066,97 @@ def send_for_approval(username, proposal_id):
 def approve_proposal(username, proposal_id):
     """Approve proposal and send to client"""
     try:
-        data = request.get_json() or {}
+        # Handle both JSON and empty body
+        data = request.get_json(force=True, silent=True) or {}
         comments = data.get('comments', '')
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Update status to Sent to Client (approved proposals go directly to client)
+            # Get proposal details including client email
+            cursor.execute(
+                '''SELECT id, title, client_name, client_email, user_id 
+                   FROM proposals WHERE id = %s''',
+                (proposal_id,)
+            )
+            proposal = cursor.fetchone()
+            
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            proposal_id, title, client_name, client_email, creator = proposal
+            
+            # Update status to Sent to Client
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() 
-                   WHERE id = %s RETURNING id, title, status''',
+                   WHERE id = %s RETURNING status''',
                 ('Sent to Client', proposal_id)
             )
             result = cursor.fetchone()
             conn.commit()
             
             if result:
-                print(f"✅ Proposal {proposal_id} '{result[1]}' approved and sent to client")
+                print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
+                
+                # Send email to client if email is provided
+                if client_email and client_email.strip():
+                    try:
+                        proposal_url = f"{FRONTEND_URL}/#/client-portal/{proposal_id}"
+                        
+                        email_body = f"""
+                        <html>
+                        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <div style="background-color: #2ECC71; padding: 20px; text-align: center;">
+                                <h1 style="color: white; margin: 0;">Proposal Approved</h1>
+                            </div>
+                            <div style="padding: 30px; background-color: #f9f9f9;">
+                                <p>Dear {client_name or 'Valued Client'},</p>
+                                
+                                <p>Great news! Your proposal "<strong>{title}</strong>" has been approved and is ready for your review.</p>
+                                
+                                <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                                    <h3 style="margin-top: 0; color: #2C3E50;">Proposal Details</h3>
+                                    <p><strong>Title:</strong> {title}</p>
+                                    <p><strong>Status:</strong> <span style="color: #2ECC71;">Approved & Ready for Review</span></p>
+                                </div>
+                                
+                                <div style="text-align: center; margin: 30px 0;">
+                                    <a href="{proposal_url}" 
+                                       style="background-color: #2ECC71; color: white; padding: 15px 30px; 
+                                              text-decoration: none; border-radius: 5px; display: inline-block;
+                                              font-weight: bold;">
+                                        View Proposal
+                                    </a>
+                                </div>
+                                
+                                <p style="color: #7F8C8D; font-size: 12px; margin-top: 30px;">
+                                    This is an automated message. Please do not reply to this email.
+                                </p>
+                            </div>
+                        </body>
+                        </html>
+                        """
+                        
+                        send_email(
+                            to_email=client_email,
+                            subject=f"Proposal Approved: {title}",
+                            body=email_body
+                        )
+                        print(f"[SUCCESS] Email sent to client: {client_email}")
+                    except Exception as email_error:
+                        print(f"[WARN] Could not send email to client: {email_error}")
+                        # Don't fail the approval if email fails
+                
                 return {
                     'detail': 'Proposal approved and sent to client',
-                    'status': result[2]
+                    'status': result[0],
+                    'email_sent': bool(client_email and client_email.strip())
                 }, 200
             else:
-                return {'detail': 'Proposal not found'}, 404
+                return {'detail': 'Failed to update proposal status'}, 500
                 
     except Exception as e:
-        print(f"❌ Error approving proposal: {e}")
+        print(f"[ERROR] Error approving proposal: {e}")
         import traceback
         traceback.print_exc()
         return {'detail': str(e)}, 500
@@ -1101,7 +1166,8 @@ def approve_proposal(username, proposal_id):
 def reject_proposal(username, proposal_id):
     """Reject proposal and send back to draft"""
     try:
-        data = request.get_json() or {}
+        # Handle both JSON and empty body
+        data = request.get_json(force=True, silent=True) or {}
         comments = data.get('comments', '')
         
         with get_db_connection() as conn:

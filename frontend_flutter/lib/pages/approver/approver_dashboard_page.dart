@@ -4,6 +4,8 @@ import '../../services/api_service.dart';
 import '../../widgets/role_switcher.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 
 class ApproverDashboardPage extends StatefulWidget {
   const ApproverDashboardPage({super.key});
@@ -34,20 +36,33 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
 
     setState(() => _isLoading = true);
 
-    // Wait a bit for auth to be ready
-    await Future.delayed(const Duration(milliseconds: 300));
-
     try {
-      var token = AuthService.token;
-      print('🔑 Token available: ${token != null}');
+      // Force restore from localStorage
+      print('🔄 Restoring session from storage...');
+      AuthService.restoreSessionFromStorage();
 
-      // Try multiple times if token is not immediately available
-      int attempts = 0;
-      while (token == null && attempts < 5) {
-        print('⚠️ Token is null, attempt ${attempts + 1}/5...');
-        await Future.delayed(const Duration(milliseconds: 200));
+      var token = AuthService.token;
+      print('🔑 After restore - Token available: ${token != null}');
+      print('🔑 After restore - User: ${AuthService.currentUser?['email']}');
+      print('🔑 After restore - isLoggedIn: ${AuthService.isLoggedIn}');
+
+      if (token == null) {
+        print(
+            '⚠️ Token still null after restore, checking localStorage directly...');
+        // Check localStorage directly
+        try {
+          final data = html.window.localStorage['lukens_auth_session'];
+          print('📦 localStorage data exists: ${data != null}');
+          if (data != null) {
+            print('📦 localStorage content: ${data.substring(0, 50)}...');
+          }
+        } catch (e) {
+          print('❌ Error accessing localStorage: $e');
+        }
+
+        // Wait and retry
+        await Future.delayed(const Duration(milliseconds: 500));
         token = AuthService.token;
-        attempts++;
       }
 
       if (token != null) {
@@ -55,7 +70,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
       }
 
       if (token == null) {
-        print('❌ No token available after ${attempts} attempts');
+        print('❌ No token available after restoration attempts');
         if (mounted) {
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -531,74 +546,99 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
   }
 
   Widget _buildApprovalItem(int id, String name, String client, String meta) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF3CD),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFF39C12)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.pending,
-                        size: 16, color: Color(0xFFF39C12)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
+    return InkWell(
+      onTap: () {
+        print('📄 Opening proposal for viewing:');
+        print('   ID: $id');
+        print('   Title: $name');
+        print('   Arguments: ${{
+          'proposalId': id.toString(),
+          'proposalTitle': name,
+          'readOnly': true
+        }}');
+
+        // Navigate to view the proposal
+        Navigator.pushNamed(
+          context,
+          '/blank-document',
+          arguments: {
+            'proposalId': id.toString(),
+            'proposalTitle': name,
+            'readOnly': true, // View-only mode for approver
+          },
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3CD),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: const Color(0xFFF39C12)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.pending,
+                          size: 16, color: Color(0xFFF39C12)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
+                      const Icon(Icons.arrow_forward_ios,
+                          size: 12, color: Color(0xFF7F8C8D)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '🏢 $client',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF2C3E50),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '🏢 $client',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF2C3E50),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  meta,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF7F8C8D),
+                  const SizedBox(height: 4),
+                  Text(
+                    meta,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF7F8C8D),
+                    ),
                   ),
+                ],
+              ),
+            ),
+            Row(
+              children: [
+                _buildButton(
+                  'Approve',
+                  const Color(0xFF2ECC71),
+                  false,
+                  () => _approveProposal(id, name),
+                ),
+                const SizedBox(width: 10),
+                _buildButton(
+                  'Reject',
+                  const Color(0xFFE74C3C),
+                  true,
+                  () => _rejectProposal(id, name),
                 ),
               ],
             ),
-          ),
-          Row(
-            children: [
-              _buildButton(
-                'Approve',
-                const Color(0xFF2ECC71),
-                false,
-                () => _approveProposal(id, name),
-              ),
-              const SizedBox(width: 10),
-              _buildButton(
-                'Reject',
-                const Color(0xFFE74C3C),
-                true,
-                () => _rejectProposal(id, name),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

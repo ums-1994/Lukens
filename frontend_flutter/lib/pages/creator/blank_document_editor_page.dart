@@ -15,6 +15,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalTitle;
   final String? initialTitle;
   final Map<String, dynamic>? aiGeneratedSections;
+  final bool readOnly; // For approver view-only mode
 
   const BlankDocumentEditorPage({
     super.key,
@@ -22,6 +23,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.proposalTitle,
     this.initialTitle,
     this.aiGeneratedSections,
+    this.readOnly = false, // Default to editable
   });
 
   @override
@@ -88,6 +90,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   @override
   void initState() {
     super.initState();
+
+    print('📄 BlankDocumentEditorPage initState');
+    print('   proposalId: ${widget.proposalId}');
+    print('   proposalTitle: ${widget.proposalTitle}');
+    print('   initialTitle: ${widget.initialTitle}');
+
     _titleController = TextEditingController(
       text: widget.initialTitle ?? widget.proposalTitle ?? 'Untitled Document',
     );
@@ -1976,18 +1984,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
-          // Left Sidebar
-          _buildLeftSidebar(),
-          // Sections Sidebar (conditional)
-          if (_showSectionsSidebar) _buildSectionsSidebar(),
+          // Left Sidebar (hide in read-only mode)
+          if (!widget.readOnly) _buildLeftSidebar(),
+          // Sections Sidebar (conditional, hide in read-only mode)
+          if (!widget.readOnly && _showSectionsSidebar) _buildSectionsSidebar(),
           // Main content
           Expanded(
             child: Column(
               children: [
                 // Top header
                 _buildTopHeader(),
-                // Formatting toolbar
-                _buildToolbar(),
+                // Formatting toolbar (hide in read-only mode)
+                if (!widget.readOnly) _buildToolbar(),
                 // Main document area
                 Expanded(
                   child: Row(
@@ -2016,18 +2024,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 ),
                               ),
                             ),
-                            // Floating toolbar on right
-                            Positioned(
-                              right: 20,
-                              top: 0,
-                              bottom: 0,
-                              child: _buildFloatingToolbar(),
-                            ),
+                            // Floating toolbar on right (hide in read-only mode)
+                            if (!widget.readOnly)
+                              Positioned(
+                                right: 20,
+                                top: 0,
+                                bottom: 0,
+                                child: _buildFloatingToolbar(),
+                              ),
                           ],
                         ),
                       ),
-                      // Right sidebar
-                      _buildRightSidebar(),
+                      // Right sidebar (hide in read-only mode)
+                      if (!widget.readOnly) _buildRightSidebar(),
                     ],
                   ),
                 ),
@@ -2500,14 +2509,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         Expanded(
                           child: TextField(
                             controller: _titleController,
+                            enabled: !widget
+                                .readOnly, // Disable editing in read-only mode
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF1A1A1A),
                             ),
-                            decoration: const InputDecoration(
-                              hintText: 'Click to edit document title...',
-                              hintStyle: TextStyle(
+                            decoration: InputDecoration(
+                              hintText: widget.readOnly
+                                  ? '' // No hint in read-only mode
+                                  : 'Click to edit document title...',
+                              hintStyle: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w400,
                                 color: Color(0xFFBDC3C7),
@@ -2540,6 +2553,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                   ),
                 ),
+                // View Only badge (show in read-only mode)
+                if (widget.readOnly) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF39C12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.visibility, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'View Only',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -3274,18 +3314,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 controller: section.controller,
                 maxLines: null,
                 minLines: 15,
+                enabled: !widget.readOnly, // Disable editing in read-only mode
                 style: _getContentTextStyle(),
                 textAlign: _getTextAlignment(),
                 textAlignVertical: TextAlignVertical.top,
-                decoration: const InputDecoration(
-                  hintText: 'Start writing your content here...',
-                  hintStyle: TextStyle(
+                decoration: InputDecoration(
+                  hintText: widget.readOnly
+                      ? '' // No hint in read-only mode
+                      : 'Start writing your content here...',
+                  hintStyle: const TextStyle(
                     fontSize: 14,
                     color: Color(0xFFBDC3C7),
                   ),
                   border: InputBorder.none,
                   focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.all(8),
+                  contentPadding: const EdgeInsets.all(8),
                 ),
               ),
               // Display tables below text
