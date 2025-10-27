@@ -1380,8 +1380,8 @@ def create_comment(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/comments/proposal/{proposal_id}")
-def get_proposal_comments(proposal_id: int):
+@app.route("/api/comments/proposal/<int:proposal_id>", methods=['GET', 'OPTIONS'])
+def get_proposal_comments(proposal_id):
     """Get all comments for a proposal"""
     try:
         with _pg_conn() as conn:
