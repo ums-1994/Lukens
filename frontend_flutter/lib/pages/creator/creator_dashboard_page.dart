@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
+import '../../widgets/role_switcher.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
+import '../../services/role_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -142,6 +144,9 @@ class _DashboardPageState extends State<DashboardPage>
                   ),
                   Row(
                     children: [
+                      // Role Switcher
+                      const CompactRoleSwitcher(),
+                      const SizedBox(width: 20),
                       ClipOval(
                         child: Image.asset(
                           'assets/images/User_Profile.png',

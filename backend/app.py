@@ -268,7 +268,43 @@ def init_db():
         raise
 
 # Auth token storage (in production, use Redis or session manager)
-valid_tokens = {}
+# File-based persistence to survive restarts
+TOKEN_FILE = os.path.join(os.path.dirname(__file__), 'auth_tokens.json')
+
+def load_tokens():
+    """Load tokens from file"""
+    try:
+        if os.path.exists(TOKEN_FILE):
+            with open(TOKEN_FILE, 'r') as f:
+                data = json.load(f)
+                # Convert string timestamps back to datetime objects
+                for token, token_data in data.items():
+                    token_data['created_at'] = datetime.fromisoformat(token_data['created_at'])
+                    token_data['expires_at'] = datetime.fromisoformat(token_data['expires_at'])
+                print(f"🔄 Loaded {len(data)} tokens from file")
+                return data
+    except Exception as e:
+        print(f"⚠️ Could not load tokens from file: {e}")
+    return {}
+
+def save_tokens():
+    """Save tokens to file"""
+    try:
+        # Convert datetime objects to strings for JSON serialization
+        data = {}
+        for token, token_data in valid_tokens.items():
+            data[token] = {
+                'username': token_data['username'],
+                'created_at': token_data['created_at'].isoformat(),
+                'expires_at': token_data['expires_at'].isoformat()
+            }
+        with open(TOKEN_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        print(f"💾 Saved {len(data)} tokens to file")
+    except Exception as e:
+        print(f"⚠️ Could not save tokens to file: {e}")
+
+valid_tokens = load_tokens()
 
 # Utility functions
 def get_db():
@@ -288,6 +324,7 @@ def generate_token(username):
         'created_at': datetime.now(),
         'expires_at': datetime.now() + timedelta(days=7)
     }
+    save_tokens()  # Persist to file
     print(f"🎫 Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
     print(f"📋 Total valid tokens: {len(valid_tokens)}")
     return token
@@ -298,6 +335,7 @@ def verify_token(token):
     token_data = valid_tokens[token]
     if datetime.now() > token_data['expires_at']:
         del valid_tokens[token]
+        save_tokens()  # Persist after deleting expired token
         return None
     return token_data['username']
 
@@ -980,40 +1018,118 @@ def submit_for_review(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.post("/api/proposals/<int:proposal_id>/send-for-approval")
+@token_required
+def send_for_approval(username, proposal_id):
+    """Send proposal for CEO approval"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Check if proposal exists and belongs to user
+            cursor.execute(
+                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
+            )
+            proposal = cursor.fetchone()
+            
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            current_status = proposal[2]
+            if current_status != 'draft':
+                return {'detail': f'Proposal is already {current_status}'}, 400
+            
+            # Update status to Pending CEO Approval
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() 
+                   WHERE id = %s RETURNING status''',
+                ('Pending CEO Approval', proposal_id)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            print(f"✅ Proposal {proposal_id} sent for approval")
+            return {
+                'detail': 'Proposal sent for approval successfully',
+                'status': result[0]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error sending proposal for approval: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @app.post("/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username, proposal_id):
+    """Approve proposal and send to client"""
     try:
-        comments = request.args.get('comments', '')
+        data = request.get_json() or {}
+        comments = data.get('comments', '')
         
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''UPDATE proposals SET status = 'Approved' WHERE id = %s''',
-            (proposal_id,)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Proposal approved'}, 200
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Update status to Sent to Client (approved proposals go directly to client)
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() 
+                   WHERE id = %s RETURNING id, title, status''',
+                ('Sent to Client', proposal_id)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                print(f"✅ Proposal {proposal_id} '{result[1]}' approved and sent to client")
+                return {
+                    'detail': 'Proposal approved and sent to client',
+                    'status': result[2]
+                }, 200
+            else:
+                return {'detail': 'Proposal not found'}, 404
+                
     except Exception as e:
+        print(f"❌ Error approving proposal: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/proposals/<int:proposal_id>/reject")
 @token_required
 def reject_proposal(username, proposal_id):
+    """Reject proposal and send back to draft"""
     try:
-        comments = request.args.get('comments', '')
+        data = request.get_json() or {}
+        comments = data.get('comments', '')
         
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''UPDATE proposals SET status = 'Rejected' WHERE id = %s''',
-            (proposal_id,)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Proposal rejected'}, 200
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Update status to draft (rejected proposals go back to draft for editing)
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() 
+                   WHERE id = %s RETURNING id, title, status''',
+                ('draft', proposal_id)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                print(f"✅ Proposal {proposal_id} '{result[1]}' rejected and returned to draft")
+                return {
+                    'detail': 'Proposal rejected and returned to draft',
+                    'status': result[2],
+                    'comments': comments
+                }, 200
+            else:
+                return {'detail': 'Proposal not found'}, 404
+                
     except Exception as e:
+        print(f"❌ Error rejecting proposal: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.patch("/proposals/<int:proposal_id>/status")

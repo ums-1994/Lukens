@@ -28,6 +28,7 @@ import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
+import 'services/role_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -64,8 +65,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => AppState(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => AppState()),
+        ChangeNotifierProvider(create: (context) => RoleService()),
+      ],
       child: MaterialApp(
         title: 'Lukens',
         theme: ThemeData(
