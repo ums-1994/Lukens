@@ -22,11 +22,13 @@ import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/creator/collaboration_page.dart';
+import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
+import 'services/role_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -63,8 +65,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => AppState(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => AppState()),
+        ChangeNotifierProvider(create: (context) => RoleService()),
+      ],
       child: MaterialApp(
         title: 'Lukens',
         theme: ThemeData(
@@ -74,6 +79,49 @@ class MyApp extends StatelessWidget {
         ),
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
+          print('🔍 onGenerateRoute - Route name: ${settings.name}');
+
+          // Handle collaboration routes with token
+          if (settings.name == '/collaborate' ||
+              (settings.name != null &&
+                  settings.name!.contains('collaborate'))) {
+            print('🔍 Collaboration route detected!');
+
+            // Extract token from settings.name (it includes query params)
+            String? token;
+
+            // Try to get token from the route name itself
+            if (settings.name != null && settings.name!.contains('token=')) {
+              final uri = Uri.parse('http://dummy${settings.name}');
+              token = uri.queryParameters['token'];
+              print('📍 Token from route name: $token');
+            }
+
+            // Fallback: Try current URL
+            if (token == null || token.isEmpty) {
+              final currentUrl = web.window.location.href;
+              print('📍 Trying current URL: $currentUrl');
+              final uri = Uri.parse(currentUrl);
+
+              // Check fragment for token
+              if (uri.fragment.contains('token=')) {
+                final fragmentUri =
+                    Uri.parse('http://dummy?${uri.fragment.split('?').last}');
+                token = fragmentUri.queryParameters['token'];
+                print('📍 Token from fragment: $token');
+              }
+            }
+
+            if (token != null && token.isNotEmpty) {
+              print('✅ Navigating to GuestCollaborationPage with token');
+              return MaterialPageRoute(
+                builder: (context) => const GuestCollaborationPage(),
+              );
+            } else {
+              print('❌ No token found, cannot navigate');
+            }
+          }
+
           // Handle verification routes
           if (settings.name == '/verify-email' ||
               (settings.name != null &&
@@ -156,6 +204,7 @@ class MyApp extends StatelessWidget {
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
           '/collaboration': (context) => const CollaborationPage(),
+          // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) => const AnalyticsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
@@ -201,6 +250,24 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
 
+    // Check if this is a collaboration URL (has token and contains 'collaborate')
+    if (uri.fragment.contains('/collaborate') &&
+        uri.queryParameters.containsKey('token')) {
+      final token = uri.queryParameters['token'];
+      if (token != null && token.isNotEmpty) {
+        // Navigate to guest collaboration page
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const GuestCollaborationPage(),
+            ),
+          );
+        });
+        return;
+      }
+    }
+
     // Check if this is a verification URL
     if (uri.queryParameters.containsKey('token')) {
       final token = uri.queryParameters['token'];
@@ -220,6 +287,32 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if this is a collaboration URL (guest access - no auth required)
+    final currentUrl = web.window.location.href;
+    final hash = web.window.location.hash;
+    final search = web.window.location.search;
+
+    print('🔍 AuthWrapper - Full URL: $currentUrl');
+    print('🔍 AuthWrapper - Hash: $hash');
+    print('🔍 AuthWrapper - Search: $search');
+
+    // Check for collaboration in hash or URL
+    final isCollaboration = currentUrl.contains('/collaborate') ||
+        hash.contains('/collaborate') ||
+        currentUrl.contains('collaborate?token=') ||
+        hash.contains('collaborate?token=');
+
+    final hasToken = currentUrl.contains('token=') ||
+        hash.contains('token=') ||
+        search.contains('token=');
+
+    print('🔍 Is Collaboration: $isCollaboration, Has Token: $hasToken');
+
+    if (isCollaboration && hasToken) {
+      print('✅ Detected collaboration URL - showing GuestCollaborationPage');
+      return const GuestCollaborationPage();
+    }
+
     // Check if user is authenticated
     if (AuthService.isLoggedIn) {
       // Initialize AppState when user is logged in

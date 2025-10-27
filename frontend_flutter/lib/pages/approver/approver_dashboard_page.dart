@@ -1,7 +1,305 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
+import '../../widgets/role_switcher.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-class ApproverDashboardPage extends StatelessWidget {
+class ApproverDashboardPage extends StatefulWidget {
   const ApproverDashboardPage({super.key});
+
+  @override
+  State<ApproverDashboardPage> createState() => _ApproverDashboardPageState();
+}
+
+class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
+  List<Map<String, dynamic>> _pendingProposals = [];
+  List<Map<String, dynamic>> _recentlyApproved = [];
+  bool _isLoading = true;
+  int _pendingCount = 0;
+  int _approvedCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Wait for next frame to ensure auth is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
+  }
+
+  Future<void> _loadData() async {
+    print('🔄 Approver Dashboard: Loading data...');
+    if (!mounted) return;
+
+    setState(() => _isLoading = true);
+
+    // Wait a bit for auth to be ready
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    try {
+      var token = AuthService.token;
+      print('🔑 Token available: ${token != null}');
+
+      // Try multiple times if token is not immediately available
+      int attempts = 0;
+      while (token == null && attempts < 5) {
+        print('⚠️ Token is null, attempt ${attempts + 1}/5...');
+        await Future.delayed(const Duration(milliseconds: 200));
+        token = AuthService.token;
+        attempts++;
+      }
+
+      if (token != null) {
+        print('🔑 Token value: ${token.substring(0, 20)}...');
+      }
+
+      if (token == null) {
+        print('❌ No token available after ${attempts} attempts');
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                  '⚠️ Session expired. Please switch back to Creator mode.'),
+              backgroundColor: Colors.orange,
+              action: SnackBarAction(
+                label: 'Retry',
+                textColor: Colors.white,
+                onPressed: () => _loadData(),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      print('📡 Fetching proposals from API...');
+      print('🌐 API URL: ${ApiService.baseUrl}/api/proposals');
+
+      final proposals = await ApiService.getProposals(token).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('⏱️ Timeout! API call took too long');
+          throw Exception('Request timed out');
+        },
+      );
+
+      print('✅ API Response received!');
+      print('✅ Number of proposals: ${proposals.length}');
+      print('✅ Proposals type: ${proposals.runtimeType}');
+
+      if (proposals.isEmpty) {
+        print('⚠️ WARNING: No proposals returned from API!');
+      }
+
+      // Debug: Print all proposal statuses
+      print('\n📋 All Proposals:');
+      for (var i = 0; i < proposals.length; i++) {
+        final p = proposals[i];
+        print('  [$i] Title: "${p['title']}"');
+        print('      Status: "${p['status']}"');
+        print('      ID: ${p['id']}');
+        print('      User: ${p['user_id']}');
+      }
+      print('');
+
+      // Filter for pending approval
+      _pendingProposals = proposals
+          .where((p) {
+            final status = p['status'] as String?;
+            print(
+                '🔍 Checking proposal "${p['title']}" with status: [$status]');
+            // Check exact match first, then case-insensitive
+            return status == 'Pending CEO Approval' ||
+                status?.toLowerCase() == 'pending ceo approval';
+          })
+          .map((p) => p as Map<String, dynamic>)
+          .toList();
+
+      print('⏳ Pending approvals found: ${_pendingProposals.length}');
+
+      // Filter for recently approved/sent
+      _recentlyApproved = proposals
+          .where((p) {
+            final status = (p['status'] as String?)?.toLowerCase() ?? '';
+            return status == 'sent to client' || status == 'approved';
+          })
+          .take(5)
+          .map((p) => p as Map<String, dynamic>)
+          .toList();
+
+      print('✅ Recently approved found: ${_recentlyApproved.length}');
+
+      if (mounted) {
+        setState(() {
+          _pendingCount = _pendingProposals.length;
+          _approvedCount = _recentlyApproved.length;
+          _isLoading = false;
+        });
+        print('✅ State updated! Loading complete.');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error loading approver data: $e');
+      print('Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _approveProposal(int proposalId, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Approve Proposal'),
+        content: Text(
+            'Approve "$title"?\n\nThis will automatically send the proposal to the client.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Approve & Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final token = AuthService.token;
+      if (token == null) throw Exception('Not authenticated');
+
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/proposals/$proposalId/approve'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Proposal approved and sent to client!'),
+              backgroundColor: Color(0xFF2ECC71),
+            ),
+          );
+          _loadData(); // Refresh list
+        }
+      } else {
+        throw Exception('Failed to approve proposal');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to approve: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectProposal(int proposalId, String title) async {
+    final commentController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject Proposal'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Reject "$title"?'),
+            const SizedBox(height: 12),
+            const Text(
+                'This will return the proposal to draft for the creator to make changes.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: commentController,
+              decoration: const InputDecoration(
+                labelText: 'Feedback (optional)',
+                hintText: 'e.g., Please update the pricing section',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE74C3C),
+            ),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final token = AuthService.token;
+      if (token == null) throw Exception('Not authenticated');
+
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/proposals/$proposalId/reject'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'comments': commentController.text.trim(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal rejected and returned to creator'),
+              backgroundColor: Color(0xFFF39C12),
+            ),
+          );
+          _loadData(); // Refresh list
+        }
+      } else {
+        throw Exception('Failed to reject proposal');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to reject: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,51 +328,33 @@ class ApproverDashboardPage extends StatelessWidget {
                   ),
                   Row(
                     children: [
-                      // Search Bar
-                      Container(
-                        width: 200,
-                        height: 35,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F9FA),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
-                        ),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 15),
-                          child: Row(
-                            children: [
-                              Icon(Icons.search, size: 16, color: Color(0xFF7F8C8D)),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  decoration: InputDecoration(
-                                    hintText: 'Search proposals...',
-                                    hintStyle: TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
-                                    border: InputBorder.none,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                      // Role Switcher
+                      const CompactRoleSwitcher(),
+                      const SizedBox(width: 20),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, color: Colors.white),
+                        onPressed: _loadData,
+                        tooltip: 'Refresh',
                       ),
                       const SizedBox(width: 15),
                       // Notification Bell
                       Stack(
                         children: [
-                          const Icon(Icons.notifications, color: Colors.white, size: 24),
-                          Positioned(
-                            top: 0,
-                            right: 0,
-                            child: Container(
-                              width: 10,
-                              height: 10,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFE74C3C),
-                                shape: BoxShape.circle,
+                          const Icon(Icons.notifications,
+                              color: Colors.white, size: 24),
+                          if (_pendingCount > 0)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFE74C3C),
+                                  shape: BoxShape.circle,
+                                ),
                               ),
                             ),
-                          ),
                         ],
                       ),
                       const SizedBox(width: 15),
@@ -88,10 +368,13 @@ class ApproverDashboardPage extends StatelessWidget {
                               color: Color(0xFF3498DB),
                               shape: BoxShape.circle,
                             ),
-                            child: const Center(
+                            child: Center(
                               child: Text(
-                                'JD',
-                                style: TextStyle(
+                                (AuthService.currentUser?['email'] as String?)
+                                        ?.substring(0, 2)
+                                        .toUpperCase() ??
+                                    'AP',
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -99,9 +382,9 @@ class ApproverDashboardPage extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          const Text(
-                            'John Doe - Approver',
-                            style: TextStyle(color: Colors.white),
+                          Text(
+                            '${AuthService.currentUser?['email'] ?? 'Approver'} - CEO',
+                            style: const TextStyle(color: Colors.white),
                           ),
                         ],
                       ),
@@ -111,84 +394,51 @@ class ApproverDashboardPage extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Main Content
           Expanded(
-            child: Row(
-              children: [
-                // Sidebar
-                Container(
-                  width: 250,
-                  color: const Color(0xFF34495E),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        // Title
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                          child: Text(
-                            'Reviewer / Approver',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildApproverNavItem('📊', 'Dashboard', true),
-                        _buildApproverNavItem('📋', 'Proposals for Review', false),
-                        _buildApproverNavItem('💬', 'Comments & Feedback', false),
-                        _buildApproverNavItem('✅', 'Approval History', false),
-                        _buildApproverNavItem('🔍', 'Governance Checks', false),
-                        const SizedBox(height: 20), // Add bottom padding
-                      ],
-                    ),
-                  ),
-                ),
-                
-                // Content Area
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // My Approval Queue
-                          _buildSection(
-                            '📋 My Approval Queue',
-                            _buildApprovalQueue(),
-                          ),
-                          const SizedBox(height: 20),
-                          
-                          // My Approval Metrics
-                          _buildSection(
-                            '📈 My Approval Metrics',
-                            _buildApproverMetrics(),
-                          ),
-                          const SizedBox(height: 20),
-                          
-                          // Recently Approved
-                          _buildSection(
-                            '⏰ Recently Approved',
-                            _buildRecentlyApproved(),
-                          ),
-                        ],
+            child: RefreshIndicator(
+              onRefresh: _loadData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // My Approval Queue
+                      _buildSection(
+                        '📋 My Approval Queue ($_pendingCount pending)',
+                        _isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _buildApprovalQueue(),
                       ),
-                    ),
+                      const SizedBox(height: 20),
+
+                      // My Approval Metrics
+                      _buildSection(
+                        '📈 My Approval Metrics',
+                        _buildApproverMetrics(),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Recently Approved
+                      _buildSection(
+                        '⏰ Recently Approved',
+                        _buildRecentlyApproved(),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-          
+
           // Footer
           Container(
             height: 50,
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFDDD), style: BorderStyle.solid)),
+              border: Border(top: BorderSide(color: Color(0xFFDDD))),
             ),
             child: const Center(
               child: Text(
@@ -205,61 +455,12 @@ class ApproverDashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildApproverNavItem(String icon, String label, bool isActive) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-      decoration: BoxDecoration(
-        color: isActive ? const Color(0xFF5DADE2) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: InkWell(
-        onTap: () {},
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: isActive ? Colors.white : const Color(0xFF7F8C8D),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Center(
-                  child: Text(
-                    icon,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isActive ? const Color(0xFF34495E) : Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? const Color(0xFF2C3E50) : Colors.white,
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildSection(String title, Widget content) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
+        border: Border.all(color: const Color(0xFFCCC)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(15),
@@ -269,7 +470,7 @@ class ApproverDashboardPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.only(bottom: 10),
               decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Color(0xFFEEE), style: BorderStyle.solid)),
+                border: Border(bottom: BorderSide(color: Color(0xFFEEE))),
               ),
               child: Text(
                 title,
@@ -289,34 +490,54 @@ class ApproverDashboardPage extends StatelessWidget {
   }
 
   Widget _buildApprovalQueue() {
-    final approvalItems = [
-      {
-        'name': 'GlobalTech Inc. - Cloud Migration',
-        'meta': 'Submitted by: Sarah Johnson • Due: Today',
-      },
-      {
-        'name': 'NewVentures - Security Assessment',
-        'meta': 'Submitted by: Michael Chen • Due: Tomorrow',
-      },
-      {
-        'name': 'Axis Corp - Managed Services',
-        'meta': 'Submitted by: Emily Wong • Due: In 2 days',
-      },
-    ];
+    if (_pendingProposals.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(30),
+        child: const Center(
+          child: Column(
+            children: [
+              Icon(Icons.check_circle_outline,
+                  size: 48, color: Color(0xFF2ECC71)),
+              SizedBox(height: 12),
+              Text(
+                'No proposals pending approval',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF7F8C8D),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Column(
-      children: approvalItems.map((item) => _buildApprovalItem(item['name'] as String, item['meta'] as String)).toList(),
+      children: _pendingProposals.map((proposal) {
+        final submittedBy = proposal['user_id'] ?? 'Unknown';
+        final createdAt = proposal['created_at'] != null
+            ? DateTime.parse(proposal['created_at'])
+            : DateTime.now();
+        final daysAgo = DateTime.now().difference(createdAt).inDays;
+
+        return _buildApprovalItem(
+          proposal['id'],
+          proposal['title'] ?? 'Untitled',
+          proposal['client_name'] ?? 'No client',
+          'Submitted by: $submittedBy • ${daysAgo == 0 ? "Today" : "$daysAgo days ago"}',
+        );
+      }).toList(),
     );
   }
 
-  Widget _buildApprovalItem(String name, String meta) {
+  Widget _buildApprovalItem(int id, String name, String client, String meta) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
+        color: const Color(0xFFFFF3CD),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
+        border: Border.all(color: const Color(0xFFF39C12)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -325,14 +546,31 @@ class ApproverDashboardPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    const Icon(Icons.pending,
+                        size: 16, color: Color(0xFFF39C12)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
                 Text(
-                  name,
+                  '🏢 $client',
                   style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontSize: 13,
+                    color: Color(0xFF2C3E50),
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Text(
                   meta,
                   style: const TextStyle(
@@ -343,13 +581,21 @@ class ApproverDashboardPage extends StatelessWidget {
               ],
             ),
           ),
-                          Row(
+          Row(
             children: [
-              _buildButton('View Details', const Color(0xFF3498DB), true),
+              _buildButton(
+                'Approve',
+                const Color(0xFF2ECC71),
+                false,
+                () => _approveProposal(id, name),
+              ),
               const SizedBox(width: 10),
-              _buildButton('Approve', const Color(0xFF3498DB), false),
-              const SizedBox(width: 10),
-              _buildButton('Reject', const Color(0xFFE74C3C), false),
+              _buildButton(
+                'Reject',
+                const Color(0xFFE74C3C),
+                true,
+                () => _rejectProposal(id, name),
+              ),
             ],
           ),
         ],
@@ -357,20 +603,24 @@ class ApproverDashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildButton(String text, Color color, bool isOutline) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-      decoration: BoxDecoration(
-        color: isOutline ? Colors.transparent : color,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color, style: BorderStyle.solid),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isOutline ? color : Colors.white,
-          fontWeight: FontWeight.w500,
-          fontSize: 12,
+  Widget _buildButton(
+      String text, Color color, bool isOutline, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+        decoration: BoxDecoration(
+          color: isOutline ? Colors.transparent : color,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: isOutline ? color : Colors.white,
+            fontWeight: FontWeight.w500,
+            fontSize: 12,
+          ),
         ),
       ),
     );
@@ -385,10 +635,12 @@ class ApproverDashboardPage extends StatelessWidget {
       crossAxisSpacing: 15,
       mainAxisSpacing: 15,
       children: [
-        _buildMetricCard('Pending My Approval', '7', 'Proposals'),
-        _buildMetricCard('Avg. Response Time', '1.5', 'Days'),
+        _buildMetricCard(
+            'Pending My Approval', _pendingCount.toString(), 'Proposals'),
+        _buildMetricCard(
+            'Recently Approved', _approvedCount.toString(), 'This Month'),
         _buildMetricCard('Approval Rate', '85%', 'This Month'),
-        _buildMetricCard('Rejected Proposals', '3', 'This Month'),
+        _buildMetricCard('Avg. Response Time', '1.5', 'Days'),
       ],
     );
   }
@@ -414,26 +666,22 @@ class ApproverDashboardPage extends StatelessWidget {
             ),
             const Spacer(),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  children: [
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF3498DB),
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF7F8C8D),
-                      ),
-                    ),
-                  ],
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF3498DB),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF7F8C8D),
+                  ),
                 ),
               ],
             ),
@@ -444,42 +692,59 @@ class ApproverDashboardPage extends StatelessWidget {
   }
 
   Widget _buildRecentlyApproved() {
-    final approvedItems = [
-      {
-        'name': 'DataCore - Implementation',
-        'meta': 'Approved: Today, 10:30 AM',
-        'status': 'Signed',
-        'statusColor': const Color(0xFFC3E6CB),
-        'textColor': const Color(0xFF155724),
-      },
-      {
-        'name': 'WebSolutions - Support',
-        'meta': 'Approved: Yesterday, 3:45 PM',
-        'status': 'Waiting for Client',
-        'statusColor': const Color(0xFFFFF3CD),
-        'textColor': const Color(0xFF856404),
-      },
-    ];
+    if (_recentlyApproved.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'No recently approved proposals',
+            style: TextStyle(color: Color(0xFF7F8C8D)),
+          ),
+        ),
+      );
+    }
 
     return Column(
-      children: approvedItems.map((item) => _buildApprovedItem(
-        item['name'] as String,
-        item['meta'] as String,
-        item['status'] as String,
-        item['statusColor'] as Color,
-        item['textColor'] as Color,
-      )).toList(),
+      children: _recentlyApproved.map((proposal) {
+        final updatedAt = proposal['updated_at'] != null
+            ? DateTime.parse(proposal['updated_at'])
+            : DateTime.now();
+
+        return _buildApprovedItem(
+          proposal['title'] ?? 'Untitled',
+          'Approved: ${_formatDate(updatedAt)}',
+          proposal['status'] == 'Sent to Client'
+              ? 'Sent to Client'
+              : 'Approved',
+          const Color(0xFFC3E6CB),
+          const Color(0xFF155724),
+        );
+      }).toList(),
     );
   }
 
-  Widget _buildApprovedItem(String name, String meta, String status, Color statusColor, Color textColor) {
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inDays == 0) {
+      return 'Today, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    } else if (diff.inDays == 1) {
+      return 'Yesterday, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
+  }
+
+  Widget _buildApprovedItem(String name, String meta, String status,
+      Color statusColor, Color textColor) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
+        border: Border.all(color: const Color(0xFFDDD)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,

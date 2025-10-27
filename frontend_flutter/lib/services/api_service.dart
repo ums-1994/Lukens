@@ -80,6 +80,7 @@ class ApiService {
     required String title,
     required String content,
     String? clientName,
+    String? clientEmail,
     String? status,
   }) async {
     try {
@@ -90,6 +91,7 @@ class ApiService {
           'title': title,
           'content': content,
           'client_name': clientName,
+          'client_email': clientEmail,
           'status': status ?? 'draft',
         }),
       );
@@ -112,6 +114,7 @@ class ApiService {
     required String title,
     required String content,
     String? clientName,
+    String? clientEmail,
     String? status,
   }) async {
     try {
@@ -122,6 +125,7 @@ class ApiService {
           'title': title,
           'content': content,
           'client_name': clientName,
+          'client_email': clientEmail,
           'status': status,
         }),
       );

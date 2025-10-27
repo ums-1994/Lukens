@@ -222,6 +222,22 @@ def init_pg_schema():
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
         
+        # Collaboration invitations table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        invited_email VARCHAR(255) NOT NULL,
+        invited_by INTEGER NOT NULL,
+        access_token VARCHAR(500) UNIQUE NOT NULL,
+        permission_level VARCHAR(50) DEFAULT 'comment',
+        status VARCHAR(50) DEFAULT 'pending',
+        invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        accessed_at TIMESTAMP,
+        expires_at TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (invited_by) REFERENCES users(id)
+        )''')
+        
         conn.commit()
         release_pg_conn(conn)
         print("✅ PostgreSQL schema initialized successfully")
@@ -252,7 +268,43 @@ def init_db():
         raise
 
 # Auth token storage (in production, use Redis or session manager)
-valid_tokens = {}
+# File-based persistence to survive restarts
+TOKEN_FILE = os.path.join(os.path.dirname(__file__), 'auth_tokens.json')
+
+def load_tokens():
+    """Load tokens from file"""
+    try:
+        if os.path.exists(TOKEN_FILE):
+            with open(TOKEN_FILE, 'r') as f:
+                data = json.load(f)
+                # Convert string timestamps back to datetime objects
+                for token, token_data in data.items():
+                    token_data['created_at'] = datetime.fromisoformat(token_data['created_at'])
+                    token_data['expires_at'] = datetime.fromisoformat(token_data['expires_at'])
+                print(f"🔄 Loaded {len(data)} tokens from file")
+                return data
+    except Exception as e:
+        print(f"⚠️ Could not load tokens from file: {e}")
+    return {}
+
+def save_tokens():
+    """Save tokens to file"""
+    try:
+        # Convert datetime objects to strings for JSON serialization
+        data = {}
+        for token, token_data in valid_tokens.items():
+            data[token] = {
+                'username': token_data['username'],
+                'created_at': token_data['created_at'].isoformat(),
+                'expires_at': token_data['expires_at'].isoformat()
+            }
+        with open(TOKEN_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        print(f"💾 Saved {len(data)} tokens to file")
+    except Exception as e:
+        print(f"⚠️ Could not save tokens to file: {e}")
+
+valid_tokens = load_tokens()
 
 # Utility functions
 def get_db():
@@ -272,6 +324,7 @@ def generate_token(username):
         'created_at': datetime.now(),
         'expires_at': datetime.now() + timedelta(days=7)
     }
+    save_tokens()  # Persist to file
     print(f"🎫 Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
     print(f"📋 Total valid tokens: {len(valid_tokens)}")
     return token
@@ -282,6 +335,7 @@ def verify_token(token):
     token_data = valid_tokens[token]
     if datetime.now() > token_data['expires_at']:
         del valid_tokens[token]
+        save_tokens()  # Persist after deleting expired token
         return None
     return token_data['username']
 
@@ -736,9 +790,13 @@ def get_proposals(username):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            print(f"🔍 Looking for proposals for user {username}")
+            
+            # Query all columns that exist in the database
             cursor.execute(
-                '''SELECT id, title, client_name, user_id, status, created_at, updated_at, content, 
-                          client_email, budget, timeline_days
+                '''SELECT id, user_id, title, content, status, client_name, client_email, 
+                          budget, timeline_days, created_at, updated_at
                    FROM proposals WHERE user_id = %s
                    ORDER BY created_at DESC''',
                 (username,)
@@ -748,19 +806,19 @@ def get_proposals(username):
             for row in rows:
                 proposals.append({
                     'id': row[0],
-                    'title': row[1],
-                    'client': row[2],
-                    'client_name': row[2],
-                    'owner_id': row[3],
-                    'user_id': row[3],
+                    'user_id': row[1],
+                    'owner_id': row[1],  # For compatibility
+                    'title': row[2],
+                    'content': row[3],
                     'status': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None,
-                    'updated_at': row[6].isoformat() if row[6] else None,
-                    'updatedAt': row[6].isoformat() if row[6] else None,
-                    'content': row[7],
-                    'client_email': row[8],
-                    'budget': float(row[9]) if row[9] else None,
-                    'timeline_days': row[10]
+                    'client_name': row[5],
+                    'client': row[5],  # For compatibility
+                    'client_email': row[6],
+                    'budget': float(row[7]) if row[7] else None,
+                    'timeline_days': row[8],
+                    'created_at': row[9].isoformat() if row[9] else None,
+                    'updated_at': row[10].isoformat() if row[10] else None,
+                    'updatedAt': row[10].isoformat() if row[10] else None,
                 })
             print(f"✅ Found {len(proposals)} proposals for user {username}")
             return proposals, 200
@@ -780,21 +838,21 @@ def create_proposal(username):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Handle both 'client' and 'client_name' fields
+            # Insert using all available columns
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email') or ''
             
             cursor.execute(
-                '''INSERT INTO proposals (user_id, title, client_name, client_email, content, status, budget, timeline_days)
+                '''INSERT INTO proposals (user_id, title, content, status, client_name, client_email, budget, timeline_days)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, user_id, title, client_name, status, created_at, updated_at, content''',
+                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
                 (
                     username,
                     data.get('title', 'Untitled Document'),
-                    client_name,
-                    client_email,
                     data.get('content'),
                     data.get('status', 'draft'),
+                    client_name,
+                    client_email,
                     data.get('budget'),
                     data.get('timeline_days')
                 )
@@ -807,13 +865,16 @@ def create_proposal(username):
                 'user_id': result[1],
                 'owner_id': result[1],  # For compatibility
                 'title': result[2],
-                'client': result[3],
-                'client_name': result[3],
+                'content': result[3],
                 'status': result[4],
-                'created_at': result[5].isoformat() if result[5] else None,
-                'updated_at': result[6].isoformat() if result[6] else None,
-                'updatedAt': result[6].isoformat() if result[6] else None,
-                'content': result[7]
+                'client_name': result[5],
+                'client': result[5],
+                'client_email': result[6],
+                'budget': float(result[7]) if result[7] else None,
+                'timeline_days': result[8],
+                'created_at': result[9].isoformat() if result[9] else None,
+                'updated_at': result[10].isoformat() if result[10] else None,
+                'updatedAt': result[10].isoformat() if result[10] else None,
             }
             
             print(f"✅ Proposal created successfully with ID: {result[0]}")
@@ -837,21 +898,22 @@ def update_proposal(username, proposal_id):
             updates = ['updated_at = NOW()']
             params = []
             
+            # Update all columns that exist in the database
             if 'title' in data:
                 updates.append('title = %s')
                 params.append(data['title'])
-            if 'client' in data or 'client_name' in data:
-                updates.append('client_name = %s')
-                params.append(data.get('client_name') or data.get('client'))
-            if 'client_email' in data:
-                updates.append('client_email = %s')
-                params.append(data['client_email'])
             if 'content' in data:
                 updates.append('content = %s')
                 params.append(data['content'])
             if 'status' in data:
                 updates.append('status = %s')
                 params.append(data['status'])
+            if 'client_name' in data or 'client' in data:
+                updates.append('client_name = %s')
+                params.append(data.get('client_name') or data.get('client'))
+            if 'client_email' in data:
+                updates.append('client_email = %s')
+                params.append(data['client_email'])
             if 'budget' in data:
                 updates.append('budget = %s')
                 params.append(data['budget'])
@@ -956,40 +1018,118 @@ def submit_for_review(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.post("/api/proposals/<int:proposal_id>/send-for-approval")
+@token_required
+def send_for_approval(username, proposal_id):
+    """Send proposal for CEO approval"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Check if proposal exists and belongs to user
+            cursor.execute(
+                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
+            )
+            proposal = cursor.fetchone()
+            
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            current_status = proposal[2]
+            if current_status != 'draft':
+                return {'detail': f'Proposal is already {current_status}'}, 400
+            
+            # Update status to Pending CEO Approval
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() 
+                   WHERE id = %s RETURNING status''',
+                ('Pending CEO Approval', proposal_id)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            print(f"✅ Proposal {proposal_id} sent for approval")
+            return {
+                'detail': 'Proposal sent for approval successfully',
+                'status': result[0]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error sending proposal for approval: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @app.post("/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username, proposal_id):
+    """Approve proposal and send to client"""
     try:
-        comments = request.args.get('comments', '')
+        data = request.get_json() or {}
+        comments = data.get('comments', '')
         
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''UPDATE proposals SET status = 'Approved' WHERE id = %s''',
-            (proposal_id,)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Proposal approved'}, 200
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Update status to Sent to Client (approved proposals go directly to client)
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() 
+                   WHERE id = %s RETURNING id, title, status''',
+                ('Sent to Client', proposal_id)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                print(f"✅ Proposal {proposal_id} '{result[1]}' approved and sent to client")
+                return {
+                    'detail': 'Proposal approved and sent to client',
+                    'status': result[2]
+                }, 200
+            else:
+                return {'detail': 'Proposal not found'}, 404
+                
     except Exception as e:
+        print(f"❌ Error approving proposal: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/proposals/<int:proposal_id>/reject")
 @token_required
 def reject_proposal(username, proposal_id):
+    """Reject proposal and send back to draft"""
     try:
-        comments = request.args.get('comments', '')
+        data = request.get_json() or {}
+        comments = data.get('comments', '')
         
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''UPDATE proposals SET status = 'Rejected' WHERE id = %s''',
-            (proposal_id,)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Proposal rejected'}, 200
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Update status to draft (rejected proposals go back to draft for editing)
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() 
+                   WHERE id = %s RETURNING id, title, status''',
+                ('draft', proposal_id)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                print(f"✅ Proposal {proposal_id} '{result[1]}' rejected and returned to draft")
+                return {
+                    'detail': 'Proposal rejected and returned to draft',
+                    'status': result[2],
+                    'comments': comments
+                }, 200
+            else:
+                return {'detail': 'Proposal not found'}, 404
+                
     except Exception as e:
+        print(f"❌ Error rejecting proposal: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.patch("/proposals/<int:proposal_id>/status")
@@ -1307,61 +1447,83 @@ def get_client_dashboard_stats(username):
         return {'detail': str(e)}, 500
 
 @app.post("/api/comments/document/<int:proposal_id>")
-def create_comment(proposal_id: int):
+@token_required
+def create_comment(username, proposal_id):
     """Create a new comment on a document"""
     try:
         data = request.get_json()
+        comment_text = data.get('comment_text')
+        section_index = data.get('section_index')
+        highlighted_text = data.get('highlighted_text')
         
-        with _pg_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """INSERT INTO document_comments 
-                       (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
-                       VALUES (%s, %s, %s, %s, %s, %s)
-                       RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                                 section_index, highlighted_text, status, updated_at""",
-                    (
-                        proposal_id,
-                        data['comment_text'],
-                        data['created_by'],
-                        data.get('section_index'),
-                        data.get('highlighted_text'),
-                        'open'
-                    )
-                )
-                result = cur.fetchone()
-                conn.commit()
-                
-                return {
-                    "id": result[0],
-                    "proposal_id": result[1],
-                    "comment_text": result[2],
-                    "created_by": result[3],
-                    "created_at": result[4].isoformat() if result[4] else None,
-                    "section_index": result[5],
-                    "highlighted_text": result[6],
-                    "status": result[7],
-                    "updated_at": result[8].isoformat() if result[8] else None,
-                    "resolved_by": None,
-                    "resolved_at": None
-                }
-    except HTTPException:
-        raise
+        if not comment_text:
+            return {'detail': 'Comment text is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user ID
+            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user['id']
+            
+            # Create comment
+            cursor.execute("""
+                INSERT INTO document_comments 
+                (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, proposal_id, comment_text, created_by, created_at, 
+                          section_index, highlighted_text, status, updated_at
+            """, (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open'))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'id': result['id'],
+                'proposal_id': result['proposal_id'],
+                'comment_text': result['comment_text'],
+                'created_by': result['created_by'],
+                'created_by_email': user['email'],
+                'created_by_name': user['full_name'],
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+                'section_index': result['section_index'],
+                'highlighted_text': result['highlighted_text'],
+                'status': result['status'],
+                'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+                'resolved_by': None,
+                'resolved_at': None
+            }, 201
+            
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Error creating comment: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
-@app.get("/api/comments/proposal/{proposal_id}")
-def get_proposal_comments(proposal_id: int):
+@app.route("/api/comments/proposal/<int:proposal_id>", methods=['GET', 'OPTIONS'])
+def get_proposal_comments(proposal_id):
     """Get all comments for a proposal"""
     try:
         with _pg_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
-                    """SELECT id, proposal_id, comment_text, created_by, created_at,
-                              section_index, highlighted_text, status, updated_at, resolved_by, resolved_at
-                       FROM document_comments
-                       WHERE proposal_id = %s
-                       ORDER BY created_at DESC""",
+                    """SELECT 
+                           dc.id, dc.proposal_id, dc.comment_text, dc.created_by, dc.created_at,
+                           dc.section_index, dc.highlighted_text, dc.status, dc.updated_at, 
+                           dc.resolved_by, dc.resolved_at,
+                           u.email as created_by_email,
+                           u.full_name as created_by_name,
+                           r.email as resolved_by_email,
+                           r.full_name as resolved_by_name
+                       FROM document_comments dc
+                       LEFT JOIN users u ON dc.created_by = u.id
+                       LEFT JOIN users r ON dc.resolved_by = r.id
+                       WHERE dc.proposal_id = %s
+                       ORDER BY dc.created_at DESC""",
                     (proposal_id,)
                 )
                 rows = cur.fetchall()
@@ -1374,12 +1536,16 @@ def get_proposal_comments(proposal_id: int):
                         "proposal_id": row["proposal_id"],
                         "comment_text": row["comment_text"],
                         "created_by": row["created_by"],
+                        "created_by_email": row["created_by_email"],
+                        "created_by_name": row["created_by_name"],
                         "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                         "section_index": row["section_index"],
                         "highlighted_text": row["highlighted_text"],
                         "status": row["status"],
                         "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
                         "resolved_by": row["resolved_by"],
+                        "resolved_by_email": row["resolved_by_email"],
+                        "resolved_by_name": row["resolved_by_name"],
                         "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
                     })
                 return comments
@@ -1399,6 +1565,12 @@ def create_version(username, proposal_id):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # Get user ID from username
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            user_id = user_row[0] if user_row else None
+            
             cursor.execute(
                 '''INSERT INTO proposal_versions 
                    (proposal_id, version_number, content, created_by, change_description)
@@ -1408,7 +1580,7 @@ def create_version(username, proposal_id):
                     proposal_id,
                     data.get('version_number', 1),
                     data.get('content', ''),
-                    username,
+                    user_id,
                     data.get('change_description', 'Version created')
                 )
             )
@@ -1841,6 +2013,383 @@ def submit_ai_feedback(username):
             
     except Exception as e:
         print(f"❌ Error submitting feedback: {e}")
+        return {'detail': str(e)}, 500
+
+# ============================================================
+# COLLABORATION ENDPOINTS
+# ============================================================
+
+@app.post("/api/proposals/<int:proposal_id>/invite")
+@token_required
+def invite_collaborator(username, proposal_id):
+    """Invite a collaborator to view and comment on a proposal"""
+    try:
+        data = request.get_json()
+        invited_email = data.get('email')
+        permission_level = data.get('permission_level', 'comment')  # 'view' or 'comment'
+        
+        if not invited_email:
+            return {'detail': 'Email is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get user ID
+            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user[0]
+            inviter_email = user[1]
+            
+            # Check if proposal exists and belongs to user
+            cursor.execute(
+                'SELECT title FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            proposal_title = proposal[0]
+            
+            # Generate unique access token
+            access_token = secrets.token_urlsafe(32)
+            
+            # Set expiration (30 days from now)
+            expires_at = datetime.now() + timedelta(days=30)
+            
+            # Create invitation
+            cursor.execute("""
+                INSERT INTO collaboration_invitations 
+                (proposal_id, invited_email, invited_by, access_token, permission_level, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (proposal_id, invited_email, user_id, access_token, permission_level, expires_at))
+            
+            invitation_id = cursor.fetchone()[0]
+            conn.commit()
+            
+            # Send invitation email
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+            collaboration_url = f"{frontend_url}/#/collaborate?token={access_token}"
+            
+            subject = f"You've been invited to collaborate on '{proposal_title}'"
+            html_content = f"""
+            <html>
+                <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
+                    <div style="max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #2C3E50; margin: 0;">Collaboration Invitation</h1>
+                        </div>
+                        
+                        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                            Hi there,
+                        </p>
+                        
+                        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                            <strong>{inviter_email}</strong> has invited you to collaborate on the proposal:
+                        </p>
+                        
+                        <div style="background-color: #f8f9fa; padding: 20px; border-left: 4px solid #3498DB; margin: 20px 0;">
+                            <h2 style="color: #2C3E50; margin: 0 0 10px 0; font-size: 18px;">{proposal_title}</h2>
+                            <p style="color: #666; margin: 0; font-size: 14px;">
+                                Permission: <strong>{permission_level.title()}</strong>
+                            </p>
+                        </div>
+                        
+                        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                            You can view the proposal and {'add comments' if permission_level == 'comment' else 'review it'} using the link below:
+                        </p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="{collaboration_url}" 
+                               style="background-color: #3498DB; color: white; padding: 14px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px; font-weight: 600;">
+                                Open Proposal
+                            </a>
+                        </div>
+                        
+                        <p style="color: #666; font-size: 14px; line-height: 1.6;">
+                            Or copy and paste this link into your browser:
+                        </p>
+                        <p style="word-break: break-all; color: #3498DB; font-size: 12px; background-color: #f8f9fa; padding: 10px; border-radius: 4px;">
+                            {collaboration_url}
+                        </p>
+                        
+                        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+                            <p style="color: #999; font-size: 12px; line-height: 1.4; margin: 0;">
+                                This invitation will expire on {expires_at.strftime('%B %d, %Y at %I:%M %p')}.<br>
+                                If you didn't expect this invitation, you can safely ignore this email.
+                            </p>
+                        </div>
+                    </div>
+                </body>
+            </html>
+            """
+            
+            email_sent = send_email(invited_email, subject, html_content)
+            
+            return {
+                'id': invitation_id,
+                'message': 'Invitation sent successfully',
+                'email_sent': email_sent,
+                'collaboration_url': collaboration_url,
+                'expires_at': expires_at.isoformat()
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error inviting collaborator: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/collaborators")
+@token_required
+def get_collaborators(username, proposal_id):
+    """Get all collaborators for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify ownership
+            cursor.execute(
+                'SELECT id FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
+            )
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get collaborators
+            cursor.execute("""
+                SELECT 
+                    id,
+                    invited_email,
+                    permission_level,
+                    status,
+                    invited_at,
+                    accessed_at,
+                    expires_at
+                FROM collaboration_invitations
+                WHERE proposal_id = %s
+                ORDER BY invited_at DESC
+            """, (proposal_id,))
+            
+            collaborators = cursor.fetchall()
+            
+            return [dict(row) for row in collaborators], 200
+            
+    except Exception as e:
+        print(f"❌ Error getting collaborators: {e}")
+        return {'detail': str(e)}, 500
+
+@app.delete("/api/collaborations/<int:invitation_id>")
+@token_required
+def remove_collaborator(username, invitation_id):
+    """Remove a collaborator invitation"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get user ID
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user[0]
+            
+            # Check if user owns the proposal
+            cursor.execute("""
+                SELECT ci.id 
+                FROM collaboration_invitations ci
+                JOIN proposals p ON ci.proposal_id = p.id
+                WHERE ci.id = %s AND (ci.invited_by = %s OR p.user_id = %s)
+            """, (invitation_id, user_id, username))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Invitation not found or access denied'}, 404
+            
+            # Delete invitation
+            cursor.execute('DELETE FROM collaboration_invitations WHERE id = %s', (invitation_id,))
+            conn.commit()
+            
+            return {'message': 'Collaborator removed successfully'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error removing collaborator: {e}")
+        return {'detail': str(e)}, 500
+
+@app.get("/api/collaborate")
+def get_collaboration_access():
+    """Get proposal access via collaboration token (no auth required)"""
+    try:
+        token = request.args.get('token')
+        if not token:
+            return {'detail': 'Access token is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get invitation details
+            cursor.execute("""
+                SELECT 
+                    ci.id,
+                    ci.proposal_id,
+                    ci.invited_email,
+                    ci.permission_level,
+                    ci.status,
+                    ci.expires_at,
+                    p.title,
+                    p.content,
+                    p.user_id,
+                    u.email as owner_email,
+                    u.full_name as owner_name
+                FROM collaboration_invitations ci
+                JOIN proposals p ON ci.proposal_id = p.id
+                JOIN users u ON ci.invited_by = u.id
+                WHERE ci.access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            
+            if not invitation:
+                return {'detail': 'Invalid collaboration token'}, 404
+            
+            # Check if expired
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'This invitation has expired'}, 403
+            
+            # Update accessed_at timestamp on first access
+            if invitation['status'] == 'pending':
+                cursor.execute("""
+                    UPDATE collaboration_invitations 
+                    SET status = 'accepted', accessed_at = NOW()
+                    WHERE id = %s
+                """, (invitation['id'],))
+                conn.commit()
+            
+            # Get comments for the proposal with user details
+            cursor.execute("""
+                SELECT 
+                    dc.id,
+                    dc.comment_text,
+                    dc.created_by,
+                    u.email as created_by_email,
+                    u.full_name as created_by_name,
+                    dc.created_at,
+                    dc.section_index,
+                    dc.highlighted_text,
+                    dc.status
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at DESC
+            """, (invitation['proposal_id'],))
+            
+            comments = cursor.fetchall()
+            
+            return {
+                'proposal': {
+                    'id': invitation['proposal_id'],
+                    'title': invitation['title'],
+                    'content': invitation['content'],
+                    'owner_email': invitation['owner_email'],
+                    'owner_name': invitation['owner_name']
+                },
+                'permission_level': invitation['permission_level'],
+                'invited_email': invitation['invited_email'],
+                'comments': [dict(row) for row in comments],
+                'can_comment': invitation['permission_level'] == 'comment'
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting collaboration access: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/collaborate/comment")
+def add_guest_comment():
+    """Add a comment as a guest collaborator (no auth required)"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        comment_text = data.get('comment_text')
+        section_index = data.get('section_index')
+        highlighted_text = data.get('highlighted_text')
+        
+        if not token or not comment_text:
+            return {'detail': 'Token and comment text are required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify token and get permission
+            cursor.execute("""
+                SELECT 
+                    ci.proposal_id,
+                    ci.permission_level,
+                    ci.invited_email,
+                    ci.expires_at
+                FROM collaboration_invitations ci
+                WHERE ci.access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            
+            if not invitation:
+                return {'detail': 'Invalid collaboration token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'This invitation has expired'}, 403
+            
+            if invitation['permission_level'] != 'comment':
+                return {'detail': 'You do not have permission to comment'}, 403
+            
+            # Create a guest user if not exists
+            guest_email = invitation['invited_email']
+            cursor.execute("""
+                INSERT INTO users (username, email, password_hash, full_name, role)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+                RETURNING id
+            """, (guest_email, guest_email, '', f'Guest ({guest_email})', 'guest'))
+            
+            guest_user_id = cursor.fetchone()['id']
+            conn.commit()
+            
+            # Add comment
+            cursor.execute("""
+                INSERT INTO document_comments 
+                (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, proposal_id, comment_text, created_by, created_at, 
+                          section_index, highlighted_text, status
+            """, (
+                invitation['proposal_id'],
+                comment_text,
+                guest_user_id,
+                section_index,
+                highlighted_text,
+                'open'
+            ))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'id': result['id'],
+                'proposal_id': result['proposal_id'],
+                'comment_text': result['comment_text'],
+                'created_by': guest_email,
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+                'section_index': result['section_index'],
+                'highlighted_text': result['highlighted_text'],
+                'status': result['status']
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error adding guest comment: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 # Health check endpoint (no auth required)
