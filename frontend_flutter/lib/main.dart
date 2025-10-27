@@ -22,6 +22,7 @@ import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/creator/collaboration_page.dart';
+import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
@@ -156,6 +157,7 @@ class MyApp extends StatelessWidget {
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
           '/collaboration': (context) => const CollaborationPage(),
+          '/collaborate': (context) => const GuestCollaborationPage(),
           '/analytics': (context) => const AnalyticsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),

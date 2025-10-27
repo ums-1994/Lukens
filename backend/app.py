@@ -222,6 +222,22 @@ def init_pg_schema():
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
         
+        # Collaboration invitations table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        invited_email VARCHAR(255) NOT NULL,
+        invited_by INTEGER NOT NULL,
+        access_token VARCHAR(500) UNIQUE NOT NULL,
+        permission_level VARCHAR(50) DEFAULT 'comment',
+        status VARCHAR(50) DEFAULT 'pending',
+        invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        accessed_at TIMESTAMP,
+        expires_at TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (invited_by) REFERENCES users(id)
+        )''')
+        
         conn.commit()
         release_pg_conn(conn)
         print("✅ PostgreSQL schema initialized successfully")
@@ -1841,6 +1857,380 @@ def submit_ai_feedback(username):
             
     except Exception as e:
         print(f"❌ Error submitting feedback: {e}")
+        return {'detail': str(e)}, 500
+
+# ============================================================
+# COLLABORATION ENDPOINTS
+# ============================================================
+
+@app.post("/api/proposals/<int:proposal_id>/invite")
+@token_required
+def invite_collaborator(username, proposal_id):
+    """Invite a collaborator to view and comment on a proposal"""
+    try:
+        data = request.get_json()
+        invited_email = data.get('email')
+        permission_level = data.get('permission_level', 'comment')  # 'view' or 'comment'
+        
+        if not invited_email:
+            return {'detail': 'Email is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get user ID
+            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user[0]
+            inviter_email = user[1]
+            
+            # Check if proposal exists and belongs to user
+            cursor.execute(
+                'SELECT title FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            proposal_title = proposal[0]
+            
+            # Generate unique access token
+            access_token = secrets.token_urlsafe(32)
+            
+            # Set expiration (30 days from now)
+            expires_at = datetime.now() + timedelta(days=30)
+            
+            # Create invitation
+            cursor.execute("""
+                INSERT INTO collaboration_invitations 
+                (proposal_id, invited_email, invited_by, access_token, permission_level, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (proposal_id, invited_email, user_id, access_token, permission_level, expires_at))
+            
+            invitation_id = cursor.fetchone()[0]
+            conn.commit()
+            
+            # Send invitation email
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+            collaboration_url = f"{frontend_url}/#/collaborate?token={access_token}"
+            
+            subject = f"You've been invited to collaborate on '{proposal_title}'"
+            html_content = f"""
+            <html>
+                <body style="font-family: Arial, sans-serif; background-color: #f5f5f5; padding: 20px;">
+                    <div style="max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #2C3E50; margin: 0;">Collaboration Invitation</h1>
+                        </div>
+                        
+                        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                            Hi there,
+                        </p>
+                        
+                        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                            <strong>{inviter_email}</strong> has invited you to collaborate on the proposal:
+                        </p>
+                        
+                        <div style="background-color: #f8f9fa; padding: 20px; border-left: 4px solid #3498DB; margin: 20px 0;">
+                            <h2 style="color: #2C3E50; margin: 0 0 10px 0; font-size: 18px;">{proposal_title}</h2>
+                            <p style="color: #666; margin: 0; font-size: 14px;">
+                                Permission: <strong>{permission_level.title()}</strong>
+                            </p>
+                        </div>
+                        
+                        <p style="color: #333; font-size: 16px; line-height: 1.6;">
+                            You can view the proposal and {'add comments' if permission_level == 'comment' else 'review it'} using the link below:
+                        </p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="{collaboration_url}" 
+                               style="background-color: #3498DB; color: white; padding: 14px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px; font-weight: 600;">
+                                Open Proposal
+                            </a>
+                        </div>
+                        
+                        <p style="color: #666; font-size: 14px; line-height: 1.6;">
+                            Or copy and paste this link into your browser:
+                        </p>
+                        <p style="word-break: break-all; color: #3498DB; font-size: 12px; background-color: #f8f9fa; padding: 10px; border-radius: 4px;">
+                            {collaboration_url}
+                        </p>
+                        
+                        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+                            <p style="color: #999; font-size: 12px; line-height: 1.4; margin: 0;">
+                                This invitation will expire on {expires_at.strftime('%B %d, %Y at %I:%M %p')}.<br>
+                                If you didn't expect this invitation, you can safely ignore this email.
+                            </p>
+                        </div>
+                    </div>
+                </body>
+            </html>
+            """
+            
+            email_sent = send_email(invited_email, subject, html_content)
+            
+            return {
+                'id': invitation_id,
+                'message': 'Invitation sent successfully',
+                'email_sent': email_sent,
+                'collaboration_url': collaboration_url,
+                'expires_at': expires_at.isoformat()
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error inviting collaborator: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/collaborators")
+@token_required
+def get_collaborators(username, proposal_id):
+    """Get all collaborators for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify ownership
+            cursor.execute(
+                'SELECT id FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
+            )
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get collaborators
+            cursor.execute("""
+                SELECT 
+                    id,
+                    invited_email,
+                    permission_level,
+                    status,
+                    invited_at,
+                    accessed_at,
+                    expires_at
+                FROM collaboration_invitations
+                WHERE proposal_id = %s
+                ORDER BY invited_at DESC
+            """, (proposal_id,))
+            
+            collaborators = cursor.fetchall()
+            
+            return [dict(row) for row in collaborators], 200
+            
+    except Exception as e:
+        print(f"❌ Error getting collaborators: {e}")
+        return {'detail': str(e)}, 500
+
+@app.delete("/api/collaborations/<int:invitation_id>")
+@token_required
+def remove_collaborator(username, invitation_id):
+    """Remove a collaborator invitation"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get user ID
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user[0]
+            
+            # Check if user owns the proposal
+            cursor.execute("""
+                SELECT ci.id 
+                FROM collaboration_invitations ci
+                JOIN proposals p ON ci.proposal_id = p.id
+                WHERE ci.id = %s AND (ci.invited_by = %s OR p.user_id = %s)
+            """, (invitation_id, user_id, username))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Invitation not found or access denied'}, 404
+            
+            # Delete invitation
+            cursor.execute('DELETE FROM collaboration_invitations WHERE id = %s', (invitation_id,))
+            conn.commit()
+            
+            return {'message': 'Collaborator removed successfully'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error removing collaborator: {e}")
+        return {'detail': str(e)}, 500
+
+@app.get("/api/collaborate")
+def get_collaboration_access():
+    """Get proposal access via collaboration token (no auth required)"""
+    try:
+        token = request.args.get('token')
+        if not token:
+            return {'detail': 'Access token is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get invitation details
+            cursor.execute("""
+                SELECT 
+                    ci.id,
+                    ci.proposal_id,
+                    ci.invited_email,
+                    ci.permission_level,
+                    ci.status,
+                    ci.expires_at,
+                    p.title,
+                    p.content,
+                    p.user_id,
+                    u.email as owner_email,
+                    u.full_name as owner_name
+                FROM collaboration_invitations ci
+                JOIN proposals p ON ci.proposal_id = p.id
+                JOIN users u ON ci.invited_by = u.id
+                WHERE ci.access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            
+            if not invitation:
+                return {'detail': 'Invalid collaboration token'}, 404
+            
+            # Check if expired
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'This invitation has expired'}, 403
+            
+            # Update accessed_at timestamp on first access
+            if invitation['status'] == 'pending':
+                cursor.execute("""
+                    UPDATE collaboration_invitations 
+                    SET status = 'accepted', accessed_at = NOW()
+                    WHERE id = %s
+                """, (invitation['id'],))
+                conn.commit()
+            
+            # Get comments for the proposal
+            cursor.execute("""
+                SELECT 
+                    id,
+                    comment_text,
+                    created_by,
+                    created_at,
+                    section_index,
+                    highlighted_text,
+                    status
+                FROM document_comments
+                WHERE proposal_id = %s
+                ORDER BY created_at DESC
+            """, (invitation['proposal_id'],))
+            
+            comments = cursor.fetchall()
+            
+            return {
+                'proposal': {
+                    'id': invitation['proposal_id'],
+                    'title': invitation['title'],
+                    'content': invitation['content'],
+                    'owner_email': invitation['owner_email'],
+                    'owner_name': invitation['owner_name']
+                },
+                'permission_level': invitation['permission_level'],
+                'invited_email': invitation['invited_email'],
+                'comments': [dict(row) for row in comments],
+                'can_comment': invitation['permission_level'] == 'comment'
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting collaboration access: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/collaborate/comment")
+def add_guest_comment():
+    """Add a comment as a guest collaborator (no auth required)"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        comment_text = data.get('comment_text')
+        section_index = data.get('section_index')
+        highlighted_text = data.get('highlighted_text')
+        
+        if not token or not comment_text:
+            return {'detail': 'Token and comment text are required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify token and get permission
+            cursor.execute("""
+                SELECT 
+                    ci.proposal_id,
+                    ci.permission_level,
+                    ci.invited_email,
+                    ci.expires_at
+                FROM collaboration_invitations ci
+                WHERE ci.access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            
+            if not invitation:
+                return {'detail': 'Invalid collaboration token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'This invitation has expired'}, 403
+            
+            if invitation['permission_level'] != 'comment':
+                return {'detail': 'You do not have permission to comment'}, 403
+            
+            # Create a guest user if not exists
+            guest_email = invitation['invited_email']
+            cursor.execute("""
+                INSERT INTO users (username, email, password_hash, full_name, role)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+                RETURNING id
+            """, (guest_email, guest_email, '', f'Guest ({guest_email})', 'guest'))
+            
+            guest_user_id = cursor.fetchone()['id']
+            conn.commit()
+            
+            # Add comment
+            cursor.execute("""
+                INSERT INTO document_comments 
+                (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, proposal_id, comment_text, created_by, created_at, 
+                          section_index, highlighted_text, status
+            """, (
+                invitation['proposal_id'],
+                comment_text,
+                guest_user_id,
+                section_index,
+                highlighted_text,
+                'open'
+            ))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'id': result['id'],
+                'proposal_id': result['proposal_id'],
+                'comment_text': result['comment_text'],
+                'created_by': guest_email,
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+                'section_index': result['section_index'],
+                'highlighted_text': result['highlighted_text'],
+                'status': result['status']
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error adding guest comment: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 # Health check endpoint (no auth required)

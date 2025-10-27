@@ -403,6 +403,85 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  Future<void> _loadCollaborators() async {
+    if (_savedProposalId == null) return;
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      print('🔄 Loading collaborators for proposal $_savedProposalId...');
+      final response = await http.get(
+        Uri.parse(
+            'http://localhost:8000/api/proposals/$_savedProposalId/collaborators'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> collaborators = jsonDecode(response.body);
+        setState(() {
+          _collaborators.clear();
+          for (var collab in collaborators) {
+            _collaborators.add({
+              'id': collab['id'],
+              'email': collab['invited_email'],
+              'name': collab['invited_email'].split('@')[0],
+              'role': collab['permission_level'] == 'comment'
+                  ? 'Can Comment'
+                  : 'View Only',
+              'status': collab['status'],
+              'invited_at': collab['invited_at'],
+              'accessed_at': collab['accessed_at'],
+            });
+          }
+          _isCollaborating = _collaborators.isNotEmpty;
+        });
+        print('✅ Loaded ${collaborators.length} collaborators');
+      }
+    } catch (e) {
+      print('⚠️ Error loading collaborators: $e');
+    }
+  }
+
+  Future<void> _removeCollaborator(int invitationId) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final response = await http.delete(
+        Uri.parse('http://localhost:8000/api/collaborations/$invitationId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        await _loadCollaborators();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Collaborator removed'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error removing collaborator: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<String?> _getAuthToken() async {
     // Try to get cached token first
     if (_authToken != null && _authToken!.isNotEmpty) {
@@ -6537,6 +6616,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   void _showCollaborationDialog() {
     final emailController = TextEditingController();
+    bool isInviting = false;
+    String selectedPermission = 'comment';
+
+    // Load existing collaborators
+    _loadCollaborators();
 
     showDialog(
       context: context,
@@ -6547,7 +6631,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
               child: SizedBox(
-                width: 500,
+                width: 600,
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(
@@ -6569,10 +6653,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           ),
                         ],
                       ),
-                      const SizedBox(width: 20),
+                      const SizedBox(height: 20),
 
                       Text(
-                        'Invite others to collaborate on this proposal. They will be able to view, comment, and edit.',
+                        'Invite others to view and comment on this proposal. They will receive an email with a secure link.',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey[600],
@@ -6596,36 +6680,161 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                               ),
+                              enabled: !isInviting,
                             ),
                           ),
                           const SizedBox(width: 12),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              if (emailController.text.isNotEmpty) {
-                                setDialogState(() {
-                                  _collaborators.add({
-                                    'email': emailController.text,
-                                    'name': emailController.text.split('@')[0],
-                                    'role': 'Editor',
-                                    'added_at':
-                                        DateTime.now().toIso8601String(),
-                                  });
-                                  _isCollaborating = true;
-                                });
-                                setState(() {});
-                                emailController.clear();
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        'Invitation sent to ${emailController.text}'),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              }
+                          DropdownButton<String>(
+                            value: selectedPermission,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'comment',
+                                child: Text('Can Comment'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'view',
+                                child: Text('View Only'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setDialogState(() {
+                                selectedPermission = value ?? 'comment';
+                              });
                             },
-                            icon: const Icon(Icons.add, size: 18),
-                            label: const Text('Invite'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: isInviting
+                                ? null
+                                : () async {
+                                    final email = emailController.text.trim();
+                                    if (email.isEmpty) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Please enter an email address'),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    // Validate email format
+                                    if (!RegExp(
+                                            r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                                        .hasMatch(email)) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Please enter a valid email address'),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    if (_savedProposalId == null) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'Please save the proposal first'),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    setDialogState(() {
+                                      isInviting = true;
+                                    });
+
+                                    try {
+                                      final token = await _getAuthToken();
+                                      if (token == null) {
+                                        throw Exception(
+                                            'Authentication required');
+                                      }
+
+                                      final response = await http.post(
+                                        Uri.parse(
+                                            'http://localhost:8000/api/proposals/$_savedProposalId/invite'),
+                                        headers: {
+                                          'Authorization': 'Bearer $token',
+                                          'Content-Type': 'application/json',
+                                        },
+                                        body: jsonEncode({
+                                          'email': email,
+                                          'permission_level':
+                                              selectedPermission,
+                                        }),
+                                      );
+
+                                      if (response.statusCode == 201) {
+                                        final result =
+                                            jsonDecode(response.body);
+
+                                        // Reload collaborators list
+                                        await _loadCollaborators();
+
+                                        setState(() {
+                                          _isCollaborating = true;
+                                        });
+
+                                        emailController.clear();
+
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(result[
+                                                          'email_sent'] ==
+                                                      true
+                                                  ? '✅ Invitation sent to $email'
+                                                  : '⚠️ Invitation created but email failed to send'),
+                                              backgroundColor:
+                                                  result['email_sent'] == true
+                                                      ? Colors.green
+                                                      : Colors.orange,
+                                            ),
+                                          );
+                                        }
+                                      } else {
+                                        final error = jsonDecode(response.body);
+                                        throw Exception(error['detail'] ??
+                                            'Failed to send invitation');
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error: $e'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    } finally {
+                                      setDialogState(() {
+                                        isInviting = false;
+                                      });
+                                    }
+                                  },
+                            icon: isInviting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                    ),
+                                  )
+                                : const Icon(Icons.send, size: 18),
+                            label:
+                                Text(isInviting ? 'Sending...' : 'Send Invite'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF27AE60),
                               padding: const EdgeInsets.symmetric(
@@ -6725,26 +6934,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            collaborator['status'] == 'accepted'
+                                                ? Colors.green[50]
+                                                : Colors.orange[50],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        collaborator['status'] == 'accepted'
+                                            ? 'Active'
+                                            : 'Pending',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: collaborator['status'] ==
+                                                  'accepted'
+                                              ? Colors.green[700]
+                                              : Colors.orange[700],
+                                        ),
+                                      ),
+                                    ),
                                     IconButton(
                                       icon: const Icon(Icons.close, size: 18),
-                                      onPressed: () {
-                                        setDialogState(() {
-                                          _collaborators.removeAt(index);
-                                          if (_collaborators.isEmpty) {
-                                            _isCollaborating = false;
-                                          }
-                                        });
-                                        setState(() {});
-
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              '${collaborator['name']} removed from collaborators',
-                                            ),
-                                            backgroundColor: Colors.orange,
-                                          ),
-                                        );
+                                      tooltip: 'Remove collaborator',
+                                      onPressed: () async {
+                                        final invitationId = collaborator['id'];
+                                        if (invitationId != null) {
+                                          Navigator.pop(context);
+                                          await _removeCollaborator(
+                                              invitationId);
+                                          _showCollaborationDialog();
+                                        }
                                       },
                                     ),
                                   ],
