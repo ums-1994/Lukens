@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
+import 'package:web/web.dart' as web;
 
 class GuestCollaborationPage extends StatefulWidget {
   const GuestCollaborationPage({super.key});
@@ -29,17 +30,81 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
 
   void _extractTokenAndLoad() {
     // Get token from URL query parameters
-    final uri = Uri.base;
-    final token = uri.queryParameters['token'];
+    // For Flutter web with hash routing, need to parse window.location.href
+    String? token;
+
+    try {
+      // Get the full URL from the browser
+      final currentUrl = web.window.location.href;
+      print('🔍 Full URL: $currentUrl');
+      print('🔍 Hash: ${web.window.location.hash}');
+      print('🔍 Search: ${web.window.location.search}');
+
+      // Parse the URL
+      final uri = Uri.parse(currentUrl);
+      print('🔍 URI Fragment: ${uri.fragment}');
+      print('🔍 URI Query: ${uri.query}');
+
+      // Try 1: Direct query parameters (before #)
+      token = uri.queryParameters['token'];
+      print('📍 Try 1 - Token from URI query params: $token');
+
+      // Try 2: From window.location.search
+      if (token == null || token.isEmpty) {
+        final search = web.window.location.search;
+        if (search.isNotEmpty) {
+          final searchUri = Uri.parse('http://dummy$search');
+          token = searchUri.queryParameters['token'];
+          print('📍 Try 2 - Token from location.search: $token');
+        }
+      }
+
+      // Try 3: Parse from fragment (after #)
+      if ((token == null || token.isEmpty) && uri.fragment.isNotEmpty) {
+        final fragment = uri.fragment;
+        print('📍 Try 3 - Parsing fragment: $fragment');
+
+        // Fragment might be like: /collaborate?token=xyz
+        if (fragment.contains('token=')) {
+          final queryStart = fragment.indexOf('?');
+          if (queryStart != -1) {
+            final queryString = fragment.substring(queryStart + 1);
+            print('📍 Query string from fragment: $queryString');
+
+            // Parse query string manually
+            final params = Uri.splitQueryString(queryString);
+            token = params['token'];
+            print('📍 Token from fragment: $token');
+          }
+        }
+      }
+
+      // Try 4: Direct from window.location.hash
+      if (token == null || token.isEmpty) {
+        final hash = web.window.location.hash;
+        if (hash.contains('token=')) {
+          final tokenMatch = RegExp(r'token=([^&]+)').firstMatch(hash);
+          if (tokenMatch != null) {
+            token = tokenMatch.group(1);
+            print('📍 Try 4 - Token from regex: $token');
+          }
+        }
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error parsing URL: $e');
+      print('❌ Stack trace: $stackTrace');
+    }
 
     if (token == null || token.isEmpty) {
       setState(() {
-        _error = 'No access token provided';
+        _error =
+            'No access token provided. Check browser console (F12) for debug info.';
         _isLoading = false;
       });
       return;
     }
 
+    print('✅ Token extracted successfully: ${token.substring(0, 20)}...');
     setState(() {
       _accessToken = token;
     });
