@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/smtp_auth_service.dart';
+import '../../services/auth_service.dart';
 import '../../api.dart';
 import 'dart:math' as math;
 
@@ -106,6 +107,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             final appState = context.read<AppState>();
             appState.authToken = result['access_token'];
             appState.currentUser = userProfile;
+
+            // IMPORTANT: Also persist to AuthService and localStorage
+            AuthService.setUserData(userProfile, result['access_token']);
+
             await appState.init();
 
             Navigator.pushNamedAndRemoveUntil(

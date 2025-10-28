@@ -15,6 +15,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalTitle;
   final String? initialTitle;
   final Map<String, dynamic>? aiGeneratedSections;
+  final bool readOnly; // For approver view-only mode
 
   const BlankDocumentEditorPage({
     super.key,
@@ -22,6 +23,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.proposalTitle,
     this.initialTitle,
     this.aiGeneratedSections,
+    this.readOnly = false, // Default to editable
   });
 
   @override
@@ -31,6 +33,8 @@ class BlankDocumentEditorPage extends StatefulWidget {
 
 class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _titleController;
+  late TextEditingController _clientNameController;
+  late TextEditingController _clientEmailController;
   bool _isSaving = false;
   DateTime? _lastSaved;
   List<_DocumentSection> _sections = [];
@@ -81,13 +85,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   // Backend integration
   int? _savedProposalId; // Store the actual backend proposal ID
   String? _authToken;
+  String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
 
   @override
   void initState() {
     super.initState();
+
+    print('📄 BlankDocumentEditorPage initState');
+    print('   proposalId: ${widget.proposalId}');
+    print('   proposalTitle: ${widget.proposalTitle}');
+    print('   initialTitle: ${widget.initialTitle}');
+
     _titleController = TextEditingController(
       text: widget.initialTitle ?? widget.proposalTitle ?? 'Untitled Document',
     );
+    _clientNameController = TextEditingController();
+    _clientEmailController = TextEditingController();
     _commentController = TextEditingController();
 
     // Check if AI-generated sections are provided
@@ -257,6 +270,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             _titleController.text = contentData['title'] ??
                 proposal['title'] ??
                 'Untitled Document';
+
+            // Load proposal status
+            _proposalStatus = proposal['status'] ?? 'draft';
+
+            // Load client information
+            _clientNameController.text = proposal['client_name'] ?? '';
+            _clientEmailController.text = proposal['client_email'] ?? '';
 
             // Clear existing sections
             for (var section in _sections) {
@@ -527,6 +547,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void dispose() {
     _autoSaveTimer?.cancel();
     _titleController.dispose();
+    _clientNameController.dispose();
+    _clientEmailController.dispose();
     _commentController.dispose();
     for (var section in _sections) {
       section.controller.dispose();
@@ -869,6 +891,252 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  // Status helper methods
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending ceo approval':
+        return const Color(0xFFF39C12); // Orange
+      case 'sent to client':
+        return const Color(0xFF3498DB); // Blue
+      case 'approved':
+        return const Color(0xFF2ECC71); // Green
+      case 'rejected':
+        return const Color(0xFFE74C3C); // Red
+      default:
+        return const Color(0xFF95A5A6); // Gray
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending ceo approval':
+        return Icons.pending;
+      case 'sent to client':
+        return Icons.send;
+      case 'approved':
+        return Icons.check_circle;
+      case 'rejected':
+        return Icons.cancel;
+      default:
+        return Icons.info;
+    }
+  }
+
+  String _getStatusLabel(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending ceo approval':
+        return 'Pending Approval';
+      case 'sent to client':
+        return 'Sent to Client';
+      case 'approved':
+        return 'Approved';
+      case 'rejected':
+        return 'Rejected';
+      default:
+        return status;
+    }
+  }
+
+  Future<bool?> _showClientInfoDialog() async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Client Information Required'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Please provide client information before sending for approval:',
+                style: TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _clientNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Client Name *',
+                  hintText: 'e.g., Acme Corporation',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.business),
+                ),
+                textCapitalization: TextCapitalization.words,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _clientEmailController,
+                decoration: const InputDecoration(
+                  labelText: 'Client Email *',
+                  hintText: 'e.g., contact@acme.com',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '* When approved, the proposal will be sent to this email',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Validate inputs
+              if (_clientNameController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter client name'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              final email = _clientEmailController.text.trim();
+              if (email.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter client email'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              // Basic email validation
+              if (!email.contains('@') || !email.contains('.')) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid email address'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              Navigator.pop(context, true);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendForApproval() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before sending for approval'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Check if client information is provided
+    if (_clientNameController.text.trim().isEmpty ||
+        _clientEmailController.text.trim().isEmpty) {
+      // Show dialog to collect client information
+      final clientInfoProvided = await _showClientInfoDialog();
+      if (clientInfoProvided != true) return;
+
+      // Save with client info
+      await _saveToBackend();
+    }
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send for Approval'),
+        content: const Text(
+          'This will send your proposal to the CEO for approval. '
+          'Once approved, it will be automatically sent to the client.\n\n'
+          'Do you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Send for Approval'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) {
+        throw Exception('Not authenticated');
+      }
+
+      final response = await http.post(
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _proposalStatus = data['status'];
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Proposal sent for approval successfully!'),
+              backgroundColor: Color(0xFF2ECC71),
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to send for approval');
+      }
+    } catch (e) {
+      print('❌ Error sending for approval: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send for approval: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // Auto-save and versioning methods
   void _setupAutoSaveListeners() {
     // Listen to title changes
@@ -1042,7 +1310,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           token: token,
           title: title,
           content: content,
-          status: 'draft',
+          clientName: _clientNameController.text.trim().isEmpty
+              ? null
+              : _clientNameController.text.trim(),
+          clientEmail: _clientEmailController.text.trim().isEmpty
+              ? null
+              : _clientEmailController.text.trim(),
+          status: _proposalStatus ?? 'draft',
         );
 
         print('🔍 Create proposal result: $result');
@@ -1068,7 +1342,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           id: _savedProposalId!,
           title: title,
           content: content,
-          status: 'draft',
+          clientName: _clientNameController.text.trim().isEmpty
+              ? null
+              : _clientNameController.text.trim(),
+          clientEmail: _clientEmailController.text.trim().isEmpty
+              ? null
+              : _clientEmailController.text.trim(),
+          status: _proposalStatus ?? 'draft',
         );
         print('✅ Proposal updated: $_savedProposalId');
         print('🔍 Update result: $result');
@@ -1704,18 +1984,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
-          // Left Sidebar
-          _buildLeftSidebar(),
-          // Sections Sidebar (conditional)
-          if (_showSectionsSidebar) _buildSectionsSidebar(),
+          // Left Sidebar (hide in read-only mode)
+          if (!widget.readOnly) _buildLeftSidebar(),
+          // Sections Sidebar (conditional, hide in read-only mode)
+          if (!widget.readOnly && _showSectionsSidebar) _buildSectionsSidebar(),
           // Main content
           Expanded(
             child: Column(
               children: [
                 // Top header
                 _buildTopHeader(),
-                // Formatting toolbar
-                _buildToolbar(),
+                // Formatting toolbar (hide in read-only mode)
+                if (!widget.readOnly) _buildToolbar(),
                 // Main document area
                 Expanded(
                   child: Row(
@@ -1744,18 +2024,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 ),
                               ),
                             ),
-                            // Floating toolbar on right
-                            Positioned(
-                              right: 20,
-                              top: 0,
-                              bottom: 0,
-                              child: _buildFloatingToolbar(),
-                            ),
+                            // Floating toolbar on right (hide in read-only mode)
+                            if (!widget.readOnly)
+                              Positioned(
+                                right: 20,
+                                top: 0,
+                                bottom: 0,
+                                child: _buildFloatingToolbar(),
+                              ),
                           ],
                         ),
                       ),
-                      // Right sidebar
-                      _buildRightSidebar(),
+                      // Right sidebar (hide in read-only mode)
+                      if (!widget.readOnly) _buildRightSidebar(),
                     ],
                   ),
                 ),
@@ -2228,14 +2509,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         Expanded(
                           child: TextField(
                             controller: _titleController,
+                            enabled: !widget
+                                .readOnly, // Disable editing in read-only mode
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF1A1A1A),
                             ),
-                            decoration: const InputDecoration(
-                              hintText: 'Click to edit document title...',
-                              hintStyle: TextStyle(
+                            decoration: InputDecoration(
+                              hintText: widget.readOnly
+                                  ? '' // No hint in read-only mode
+                                  : 'Click to edit document title...',
+                              hintStyle: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w400,
                                 color: Color(0xFFBDC3C7),
@@ -2268,6 +2553,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                   ),
                 ),
+                // View Only badge (show in read-only mode)
+                if (widget.readOnly) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF39C12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.visibility, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'View Only',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2459,6 +2771,52 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
+          // Status Badge
+          if (_proposalStatus != null && _proposalStatus != 'draft')
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getStatusColor(_proposalStatus!),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_getStatusIcon(_proposalStatus!),
+                      size: 14, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    _getStatusLabel(_proposalStatus!),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_proposalStatus != null && _proposalStatus != 'draft')
+            const SizedBox(width: 12),
+          // Send for Approval button
+          if (_proposalStatus == null || _proposalStatus == 'draft')
+            ElevatedButton.icon(
+              onPressed: _sendForApproval,
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Send for Approval'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (_proposalStatus == null || _proposalStatus == 'draft')
+            const SizedBox(width: 12),
           // Action buttons
           OutlinedButton.icon(
             onPressed: _showPreview,
@@ -2956,18 +3314,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 controller: section.controller,
                 maxLines: null,
                 minLines: 15,
+                enabled: !widget.readOnly, // Disable editing in read-only mode
                 style: _getContentTextStyle(),
                 textAlign: _getTextAlignment(),
                 textAlignVertical: TextAlignVertical.top,
-                decoration: const InputDecoration(
-                  hintText: 'Start writing your content here...',
-                  hintStyle: TextStyle(
+                decoration: InputDecoration(
+                  hintText: widget.readOnly
+                      ? '' // No hint in read-only mode
+                      : 'Start writing your content here...',
+                  hintStyle: const TextStyle(
                     fontSize: 14,
                     color: Color(0xFFBDC3C7),
                   ),
                   border: InputBorder.none,
                   focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.all(8),
+                  contentPadding: const EdgeInsets.all(8),
                 ),
               ),
               // Display tables below text
