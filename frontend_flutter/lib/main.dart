@@ -28,6 +28,7 @@ import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
+import 'widgets/app_background.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -72,7 +73,10 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
           textTheme: GoogleFonts.poppinsTextTheme(),
+          scaffoldBackgroundColor: Colors.transparent,
         ),
+        // Apply global background: image after auth, gradient before auth
+        builder: (context, child) => AppBackground(child: child ?? const SizedBox.shrink()),
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
@@ -355,12 +359,21 @@ class _HomeShellState extends State<HomeShell> {
       _current = _labelForIdx(idx);
     }
     return Scaffold(
-      body: Row(
-        children: [
-          // Modern Navigation Sidebar
-          _buildModernSidebar(),
-          Expanded(child: pages[idx]),
-        ],
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/Global BG.jpg'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Modern Navigation Sidebar
+            _buildModernSidebar(),
+            Expanded(child: pages[idx]),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {

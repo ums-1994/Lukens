@@ -180,7 +180,7 @@ class _RegisterPageState extends State<RegisterPage>
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [

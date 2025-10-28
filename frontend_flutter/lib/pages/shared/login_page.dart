@@ -208,7 +208,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [

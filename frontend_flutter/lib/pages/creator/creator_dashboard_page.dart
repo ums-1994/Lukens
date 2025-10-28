@@ -18,7 +18,7 @@ class DashboardPage extends StatelessWidget {
     print('Dashboard - Proposals: ${app.proposals}');
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           // Header

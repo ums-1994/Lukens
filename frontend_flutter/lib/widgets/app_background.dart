@@ -10,17 +10,42 @@ class AppBackground extends StatelessWidget {
     // Check if user is logged in
     final isLoggedIn = AuthService.isLoggedIn;
     
+    final themedChild = Theme(
+      data: Theme.of(context).copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+        dialogBackgroundColor: Colors.transparent,
+        canvasColor: Colors.transparent,
+      ),
+      child: child,
+    );
+
     return Stack(
       children: [
         // Background image for logged-in users, gradient for others
         if (isLoggedIn)
           // Background image for authenticated screens
-          Container(
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage('assets/images/Global BG.jpg'),
-                fit: BoxFit.cover,
-              ),
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/Global BG.jpg',
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+              gaplessPlayback: true,
+              excludeFromSemantics: true,
+              errorBuilder: (context, error, stack) {
+                // Fallback: show a subtle gradient if asset fails to load
+                return Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF1F2937),
+                        Color(0xFF111827),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           )
         else
@@ -38,11 +63,7 @@ class AppBackground extends StatelessWidget {
               ),
             ),
           ),
-        // Subtle overlay for better readability on image
-        if (isLoggedIn)
-          Container(
-            color: Colors.black.withOpacity(0.3),
-          ),
+        // No overlay to ensure the image is clearly visible
         // Subtle radial glow bottom-right
         Positioned(
           bottom: 0,
@@ -60,8 +81,8 @@ class AppBackground extends StatelessWidget {
             ),
           ),
         ),
-        // Page content
-        child,
+        // Page content with transparent Scaffold background
+        themedChild,
       ],
     );
   }

@@ -102,7 +102,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
     final unreadCount = _notifications.where((n) => n['read'] != true).length;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           // Header
