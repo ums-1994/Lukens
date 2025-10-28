@@ -23,6 +23,7 @@ import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/creator/collaboration_page.dart';
 import 'pages/guest/guest_collaboration_page.dart';
+import 'pages/shared/collaboration_router.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
@@ -113,9 +114,11 @@ class MyApp extends StatelessWidget {
             }
 
             if (token != null && token.isNotEmpty) {
-              print('✅ Navigating to GuestCollaborationPage with token');
+              print('✅ Token found, determining collaboration type...');
+              // Use CollaborationRouter to determine which page to show
+              final validToken = token; // Create non-nullable variable
               return MaterialPageRoute(
-                builder: (context) => const GuestCollaborationPage(),
+                builder: (context) => CollaborationRouter(token: validToken),
               );
             } else {
               print('❌ No token found, cannot navigate');
@@ -135,7 +138,38 @@ class MyApp extends StatelessWidget {
             );
           }
 
-          // Handle client portal with token
+          // Handle client portal route (e.g., /client-portal/123)
+          if (settings.name != null &&
+              settings.name!.contains('client-portal')) {
+            print('🔍 Client portal route detected: ${settings.name}');
+
+            // Extract proposal ID from the route
+            final routeParts = settings.name!.split('/');
+            String? proposalId;
+
+            // Find the proposal ID after 'client-portal'
+            for (int i = 0; i < routeParts.length; i++) {
+              if (routeParts[i] == 'client-portal' &&
+                  i + 1 < routeParts.length) {
+                proposalId = routeParts[i + 1];
+                break;
+              }
+            }
+
+            if (proposalId != null && proposalId.isNotEmpty) {
+              print('✅ Opening client portal for proposal ID: $proposalId');
+              return MaterialPageRoute(
+                builder: (context) => BlankDocumentEditorPage(
+                  proposalId: proposalId,
+                  proposalTitle: 'Proposal #$proposalId',
+                  readOnly: true, // Clients view in read-only mode
+                ),
+              );
+            } else {
+              print('❌ No proposal ID found in client-portal route');
+            }
+          }
+
           return null; // Let other routes be handled normally
         },
         routes: {

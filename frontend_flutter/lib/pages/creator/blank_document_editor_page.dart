@@ -457,9 +457,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               'id': collab['id'],
               'email': collab['invited_email'],
               'name': collab['invited_email'].split('@')[0],
-              'role': collab['permission_level'] == 'comment'
-                  ? 'Can Comment'
-                  : 'View Only',
+              'role': collab['permission_level'] == 'edit'
+                  ? 'Can Edit'
+                  : collab['permission_level'] == 'suggest'
+                      ? 'Can Suggest'
+                      : collab['permission_level'] == 'comment'
+                          ? 'Can Comment'
+                          : 'View Only',
               'status': collab['status'],
               'invited_at': collab['invited_at'],
               'accessed_at': collab['accessed_at'],
@@ -6986,7 +6990,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _showCollaborationDialog() {
     final emailController = TextEditingController();
     bool isInviting = false;
-    String selectedPermission = 'comment';
+    String selectedPermission = 'edit'; // Default to edit for collaborators
 
     // Load existing collaborators
     _loadCollaborators();
@@ -7025,7 +7029,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       const SizedBox(height: 20),
 
                       Text(
-                        'Invite others to view and comment on this proposal. They will receive an email with a secure link.',
+                        'Invite others to collaborate on this proposal. They will receive an email with a secure link.',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey[600],
@@ -7057,6 +7061,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             value: selectedPermission,
                             items: const [
                               DropdownMenuItem(
+                                value: 'edit',
+                                child: Text('Can Edit'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'suggest',
+                                child: Text('Can Suggest Changes'),
+                              ),
+                              DropdownMenuItem(
                                 value: 'comment',
                                 child: Text('Can Comment'),
                               ),
@@ -7067,7 +7079,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ],
                             onChanged: (value) {
                               setDialogState(() {
-                                selectedPermission = value ?? 'comment';
+                                selectedPermission = value ?? 'edit';
                               });
                             },
                           ),
