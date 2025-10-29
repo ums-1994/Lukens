@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/smtp_auth_service.dart';
-import 'email_verification_page.dart';
+import 'login_page.dart';
 import 'dart:math' as math;
 
 class RegisterPage extends StatefulWidget {
@@ -146,12 +146,17 @@ class _RegisterPageState extends State<RegisterPage>
         setState(() => _isLoading = false);
 
         if (result != null) {
+          // Skip email verification - go directly to login
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Registration successful! Please login.'),
+              backgroundColor: Colors.green,
+            ),
+          );
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => EmailVerificationPage(
-                email: _emailController.text.trim(),
-              ),
+              builder: (context) => const LoginPage(),
             ),
           );
         } else {
@@ -180,7 +185,7 @@ class _RegisterPageState extends State<RegisterPage>
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -646,7 +651,7 @@ class _RegisterPageState extends State<RegisterPage>
         borderRadius: BorderRadius.circular(8),
       ),
       child: DropdownButtonFormField<String>(
-        value: _selectedRole,
+        initialValue: _selectedRole,
         dropdownColor: const Color(0xFF2A2A2A),
         style: const TextStyle(
           fontFamily: 'Poppins',

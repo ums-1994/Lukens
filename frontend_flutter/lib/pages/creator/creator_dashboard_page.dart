@@ -1,24 +1,126 @@
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
+import '../../widgets/role_switcher.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/asset_service.dart';
+import '../../services/role_service.dart';
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage>
+    with TickerProviderStateMixin {
+  bool _isSidebarCollapsed = true;
+  late AnimationController _animationController;
+  String _currentPage = 'Dashboard';
+  bool _isRefreshing = false;
+  String _statusFilter = 'all'; // all, draft, published, pending, approved
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    // Start collapsed
+    _animationController.value = 1.0;
+
+    // Refresh data when dashboard loads (after AppState is ready)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Ensure AppState has the token before refreshing
+      final app = context.read<AppState>();
+      if (app.authToken == null && AuthService.token != null) {
+        print('🔄 Syncing token to AppState...');
+        app.authToken = AuthService.token;
+        app.currentUser = AuthService.currentUser;
+      }
+      await _refreshData();
+    });
+  }
+
+  Future<void> _refreshData() async {
+    if (_isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+
+    try {
+      final app = context.read<AppState>();
+
+      // Double-check auth token is synced
+      if (app.authToken == null && AuthService.token != null) {
+        app.authToken = AuthService.token;
+        app.currentUser = AuthService.currentUser;
+        print(
+            '✅ Synced token from AuthService: ${AuthService.token?.substring(0, 20)}...');
+      }
+
+      if (app.authToken == null) {
+        print('❌ No auth token available - cannot fetch data');
+        return;
+      }
+
+      await Future.wait([
+        app.fetchProposals(),
+        app.fetchDashboard(),
+      ]);
+      print(
+          '✅ Dashboard data refreshed - ${app.proposals.length} proposals loaded');
+    } catch (e) {
+      print('❌ Error refreshing dashboard: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshing = false);
+      }
+    }
+  }
+
+  List<dynamic> _getFilteredProposals(List<dynamic> proposals) {
+    if (_statusFilter == 'all') {
+      return proposals;
+    }
+    return proposals.where((proposal) {
+      final status = proposal['status']?.toString().toLowerCase() ?? 'draft';
+      return status == _statusFilter.toLowerCase();
+    }).toList();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final counts = app.dashboardCounts;
+    final userRole = app.currentUser?['role'] ?? 'Financial Manager';
 
-    // Debug: Print current state
     print('Dashboard - Current User: ${app.currentUser}');
+    print('Dashboard - User Role: $userRole');
     print('Dashboard - Counts: $counts');
     print('Dashboard - Proposals: ${app.proposals}');
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF5F7F9),
       body: Column(
         children: [
           // Header
@@ -32,9 +134,9 @@ class DashboardPage extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Proposal & SOW Builder',
-                    style: TextStyle(
+                  Text(
+                    _getHeaderTitle(userRole),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -42,27 +144,34 @@ class DashboardPage extends StatelessWidget {
                   ),
                   Row(
                     children: [
-                      Container(
-                        width: 35,
-                        height: 35,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF3498DB),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            _getUserInitials(app.currentUser),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                      // Role Switcher
+                      const CompactRoleSwitcher(),
+                      const SizedBox(width: 20),
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/User_Profile.png',
+                          width: 105,
+                          height: 105,
+                          fit: BoxFit.cover,
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(
-                        _getUserName(app.currentUser),
-                        style: const TextStyle(color: Colors.white),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getUserName(app.currentUser),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            userRole,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 10),
                       PopupMenuButton<String>(
@@ -71,7 +180,7 @@ class DashboardPage extends StatelessWidget {
                           if (value == 'logout') {
                             app.logout();
                             AuthService.logout();
-                            Navigator.pushReplacementNamed(context, '/login');
+                            Navigator.pushNamed(context, '/login');
                           }
                         },
                         itemBuilder: (BuildContext context) => [
@@ -94,106 +203,128 @@ class DashboardPage extends StatelessWidget {
             ),
           ),
 
-          // Main Content
+          // Main Content with Sidebar
           Expanded(
             child: Row(
               children: [
-                // Sidebar
-                Container(
-                  width: 250,
-                  color: const Color(0xFF34495E),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        // Title with better styling
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C3E50),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color: const Color(0xFF34495E), width: 1),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.person_outline,
-                                color: Color(0xFF3498DB),
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Business Developer',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                // Collapsible Sidebar
+                GestureDetector(
+                  onTap: () {
+                    if (_isSidebarCollapsed) _toggleSidebar();
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width: _isSidebarCollapsed ? 90.0 : 250.0,
+                    color: const Color(0xFF34495E),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 16),
+                          // Toggle button
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: InkWell(
+                              onTap: _toggleSidebar,
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2C3E50),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: _isSidebarCollapsed
+                                      ? MainAxisAlignment.center
+                                      : MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    if (!_isSidebarCollapsed)
+                                      const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 12),
+                                        child: Text(
+                                          'Navigation',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12),
+                                        ),
+                                      ),
+                                    Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal:
+                                              _isSidebarCollapsed ? 0 : 8),
+                                      child: Icon(
+                                        _isSidebarCollapsed
+                                            ? Icons.keyboard_arrow_right
+                                            : Icons.keyboard_arrow_left,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildNavItem('📊', 'Dashboard', true, context),
-                        _buildNavItem('📝', 'My Proposals', false, context),
-                        _buildNavItem('📂', 'Templates', false, context),
-                        _buildNavItem('🧩', 'Content Library', false, context),
-                        _buildNavItem('👥', 'Collaboration', false, context),
-                        _buildNavItem('📋', 'Approvals Status', false, context),
-                        _buildNavItem(
-                            '🔍', 'Analytics (My Pipeline)', false, context),
-
-                        // Divider
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 16),
-                          height: 1,
-                          color: const Color(0xFF2C3E50),
-                        ),
-
-                        // Quick Actions Section
-                        const Padding(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Text(
-                            'Quick Actions',
-                            style: TextStyle(
-                              color: Color(0xFF95A5A6),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          // Navigation items
+                          _buildNavItem(
+                              'Dashboard',
+                              'assets/images/Dahboard.png',
+                              _currentPage == 'Dashboard',
+                              context),
+                          _buildNavItem(
+                              'My Proposals',
+                              'assets/images/My_Proposals.png',
+                              _currentPage == 'My Proposals',
+                              context),
+                          _buildNavItem(
+                              'Templates',
+                              'assets/images/content_library.png',
+                              _currentPage == 'Templates',
+                              context),
+                          _buildNavItem(
+                              'Content Library',
+                              'assets/images/content_library.png',
+                              _currentPage == 'Content Library',
+                              context),
+                          _buildNavItem(
+                              'Collaboration',
+                              'assets/images/collaborations.png',
+                              _currentPage == 'Collaboration',
+                              context),
+                          _buildNavItem(
+                              'Approvals Status',
+                              'assets/images/Time Allocation_Approval_Blue.png',
+                              _currentPage == 'Approvals Status',
+                              context),
+                          _buildNavItem(
+                              'Analytics (My Pipeline)',
+                              'assets/images/analytics.png',
+                              _currentPage == 'Analytics (My Pipeline)',
+                              context),
 
-                        _buildNavItem('➕', 'New Proposal', false, context),
-                        _buildNavItem('⚙️', 'Settings', false, context),
+                          const SizedBox(height: 20),
 
-                        // Debug section
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          child: ElevatedButton(
-                            onPressed: () {
-                              print(
-                                  'Debug button clicked - navigating to templates');
-                              Navigator.pushReplacementNamed(
-                                  context, '/templates');
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFE74C3C),
-                              foregroundColor: Colors.white,
+                          // Divider
+                          if (!_isSidebarCollapsed)
+                            Container(
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              height: 1,
+                              color: const Color(0xFF2C3E50),
                             ),
-                            child: const Text('DEBUG: Go to Templates'),
-                          ),
-                        ),
 
-                        const SizedBox(height: 20), // Add bottom padding
-                      ],
+                          const SizedBox(height: 12),
+
+                          // Logout button
+                          _buildNavItem(
+                              'Logout',
+                              'assets/images/Logout_KhonoBuzz.png',
+                              false,
+                              context),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -202,41 +333,12 @@ class DashboardPage extends StatelessWidget {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Proposal Dashboard Section
-                          _buildSection(
-                            '📊 Proposal Dashboard',
-                            _buildDashboardGrid(counts, context),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // End-to-End Proposal Flow
-                          _buildSection(
-                            '🔧 End-to-End Proposal Flow',
-                            _buildWorkflow(context),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // AI-Powered Compound Risk Gate
-                          _buildAISection(context),
-                          const SizedBox(height: 20),
-
-                          // Recent Proposals
-                          _buildSection(
-                            '📝 Recent Proposals',
-                            _buildRecentProposals(context, app.proposals),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // System Components
-                          _buildSection(
-                            '🧩 System Components',
-                            _buildSystemComponents(),
-                          ),
-                        ],
+                    child: RefreshIndicator(
+                      onRefresh: _refreshData,
+                      color: const Color(0xFF3498DB),
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: _buildRoleSpecificContent(userRole, counts, app),
                       ),
                     ),
                   ),
@@ -245,64 +347,116 @@ class DashboardPage extends StatelessWidget {
             ),
           ),
 
-          Footer(),
+          const Footer(),
         ],
       ),
     );
   }
 
   Widget _buildNavItem(
-      String icon, String label, bool isActive, BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+      String label, String assetPath, bool isActive, BuildContext context) {
+    if (_isSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: () {
+              setState(() => _currentPage = label);
+              _navigateToPage(context, label);
+            },
+            borderRadius: BorderRadius.circular(30),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isActive
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFFCBD5E1),
+                  width: isActive ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: ClipOval(
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        border: isActive
-            ? Border.all(color: const Color(0xFF2980B9), width: 1)
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            print('Tapped on: $label'); // Debug print
-            _navigateToPage(context, label);
-          },
-          onHover: (hovering) {
-            // This will provide visual feedback on hover
-          },
-          splashColor: Colors.white.withValues(alpha: 0.1),
-          highlightColor: Colors.white.withValues(alpha: 0.05),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Text(icon,
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: isActive ? Colors.white : const Color(0xFFBDC3C7),
-                    )),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                      fontSize: 14,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+        onTap: () {
+          setState(() => _currentPage = label);
+          _navigateToPage(context, label);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isActive
+                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isActive
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFFCBD5E1),
+                    width: isActive ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
                     ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(6),
+                child: ClipOval(
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-                if (isActive)
-                  const Icon(
-                    Icons.arrow_forward_ios,
-                    size: 12,
-                    color: Colors.white,
-                  ),
-              ],
-            ),
+              ),
+              if (isActive)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
+            ],
           ),
         ),
       ),
@@ -310,46 +464,67 @@ class DashboardPage extends StatelessWidget {
   }
 
   void _navigateToPage(BuildContext context, String label) {
-    print('Navigating to: $label'); // Debug print
-
     switch (label) {
       case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        // Already on dashboard
         break;
       case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
+        Navigator.pushNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushReplacementNamed(context, '/templates');
+        Navigator.pushNamed(context, '/templates');
         break;
       case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushNamed(context, '/content_library');
         break;
       case 'Collaboration':
-        Navigator.pushReplacementNamed(context, '/collaboration');
+        Navigator.pushNamed(context, '/collaboration');
         break;
       case 'Approvals Status':
-        Navigator.pushReplacementNamed(context, '/approvals');
+        Navigator.pushNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushReplacementNamed(context, '/analytics');
+        Navigator.pushNamed(context, '/analytics');
         break;
-      case 'New Proposal':
-        Navigator.pushReplacementNamed(context, '/compose');
+      case 'Logout':
+        _handleLogout(context);
         break;
-      case 'Settings':
-        // For now, show a message as settings page might not exist
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings page coming soon!'),
-            backgroundColor: Color(0xFFE67E22),
-          ),
-        );
-        break;
-      default:
-        // Default to dashboard
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
     }
+  }
+
+  void _handleLogout(BuildContext context) {
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                // Perform logout
+                final app = context.read<AppState>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildSection(String title, Widget content) {
@@ -391,14 +566,20 @@ class DashboardPage extends StatelessWidget {
       crossAxisSpacing: 20,
       mainAxisSpacing: 20,
       children: [
-        _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '4',
+        _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
             'Active', context),
-        _buildStatCard('In Review', counts['In Review']?.toString() ?? '2',
-            'Pending', context),
-        _buildStatCard('Awaiting Sign-off',
-            counts['Released']?.toString() ?? '3', 'With Clients', context),
-        _buildStatCard('Signed', counts['Signed']?.toString() ?? '12',
-            'This Quarter', context),
+        _buildStatCard(
+            'Pending CEO Approval',
+            counts['Pending CEO Approval']?.toString() ?? '0',
+            'Awaiting Review',
+            context),
+        _buildStatCard(
+            'Sent to Client',
+            counts['Sent to Client']?.toString() ?? '0',
+            'With Clients',
+            context),
+        _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
+            'Completed', context),
       ],
     );
   }
@@ -408,7 +589,7 @@ class DashboardPage extends StatelessWidget {
     return InkWell(
       onTap: () {
         // Navigate to proposals page when clicking on stat cards
-        Navigator.pushReplacementNamed(context, '/proposals');
+        Navigator.pushNamed(context, '/proposals');
       },
       child: Container(
         decoration: BoxDecoration(
@@ -527,23 +708,23 @@ class DashboardPage extends StatelessWidget {
     Future.delayed(const Duration(milliseconds: 100), () {
       switch (step) {
         case 'Compose':
-          Navigator.pushReplacementNamed(context, '/compose');
+          Navigator.pushNamed(context, '/compose');
           break;
         case 'Govern':
-          Navigator.pushReplacementNamed(context, '/govern');
+          Navigator.pushNamed(context, '/govern');
           break;
         case 'AI Risk Gate':
           // For now, navigate to approvals as AI risk gate might be part of approval process
-          Navigator.pushReplacementNamed(context, '/approvals');
+          Navigator.pushNamed(context, '/approvals');
           break;
         case 'Internal Sign-off':
-          Navigator.pushReplacementNamed(context, '/approvals');
+          Navigator.pushNamed(context, '/approvals');
           break;
         case 'Client Sign-off':
-          Navigator.pushReplacementNamed(context, '/approvals');
+          Navigator.pushNamed(context, '/approvals');
           break;
         default:
-          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+          Navigator.pushNamed(context, '/creator_dashboard');
       }
     });
   }
@@ -561,30 +742,30 @@ class DashboardPage extends StatelessWidget {
     Future.delayed(const Duration(milliseconds: 100), () {
       switch (component) {
         case 'Template Library':
-          Navigator.pushReplacementNamed(context, '/compose');
+          Navigator.pushNamed(context, '/compose');
           break;
         case 'Content Blocks':
-          Navigator.pushReplacementNamed(context, '/content_library');
+          Navigator.pushNamed(context, '/content_library');
           break;
         case 'Collaboration Tools':
-          Navigator.pushReplacementNamed(context, '/approvals');
+          Navigator.pushNamed(context, '/approvals');
           break;
         case 'E-Signature':
-          Navigator.pushReplacementNamed(context, '/approvals');
+          Navigator.pushNamed(context, '/approvals');
           break;
         case 'Analytics':
-          Navigator.pushReplacementNamed(context, '/proposals');
+          Navigator.pushNamed(context, '/proposals');
           break;
         case 'User Management':
-          Navigator.pushReplacementNamed(context, '/admin_dashboard');
+          Navigator.pushNamed(context, '/admin_dashboard');
           break;
         default:
-          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+          Navigator.pushNamed(context, '/creator_dashboard');
       }
     });
   }
 
-  Widget _buildAISection(BuildContext context) {
+  Widget _buildAISection() {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFFF4E6),
@@ -617,7 +798,6 @@ class DashboardPage extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _buildProposalItem(
-              context,
               'GlobalTech Cloud Migration',
               '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
               'Review Needed',
@@ -630,28 +810,152 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildRecentProposals(BuildContext context, List<dynamic> proposals) {
-    return Column(
-      children: proposals.take(3).map((proposal) {
-        String status = proposal['status'] ?? 'Draft';
-        Color statusColor = _getStatusColor(status);
-        Color textColor = _getStatusTextColor(status);
+  Widget _buildRecentProposals(List<dynamic> proposals) {
+    final filteredProposals = _getFilteredProposals(proposals);
 
-        return _buildProposalItem(
-          context,
-          proposal['title'] ?? 'Untitled',
-          'Last modified: ${_formatDate(proposal['updated_at'])}',
-          status,
-          statusColor,
-          textColor,
-          proposalId: proposal['id'],
-        );
-      }).toList(),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Status Filter Tabs
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildFilterTab('All', 'all', proposals.length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Draft',
+                  'draft',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? 'draft').toString().toLowerCase() ==
+                          'draft')
+                      .length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Sent to Client',
+                  'sent to client',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'sent to client')
+                      .length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Pending CEO Approval',
+                  'pending ceo approval',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'pending ceo approval')
+                      .length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Signed',
+                  'signed',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'signed')
+                      .length),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Filtered Proposals List
+        if (filteredProposals.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(32),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[400]),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No proposals found',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ...filteredProposals.take(5).map((proposal) {
+            String status = proposal['status'] ?? 'Draft';
+            Color statusColor = _getStatusColor(status);
+            Color textColor = _getStatusTextColor(status);
+
+            return _buildProposalItem(
+              proposal['title'] ?? 'Untitled',
+              'Last modified: ${_formatDate(proposal['updated_at'])}',
+              status,
+              statusColor,
+              textColor,
+            );
+          }).toList(),
+      ],
     );
   }
 
-  Widget _buildProposalItem(BuildContext context, String title, String subtitle, String status,
-      Color statusColor, Color textColor, {String? proposalId}) {
+  Widget _buildFilterTab(String label, String value, int count) {
+    final isActive = _statusFilter == value;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _statusFilter = value;
+        });
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFF3498DB) : const Color(0xFFF0F0F0),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? const Color(0xFF2980B9) : const Color(0xFFE0E0E0),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? Colors.white : const Color(0xFF2C3E50),
+                fontSize: 13,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            if (count > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? Colors.white.withOpacity(0.3)
+                      : const Color(0xFF3498DB).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFF3498DB),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProposalItem(String title, String subtitle, String status,
+      Color statusColor, Color textColor) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -661,82 +965,48 @@ class DashboardPage extends StatelessWidget {
         border:
             Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF7F8C8D),
-                      ),
-                    ),
-                  ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  status,
-                  style: TextStyle(
+                const SizedBox(height: 5),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: textColor,
+                    color: Color(0xFF7F8C8D),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          if (status == 'Draft' && proposalId != null) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _submitForApproval(context, proposalId, title),
-                icon: const Icon(Icons.send, size: 16),
-                label: const Text('Submit for Approval'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2C3E50),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              status,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: textColor,
               ),
             ),
-          ],
+          ),
         ],
       ),
-    );
-  }
-
-  void _submitForApproval(BuildContext context, String proposalId, String proposalTitle) {
-    Navigator.pushNamed(
-      context,
-      '/submit_for_approval',
-      arguments: {
-        'proposalId': proposalId,
-        'proposalTitle': proposalTitle,
-      },
     );
   }
 
@@ -827,26 +1097,6 @@ class DashboardPage extends StatelessWidget {
     return date.toString();
   }
 
-  String _getUserInitials(Map<String, dynamic>? user) {
-    if (user == null) return 'U';
-
-    // Try different possible field names for the user's name
-    String? name = user['full_name'] ??
-        user['first_name'] ??
-        user['name'] ??
-        user['email']?.split('@')[0];
-
-    if (name == null || name.isEmpty) return 'U';
-
-    // Extract initials from the name
-    List<String> nameParts = name.split(' ');
-    if (nameParts.length >= 2) {
-      return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
-    } else {
-      return name.substring(0, 2).toUpperCase();
-    }
-  }
-
   String _getUserName(Map<String, dynamic>? user) {
     if (user == null) return 'User';
 
@@ -857,5 +1107,249 @@ class DashboardPage extends StatelessWidget {
         user['email']?.split('@')[0];
 
     return name ?? 'User';
+  }
+
+  String _getHeaderTitle(String role) {
+    switch (role) {
+      case 'CEO':
+        return 'CEO Dashboard - Executive Overview';
+      case 'Financial Manager':
+        return 'Financial Manager - Proposal Management';
+      case 'Client':
+        return 'Client Portal - My Proposals';
+      default:
+        return 'Proposal & SOW Builder';
+    }
+  }
+
+  Widget _buildRoleSpecificContent(
+      String role, Map<String, dynamic> counts, AppState app) {
+    switch (role) {
+      case 'CEO':
+        return _buildCEODashboard(counts, app);
+      case 'Client':
+        return _buildClientDashboard(counts, app);
+      case 'Financial Manager':
+      default:
+        return _buildFinancialManagerDashboard(counts, app);
+    }
+  }
+
+  Widget _buildCEODashboard(Map<String, dynamic> counts, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '👔 CEO Executive Dashboard',
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2C3E50)),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Organization-wide overview and pending approvals',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+
+        // CEO Dashboard Grid
+        _buildSection(
+          '📊 Organization Overview',
+          _buildDashboardGrid(counts, context),
+        ),
+        const SizedBox(height: 20),
+
+        // Pending Approvals Section (CEO-specific)
+        _buildSection(
+          '⏳ Awaiting Your Approval',
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                const Icon(Icons.pending_actions,
+                    size: 48, color: Color(0xFFE67E22)),
+                const SizedBox(height: 12),
+                Text(
+                  '${counts['Pending CEO Approval'] ?? 0} proposals pending your approval',
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.approval),
+                  label: const Text('Review Pending Approvals'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3498DB),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                  ),
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/approvals');
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Recent Proposals
+        _buildSection(
+          '📝 All Proposals (Organization-wide)',
+          _buildRecentProposals(app.proposals),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFinancialManagerDashboard(
+      Map<String, dynamic> counts, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '💼 Financial Manager Dashboard',
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2C3E50)),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Create and manage proposals for client engagement',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+
+        // Dashboard Grid
+        _buildSection(
+          '📊 My Proposal Dashboard',
+          _buildDashboardGrid(counts, context),
+        ),
+        const SizedBox(height: 20),
+
+        // End-to-End Proposal Flow
+        _buildSection(
+          '🔧 Proposal Workflow',
+          _buildWorkflow(context),
+        ),
+        const SizedBox(height: 20),
+
+        // AI-Powered Compound Risk Gate
+        _buildAISection(),
+        const SizedBox(height: 20),
+
+        // Recent Proposals
+        _buildSection(
+          '📝 My Recent Proposals',
+          _buildRecentProposals(app.proposals),
+        ),
+        const SizedBox(height: 20),
+
+        // System Components
+        _buildSection(
+          '🧩 Available Tools',
+          _buildSystemComponents(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClientDashboard(Map<String, dynamic> counts, AppState app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '🤝 Client Portal',
+          style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2C3E50)),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'View and manage proposals sent to you',
+          style: TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 24),
+
+        // Simplified Dashboard for Clients
+        _buildSection(
+          '📊 My Proposals Status',
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            childAspectRatio: 2.5,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 20,
+            children: [
+              _buildStatCard(
+                  'Active Proposals',
+                  counts['Sent to Client']?.toString() ?? '0',
+                  'For Review',
+                  context),
+              _buildStatCard('Signed', counts['Signed']?.toString() ?? '0',
+                  'Completed', context),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Active Proposals
+        _buildSection(
+          '📝 Proposals Sent to Me',
+          app.proposals.isEmpty
+              ? Container(
+                  padding: const EdgeInsets.all(32),
+                  child: const Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.inbox, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'No proposals yet',
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _buildRecentProposals(app.proposals),
+        ),
+        const SizedBox(height: 20),
+
+        // Quick Actions
+        _buildSection(
+          '⚡ Quick Actions',
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.download),
+                label: const Text('Download Signed Documents'),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Feature coming soon!')),
+                  );
+                },
+              ),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.support_agent),
+                label: const Text('Contact Support'),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Support: support@example.com')),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

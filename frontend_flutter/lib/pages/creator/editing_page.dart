@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../client/proposal_viewer_page.dart';
 import '../../services/email_service.dart';
 
 class EditingPage extends StatefulWidget {
@@ -621,7 +620,7 @@ class _EditingPageState extends State<EditingPage> {
                     _isPlainText = value;
                   });
                 },
-                activeColor: const Color(0xFF3498DB),
+                activeThumbColor: const Color(0xFF3498DB),
               ),
             ],
           ),
@@ -864,15 +863,11 @@ class _EditingPageState extends State<EditingPage> {
 
   // Backend methods
   void _openProposalViewer() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ProposalViewerPage(
-          documentName: widget.documentName,
-          companyName: widget.companyName,
-          selectedClient: widget.selectedClient,
-          selectedSnapshots: widget.selectedSnapshots,
-        ),
+    // TODO: Implement proposal viewer functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Proposal viewer is not available'),
+        duration: Duration(seconds: 2),
       ),
     );
   }

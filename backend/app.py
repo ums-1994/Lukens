@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import secrets
 import smtplib
+import difflib
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -238,6 +239,91 @@ def init_pg_schema():
         FOREIGN KEY (invited_by) REFERENCES users(id)
         )''')
         
+        # Suggested changes table for suggest mode
+        cursor.execute('''CREATE TABLE IF NOT EXISTS suggested_changes (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        section_id VARCHAR(255),
+        suggested_by INTEGER NOT NULL,
+        suggestion_text TEXT NOT NULL,
+        original_text TEXT,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP,
+        resolved_by INTEGER,
+        resolution_action VARCHAR(50),
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (suggested_by) REFERENCES users(id),
+        FOREIGN KEY (resolved_by) REFERENCES users(id)
+        )''')
+        
+        # Section locks table for soft locking
+        cursor.execute('''CREATE TABLE IF NOT EXISTS section_locks (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        section_id VARCHAR(255) NOT NULL,
+        locked_by INTEGER NOT NULL,
+        locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (locked_by) REFERENCES users(id),
+        UNIQUE(proposal_id, section_id)
+        )''')
+        
+        # Activity log table for comprehensive timeline
+        cursor.execute('''CREATE TABLE IF NOT EXISTS activity_log (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        user_id INTEGER,
+        action_type VARCHAR(100) NOT NULL,
+        action_description TEXT NOT NULL,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
+        
+        # Create index for faster activity queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_log_proposal 
+                         ON activity_log(proposal_id, created_at DESC)''')
+        
+        # Notifications table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        proposal_id INTEGER,
+        notification_type VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        metadata JSONB,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        read_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+        
+        # Create index for faster notification queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user 
+                         ON notifications(user_id, is_read, created_at DESC)''')
+        
+        # Mentions table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS comment_mentions (
+        id SERIAL PRIMARY KEY,
+        comment_id INTEGER NOT NULL,
+        mentioned_user_id INTEGER NOT NULL,
+        mentioned_by_user_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read BOOLEAN DEFAULT FALSE,
+        FOREIGN KEY (comment_id) REFERENCES document_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (mentioned_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (mentioned_by_user_id) REFERENCES users(id)
+        )''')
+        
+        # Create index for faster mention queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
+                         ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
+        
         conn.commit()
         release_pg_conn(conn)
         print("✅ PostgreSQL schema initialized successfully")
@@ -305,6 +391,193 @@ def save_tokens():
         print(f"[WARN] Could not save tokens to file: {e}")
 
 valid_tokens = load_tokens()
+
+# ============================================================================
+# ACTIVITY LOG HELPER
+# ============================================================================
+
+def log_activity(proposal_id, user_id, action_type, description, metadata=None):
+    """
+    Log an activity to the activity timeline
+    
+    Args:
+        proposal_id: ID of the proposal
+        user_id: ID of the user performing the action (can be None for system actions)
+        action_type: Type of action (e.g., 'comment_added', 'suggestion_created', 'proposal_edited')
+        description: Human-readable description of the action
+        metadata: Optional dict with additional data
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO activity_log (proposal_id, user_id, action_type, action_description, metadata)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (proposal_id, user_id, action_type, description, json.dumps(metadata) if metadata else None))
+            conn.commit()
+    except Exception as e:
+        print(f"⚠️ Failed to log activity: {e}")
+        # Don't raise - activity logging should not break main functionality
+
+# ============================================================================
+# NOTIFICATION HELPER
+# ============================================================================
+
+def create_notification(user_id, notification_type, title, message, proposal_id=None, metadata=None):
+    """
+    Create a notification for a user
+    
+    Args:
+        user_id: ID of the user to notify
+        notification_type: Type of notification (e.g., 'comment_added', 'suggestion_created')
+        title: Notification title
+        message: Notification message
+        proposal_id: Optional proposal ID
+        metadata: Optional dict with additional data
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO notifications (user_id, proposal_id, notification_type, title, message, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (user_id, proposal_id, notification_type, title, message, json.dumps(metadata) if metadata else None))
+            conn.commit()
+            print(f"✅ Notification created for user {user_id}: {title}")
+    except Exception as e:
+        print(f"⚠️ Failed to create notification: {e}")
+        # Don't raise - notification should not break main functionality
+
+def notify_proposal_collaborators(proposal_id, notification_type, title, message, exclude_user_id=None, metadata=None):
+    """
+    Notify all collaborators on a proposal
+    
+    Args:
+        proposal_id: ID of the proposal
+        notification_type: Type of notification
+        title: Notification title
+        message: Notification message
+        exclude_user_id: Optional user ID to exclude from notifications (e.g., the person who made the change)
+        metadata: Optional dict with additional data
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get proposal owner
+            cursor.execute("SELECT user_id FROM proposals WHERE id = %s", (proposal_id,))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return
+            
+            # Get owner's user ID
+            cursor.execute("SELECT id FROM users WHERE username = %s", (proposal['user_id'],))
+            owner = cursor.fetchone()
+            if owner and owner['id'] != exclude_user_id:
+                create_notification(owner['id'], notification_type, title, message, proposal_id, metadata)
+            
+            # Get all collaborators
+            cursor.execute("""
+                SELECT DISTINCT u.id
+                FROM collaboration_invitations ci
+                JOIN users u ON ci.invited_email = u.email
+                WHERE ci.proposal_id = %s AND ci.status = 'accepted'
+            """, (proposal_id,))
+            
+            collaborators = cursor.fetchall()
+            for collab in collaborators:
+                if collab['id'] != exclude_user_id:
+                    create_notification(collab['id'], notification_type, title, message, proposal_id, metadata)
+                    
+    except Exception as e:
+        print(f"⚠️ Failed to notify collaborators: {e}")
+
+# ============================================================================
+# MENTION HELPER
+# ============================================================================
+
+def extract_mentions(text):
+    """
+    Extract @mentions from text
+    Returns list of mentioned usernames/emails
+    
+    Supports:
+    - @username
+    - @email@domain.com
+    """
+    # Pattern to match @username or @email
+    pattern = r'@([a-zA-Z0-9_.+-]+(?:@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)?)'
+    mentions = re.findall(pattern, text)
+    return list(set(mentions))  # Remove duplicates
+
+def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id):
+    """
+    Process @mentions in a comment
+    - Extract mentions from text
+    - Find mentioned users
+    - Create mention records
+    - Send notifications
+    
+    Args:
+        comment_id: ID of the comment containing mentions
+        comment_text: Text of the comment
+        mentioned_by_user_id: ID of user who created the comment
+        proposal_id: ID of the proposal
+    """
+    try:
+        mentions = extract_mentions(comment_text)
+        if not mentions:
+            return
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get the commenter's name
+            cursor.execute("SELECT full_name FROM users WHERE id = %s", (mentioned_by_user_id,))
+            commenter = cursor.fetchone()
+            commenter_name = commenter['full_name'] if commenter else 'Someone'
+            
+            for mention in mentions:
+                # Try to find user by username or email
+                cursor.execute("""
+                    SELECT id, full_name, email FROM users 
+                    WHERE username = %s OR email = %s OR email LIKE %s
+                """, (mention, mention, f'{mention}@%'))
+                
+                mentioned_user = cursor.fetchone()
+                if not mentioned_user:
+                    print(f"⚠️ Mentioned user not found: @{mention}")
+                    continue
+                
+                # Don't mention yourself
+                if mentioned_user['id'] == mentioned_by_user_id:
+                    continue
+                
+                # Create mention record
+                cursor.execute("""
+                    INSERT INTO comment_mentions 
+                    (comment_id, mentioned_user_id, mentioned_by_user_id)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (comment_id, mentioned_user['id'], mentioned_by_user_id))
+                
+                # Send notification
+                create_notification(
+                    mentioned_user['id'],
+                    'mentioned',
+                    'You were mentioned',
+                    f"{commenter_name} mentioned you in a comment",
+                    proposal_id,
+                    {'comment_id': comment_id, 'mentioned_by': mentioned_by_user_id}
+                )
+                
+                print(f"✅ Notified @{mentioned_user['email']} about mention")
+            
+            conn.commit()
+            
+    except Exception as e:
+        print(f"⚠️ Failed to process mentions: {e}")
+        traceback.print_exc()
 
 # Utility functions
 def get_db():
@@ -1101,7 +1374,26 @@ def approve_proposal(username, proposal_id):
                 # Send email to client if email is provided
                 if client_email and client_email.strip():
                     try:
-                        proposal_url = f"{FRONTEND_URL}/#/client-portal/{proposal_id}"
+                        # Get user ID for the invitation
+                        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                        user = cursor.fetchone()
+                        user_id = user[0] if user else None
+                        
+                        # Generate secure access token for collaboration
+                        access_token = secrets.token_urlsafe(32)
+                        expires_at = datetime.now() + timedelta(days=90)  # 90 days for client access
+                        
+                        # Create collaboration invitation for the client
+                        cursor.execute("""
+                            INSERT INTO collaboration_invitations 
+                            (proposal_id, invited_email, invited_by, access_token, permission_level, expires_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT DO NOTHING
+                        """, (proposal_id, client_email, user_id, access_token, 'view', expires_at))
+                        conn.commit()
+                        
+                        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                        proposal_url = f"{frontend_url}/#/collaborate?token={access_token}"
                         
                         email_body = f"""
                         <html>
@@ -1130,6 +1422,7 @@ def approve_proposal(username, proposal_id):
                                 </div>
                                 
                                 <p style="color: #7F8C8D; font-size: 12px; margin-top: 30px;">
+                                    This secure link will remain active for 90 days.<br>
                                     This is an automated message. Please do not reply to this email.
                                 </p>
                             </div>
@@ -1140,11 +1433,13 @@ def approve_proposal(username, proposal_id):
                         send_email(
                             to_email=client_email,
                             subject=f"Proposal Approved: {title}",
-                            body=email_body
+                            html_content=email_body
                         )
-                        print(f"[SUCCESS] Email sent to client: {client_email}")
+                        print(f"[SUCCESS] Email sent to client: {client_email} with collaboration token")
                     except Exception as email_error:
                         print(f"[WARN] Could not send email to client: {email_error}")
+                        import traceback
+                        traceback.print_exc()
                         # Don't fail the approval if email fails
                 
                 return {
@@ -1548,6 +1843,29 @@ def create_comment(username, proposal_id):
             
             result = cursor.fetchone()
             conn.commit()
+            
+            # Log activity
+            section_text = f" on section {section_index}" if section_index is not None else ""
+            log_activity(
+                proposal_id,
+                user_id,
+                'comment_added',
+                f"{user['full_name']} added a comment{section_text}",
+                {'comment_id': result['id'], 'section_index': section_index}
+            )
+            
+            # Notify proposal owner and collaborators
+            notify_proposal_collaborators(
+                proposal_id,
+                'comment_added',
+                'New Comment',
+                f"{user['full_name']} commented{section_text}",
+                exclude_user_id=user_id,
+                metadata={'comment_id': result['id'], 'section_index': section_index}
+            )
+            
+            # Process @mentions in the comment
+            process_mentions(result['id'], comment_text, user_id, proposal_id)
             
             return {
                 'id': result['id'],
@@ -2334,6 +2652,26 @@ def get_collaboration_access():
                 """, (invitation['id'],))
                 conn.commit()
             
+            # For edit/suggest permission, create/get guest user and generate auth token
+            auth_token = None
+            if invitation['permission_level'] in ['edit', 'suggest']:
+                guest_email = invitation['invited_email']
+                
+                # Create or get guest user
+                cursor.execute("""
+                    INSERT INTO users (username, email, password_hash, full_name, role)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+                    RETURNING id, email
+                """, (guest_email, guest_email, '', f'Collaborator ({guest_email})', 'collaborator'))
+                
+                user = cursor.fetchone()
+                conn.commit()
+                
+                # Generate temporary auth token for this collaborator
+                auth_token = generate_token(user['email'])
+                print(f"✅ Generated auth token for collaborator: {guest_email} (permission: {invitation['permission_level']})")
+            
             # Get comments for the proposal with user details
             cursor.execute("""
                 SELECT 
@@ -2354,7 +2692,7 @@ def get_collaboration_access():
             
             comments = cursor.fetchall()
             
-            return {
+            response = {
                 'proposal': {
                     'id': invitation['proposal_id'],
                     'title': invitation['title'],
@@ -2365,8 +2703,16 @@ def get_collaboration_access():
                 'permission_level': invitation['permission_level'],
                 'invited_email': invitation['invited_email'],
                 'comments': [dict(row) for row in comments],
-                'can_comment': invitation['permission_level'] == 'comment'
-            }, 200
+                'can_comment': invitation['permission_level'] in ['comment', 'suggest', 'edit'],
+                'can_suggest': invitation['permission_level'] in ['suggest', 'edit'],
+                'can_edit': invitation['permission_level'] == 'edit'
+            }
+            
+            # Add auth token for edit/suggest permission
+            if auth_token:
+                response['auth_token'] = auth_token
+            
+            return response, 200
             
     except Exception as e:
         print(f"❌ Error getting collaboration access: {e}")
@@ -2457,6 +2803,1012 @@ def add_guest_comment():
         print(f"❌ Error adding guest comment: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
+
+# ============================================================
+# CLIENT PORTAL ENDPOINTS (Token-based, no auth required)
+# ============================================================
+
+@app.get("/api/client/proposals")
+def get_client_proposals():
+    """Get all proposals for a client using their access token"""
+    try:
+        token = request.args.get('token')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get invitation details to find client email
+            cursor.execute("""
+                SELECT invited_email, expires_at
+                FROM collaboration_invitations
+                WHERE access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            # Check if expired
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            client_email = invitation['invited_email']
+            
+            # Get all proposals for this client email
+            cursor.execute("""
+                SELECT p.id, p.title, p.status, p.created_at, p.updated_at, p.client_name, p.client_email
+                FROM proposals p
+                WHERE p.client_email = %s
+                ORDER BY p.updated_at DESC
+            """, (client_email,))
+            
+            proposals = cursor.fetchall()
+            
+            return {
+                'client_email': client_email,
+                'proposals': [dict(p) for p in proposals]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting client proposals: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/client/proposals/<int:proposal_id>")
+def get_client_proposal_details(proposal_id):
+    """Get detailed proposal information for client"""
+    try:
+        token = request.args.get('token')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify token and get client email
+            cursor.execute("""
+                SELECT invited_email, expires_at
+                FROM collaboration_invitations
+                WHERE access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            # Get proposal details
+            cursor.execute("""
+                SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
+                       p.client_name, p.client_email, p.user_id,
+                       u.full_name as owner_name, u.email as owner_email
+                FROM proposals p
+                LEFT JOIN users u ON p.user_id = u.username
+                WHERE p.id = %s AND p.client_email = %s
+            """, (proposal_id, invitation['invited_email']))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get comments
+            cursor.execute("""
+                SELECT dc.id, dc.comment_text, dc.created_at, dc.created_by,
+                       u.full_name as created_by_name, u.email as created_by_email
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at DESC
+            """, (proposal_id,))
+            
+            comments = cursor.fetchall()
+            
+            # Get activity log (simplified - you can enhance this)
+            activity = [
+                {
+                    'action': 'Proposal Created',
+                    'description': f'Proposal was created by {proposal["owner_name"]}',
+                    'timestamp': proposal['created_at'].isoformat() if proposal['created_at'] else None
+                },
+                {
+                    'action': 'Sent to Client',
+                    'description': f'Proposal was sent to {proposal["client_name"]}',
+                    'timestamp': proposal['updated_at'].isoformat() if proposal['updated_at'] else None
+                }
+            ]
+            
+            return {
+                'proposal': dict(proposal),
+                'comments': [dict(c) for c in comments],
+                'activity': activity
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting client proposal details: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/client/proposals/<int:proposal_id>/comment")
+def add_client_comment(proposal_id):
+    """Add a comment from client"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        comment_text = data.get('comment_text')
+        
+        if not token or not comment_text:
+            return {'detail': 'Token and comment text required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify token
+            cursor.execute("""
+                SELECT invited_email, expires_at
+                FROM collaboration_invitations
+                WHERE access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            # Create or get guest user
+            guest_email = invitation['invited_email']
+            cursor.execute("""
+                INSERT INTO users (username, email, password_hash, full_name, role)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+                RETURNING id
+            """, (guest_email, guest_email, '', f'Client ({guest_email})', 'client'))
+            
+            guest_user_id = cursor.fetchone()['id']
+            conn.commit()
+            
+            # Add comment
+            cursor.execute("""
+                INSERT INTO document_comments 
+                (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, created_at
+            """, (proposal_id, comment_text, guest_user_id, 
+                  data.get('section_index'), data.get('highlighted_text'), 'open'))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'id': result['id'],
+                'message': 'Comment added successfully',
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error adding client comment: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/client/proposals/<int:proposal_id>/approve")
+def client_approve_proposal(proposal_id):
+    """Client approves and signs proposal"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        signer_name = data.get('signer_name')
+        signer_title = data.get('signer_title', '')
+        comments = data.get('comments', '')
+        signature_date = data.get('signature_date')
+        
+        if not token or not signer_name:
+            return {'detail': 'Token and signer name required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify token
+            cursor.execute("""
+                SELECT invited_email, expires_at
+                FROM collaboration_invitations
+                WHERE access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            # Update proposal status
+            cursor.execute("""
+                UPDATE proposals 
+                SET status = 'Client Approved', updated_at = NOW()
+                WHERE id = %s AND client_email = %s
+                RETURNING id, title, client_name, user_id
+            """, (proposal_id, invitation['invited_email']))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Store signature information (you might want a separate table for this)
+            # For now, add as a comment
+            signature_info = f"""
+✓ APPROVED AND SIGNED
+Signer: {signer_name}
+{f"Title: {signer_title}" if signer_title else ""}
+Date: {signature_date or datetime.now().isoformat()}
+{f"Comments: {comments}" if comments else ""}
+            """
+            
+            # Get or create client user
+            cursor.execute("""
+                INSERT INTO users (username, email, password_hash, full_name, role)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+                RETURNING id
+            """, (invitation['invited_email'], invitation['invited_email'], '', signer_name, 'client'))
+            
+            client_user_id = cursor.fetchone()['id']
+            
+            # Add signature as comment
+            cursor.execute("""
+                INSERT INTO document_comments 
+                (proposal_id, comment_text, created_by, status)
+                VALUES (%s, %s, %s, %s)
+            """, (proposal_id, signature_info, client_user_id, 'resolved'))
+            
+            conn.commit()
+            
+            print(f"✅ Proposal {proposal_id} approved by client: {signer_name}")
+            
+            return {
+                'message': 'Proposal approved successfully',
+                'proposal_id': proposal['id'],
+                'status': 'Client Approved'
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error approving proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/client/proposals/<int:proposal_id>/reject")
+def client_reject_proposal(proposal_id):
+    """Client rejects proposal"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        reason = data.get('reason')
+        
+        if not token or not reason:
+            return {'detail': 'Token and reason required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify token
+            cursor.execute("""
+                SELECT invited_email, expires_at
+                FROM collaboration_invitations
+                WHERE access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            # Update proposal status
+            cursor.execute("""
+                UPDATE proposals 
+                SET status = 'Client Declined', updated_at = NOW()
+                WHERE id = %s AND client_email = %s
+                RETURNING id, title
+            """, (proposal_id, invitation['invited_email']))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Add rejection reason as comment
+            rejection_info = f"✗ REJECTED\nReason: {reason}"
+            
+            cursor.execute("""
+                INSERT INTO users (username, email, password_hash, full_name, role)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+                RETURNING id
+            """, (invitation['invited_email'], invitation['invited_email'], '', f'Client ({invitation["invited_email"]})', 'client'))
+            
+            client_user_id = cursor.fetchone()['id']
+            
+            cursor.execute("""
+                INSERT INTO document_comments 
+                (proposal_id, comment_text, created_by, status)
+                VALUES (%s, %s, %s, %s)
+            """, (proposal_id, rejection_info, client_user_id, 'open'))
+            
+            conn.commit()
+            
+            print(f"⚠️ Proposal {proposal_id} rejected by client")
+            
+            return {
+                'message': 'Proposal rejected',
+                'proposal_id': proposal['id'],
+                'status': 'Client Declined'
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error rejecting proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+# ============================================================================
+# COLLABORATION ADVANCED ENDPOINTS - Suggest Mode & Section Locking
+# ============================================================================
+
+@app.post("/api/proposals/<int:proposal_id>/suggestions")
+@token_required
+def create_suggestion(username, proposal_id):
+    """Create a suggested change (for reviewers with suggest permission)"""
+    try:
+        data = request.get_json()
+        section_id = data.get('section_id')
+        suggestion_text = data.get('suggestion_text')
+        original_text = data.get('original_text', '')
+        
+        if not suggestion_text:
+            return {'detail': 'Suggestion text is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user has access to this proposal
+            cursor.execute("""
+                SELECT ci.permission_level
+                FROM collaboration_invitations ci
+                WHERE ci.proposal_id = %s 
+                AND ci.invited_email = %s
+                AND ci.status = 'accepted'
+            """, (proposal_id, current_user['email']))
+            
+            invitation = cursor.fetchone()
+            if not invitation or invitation['permission_level'] not in ['suggest', 'edit']:
+                return {'detail': 'Insufficient permissions'}, 403
+            
+            # Create suggestion
+            cursor.execute("""
+                INSERT INTO suggested_changes 
+                (proposal_id, section_id, suggested_by, suggestion_text, original_text, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, created_at
+            """, (proposal_id, section_id, current_user['id'], suggestion_text, original_text, 'pending'))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            log_activity(
+                proposal_id,
+                current_user['id'],
+                'suggestion_created',
+                f"{current_user.get('full_name', current_user['email'])} suggested a change{' to ' + section_id if section_id else ''}",
+                {'suggestion_id': result['id'], 'section_id': section_id}
+            )
+            
+            # Notify proposal owner and collaborators
+            notify_proposal_collaborators(
+                proposal_id,
+                'suggestion_created',
+                'New Suggestion',
+                f"{current_user.get('full_name', current_user['email'])} suggested a change{' to ' + section_id if section_id else ''}",
+                exclude_user_id=current_user['id'],
+                metadata={'suggestion_id': result['id'], 'section_id': section_id}
+            )
+            
+            print(f"✅ Suggestion created by {current_user['email']} for proposal {proposal_id}")
+            
+            return {
+                'id': result['id'],
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+                'message': 'Suggestion created successfully'
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error creating suggestion: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/suggestions")
+@token_required
+def get_suggestions(username, proposal_id):
+    """Get all suggestions for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details (not strictly needed here but for consistency)
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                SELECT sc.*, 
+                       u.full_name as suggested_by_name,
+                       u.email as suggested_by_email,
+                       r.full_name as resolved_by_name
+                FROM suggested_changes sc
+                LEFT JOIN users u ON sc.suggested_by = u.id
+                LEFT JOIN users r ON sc.resolved_by = r.id
+                WHERE sc.proposal_id = %s
+                ORDER BY sc.created_at DESC
+            """, (proposal_id,))
+            
+            suggestions = cursor.fetchall()
+            
+            return {
+                'suggestions': [dict(s) for s in suggestions]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting suggestions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/proposals/<int:proposal_id>/suggestions/<int:suggestion_id>/resolve")
+@token_required
+def resolve_suggestion(username, proposal_id, suggestion_id):
+    """Accept or reject a suggestion (proposal owner only)"""
+    try:
+        data = request.get_json()
+        action = data.get('action')  # 'accept' or 'reject'
+        
+        if action not in ['accept', 'reject']:
+            return {'detail': 'Action must be accept or reject'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user owns the proposal
+            cursor.execute("""
+                SELECT user_id FROM proposals WHERE id = %s
+            """, (proposal_id,))
+            
+            proposal = cursor.fetchone()
+            if not proposal or proposal['user_id'] != username:
+                return {'detail': 'Only proposal owner can resolve suggestions'}, 403
+            
+            # Update suggestion
+            cursor.execute("""
+                UPDATE suggested_changes
+                SET status = %s,
+                    resolved_at = NOW(),
+                    resolved_by = %s,
+                    resolution_action = %s
+                WHERE id = %s AND proposal_id = %s
+                RETURNING id
+            """, ('accepted' if action == 'accept' else 'rejected', 
+                  current_user['id'], action, suggestion_id, proposal_id))
+            
+            result = cursor.fetchone()
+            if not result:
+                return {'detail': 'Suggestion not found'}, 404
+            
+            conn.commit()
+            
+            # Log activity
+            log_activity(
+                proposal_id,
+                current_user['id'],
+                f'suggestion_{action}ed',
+                f"{current_user.get('full_name', current_user['email'])} {action}ed a suggestion",
+                {'suggestion_id': suggestion_id, 'action': action}
+            )
+            
+            # Notify the suggestion creator
+            cursor.execute("SELECT suggested_by FROM suggested_changes WHERE id = %s", (suggestion_id,))
+            suggestion_creator = cursor.fetchone()
+            if suggestion_creator and suggestion_creator['suggested_by'] != current_user['id']:
+                create_notification(
+                    suggestion_creator['suggested_by'],
+                    f'suggestion_{action}ed',
+                    f'Suggestion {action.title()}ed',
+                    f"Your suggestion was {action}ed by {current_user.get('full_name', current_user['email'])}",
+                    proposal_id,
+                    {'suggestion_id': suggestion_id, 'action': action}
+                )
+            
+            print(f"✅ Suggestion {suggestion_id} {action}ed by {current_user['email']}")
+            
+            return {
+                'message': f'Suggestion {action}ed successfully',
+                'suggestion_id': suggestion_id,
+                'action': action
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error resolving suggestion: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/proposals/<int:proposal_id>/sections/<section_id>/lock")
+@token_required
+def lock_section(username, proposal_id, section_id):
+    """Lock a section for editing (soft lock)"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, full_name FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Check if section is already locked
+            cursor.execute("""
+                SELECT locked_by, expires_at, u.full_name
+                FROM section_locks sl
+                LEFT JOIN users u ON sl.locked_by = u.id
+                WHERE proposal_id = %s AND section_id = %s
+                AND (expires_at IS NULL OR expires_at > NOW())
+            """, (proposal_id, section_id))
+            
+            existing_lock = cursor.fetchone()
+            if existing_lock and existing_lock['locked_by'] != current_user['id']:
+                return {
+                    'locked': True,
+                    'locked_by': existing_lock['full_name'],
+                    'message': f"Section is being edited by {existing_lock['full_name']}"
+                }, 409
+            
+            # Create or update lock (expires in 5 minutes)
+            expires_at = datetime.now() + timedelta(minutes=5)
+            cursor.execute("""
+                INSERT INTO section_locks (proposal_id, section_id, locked_by, expires_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (proposal_id, section_id) 
+                DO UPDATE SET locked_by = %s, locked_at = NOW(), expires_at = %s
+                RETURNING id
+            """, (proposal_id, section_id, current_user['id'], expires_at,
+                  current_user['id'], expires_at))
+            
+            conn.commit()
+            
+            return {
+                'locked': True,
+                'locked_by': current_user['full_name'],
+                'expires_at': expires_at.isoformat()
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error locking section: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/proposals/<int:proposal_id>/sections/<section_id>/unlock")
+@token_required
+def unlock_section(username, proposal_id, section_id):
+    """Unlock a section"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                DELETE FROM section_locks
+                WHERE proposal_id = %s AND section_id = %s AND locked_by = %s
+                RETURNING id
+            """, (proposal_id, section_id, current_user['id']))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                return {'message': 'Section unlocked'}, 200
+            else:
+                return {'message': 'No lock found or not owned by you'}, 404
+            
+    except Exception as e:
+        print(f"❌ Error unlocking section: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/sections/locks")
+@token_required
+def get_section_locks(username, proposal_id):
+    """Get all active section locks for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT sl.section_id, sl.locked_by, sl.locked_at, sl.expires_at,
+                       u.full_name as locked_by_name, u.email as locked_by_email
+                FROM section_locks sl
+                LEFT JOIN users u ON sl.locked_by = u.id
+                WHERE sl.proposal_id = %s
+                AND (sl.expires_at IS NULL OR sl.expires_at > NOW())
+            """, (proposal_id,))
+            
+            locks = cursor.fetchall()
+            
+            return {
+                'locks': [dict(lock) for lock in locks]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting section locks: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/notifications")
+@token_required
+def get_notifications(username):
+    """Get all notifications for current user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Get user's notifications
+            cursor.execute("""
+                SELECT n.*, p.title as proposal_title
+                FROM notifications n
+                LEFT JOIN proposals p ON n.proposal_id = p.id
+                WHERE n.user_id = %s
+                ORDER BY n.created_at DESC
+                LIMIT 50
+            """, (current_user['id'],))
+            
+            notifications = cursor.fetchall()
+            
+            # Get unread count
+            cursor.execute("""
+                SELECT COUNT(*) as unread_count
+                FROM notifications
+                WHERE user_id = %s AND is_read = FALSE
+            """, (current_user['id'],))
+            
+            unread_count = cursor.fetchone()['unread_count']
+            
+            return {
+                'notifications': [dict(n) for n in notifications],
+                'unread_count': unread_count
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting notifications: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/notifications/<int:notification_id>/mark-read")
+@token_required
+def mark_notification_read(username, notification_id):
+    """Mark a notification as read"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                UPDATE notifications
+                SET is_read = TRUE, read_at = NOW()
+                WHERE id = %s AND user_id = %s
+            """, (notification_id, current_user['id']))
+            
+            conn.commit()
+            
+            return {'message': 'Notification marked as read'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error marking notification as read: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/notifications/mark-all-read")
+@token_required
+def mark_all_notifications_read(username):
+    """Mark all notifications as read for current user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                UPDATE notifications
+                SET is_read = TRUE, read_at = NOW()
+                WHERE user_id = %s AND is_read = FALSE
+            """, (current_user['id'],))
+            
+            conn.commit()
+            
+            return {'message': 'All notifications marked as read'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error marking all notifications as read: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/mentions")
+@token_required
+def get_user_mentions(username):
+    """Get all mentions for current user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Get mentions with comment details
+            cursor.execute("""
+                SELECT cm.*, 
+                       dc.comment_text, dc.proposal_id, dc.section_index,
+                       u.full_name as mentioned_by_name, u.email as mentioned_by_email,
+                       p.title as proposal_title
+                FROM comment_mentions cm
+                JOIN document_comments dc ON cm.comment_id = dc.id
+                JOIN users u ON cm.mentioned_by_user_id = u.id
+                LEFT JOIN proposals p ON dc.proposal_id = p.id
+                WHERE cm.mentioned_user_id = %s
+                ORDER BY cm.created_at DESC
+                LIMIT 50
+            """, (current_user['id'],))
+            
+            mentions = cursor.fetchall()
+            
+            # Get unread count
+            cursor.execute("""
+                SELECT COUNT(*) as unread_count
+                FROM comment_mentions
+                WHERE mentioned_user_id = %s AND is_read = FALSE
+            """, (current_user['id'],))
+            
+            unread_count = cursor.fetchone()['unread_count']
+            
+            return {
+                'mentions': [dict(m) for m in mentions],
+                'unread_count': unread_count
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting mentions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/mentions/<int:mention_id>/mark-read")
+@token_required
+def mark_mention_read(username, mention_id):
+    """Mark a mention as read"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                UPDATE comment_mentions
+                SET is_read = TRUE
+                WHERE id = %s AND mentioned_user_id = %s
+            """, (mention_id, current_user['id']))
+            
+            conn.commit()
+            
+            return {'message': 'Mention marked as read'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error marking mention as read: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/activity")
+@token_required
+def get_activity_timeline(username, proposal_id):
+    """Get comprehensive activity timeline for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user has access to this proposal
+            cursor.execute("""
+                SELECT p.id FROM proposals p
+                LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
+                WHERE p.id = %s 
+                AND (p.user_id = %s OR ci.invited_email = %s)
+            """, (proposal_id, username, current_user['email']))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get all activities from activity_log table
+            cursor.execute("""
+                SELECT al.*, u.full_name as user_name, u.email as user_email
+                FROM activity_log al
+                LEFT JOIN users u ON al.user_id = u.id
+                WHERE al.proposal_id = %s
+                ORDER BY al.created_at DESC
+                LIMIT 100
+            """, (proposal_id,))
+            
+            activities = cursor.fetchall()
+            
+            return {
+                'activities': [dict(activity) for activity in activities]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting activity timeline: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/versions/compare")
+@token_required
+def compare_proposal_versions(username, proposal_id):
+    """Compare two versions of a proposal and return diff"""
+    try:
+        version1 = request.args.get('version1', type=int)
+        version2 = request.args.get('version2', type=int)
+        
+        if not version1 or not version2:
+            return {'detail': 'Both version1 and version2 parameters are required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user has access to this proposal
+            cursor.execute("""
+                SELECT p.id FROM proposals p
+                LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
+                WHERE p.id = %s 
+                AND (p.user_id = %s OR ci.invited_email = %s)
+            """, (proposal_id, username, current_user['email']))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get both versions
+            cursor.execute("""
+                SELECT id, version_number, content, created_at, created_by,
+                       u.full_name as created_by_name
+                FROM proposal_versions pv
+                LEFT JOIN users u ON pv.created_by = u.id
+                WHERE proposal_id = %s AND version_number IN (%s, %s)
+                ORDER BY version_number
+            """, (proposal_id, version1, version2))
+            
+            versions = cursor.fetchall()
+            
+            if len(versions) != 2:
+                return {'detail': 'One or both versions not found'}, 404
+            
+            # Parse JSON content
+            v1_content = json.loads(versions[0]['content']) if isinstance(versions[0]['content'], str) else versions[0]['content']
+            v2_content = json.loads(versions[1]['content']) if isinstance(versions[1]['content'], str) else versions[1]['content']
+            
+            # Convert to text for comparison
+            v1_text = json.dumps(v1_content, indent=2, sort_keys=True)
+            v2_text = json.dumps(v2_content, indent=2, sort_keys=True)
+            
+            # Generate diff using difflib
+            diff = difflib.unified_diff(
+                v1_text.splitlines(keepends=True),
+                v2_text.splitlines(keepends=True),
+                fromfile=f'Version {version1}',
+                tofile=f'Version {version2}',
+                lineterm=''
+            )
+            
+            # Generate HTML diff for better visualization
+            html_diff = difflib.HtmlDiff()
+            html_diff_output = html_diff.make_table(
+                v1_text.splitlines(),
+                v2_text.splitlines(),
+                fromdesc=f'Version {version1} ({versions[0]["created_at"]})',
+                todesc=f'Version {version2} ({versions[1]["created_at"]})',
+                context=True,
+                numlines=3
+            )
+            
+            # Calculate statistics
+            changes = {
+                'additions': 0,
+                'deletions': 0,
+                'modifications': 0
+            }
+            
+            for line in difflib.unified_diff(v1_text.splitlines(), v2_text.splitlines(), lineterm=''):
+                if line.startswith('+') and not line.startswith('+++'):
+                    changes['additions'] += 1
+                elif line.startswith('-') and not line.startswith('---'):
+                    changes['deletions'] += 1
+            
+            return {
+                'version1': {
+                    'version_number': versions[0]['version_number'],
+                    'created_at': versions[0]['created_at'].isoformat() if versions[0]['created_at'] else None,
+                    'created_by': versions[0]['created_by_name']
+                },
+                'version2': {
+                    'version_number': versions[1]['version_number'],
+                    'created_at': versions[1]['created_at'].isoformat() if versions[1]['created_at'] else None,
+                    'created_by': versions[1]['created_by_name']
+                },
+                'diff': '\n'.join(diff),
+                'html_diff': html_diff_output,
+                'changes': changes
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error comparing versions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+# ============================================================================
+# END COLLABORATION ADVANCED ENDPOINTS
+# ============================================================================
 
 # Health check endpoint (no auth required)
 @app.get("/health")
