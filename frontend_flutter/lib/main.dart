@@ -31,7 +31,6 @@ import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
 import 'services/role_service.dart';
 import 'api.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,7 +75,7 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
-          textTheme: GoogleFonts.poppinsTextTheme(),
+          fontFamily: 'Poppins',
           scaffoldBackgroundColor: Colors.transparent,
         ),
         home: const AuthWrapper(),
