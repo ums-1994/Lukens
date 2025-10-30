@@ -349,95 +349,30 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
         scale: Tween<double>(begin: 0.95, end: 1.0).animate(
           CurvedAnimation(parent: _ctaController, curve: Curves.easeOut),
         ),
-        child: Wrap(
-          spacing: isMobile ? 16 : 32,
-          runSpacing: 16,
-          children: [
-            // Get Started button with gradient
-            AnimatedBuilder(
-              animation: _parallaxController,
-              builder: (context, child) {
-                final glowIntensity = 0.6 + (math.sin(_parallaxController.value * 2 * math.pi) * 0.3);
-                return Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(50),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFFE9293A), // #E9293A
-                        Color(0xFF780A01), // #780A01
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFE9293A).withOpacity(glowIntensity),
-                        blurRadius: 24,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pushNamed(context, '/register'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isMobile ? 32 : 48,
-                        vertical: isMobile ? 16 : 20,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(50),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Text(
-                      'Get Started',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: isMobile ? 16 : 20,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-
-            // Learn More button with grey/silver gradient
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(50),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFFFFFF), // #FFFFFF
-                    Color(0xFFB0B6BB), // #B0B6BB
-                  ],
-                ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/khono.png',
+                height: 56,
+                fit: BoxFit.contain,
               ),
-              child: ElevatedButton(
-                onPressed: () {
-                  // TODO: Navigate to learn more page
-                },
+              const SizedBox(height: 24),
+
+              ElevatedButton(
+                onPressed: () => Navigator.pushNamed(context, '/register'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  foregroundColor: Colors.black,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 32 : 48,
-                    vertical: isMobile ? 16 : 20,
-                  ),
+                  backgroundColor: const Color(0xFFC10D00),
+                  foregroundColor: Colors.white,
+                  minimumSize: Size(isMobile ? 220 : 240, isMobile ? 52 : 56),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(50),
                   ),
                   elevation: 0,
                 ),
                 child: Text(
-                  'Learn More',
+                  'GET STARTED',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: isMobile ? 16 : 20,
@@ -446,8 +381,32 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                   ),
                 ),
               ),
-            ),
-          ],
+
+              const SizedBox(height: 16),
+
+              ElevatedButton(
+                onPressed: () {},
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC10D00),
+                  foregroundColor: Colors.white,
+                  minimumSize: Size(isMobile ? 220 : 240, isMobile ? 52 : 56),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(50),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'LEARN MORE',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: isMobile ? 16 : 20,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
