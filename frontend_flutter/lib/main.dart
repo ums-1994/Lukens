@@ -77,8 +77,22 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
           textTheme: GoogleFonts.poppinsTextTheme(),
+          scaffoldBackgroundColor: Colors.transparent,
         ),
         home: const AuthWrapper(),
+        builder: (context, child) {
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/nathi.png',
+                  fit: BoxFit.cover,
+                ),
+              ),
+              if (child != null) child,
+            ],
+          );
+        },
         onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
 
