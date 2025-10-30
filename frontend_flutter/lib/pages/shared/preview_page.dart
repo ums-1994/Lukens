@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import '../../api.dart';
 
 class PreviewPage extends StatelessWidget {
@@ -76,19 +77,100 @@ class PreviewPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final p = app.currentProposal;
+    var p = app.currentProposal;
+    // Fallback: accept proposal via route arguments if app state not set
+    if (p == null) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, dynamic>) {
+        p = args;
+        try {
+          context.read<AppState>().selectProposal(p);
+        } catch (_) {}
+      }
+    }
     if (p == null) {
       return const Center(child: Text("Select a proposal to preview."));
     }
-    final sections = Map<String, dynamic>.from(p["sections"] ?? {});
+    final Map<String, dynamic> pm = Map<String, dynamic>.from(p as Map);
+    final sections = Map<String, dynamic>.from(pm["sections"] ?? {});
     return Padding(
       padding: const EdgeInsets.all(16),
       child: ListView(
         children: [
-          Text(p["title"],
-              style:
-                  const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          Text("${p["dtype"]} for ${p["client"]}"),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(pm["title"],
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.draw),
+                label: const Text('Send with DocuSign'),
+                onPressed: () async {
+                  final nameController = TextEditingController(
+                      text: pm['client_name']?.toString().isNotEmpty == true
+                          ? pm['client_name']
+                          : 'Client');
+                  final emailController = TextEditingController(
+                      text: pm['client_email']?.toString() ?? '');
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Send for Signature'),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            controller: nameController,
+                            decoration:
+                                const InputDecoration(labelText: 'Signer Name'),
+                          ),
+                          TextField(
+                            controller: emailController,
+                            decoration: const InputDecoration(
+                                labelText: 'Signer Email'),
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel')),
+                        ElevatedButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Send')),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                  final id = pm['id'] is int
+                      ? pm['id'] as int
+                      : int.tryParse(pm['id']?.toString() ?? '') ?? 0;
+                  if (id == 0) return;
+                  final appWrite = context.read<AppState>();
+                  final result = await appWrite.sendProposalForSignature(
+                    proposalId: id,
+                    signerName: nameController.text.trim(),
+                    signerEmail: emailController.text.trim(),
+                    returnUrl:
+                        'http://localhost:8081/#/proposals/$id?signed=true',
+                  );
+                  if (result != null && result['signing_url'] != null) {
+                    final url = result['signing_url'].toString();
+                    await launchUrlString(url);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Failed to create DocuSign envelope')));
+                  }
+                },
+              ),
+            ],
+          ),
+          Text((pm["dtype"] ?? 'Proposal').toString() +
+              (pm["client"] != null ? " for ${pm["client"]}" : "")),
           const Divider(),
           // Export PDF & Request e-sign buttons handled here
           const SizedBox(height: 8),

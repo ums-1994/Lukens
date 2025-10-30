@@ -5,6 +5,7 @@ import 'dart:io';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
+import '../../widgets/ai_content_generator.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -18,6 +19,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   final keyCtrl = TextEditingController();
   final labelCtrl = TextEditingController();
   final contentCtrl = TextEditingController();
+  final searchCtrl = TextEditingController();
   String selectedCategory = "Sections";
   String sortBy = "Last Edited (Newest First)";
   int currentPage = 1;
@@ -26,6 +28,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
   int? currentFolderId; // Track current folder being viewed
+  String searchQuery = "";
+  String typeFilter = "all";
+  bool _showAIGenerator = false;
 
   final List<String> categories = ["Sections", "Images", "Snippets", "Trash"];
 
@@ -58,6 +63,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   @override
   void dispose() {
     _animationController.dispose();
+    searchCtrl.dispose();
     super.dispose();
   }
 
@@ -78,6 +84,18 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       return await app.fetchTrash();
     }
     return [];
+  }
+
+  void _handleContentGenerated(Map<String, dynamic> contentData) {
+    // Content is already saved in the AI Content Generator widget
+    // Just refresh the content list
+    final app = context.read<AppState>();
+    app.fetchContent();
+    setState(() {
+      // Optionally switch to Sections tab to see the new content
+      selectedCategory = "Sections";
+      currentPage = 1;
+    });
   }
 
   @override
@@ -108,7 +126,18 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       }).toList();
     }
 
-    final filteredItems = displayItems;
+    List<dynamic> filteredItems = displayItems.where((item) {
+      if (searchQuery.isEmpty) return true;
+      final q = searchQuery.toLowerCase();
+      final label = (item["label"] ?? item["key"] ?? "").toString().toLowerCase();
+      final content = (item["content"] ?? "").toString().toLowerCase();
+      final tags = (item["tags"] is List)
+          ? (item["tags"] as List)
+              .map((e) => e.toString().toLowerCase())
+              .toList()
+          : <String>[];
+      return label.contains(q) || content.contains(q) || tags.any((t) => t.contains(q));
+    }).toList();
 
     // Sort items
     switch (sortBy) {
@@ -141,9 +170,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     final endIdx = (startIdx + itemsPerPage).clamp(0, filteredItems.length);
     final pagedItems = filteredItems.sublist(startIdx, endIdx);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
-      body: Row(
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: const Color(0xFFF5F7F9),
+          body: Row(
         children: [
           // Collapsible Sidebar (matching dashboard)
           GestureDetector(
@@ -240,89 +271,6 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               ),
             ),
           ),
-          // Category Sidebar
-          Container(
-            width: 280,
-            decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(right: BorderSide(color: Colors.grey[300]!))),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      "Categories",
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                  ),
-                  ...categories.map((category) {
-                    final count = app.contentBlocks
-                        .where((item) =>
-                            (item["category"] ?? "Sections").toLowerCase() ==
-                            category.toLowerCase())
-                        .length;
-
-                    return Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          setState(() {
-                            selectedCategory = category;
-                            currentPage = 1;
-                            currentFolderId = null;
-                          });
-                        },
-                        child: Container(
-                          color: selectedCategory == category
-                              ? const Color(0xFFE8F0F7)
-                              : Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              Icon(
-                                _getCategoryIcon(category),
-                                color: selectedCategory == category
-                                    ? const Color(0xFF1E3A8A)
-                                    : Colors.grey[600],
-                                size: 20,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  category,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: selectedCategory == category
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                    color: selectedCategory == category
-                                        ? const Color(0xFF1E3A8A)
-                                        : Colors.grey[700],
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                category == "Templates"
-                                    ? count.toString()
-                                    : "-",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
           // Main Content
           Expanded(
             child: Padding(
@@ -330,54 +278,126 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header with back button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          if (currentFolderId != null)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: IconButton(
-                                icon: const Icon(Icons.arrow_back),
-                                onPressed: () =>
-                                    setState(() => currentFolderId = null),
-                                tooltip: "Go back",
-                              ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.library_books, size: 32, color: Colors.blue[600]),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Content Library",
+                              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                             ),
-                          Text(
-                            "$selectedCategory /",
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          if (currentFolderId != null) ...[
-                            const SizedBox(width: 8),
                             Text(
-                              app.contentBlocks.firstWhere(
-                                    (item) => item["id"] == currentFolderId,
-                                    orElse: () => {"label": "Folder"},
-                                  )["label"] ??
-                                  "Folder",
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF0066CC),
-                                  ),
+                              "Manage reusable content blocks and images",
+                              style: TextStyle(color: Colors.grey[600]),
                             ),
                           ],
-                        ],
-                      ),
-                      Row(
-                        children: _buildHeaderButtons(context, app),
-                      ),
-                    ],
+                        ),
+                        const Spacer(),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            setState(() => _showAIGenerator = true);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF9C27B0),
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.auto_awesome, size: 20),
+                          label: const Text("AI Generate"),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: () => _showNewContentMenu(context, app),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue[600],
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.add, size: 20),
+                          label: const Text("New Content"),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 0),
+                    child: Row(
+                      children: [
+                        _buildTabButton(
+                          label: "Text Blocks",
+                          isActive: selectedCategory == "Sections",
+                          onTap: () {
+                            setState(() {
+                              selectedCategory = "Sections";
+                              currentFolderId = null;
+                              currentPage = 1;
+                            });
+                          },
+                        ),
+                        _buildTabButton(
+                          label: "Image Library",
+                          isActive: selectedCategory == "Images",
+                          onTap: () {
+                            setState(() {
+                              selectedCategory = "Images";
+                              currentFolderId = null;
+                              currentPage = 1;
+                            });
+                          },
+                        ),
+                        _buildTabButton(
+                          label: "Templates",
+                          isActive: selectedCategory == "Templates",
+                          onTap: () {
+                            setState(() {
+                              selectedCategory = "Templates";
+                              currentFolderId = null;
+                              currentPage = 1;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: searchCtrl,
+                            onChanged: (v) => setState(() => searchQuery = v),
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.search),
+                              hintText: "Search content, tags...",
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: Colors.grey[300]!),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        DropdownButton<String>(
+                          value: typeFilter,
+                          items: const [
+                            DropdownMenuItem(value: "all", child: Text("All Types")),
+                          ],
+                          onChanged: (v) {
+                            setState(() {
+                              typeFilter = v ?? 'all';
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 20),
                   // Filter/Sort Bar
@@ -459,8 +479,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: 3,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
                                   childAspectRatio: 0.8,
                                 ),
                                 itemCount: pagedItems.length,
@@ -575,81 +595,97 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                             CrossAxisAlignment.stretch,
                                         children: [
                                           Expanded(
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  const BorderRadius.only(
-                                                topLeft: Radius.circular(12),
-                                                topRight: Radius.circular(12),
-                                              ),
-                                              child: isImage && imageUrl != null
-                                                  ? Image.network(
-                                                      imageUrl,
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (context,
-                                                          error, stackTrace) {
-                                                        return Container(
-                                                          color:
-                                                              Colors.grey[200],
-                                                          child: const Icon(
-                                                              Icons
-                                                                  .image_not_supported,
-                                                              color:
-                                                                  Colors.grey),
-                                                        );
-                                                      },
-                                                      loadingBuilder: (context,
-                                                          child,
-                                                          loadingProgress) {
-                                                        if (loadingProgress ==
-                                                            null) return child;
-                                                        return Container(
-                                                          color:
-                                                              Colors.grey[200],
-                                                          child: const Center(
-                                                            child: SizedBox(
-                                                              width: 20,
-                                                              height: 20,
-                                                              child:
-                                                                  CircularProgressIndicator(
-                                                                strokeWidth: 2,
+                                            child: Stack(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius:
+                                                      const BorderRadius.only(
+                                                    topLeft: Radius.circular(12),
+                                                    topRight: Radius.circular(12),
+                                                  ),
+                                                  child: isImage && imageUrl != null
+                                                      ? Image.network(
+                                                          imageUrl,
+                                                          fit: BoxFit.cover,
+                                                          errorBuilder: (context, error, stackTrace) {
+                                                            return Container(
+                                                              color: Colors.grey[200],
+                                                              child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                                                            );
+                                                          },
+                                                          loadingBuilder: (context, child, loadingProgress) {
+                                                            if (loadingProgress == null) return child;
+                                                            return Container(
+                                                              color: Colors.grey[200],
+                                                              child: const Center(
+                                                                child: SizedBox(
+                                                                  width: 20,
+                                                                  height: 20,
+                                                                  child: CircularProgressIndicator(
+                                                                    strokeWidth: 2,
+                                                                  ),
+                                                                ),
                                                               ),
+                                                            );
+                                                          },
+                                                        )
+                                                      : Container(
+                                                          color: Colors.grey[100],
+                                                          child: Center(
+                                                            child: Column(
+                                                              mainAxisAlignment: MainAxisAlignment.center,
+                                                              children: [
+                                                                Icon(
+                                                                  _getFileIcon(item["label"] ?? ""),
+                                                                  size: 48,
+                                                                  color: const Color(0xFF4A90E2),
+                                                                ),
+                                                                const SizedBox(height: 8),
+                                                                Text(
+                                                                  _getFileExtension(item["label"] ?? ""),
+                                                                  style: TextStyle(
+                                                                    fontSize: 11,
+                                                                    color: Colors.grey[600],
+                                                                  ),
+                                                                ),
+                                                              ],
                                                             ),
                                                           ),
-                                                        );
-                                                      },
-                                                    )
-                                                  : Container(
-                                                      color: Colors.grey[100],
-                                                      child: Center(
-                                                        child: Column(
-                                                          mainAxisAlignment:
-                                                              MainAxisAlignment
-                                                                  .center,
-                                                          children: [
-                                                            Icon(
-                                                              _getFileIcon(item[
-                                                                      "label"] ??
-                                                                  ""),
-                                                              size: 48,
-                                                              color: const Color(
-                                                                  0xFF4A90E2),
-                                                            ),
-                                                            const SizedBox(
-                                                                height: 8),
-                                                            Text(
-                                                              _getFileExtension(
-                                                                  item["label"] ??
-                                                                      ""),
-                                                              style: TextStyle(
-                                                                fontSize: 11,
-                                                                color: Colors
-                                                                    .grey[600],
-                                                              ),
-                                                            ),
-                                                          ],
                                                         ),
-                                                      ),
+                                                ),
+                                                if (isImage)
+                                                  Positioned(
+                                                    top: 8,
+                                                    right: 8,
+                                                    child: Row(
+                                                      children: [
+                                                        InkWell(
+                                                          onTap: () => _showEditDialog(context, app, item),
+                                                          child: Container(
+                                                            decoration: BoxDecoration(
+                                                              color: Colors.black.withOpacity(0.4),
+                                                              borderRadius: BorderRadius.circular(6),
+                                                            ),
+                                                            padding: const EdgeInsets.all(6),
+                                                            child: const Icon(Icons.edit, size: 16, color: Colors.white),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        InkWell(
+                                                          onTap: () => _deleteItem(context, app, item["id"]),
+                                                          child: Container(
+                                                            decoration: BoxDecoration(
+                                                              color: Colors.black.withOpacity(0.4),
+                                                              borderRadius: BorderRadius.circular(6),
+                                                            ),
+                                                            padding: const EdgeInsets.all(6),
+                                                            child: const Icon(Icons.delete, size: 16, color: Colors.white),
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
+                                                  ),
+                                              ],
                                             ),
                                           ),
                                           Padding(
@@ -680,6 +716,49 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                     color: Colors.grey[500],
                                                   ),
                                                 ),
+                                                if (item["tags"] is List &&
+                                                    (item["tags"] as List)
+                                                        .isNotEmpty)
+                                                  ...[
+                                                    const SizedBox(height: 6),
+                                                    Wrap(
+                                                      spacing: 4,
+                                                      runSpacing: 4,
+                                                      children: (item["tags"]
+                                                              as List)
+                                                          .take(2)
+                                                          .map<Widget>(
+                                                              (tag) => Container(
+                                                                    padding: const EdgeInsets
+                                                                        .symmetric(
+                                                                      horizontal:
+                                                                          6,
+                                                                      vertical:
+                                                                          2,
+                                                                    ),
+                                                                    decoration: BoxDecoration(
+                                                                      color: Colors
+                                                                          .blue[50],
+                                                                      borderRadius:
+                                                                          BorderRadius
+                                                                              .circular(
+                                                                                4,
+                                                                              ),
+                                                                    ),
+                                                                    child: Text(
+                                                                      tag
+                                                                          .toString(),
+                                                                      style: TextStyle(
+                                                                        fontSize:
+                                                                            10,
+                                                                        color: Colors
+                                                                            .blue[700],
+                                                                      ),
+                                                                    ),
+                                                                  ))
+                                                          .toList(),
+                                                    ),
+                                                  ],
                                               ],
                                             ),
                                           ),
@@ -778,7 +857,119 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             ),
           ),
         ],
+          ),
+        ),
+        // AI Content Generator Dialog
+        AIContentGenerator(
+          open: _showAIGenerator,
+          onClose: () => setState(() => _showAIGenerator = false),
+          onContentGenerated: _handleContentGenerated,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabButton({
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isActive ? Colors.blue[50] : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isActive ? Colors.blue[300]! : Colors.grey[300]!,
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                color: isActive ? Colors.blue[700] : Colors.grey[700],
+              ),
+            ),
+          ),
+        ),
       ),
+    );
+  }
+
+  Future<void> _showNewContentMenu(BuildContext context, AppState app) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        final isTemplates = selectedCategory == "Templates";
+        final isImages = selectedCategory == "Images";
+        return AlertDialog(
+          title: const Text("New Content"),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isTemplates)
+                  ListTile(
+                    leading: const Icon(Icons.style),
+                    title: const Text("Create Template"),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showCreateDialog(context, app);
+                    },
+                  ),
+                if (isTemplates)
+                  ListTile(
+                    leading: const Icon(Icons.upload_file),
+                    title: const Text("Upload Template"),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showUploadTemplateDialog(context, app);
+                    },
+                  ),
+                if (!isTemplates)
+                  ListTile(
+                    leading: const Icon(Icons.upload_file),
+                    title: const Text("Upload"),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _uploadFile(context, app);
+                    },
+                  ),
+                if (isImages)
+                  ListTile(
+                    leading: const Icon(Icons.link),
+                    title: const Text("Add Image URL"),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _addImageUrl(context, app);
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.create_new_folder),
+                  title: const Text("New Folder"),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showNewFolderDialog(context, app);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Close"),
+            ),
+          ],
+        );
+      },
     );
   }
 
