@@ -18,7 +18,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
   // Background images for cinematic sequence (clean geometric look)
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/nathi.png',
   ];
 
   int _currentFrameIndex = 0;
@@ -111,7 +111,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF000000),
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [

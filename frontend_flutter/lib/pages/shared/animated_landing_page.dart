@@ -200,7 +200,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF000000),
+      backgroundColor: Colors.transparent,
       body: AnimatedBuilder(
         animation: Listenable.merge([
           _backgroundController,
@@ -244,39 +244,46 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
   Widget _buildBackground() {
     return Opacity(
       opacity: _backgroundOpacity.value,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF000000),
-              Color(0xFF0B0B0C),
-              Color(0xFF1A1A1B),
-            ],
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/nathi.png',
+              fit: BoxFit.cover,
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            // Geometric shapes
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                width: 400,
-                height: 400,
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: [
-                      const Color(0xFF2C3E50).withOpacity(0.1),
-                      Colors.transparent,
-                    ],
-                  ),
+          // Gradient overlay for contrast
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF000000),
+                  Color(0xFF0B0B0C),
+                  Color(0xFF1A1A1B),
+                ],
+              ),
+            ),
+          ),
+          // Geometric shapes
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              width: 400,
+              height: 400,
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF2C3E50).withOpacity(0.1),
+                    Colors.transparent,
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

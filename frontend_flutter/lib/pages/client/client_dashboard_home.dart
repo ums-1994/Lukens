@@ -164,7 +164,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F9),
+        backgroundColor: Colors.transparent,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -180,7 +180,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     if (_error != null) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F9),
+        backgroundColor: Colors.transparent,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -205,7 +205,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           // Header

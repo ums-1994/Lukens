@@ -167,7 +167,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F9),
+        backgroundColor: Colors.transparent,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -183,7 +183,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
     if (_error != null) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F9),
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: const Color(0xFF2C3E50),
           title: const Text('Error'),
@@ -217,7 +217,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         status.toLowerCase().contains('pending');
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           // Header

@@ -54,7 +54,7 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
 
   Widget _buildCEOApprovalView() {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Pending CEO Approvals'),
         backgroundColor: const Color(0xFF2C3E50),

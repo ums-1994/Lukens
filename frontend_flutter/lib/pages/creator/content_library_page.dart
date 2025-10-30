@@ -142,7 +142,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     final pagedItems = filteredItems.sublist(startIdx, endIdx);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Row(
         children: [
           // Collapsible Sidebar (matching dashboard)

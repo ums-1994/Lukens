@@ -35,7 +35,7 @@ class _RegisterPageState extends State<RegisterPage>
   late final AnimationController _fadeInController;
 
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/nathi.png',
   ];
 
   int _currentFrameIndex = 0;
@@ -185,7 +185,7 @@ class _RegisterPageState extends State<RegisterPage>
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [
