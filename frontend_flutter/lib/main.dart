@@ -407,11 +407,21 @@ class _HomeShellState extends State<HomeShell> {
       _current = _labelForIdx(idx);
     }
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          // Modern Navigation Sidebar
-          _buildModernSidebar(),
-          Expanded(child: pages[idx]),
+          Row(
+            children: [
+              // Modern Navigation Sidebar
+              _buildModernSidebar(),
+              Expanded(child: pages[idx]),
+            ],
+          ),
+          // Right side circular buttons
+          Positioned(
+            right: 20,
+            top: 100,
+            child: _buildRightSideButtons(),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -476,77 +486,69 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _buildModernSidebar() {
     return Container(
-      width: 80,
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1419),
-        border: Border(right: BorderSide(color: Colors.grey[900]!)),
+      width: 60,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1D23),
       ),
       child: Column(
         children: [
-          // Logo Section
+          // Logo Section - Teal square with grid pattern
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 20),
             child: Container(
-              width: 48,
-              height: 48,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF00CED1),
-                    const Color(0xFF20B2AA),
-                  ],
-                ),
+                color: const Color(0xFF00CED1),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.dashboard, color: Colors.white, size: 26),
+              child: const Icon(
+                Icons.grid_view,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
           ),
+          
+          const SizedBox(height: 16),
+          
           // Navigation Items
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildModernNavItem(
-                    icon: Icons.dashboard_outlined,
-                    label: 'Dashboard',
-                    index: 0,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.description_outlined,
-                    label: 'My Proposals',
-                    index: 1,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.library_books,
-                    label: 'Templates',
-                    index: 2,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.collections,
-                    label: 'Content Library',
-                    index: 3,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.people_outline,
-                    label: 'Collaboration',
-                    index: 4,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.done_all_outlined,
-                    label: 'Approvals',
-                    index: 5,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.bar_chart_outlined,
-                    label: 'Analytics',
-                    index: 6,
-                  ),
-                ],
-              ),
+            child: Column(
+              children: [
+                _buildModernNavItem(
+                  icon: Icons.grid_view,
+                  label: 'Dashboard',
+                  index: 0,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.description,
+                  label: 'My',
+                  index: 1,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.content_copy,
+                  label: 'Templates',
+                  index: 2,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.image,
+                  label: 'Content',
+                  index: 3,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.people,
+                  label: 'Collaboration',
+                  index: 4,
+                ),
+              ],
             ),
           ),
+          
           // Bottom Section
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
@@ -557,7 +559,7 @@ class _HomeShellState extends State<HomeShell> {
                   label: 'Help',
                   index: -1,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
                 Tooltip(
                   message: 'Logout',
                   child: Material(
@@ -565,15 +567,15 @@ class _HomeShellState extends State<HomeShell> {
                     child: InkWell(
                       onTap: _handleLogout,
                       child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.logout,
-                          color: Colors.grey[600],
-                          size: 24,
+                          color: Color(0xFF6B7280),
+                          size: 20,
                         ),
                       ),
                     ),
@@ -600,36 +602,75 @@ class _HomeShellState extends State<HomeShell> {
         child: InkWell(
           onTap: index != -1 ? () => setState(() => idx = index) : null,
           child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: isActive
-                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              border: isActive
-                  ? Border.all(color: const Color(0xFF00CED1), width: 2)
-                  : null,
+              color: isActive ? const Color(0xFF00CED1) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: isActive 
+                ? Border.all(color: const Color(0xFF00CED1), width: 1)
+                : null,
             ),
-            child: Column(
-              children: [
-                Icon(
-                  icon,
-                  color: isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                  size: 26,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label.split(' ')[0],
-                  style: TextStyle(
-                    fontSize: 9,
-                    color:
-                        isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+            child: Icon(
+              icon,
+              color: isActive ? Colors.white : const Color(0xFF6B7280),
+              size: 20,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRightSideButtons() {
+    return Column(
+      children: [
+        _buildCircularButton(Icons.notifications, 'Notifications'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.trending_up, 'Analytics'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.settings, 'Settings'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.refresh, 'Refresh'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.group, 'Team'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.schedule, 'Schedule'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.bar_chart, 'Reports'),
+      ],
+    );
+  }
+
+  Widget _buildCircularButton(IconData icon, String tooltip) {
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: () {
+              // Handle button tap
+              print('Tapped: $tooltip');
+            },
+            child: Icon(
+              icon,
+              color: const Color(0xFF374151),
+              size: 20,
             ),
           ),
         ),
