@@ -16,7 +16,9 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
   late AnimationController _lineController;
   late AnimationController _subtextController;
   late AnimationController _buttonController;
-  late AnimationController _glowController;
+  // Removed unused controllers
+  // late AnimationController _tubeController;
+  // late AnimationController _floatController;
 
   // Animations
   late Animation<double> _backgroundOpacity;
@@ -30,7 +32,11 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
   late Animation<double> _subtextOpacity;
   late Animation<double> _buttonScale;
   late Animation<double> _buttonOpacity;
-  late Animation<double> _glowIntensity;
+  // Removed unused animations
+  // late Animation<double> _tubeProgress;
+  // late Animation<double> _tubeRotation;
+  // late Animation<double> _floatOffset;
+  // late Animation<double> _glowIntensity;
 
   @override
   void initState() {
@@ -125,13 +131,13 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
     );
 
     // Continuous glow (5.5s+)
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    );
-    _glowIntensity = Tween<double>(begin: 0.3, end: 0.6).animate(
-      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
-    );
+    // _glowController = AnimationController(
+    //   vsync: this,
+    //   duration: const Duration(milliseconds: 3000),
+    // );
+    // _glowIntensity = Tween<double>(begin: 0.3, end: 0.6).animate(
+    //   CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
+    // );
   }
 
   void _startAnimationSequence() async {
@@ -153,7 +159,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
 
     // 5. Continuous animations (5.5s+)
     await Future.delayed(const Duration(milliseconds: 2000));
-    _glowController.repeat(reverse: true);
+    // _floatController.repeat(reverse: true);
+    // _glowController.repeat(reverse: true);
   }
 
   @override
@@ -163,7 +170,10 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
     _lineController.dispose();
     _subtextController.dispose();
     _buttonController.dispose();
-    _glowController.dispose();
+    // Removed unused controllers
+    // _tubeController.dispose();
+    // _floatController.dispose();
+    // _glowController.dispose();
     super.dispose();
   }
 
@@ -178,7 +188,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           _lineController,
           _subtextController,
           _buttonController,
-          _glowController,
+          // Removed _glowController
         ]),
         builder: (context, child) {
           return Stack(
@@ -263,6 +273,12 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            Image.asset(
+              'assets/images/khono.png',
+              height: 120, // Increased size
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(height: 40),
             // Main headline with animations
             Column(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -276,7 +292,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                       'BUILD.',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 110,
+                        fontSize: 80, // Reduced font size
                         fontWeight: FontWeight.w900,
                         height: 0.95,
                         letterSpacing: -3,
@@ -294,7 +310,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                       'AUTOMATE.',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 110,
+                        fontSize: 80, // Reduced font size
                         fontWeight: FontWeight.w900,
                         height: 0.95,
                         letterSpacing: -3,
@@ -314,7 +330,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                           'DELIVER.',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 110,
+                            fontSize: 80, // Reduced font size
                             fontWeight: FontWeight.w900,
                             height: 0.95,
                             letterSpacing: -3,
@@ -348,7 +364,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                 'Smart Proposal & SOW\nBuilder for Digital Teams',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 32,
+                  fontSize: 24, // Reduced font size
                   fontWeight: FontWeight.w300,
                   height: 1.3,
                 ),
@@ -364,28 +380,12 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Image.asset(
-                      'assets/images/khono.png',
-                      height: 56,
-                      fit: BoxFit.contain,
-                    ),
                     const SizedBox(height: 24),
                     Transform.scale(
                       scale: _buttonScale.value,
                       child: Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(50),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFC10D00).withOpacity(
-                                _glowController.isAnimating
-                                    ? _glowIntensity.value
-                                    : 0.4,
-                              ),
-                              blurRadius: 30,
-                              spreadRadius: 5,
-                            ),
-                          ],
                         ),
                         child: ElevatedButton(
                           onPressed: () {
@@ -417,17 +417,6 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                       child: Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(50),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFC10D00).withOpacity(
-                                _glowController.isAnimating
-                                    ? _glowIntensity.value
-                                    : 0.4,
-                              ),
-                              blurRadius: 30,
-                              spreadRadius: 5,
-                            ),
-                          ],
                         ),
                         child: ElevatedButton(
                           onPressed: () {},
