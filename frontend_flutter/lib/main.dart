@@ -73,6 +73,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Lukens',
+        debugShowCheckedModeBanner: false, // Remove the debug banner
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
