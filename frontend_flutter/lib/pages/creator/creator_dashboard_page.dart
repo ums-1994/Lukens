@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/role_switcher.dart';

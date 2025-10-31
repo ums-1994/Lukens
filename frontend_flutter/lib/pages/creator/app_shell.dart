@@ -25,17 +25,13 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-
     return Scaffold(
       body: Row(
         children: [
           // Modern Navigation Sidebar
           _buildSidebar(),
           // Content Area
-          Expanded(
-            child: _buildContent(),
-          ),
+          Expanded(child: _buildContent()),
         ],
       ),
     );
@@ -61,10 +57,7 @@ class _AppShellState extends State<AppShell> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF00CED1),
-                    const Color(0xFF20B2AA),
-                  ],
+                  colors: [const Color(0xFF00CED1), const Color(0xFF20B2AA)],
                 ),
               ),
               child: const Icon(Icons.dashboard, color: Colors.white, size: 28),
@@ -187,8 +180,9 @@ class _AppShellState extends State<AppShell> {
                   label.split(' ')[0],
                   style: TextStyle(
                     fontSize: 9,
-                    color:
-                        isActive ? const Color(0xFF00CED1) : Colors.grey[600],
+                    color: isActive
+                        ? const Color(0xFF00CED1)
+                        : Colors.grey[600],
                     fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                   ),
                   textAlign: TextAlign.center,
@@ -249,10 +243,7 @@ class _AppShellState extends State<AppShell> {
             const SizedBox(height: 12),
             Text(
               'This feature is under development',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
           ],
         ),

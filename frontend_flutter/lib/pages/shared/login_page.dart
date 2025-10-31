@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/smtp_auth_service.dart';
@@ -442,7 +443,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 ),
                 TextButton(
                   onPressed: () {
-                    // TODO: Forgot password
+                    // Forgot password feature coming soon
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Forgot password feature coming soon'),
@@ -531,7 +532,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       child: IconButton(
         icon: Icon(icon, size: 28, color: Colors.black87),
         onPressed: () {
-          // TODO: Social login
+          // Social login coming soon
         },
       ),
     );

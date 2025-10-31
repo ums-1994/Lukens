@@ -23,7 +23,6 @@ class _CollaborationPageState extends State<CollaborationPage> {
   Stream<List<Map<String, dynamic>>>? _commentsStream;
   Stream<List<Map<String, dynamic>>>? _workspacesStream;
   Stream<List<Map<String, dynamic>>>? _notificationsStream;
-  late final List<Stream<List<Map<String, dynamic>>>?> _allStreams;
 
   @override
   void initState() {

@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 
 /// Khonology Landing Page with Precise Animation Timeline
@@ -12,7 +13,7 @@ class AnimatedLandingPageV2 extends StatefulWidget {
 class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     with TickerProviderStateMixin {
   late AnimationController _controller;
-  
+
   // Individual animations with precise timing intervals
   late Animation<double> _backgroundAnim;
   late Animation<double> _buildTextAnim;
@@ -34,7 +35,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
   @override
   void initState() {
     super.initState();
-    
+
     // Main timeline controller (5 seconds)
     _controller = AnimationController(
       duration: const Duration(milliseconds: 5000),
@@ -118,7 +119,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       duration: const Duration(milliseconds: 2000),
       vsync: this,
     )..repeat(reverse: true);
-    
+
     _glowAnim = Tween<double>(begin: 0.4, end: 0.7).animate(
       CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
     );
@@ -160,7 +161,8 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                   }
                   // Narrow screens: stack vertically and allow scroll
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 32),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -230,7 +232,8 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
   Widget _buildTextContent() {
     return RepaintBoundary(
       child: Padding(
-        padding: const EdgeInsets.only(left: 80, top: 60, bottom: 60, right: 20),
+        padding:
+            const EdgeInsets.only(left: 80, top: 60, bottom: 60, right: 20),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final double maxWidth = constraints.maxWidth;
@@ -241,71 +244,20 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-            // Main headline - Staggered animation
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // BUILD.
-                Opacity(
-                  opacity: _buildTextAnim.value,
-                  child: Transform.translate(
-                    offset: Offset(0, _buildSlideAnim.value),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'BUILD.',
-                        maxLines: 1,
-                        overflow: TextOverflow.visible,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: headlineSize,
-                          fontWeight: FontWeight.w900,
-                          height: 0.95,
-                          letterSpacing: -3,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // AUTOMATE.
-                Opacity(
-                  opacity: _automateTextAnim.value,
-                  child: Transform.translate(
-                    offset: Offset(0, _automateSlideAnim.value),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'AUTOMATE.',
-                        maxLines: 1,
-                        overflow: TextOverflow.visible,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: headlineSize,
-                          fontWeight: FontWeight.w900,
-                          height: 0.95,
-                          letterSpacing: -3,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // DELIVER. with animated underline
-                Stack(
-                  clipBehavior: Clip.none,
+                // Main headline - Staggered animation
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // BUILD.
                     Opacity(
-                      opacity: _deliverTextAnim.value,
+                      opacity: _buildTextAnim.value,
                       child: Transform.translate(
-                        offset: Offset(0, _deliverSlideAnim.value),
+                        offset: Offset(0, _buildSlideAnim.value),
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            'DELIVER.',
+                            'BUILD.',
                             maxLines: 1,
                             overflow: TextOverflow.visible,
                             style: TextStyle(
@@ -320,138 +272,191 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                       ),
                     ),
 
-                    // Animated red line (draws from left to right)
-                    Positioned(
-                      left: 0,
-                      bottom: 2,
-                      child: CustomPaint(
-                        size: Size(underlineWidth, 14),
-                        painter: RedLinePainter(
-                          progress: _lineAnim.value,
+                    // AUTOMATE.
+                    Opacity(
+                      opacity: _automateTextAnim.value,
+                      child: Transform.translate(
+                        offset: Offset(0, _automateSlideAnim.value),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'AUTOMATE.',
+                            maxLines: 1,
+                            overflow: TextOverflow.visible,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: headlineSize,
+                              fontWeight: FontWeight.w900,
+                              height: 0.95,
+                              letterSpacing: -3,
+                            ),
+                          ),
                         ),
                       ),
                     ),
+
+                    // DELIVER. with animated underline
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Opacity(
+                          opacity: _deliverTextAnim.value,
+                          child: Transform.translate(
+                            offset: Offset(0, _deliverSlideAnim.value),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'DELIVER.',
+                                maxLines: 1,
+                                overflow: TextOverflow.visible,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: headlineSize,
+                                  fontWeight: FontWeight.w900,
+                                  height: 0.95,
+                                  letterSpacing: -3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // Animated red line (draws from left to right)
+                        Positioned(
+                          left: 0,
+                          bottom: 2,
+                          child: CustomPaint(
+                            size: Size(underlineWidth, 14),
+                            painter: RedLinePainter(
+                              progress: _lineAnim.value,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
 
-            const SizedBox(height: 40),
+                const SizedBox(height: 40),
 
-            // Subheading
-            Opacity(
-              opacity: _subheadingAnim.value,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: Text(
-                  'Smart Proposal & SOW\nBuilder for Digital Teams',
-                  maxLines: 2,
-                  overflow: TextOverflow.visible,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: subheadingSize,
-                    fontWeight: FontWeight.w300,
-                    height: 1.3,
+                // Subheading
+                Opacity(
+                  opacity: _subheadingAnim.value,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: Text(
+                      'Smart Proposal & SOW\nBuilder for Digital Teams',
+                      maxLines: 2,
+                      overflow: TextOverflow.visible,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: subheadingSize,
+                        fontWeight: FontWeight.w300,
+                        height: 1.3,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-            const SizedBox(height: 56),
+                const SizedBox(height: 56),
 
-            // CTA Buttons
-            Opacity(
-              opacity: _buttonsAnim.value,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Khonology logo above buttons
-                    Image.asset(
-                      'assets/images/khono.png',
-                      height: 56,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 24),
+                // CTA Buttons
+                Opacity(
+                  opacity: _buttonsAnim.value,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Khonology logo above buttons
+                        Image.asset(
+                          'assets/images/khono.png',
+                          height: 56,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(height: 24),
 
-                    // GET STARTED button with glow
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(50),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFC10D00).withOpacity(_glowAnim.value),
-                            blurRadius: 30,
-                            spreadRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/register');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC10D00),
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(240, 56),
-                          shape: RoundedRectangleBorder(
+                        // GET STARTED button with glow
+                        Container(
+                          decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(50),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFC10D00)
+                                    .withOpacity(_glowAnim.value),
+                                blurRadius: 30,
+                                spreadRadius: 5,
+                              ),
+                            ],
                           ),
-                          elevation: 0,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/register');
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFC10D00),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(240, 56),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(50),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: const Text(
+                              'GET STARTED',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
                         ),
-                        child: const Text(
-                          'GET STARTED',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ),
 
-                    const SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
-                    // LEARN MORE button (same style, same size)
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(50),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFC10D00).withOpacity(_glowAnim.value),
-                            blurRadius: 30,
-                            spreadRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: () {
-                          // Navigate or scroll to features
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC10D00),
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(240, 56),
-                          shape: RoundedRectangleBorder(
+                        // LEARN MORE button (same style, same size)
+                        Container(
+                          decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(50),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFC10D00)
+                                    .withOpacity(_glowAnim.value),
+                                blurRadius: 30,
+                                spreadRadius: 5,
+                              ),
+                            ],
                           ),
-                          elevation: 0,
-                        ),
-                        child: const Text(
-                          'LEARN MORE',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              // Navigate or scroll to features
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFC10D00),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(240, 56),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(50),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: const Text(
+                              'LEARN MORE',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
             );
           },
         ),
@@ -468,7 +473,8 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
           child: Container(
             decoration: const BoxDecoration(
               image: DecorationImage(
-                image: AssetImage('assets/images/Khonology Landing Page - Frame 6.png'),
+                image: AssetImage(
+                    'assets/images/Khonology Landing Page - Frame 6.png'),
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
               ),
@@ -514,14 +520,20 @@ class RedLinePainter extends CustomPainter {
     final path = Path()
       ..moveTo(0, baselineY)
       ..cubicTo(
-        w * 0.20, baselineY - amp,
-        w * 0.35, baselineY + amp,
-        w * 0.55, baselineY,
+        w * 0.20,
+        baselineY - amp,
+        w * 0.35,
+        baselineY + amp,
+        w * 0.55,
+        baselineY,
       )
       ..cubicTo(
-        w * 0.72, baselineY - amp * 0.6,
-        w * 0.88, baselineY + amp * 0.8,
-        w, baselineY,
+        w * 0.72,
+        baselineY - amp * 0.6,
+        w * 0.88,
+        baselineY + amp * 0.8,
+        w,
+        baselineY,
       );
 
     // Draw only up to progress
@@ -538,4 +550,3 @@ class RedLinePainter extends CustomPainter {
     return oldDelegate.progress != progress;
   }
 }
-

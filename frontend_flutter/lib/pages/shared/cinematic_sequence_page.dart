@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use, unused_element
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
@@ -75,7 +76,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     _frameController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         setState(() {
-          _currentFrameIndex = (_currentFrameIndex + 1) % _backgroundImages.length;
+          _currentFrameIndex =
+              (_currentFrameIndex + 1) % _backgroundImages.length;
         });
         _frameController.reset();
         _frameController.forward();
@@ -207,12 +209,15 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           children: [
             // Triangle 1 - Top Left
             Positioned(
-              left: 120 + (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 + (math.cos(_parallaxController.value * 2 * math.pi) * 30),
+              left: 120 +
+                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
+              top: 180 +
+                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
                   size: const Size(70, 70),
                 ),
               ),
@@ -220,12 +225,17 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
             // Triangle 2 - Top Right
             Positioned(
-              right: 140 + (math.sin(_parallaxController.value * 2 * math.pi + 1.5) * 50),
-              top: 220 + (math.cos(_parallaxController.value * 2 * math.pi + 1.5) * 35),
+              right: 140 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
+                      50),
+              top: 220 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
+                      35),
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -233,12 +243,15 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
             // Triangle 3 - Bottom Left
             Positioned(
-              left: 200 + (math.sin(_parallaxController.value * 2 * math.pi + 3) * 35),
-              bottom: 150 + (math.cos(_parallaxController.value * 2 * math.pi + 3) * 25),
+              left: 200 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 3) * 35),
+              bottom: 150 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 3) * 25),
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi * 0.6,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.03)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.03)),
                   size: const Size(60, 60),
                 ),
               ),
@@ -246,12 +259,15 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
             // Triangle 4 - Center Right
             Positioned(
-              right: 180 + (math.sin(_parallaxController.value * 2 * math.pi + 4) * 45),
-              top: 400 + (math.cos(_parallaxController.value * 2 * math.pi + 4) * 40),
+              right: 180 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 4) * 45),
+              top: 400 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 4) * 40),
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.7,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
                   size: const Size(80, 80),
                 ),
               ),

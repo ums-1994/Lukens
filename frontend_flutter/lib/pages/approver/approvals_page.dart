@@ -79,8 +79,6 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
   }
 
   Widget _buildProposalCard(Map<String, dynamic> proposal) {
-    final app = context.read<AppState>();
-
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,

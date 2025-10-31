@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 
 class AnimatedLandingPage extends StatefulWidget {
@@ -225,7 +226,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     flex: 5,
                     child: _buildMainContent(),
                   ),
-                  
+
                   // Right side - 3D Tube
                   Expanded(
                     flex: 5,
@@ -289,10 +290,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
 
   Widget _build3DTube() {
     return Transform.translate(
-      offset: Offset(
-        100 - (_tubeProgress.value * 100), 
-        _floatController.isAnimating ? _floatOffset.value : 0
-      ),
+      offset: Offset(100 - (_tubeProgress.value * 100),
+          _floatController.isAnimating ? _floatOffset.value : 0),
       child: Transform.rotate(
         angle: _tubeRotation.value,
         child: Opacity(
@@ -300,7 +299,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           child: Container(
             decoration: BoxDecoration(
               image: DecorationImage(
-                image: const AssetImage('assets/images/Khonology Landing Page - Frame 6.png'),
+                image: const AssetImage(
+                    'assets/images/Khonology Landing Page - Frame 6.png'),
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
                 opacity: _tubeProgress.value,
@@ -426,7 +426,6 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     fit: BoxFit.contain,
                   ),
                   const SizedBox(height: 24),
-
                   Transform.scale(
                     scale: _buttonScale.value,
                     child: Container(
@@ -435,7 +434,9 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                         boxShadow: [
                           BoxShadow(
                             color: const Color(0xFFC10D00).withOpacity(
-                              _glowController.isAnimating ? _glowIntensity.value : 0.4,
+                              _glowController.isAnimating
+                                  ? _glowIntensity.value
+                                  : 0.4,
                             ),
                             blurRadius: 30,
                             spreadRadius: 5,
@@ -466,9 +467,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 16),
-
                   Transform.scale(
                     scale: _buttonScale.value,
                     child: Container(
@@ -477,7 +476,9 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                         boxShadow: [
                           BoxShadow(
                             color: const Color(0xFFC10D00).withOpacity(
-                              _glowController.isAnimating ? _glowIntensity.value : 0.4,
+                              _glowController.isAnimating
+                                  ? _glowIntensity.value
+                                  : 0.4,
                             ),
                             blurRadius: 30,
                             spreadRadius: 5,
@@ -565,4 +566,3 @@ class RedLinePainter extends CustomPainter {
     return oldDelegate.progress != progress;
   }
 }
-

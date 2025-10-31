@@ -290,7 +290,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
             onPressed: () {
-              // TODO: Download as PDF
+              // PDF download placeholder
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('PDF download coming soon')),
               );

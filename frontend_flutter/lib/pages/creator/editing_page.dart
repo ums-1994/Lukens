@@ -863,7 +863,7 @@ class _EditingPageState extends State<EditingPage> {
 
   // Backend methods
   void _openProposalViewer() {
-    // TODO: Implement proposal viewer functionality
+    // Proposal viewer feature coming soon
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Proposal viewer is not available'),

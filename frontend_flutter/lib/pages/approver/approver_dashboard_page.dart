@@ -4,7 +4,7 @@ import '../../services/api_service.dart';
 import '../../widgets/role_switcher.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-// ignore: avoid_web_libraries_in_flutter
+// ignore: deprecated_member_use, avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
 class ApproverDashboardPage extends StatefulWidget {

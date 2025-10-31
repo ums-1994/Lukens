@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use, unused_field
 import 'package:flutter/material.dart';
 import '../../services/smtp_auth_service.dart';
 import 'login_page.dart';
@@ -568,7 +569,7 @@ class _RegisterPageState extends State<RegisterPage>
                 ),
                 TextButton(
                   onPressed: () {
-                    // TODO: Forgot password
+                    // Forgot password feature coming soon
                   },
                   child: const Text(
                     'Forgot Password',
@@ -695,7 +696,7 @@ class _RegisterPageState extends State<RegisterPage>
       child: IconButton(
         icon: Icon(icon, size: 28, color: Colors.black87),
         onPressed: () {
-          // TODO: Social login
+          // Social login coming soon
         },
       ),
     );

@@ -101,7 +101,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
                   proposalId: proposalData['id']?.toString(),
                   proposalTitle: proposalData['title'] ?? 'Untitled',
                   readOnly: true, // Read-only in suggest mode
-                  // TODO: Add suggest mode UI to show suggestions panel
+                  // Suggest mode UI coming soon (e.g., suggestions panel)
                 ),
               ),
             );
