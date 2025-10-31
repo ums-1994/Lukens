@@ -11,9 +11,7 @@ class AnimatedLandingPage extends StatefulWidget {
 class _AnimatedLandingPageState extends State<AnimatedLandingPage>
     with TickerProviderStateMixin {
   // Animation controllers
-  late AnimationController _backgroundController;
   late AnimationController _textController;
-  late AnimationController _lineController;
   late AnimationController _subtextController;
   late AnimationController _buttonController;
   // Removed unused controllers
@@ -21,14 +19,14 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
   // late AnimationController _floatController;
 
   // Animations
-  late Animation<double> _backgroundOpacity;
   late Animation<double> _buildOpacity;
   late Animation<double> _buildSlide;
   late Animation<double> _automateOpacity;
   late Animation<double> _automateSlide;
   late Animation<double> _deliverOpacity;
   late Animation<double> _deliverSlide;
-  late Animation<double> _lineProgress;
+  // Removed unused animations
+  // late Animation<double> _lineProgress;
   late Animation<double> _subtextOpacity;
   late Animation<double> _buttonScale;
   late Animation<double> _buttonOpacity;
@@ -47,13 +45,13 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
 
   void _setupAnimations() {
     // Background (0-0.5s)
-    _backgroundController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _backgroundOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _backgroundController, curve: Curves.easeInOut),
-    );
+    // _backgroundController = AnimationController(
+    //   vsync: this,
+    //   duration: const Duration(milliseconds: 500),
+    // );
+    // _backgroundOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+    //   CurvedAnimation(parent: _backgroundController, curve: Curves.easeInOut),
+    // );
 
     // Text animations (0.5-2.5s)
     _textController = AnimationController(
@@ -101,13 +99,13 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
     );
 
     // Line drawing (0.5-2.5s)
-    _lineController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    _lineProgress = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _lineController, curve: Curves.easeInOut),
-    );
+    // _lineController = AnimationController(
+    //   vsync: this,
+    //   duration: const Duration(milliseconds: 1500),
+    // );
+    // _lineProgress = Tween<double>(begin: 0.0, end: 1.0).animate(
+    //   CurvedAnimation(parent: _lineController, curve: Curves.easeInOut),
+    // );
 
     // Subtext (2.5-3.5s)
     _subtextController = AnimationController(
@@ -142,12 +140,12 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
 
   void _startAnimationSequence() async {
     // 1. Background fade in (0-0.5s)
-    _backgroundController.forward();
+    // _backgroundController.forward();
 
     // 2. Text animations (0.5-2.5s)
     await Future.delayed(const Duration(milliseconds: 500));
     _textController.forward();
-    _lineController.forward();
+    // _lineController.forward();
 
     // 3. Secondary elements (2.5-3.5s)
     await Future.delayed(const Duration(milliseconds: 2000));
@@ -165,9 +163,9 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
 
   @override
   void dispose() {
-    _backgroundController.dispose();
+    // _backgroundController.dispose();
     _textController.dispose();
-    _lineController.dispose();
+    // _lineController.dispose();
     _subtextController.dispose();
     _buttonController.dispose();
     // Removed unused controllers
@@ -183,9 +181,9 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
       backgroundColor: Colors.transparent,
       body: AnimatedBuilder(
         animation: Listenable.merge([
-          _backgroundController,
+          // _backgroundController,
           _textController,
-          _lineController,
+          // _lineController,
           _subtextController,
           _buttonController,
           // Removed _glowController
@@ -220,7 +218,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
 
   Widget _buildBackground() {
     return Opacity(
-      opacity: _backgroundOpacity.value,
+      opacity: 1.0, // Ensure full opacity
       child: Stack(
         children: [
           Positioned.fill(
@@ -340,16 +338,6 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     ),
 
                     // Animated red underline
-                    Positioned(
-                      left: 0,
-                      bottom: 15,
-                      child: CustomPaint(
-                        size: Size(550 * _lineProgress.value, 8),
-                        painter: RedLinePainter(
-                          progress: _lineProgress.value,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ],
