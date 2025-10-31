@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
+import 'dart:ui' show ImageFilter; // Added this import back
 import '../../widgets/footer.dart';
 import '../../widgets/role_switcher.dart';
 import 'package:provider/provider.dart';
@@ -213,117 +214,131 @@ class _DashboardPageState extends State<DashboardPage>
                     if (_isSidebarCollapsed) _toggleSidebar();
                   },
                   behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
+                  child: ClipRRect(
+                    // Re-added ClipRRect
+                    borderRadius: BorderRadius.circular(
+                        0), // No rounded corners for sidebar
+                    child: BackdropFilter(
+                      // Re-added BackdropFilter
+                      filter: ImageFilter.blur(
+                          sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: _isSidebarCollapsed ? 90.0 : 250.0,
+                        color: Colors.black
+                            .withOpacity(0.32), // Adjusted opacity to 0.32
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              // Toggle button
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                child: InkWell(
+                                  onTap: _toggleSidebar,
                                   borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
+                                  child: Container(
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(
+                                          0.12), // Adjusted opacity to 0.12
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                  ],
+                                    child: Row(
+                                      mainAxisAlignment: _isSidebarCollapsed
+                                          ? MainAxisAlignment.center
+                                          : MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        if (!_isSidebarCollapsed)
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            child: Text(
+                                              'Navigation',
+                                              style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12),
+                                            ),
+                                          ),
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal:
+                                                  _isSidebarCollapsed ? 0 : 8),
+                                          child: Icon(
+                                            _isSidebarCollapsed
+                                                ? Icons.keyboard_arrow_right
+                                                : Icons.keyboard_arrow_left,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              // Navigation items
+                              _buildNavItem(
+                                  'Dashboard',
+                                  'assets/images/Dahboard.png',
+                                  _currentPage == 'Dashboard',
+                                  context),
+                              _buildNavItem(
+                                  'My Proposals',
+                                  'assets/images/My_Proposals.png',
+                                  _currentPage == 'My Proposals',
+                                  context),
+                              _buildNavItem(
+                                  'Templates',
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Templates',
+                                  context),
+                              _buildNavItem(
+                                  'Content Library',
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Content Library',
+                                  context),
+                              _buildNavItem(
+                                  'Collaboration',
+                                  'assets/images/collaborations.png',
+                                  _currentPage == 'Collaboration',
+                                  context),
+                              _buildNavItem(
+                                  'Approvals Status',
+                                  'assets/images/Time Allocation_Approval_Blue.png',
+                                  _currentPage == 'Approvals Status',
+                                  context),
+                              _buildNavItem(
+                                  'Analytics (My Pipeline)',
+                                  'assets/images/analytics.png',
+                                  _currentPage == 'Analytics (My Pipeline)',
+                                  context),
+
+                              const SizedBox(height: 20),
+
+                              // Divider
+                              if (!_isSidebarCollapsed)
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  height: 1,
+                                  color: Colors.black.withOpacity(
+                                      0.35), // Adjusted divider color to be blackish
+                                ),
+
+                              const SizedBox(height: 12),
+
+                              // Logout button
+                              _buildNavItem(
+                                  'Logout',
+                                  'assets/images/Logout_KhonoBuzz.png',
+                                  false,
+                                  context),
+                              const SizedBox(height: 20),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              _currentPage == 'My Proposals',
-                              context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Collaboration',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
-                              context),
-                          _buildNavItem(
-                              'Approvals Status',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approvals Status',
-                              context),
-                          _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              _currentPage == 'Analytics (My Pipeline)',
-                              context),
-
-                          const SizedBox(height: 20),
-
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-
-                          const SizedBox(height: 12),
-
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -335,7 +350,8 @@ class _DashboardPageState extends State<DashboardPage>
                     padding: const EdgeInsets.all(20),
                     child: RefreshIndicator(
                       onRefresh: _refreshData,
-                      color: const Color(0xFF3498DB),
+                      color: const Color(
+                          0xFFE9293A), // Changed refresh indicator color
                       child: SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         child: _buildRoleSpecificContent(userRole, counts, app),
@@ -366,30 +382,43 @@ class _DashboardPageState extends State<DashboardPage>
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+            child: ClipRRect(
+              // Re-added ClipRRect
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                // Re-added BackdropFilter
+                filter: ImageFilter.blur(
+                    sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.black
+                        .withOpacity(0.12), // Adjusted opacity to 0.12
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isActive
+                          ? const Color(0xFFE9293A).withOpacity(
+                              0.7) // Active red border, adjusted opacity
+                          : const Color(0xFFE9293A).withOpacity(
+                              0.3), // Inactive translucent red border, adjusted opacity
+                      width: isActive ? 2 : 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black
+                            .withOpacity(0.1), // Adjusted shadow opacity
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
+                  padding: const EdgeInsets.all(6),
+                  child: ClipOval(
+                    child: AssetService.buildImageWidget(assetPath,
+                        fit: BoxFit.contain),
+                  ),
+                ),
               ),
             ),
           ),
@@ -405,58 +434,79 @@ class _DashboardPageState extends State<DashboardPage>
           setState(() => _currentPage = label);
           _navigateToPage(context, label);
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+        child: ClipRRect(
+          // Re-added ClipRRect
+          borderRadius: BorderRadius.circular(8),
+          child: BackdropFilter(
+            // Re-added BackdropFilter
+            filter:
+                ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? const Color(0xFFE9293A).withOpacity(
+                        0.32) // Active translucent red, adjusted opacity
+                    : Colors.transparent, // Inactive transparent
+                borderRadius: BorderRadius.circular(8),
+                border: isActive
+                    ? Border.all(
+                        color: const Color(0xFFE9293A).withOpacity(0.7),
+                        width: 1)
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.black
+                          .withOpacity(0.12), // Adjusted opacity to 0.12
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isActive
+                            ? const Color(0xFFE9293A).withOpacity(
+                                0.7) // Active red border, adjusted opacity
+                            : const Color(0xFFE9293A).withOpacity(
+                                0.3), // Inactive translucent red border, adjusted opacity
+                        width: isActive ? 2 : 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black
+                              .withOpacity(0.1), // Adjusted shadow opacity
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    padding: const EdgeInsets.all(6),
+                    child: ClipOval(
+                      child: AssetService.buildImageWidget(assetPath,
+                          fit: BoxFit.contain),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: isActive
+                            ? Colors.white
+                            : Colors.white70, // Adjusted text color
+                        fontSize: 14,
+                        fontWeight:
+                            isActive ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                  if (isActive)
+                    const Icon(Icons.arrow_forward_ios,
+                        size: 12, color: Colors.white),
+                ],
               ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
+            ),
           ),
         ),
       ),
@@ -528,29 +578,38 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildSection(String title, Widget content) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border:
-            Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
+    return ClipRRect(
+      // Re-added ClipRRect
+      borderRadius: BorderRadius.circular(6),
+      child: BackdropFilter(
+        // Re-added BackdropFilter
+        filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.12), // Adjusted opacity to 0.12
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+                color: const Color(0xFFE9293A).withOpacity(0.5),
+                width: 1), // Adjusted red border opacity
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white, // Changed text color to white
+                  ),
+                ),
+                const SizedBox(height: 15),
+                content,
+              ],
             ),
-            const SizedBox(height: 15),
-            content,
-          ],
+          ),
         ),
       ),
     );
@@ -591,50 +650,62 @@ class _DashboardPageState extends State<DashboardPage>
         // Navigate to proposals page when clicking on stat cards
         Navigator.pushNamed(context, '/proposals');
       },
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8F9FA),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
-                ),
-              ),
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: ClipRRect(
+        // Re-added ClipRRect
+        borderRadius: BorderRadius.circular(6),
+        child: BackdropFilter(
+          // Re-added BackdropFilter
+          filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.12), // Adjusted opacity to 0.12
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                  color: const Color(0xFFE9293A).withOpacity(0.5),
+                  width: 1), // Adjusted red border opacity
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(15),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white, // Changed text color to white
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        value,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF3498DB),
-                        ),
-                      ),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF7F8C8D),
-                        ),
+                      Column(
+                        children: [
+                          Text(
+                            value,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE9293A), // Changed color to red
+                            ),
+                          ),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors
+                                  .white70, // Changed text color to white70
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -666,15 +737,18 @@ class _DashboardPageState extends State<DashboardPage>
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF2F8),
+                color: Colors.black.withOpacity(0.15), // Changed to blackish
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF3498DB), width: 2),
+                border: Border.all(
+                    color: const Color(0xFFE9293A)
+                        .withOpacity(0.5), // Adjusted red border opacity
+                    width: 2),
               ),
               child: Center(
                 child: Text(
                   number,
                   style: const TextStyle(
-                    color: Color(0xFF3498DB),
+                    color: Colors.white, // Changed text color to white
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -685,7 +759,7 @@ class _DashboardPageState extends State<DashboardPage>
               label,
               style: const TextStyle(
                 fontSize: 13,
-                color: Color(0xFF7F8C8D),
+                color: Colors.white70, // Changed text color to white70
               ),
               textAlign: TextAlign.center,
             ),
@@ -766,45 +840,59 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildAISection() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF4E6),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-            color: const Color(0xFFFFA94D), style: BorderStyle.solid),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '🤖 AI-Powered Compound Risk Gate',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFFE67E22),
-              ),
+    return ClipRRect(
+      // Re-added ClipRRect
+      borderRadius: BorderRadius.circular(6),
+      child: BackdropFilter(
+        // Re-added BackdropFilter
+        filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.12), // Adjusted opacity to 0.12
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+                color: const Color(0xFFE9293A).withOpacity(0.5),
+                width: 1), // Adjusted red border opacity
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '🤖 AI-Powered Compound Risk Gate',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white, // Changed text color to white
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'AI analyzes multiple small deviations and flags combined risks before release',
+                  style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white70), // Changed text color to white70
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  height: 1,
+                  color:
+                      Colors.black.withOpacity(0.35), // Adjusted divider color
+                ),
+                const SizedBox(height: 10),
+                _buildProposalItem(
+                  'GlobalTech Cloud Migration',
+                  '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
+                  'Review Needed',
+                  const Color(0xFFB8DAFF)
+                      .withOpacity(0.35), // Adjusted status color
+                  const Color(
+                      0xFF004085), // Keep text color as is or adjust if needed
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            const Text(
-              'AI analyzes multiple small deviations and flags combined risks before release',
-              style: TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              height: 1,
-              color: const Color(0xFFEEE),
-            ),
-            const SizedBox(height: 10),
-            _buildProposalItem(
-              'GlobalTech Cloud Migration',
-              '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
-              'Review Needed',
-              const Color(0xFFB8DAFF),
-              const Color(0xFF004085),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -907,48 +995,69 @@ class _DashboardPageState extends State<DashboardPage>
         });
       },
       borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? const Color(0xFF3498DB) : const Color(0xFFF0F0F0),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isActive ? const Color(0xFF2980B9) : const Color(0xFFE0E0E0),
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                color: isActive ? Colors.white : const Color(0xFF2C3E50),
-                fontSize: 13,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+      child: ClipRRect(
+        // Re-added ClipRRect
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          // Re-added BackdropFilter
+          filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? const Color(0xFFE9293A).withOpacity(
+                      0.32) // Active translucent red, adjusted opacity
+                  : Colors.black.withOpacity(
+                      0.12), // Inactive translucent blackish, adjusted opacity
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isActive
+                    ? const Color(0xFFE9293A)
+                        .withOpacity(0.7) // Active red border, adjusted opacity
+                    : const Color(0xFFE9293A).withOpacity(
+                        0.3), // Inactive translucent red border, adjusted opacity
+                width: 1,
               ),
             ),
-            if (count > 0) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? Colors.white.withOpacity(0.3)
-                      : const Color(0xFF3498DB).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  count.toString(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
                   style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFF3498DB),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+                    color: isActive
+                        ? Colors.white
+                        : Colors.white70, // Adjusted text color
+                    fontSize: 13,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-              ),
-            ],
-          ],
+                if (count > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? Colors.white
+                              .withOpacity(0.32) // Adjusted count background
+                          : const Color(0xFFE9293A)
+                              .withOpacity(0.32), // Adjusted count background
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      count.toString(),
+                      style: TextStyle(
+                        color: isActive ? Colors.white : Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -956,56 +1065,69 @@ class _DashboardPageState extends State<DashboardPage>
 
   Widget _buildProposalItem(String title, String subtitle, String status,
       Color statusColor, Color textColor) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(4),
-        border:
-            Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF7F8C8D),
-                  ),
-                ),
-              ],
-            ),
+    return ClipRRect(
+      // Re-added ClipRRect
+      borderRadius: BorderRadius.circular(4),
+      child: BackdropFilter(
+        // Re-added BackdropFilter
+        filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.12), // Adjusted opacity to 0.12
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+                color: const Color(0xFFE9293A).withOpacity(0.5),
+                width: 1), // Adjusted red border opacity
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: textColor,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.white, // Changed text color to white
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white70, // Changed text color to white70
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor
+                      .withOpacity(0.35), // Adjusted status background
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color:
+                        textColor, // Keep text color as is or adjust if needed
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
