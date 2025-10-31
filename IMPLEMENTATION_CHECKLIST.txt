@@ -1,0 +1,114 @@
+﻿# IMPLEMENTATION CHECKLIST
+# ========================
+
+## PRE-IMPLEMENTATION CHECK:
+□ Make backup of backend/app.py
+□ Review DOCUSIGN_COPYPASTE_FIX.py file
+□ Have backend/app.py open in editor
+
+## STEP 1: FIND get_docusign_jwt_token() FUNCTION
+□ Open backend/app.py
+□ Use Ctrl+F to search: 'def get_docusign_jwt_token'
+□ Should be around line 850
+□ Select ENTIRE function (from 'def' to next 'def')
+□ Delete the OLD function
+
+## STEP 2: PASTE NEW get_docusign_jwt_token()
+□ Position cursor after previous function ends
+□ Copy from DOCUSIGN_COPYPASTE_FIX.py - first function (lines ~13-67)
+□ Paste into backend/app.py
+□ Verify indentation is correct (should match other functions)
+
+## STEP 3: FIND create_docusign_envelope() FUNCTION
+□ Use Ctrl+F to search: 'def create_docusign_envelope'
+□ Should be around line 900 (after get_docusign_jwt_token)
+□ Select ENTIRE function (from 'def' to next 'def')
+□ Delete the OLD function
+
+## STEP 4: PASTE NEW create_docusign_envelope()
+□ Position cursor after get_docusign_jwt_token() ends
+□ Copy from DOCUSIGN_COPYPASTE_FIX.py - second function (lines ~71-180)
+□ Paste into backend/app.py
+□ Verify indentation is correct
+
+## STEP 5: SAVE FILE
+□ Save backend/app.py (Ctrl+S)
+□ Close editor
+□ Verify file saved
+
+## STEP 6: RESTART BACKEND
+□ Stop current backend (Ctrl+C if running)
+□ Navigate to backend directory:
+   cd backend
+□ Run backend:
+   python app.py
+
+## STEP 7: VERIFY STARTUP
+□ Should see logs like:
+   ✅ Backend starting...
+   [REST API running...]
+□ Should NOT see DocuSign errors at startup
+
+## STEP 8: TEST FIX
+□ Open frontend
+□ Create a proposal or use existing one
+□ Click "Send for Signature"
+□ Enter signer details
+□ Submit
+
+## STEP 9: CHECK LOGS
+□ In backend terminal, look for:
+   ✅ DocuSign JWT authenticated. Account ID: [UUID]
+   ✅ Using account_id: [UUID]
+   ✅ DocuSign envelope created: [ENVELOPE_ID]
+   ✅ Embedded signing URL created: https://...
+
+□ If you see all ✅ messages = SUCCESS! 🎉
+
+## STEP 10: VERIFY IN FRONTEND
+□ Frontend should show signing URL
+□ Button or link should be clickable
+□ Should open DocuSign signing page
+□ User should be able to sign document
+
+## TROUBLESHOOTING:
+
+If still getting 400 error:
+□ Check backend logs for error message
+□ Verify DocuSign credentials in .env are correct
+□ Verify docusign_private.key file exists and is readable
+□ Ensure DOCUSIGN_INTEGRATION_KEY is set
+□ Ensure DOCUSIGN_USER_ID is set
+
+If account_id still None:
+□ Check if JWT request to DocuSign is failing
+□ Verify auth server: account-d.docusign.com
+□ Verify integration key (should be UUID format)
+□ Verify private key is valid PEM format
+
+If other errors:
+□ Check full error message in logs
+□ Verify indentation in app.py (Python is sensitive!)
+□ Check for missing imports
+□ Run: python -m py_compile app.py (to check syntax)
+
+## FILES CREATED FOR REFERENCE:
+✓ DOCUSIGN_FIX_COMPLETE.md - Full detailed guide
+✓ FIX_SUMMARY.txt - Quick overview
+✓ DOCUSIGN_COPYPASTE_FIX.py - Code to copy
+✓ DOCUSIGN_VISUAL_DIAGRAM.txt - Visual explanation
+✓ IMPLEMENTATION_CHECKLIST.txt - This file
+
+## SUPPORT COMMANDS:
+
+Check Python syntax:
+  python -m py_compile backend/app.py
+
+Check if backend runs:
+  python backend/app.py
+
+Test DocuSign connection:
+  python -c 'from docusign_esign import ApiClient; print(\"DocuSign SDK OK\")'
+
+View specific lines of app.py:
+  python -c 'with open(\"backend/app.py\") as f: lines=f.readlines(); print(\"\".join(lines[849:860]))'

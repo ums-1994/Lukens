@@ -19,28 +19,71 @@ class AuthService {
 
   static void _persistSession() {
     try {
+      print('💾 AuthService: Attempting to persist session...');
+      print('💾 Token available: ${_token != null}');
+      print('💾 User available: ${_currentUser != null}');
+      print('💾 Is Web: $kIsWeb');
+
       if (kIsWeb && _token != null && _currentUser != null) {
         final data = json.encode({'token': _token, 'user': _currentUser});
+        print('💾 Data to store length: ${data.length}');
         html.window.localStorage[_storageKey] = data;
+        print('✅ Session persisted to localStorage');
+
+        // Verify it was saved
+        final saved = html.window.localStorage[_storageKey];
+        print('✅ Verification - Data saved: ${saved != null}');
+      } else {
+        print(
+            '⚠️ Cannot persist: Web=${kIsWeb}, Token=${_token != null}, User=${_currentUser != null}');
       }
-    } catch (_) {}
+    } catch (e) {
+      print('❌ Error persisting session: $e');
+    }
   }
 
   static void restoreSessionFromStorage() {
     try {
+      print('🔄 AuthService: Attempting to restore session from storage...');
       if (kIsWeb) {
         final data = html.window.localStorage[_storageKey];
+        print('📦 localStorage key: $_storageKey');
+        print('📦 Data exists: ${data != null}');
+        print('📦 Data isEmpty: ${data?.isEmpty ?? true}');
+
         if (data != null && data.isNotEmpty) {
+          print('📦 Data length: ${data.length}');
+          print(
+              '📦 Data preview: ${data.substring(0, data.length > 100 ? 100 : data.length)}...');
+
           final parsed = json.decode(data) as Map<String, dynamic>;
+          print('📦 Parsed keys: ${parsed.keys.toList()}');
+
           final storedToken = parsed['token'] as String?;
           final storedUser = parsed['user'] as Map<String, dynamic>?;
+
+          print('📦 Token exists in parsed data: ${storedToken != null}');
+          print('📦 User exists in parsed data: ${storedUser != null}');
+
           if (storedToken != null && storedUser != null) {
             _token = storedToken;
             _currentUser = storedUser;
+            print('✅ Session restored successfully!');
+            print('✅ Token: ${_token!.substring(0, 20)}...');
+            print('✅ User email: ${_currentUser!['email']}');
+          } else {
+            print('❌ Token or user is null in parsed data');
           }
+        } else {
+          print('⚠️ No data in localStorage or data is empty');
         }
+      } else {
+        print('⚠️ Not running on web platform');
       }
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      print('❌ Error restoring session: $e');
+      print('❌ Stack trace: $stackTrace');
+    }
   }
 
   static void _clearSessionStorage() {
@@ -219,8 +262,14 @@ class AuthService {
 
   // Set user data manually (for Firebase compatibility)
   static void setUserData(Map<String, dynamic> userData, String token) {
+    print('💾 AuthService.setUserData called');
+    print('💾 Setting token: ${token.substring(0, 20)}...');
+    print('💾 Setting user: ${userData['email']}');
     _currentUser = userData;
     _token = token;
+    // IMPORTANT: Persist to localStorage so it survives navigation/refresh
+    _persistSession();
+    print('💾 Session data set and persisted');
   }
 
   // Logout

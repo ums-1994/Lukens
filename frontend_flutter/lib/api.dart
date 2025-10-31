@@ -583,6 +583,35 @@ class AppState extends ChangeNotifier {
     return data["sign_url"] ?? "No URL returned";
   }
 
+  // DocuSign: Send for signature using backend endpoint
+  Future<Map<String, dynamic>?> sendProposalForSignature({
+    required int proposalId,
+    required String signerName,
+    required String signerEmail,
+    String? returnUrl,
+  }) async {
+    try {
+      final body = {
+        'signer_name': signerName,
+        'signer_email': signerEmail,
+        if (returnUrl != null) 'return_url': returnUrl,
+      };
+      final r = await http.post(
+        Uri.parse("$baseUrl/api/proposals/$proposalId/docusign/send"),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      if (r.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(r.body));
+      }
+      debugPrint('DocuSign send failed: ${r.statusCode} - ${r.body}');
+      return null;
+    } catch (e) {
+      debugPrint('DocuSign send error: $e');
+      return null;
+    }
+  }
+
   void selectProposal(Map<String, dynamic> p) {
     currentProposal = p;
     notifyListeners();

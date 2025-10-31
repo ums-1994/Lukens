@@ -1051,6 +1051,12 @@ class ProposalItem extends StatelessWidget {
                     'draft') {
                   Navigator.pushNamed(context, '/compose', arguments: proposal);
                 } else {
+                  // Ensure preview page knows which proposal to show
+                  try {
+                    context
+                        .read<AppState>()
+                        .selectProposal(Map<String, dynamic>.from(proposal));
+                  } catch (_) {}
                   Navigator.pushNamed(context, '/preview', arguments: proposal);
                 }
               },
