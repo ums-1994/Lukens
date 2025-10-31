@@ -32,6 +32,11 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
+    print('Attempting to log in...'); // Debug print
+    if (_formKey.currentState == null) {
+      print('Error: _formKey.currentState is null during login.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -136,156 +141,160 @@ class _LoginPageState extends State<LoginPage> {
                       maxWidth: isMobile
                           ? double.infinity
                           : 550), // Adjusted max width
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Logo with subtle breathing fade animation
-                      Center(
-                        child: Image.asset(
-                          'assets/images/2026.png',
-                          height: 120,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Text(
-                              '✕ Khonology',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 56,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Email
-                      _buildTextField(
-                        controller: _emailController,
-                        label: 'Email',
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Email required';
-                          if (!v.contains('@')) return 'Invalid email';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Password
-                      _buildTextField(
-                        controller: _passwordController,
-                        label: 'Password',
-                        obscureText: !_passwordVisible,
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _passwordVisible
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: Colors.white54,
-                            size: 20,
-                          ),
-                          onPressed: () => setState(
-                              () => _passwordVisible = !_passwordVisible),
-                        ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty)
-                            return 'Password required';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Login Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56, // Set height to 56
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(
-                                0xFFC10D00), // Set background color to #C10D00
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                  50), // Set border radius to 50
-                            ),
-                            elevation: 0, // Remove glowing effect
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text(
-                                  'LOGIN', // All caps text
-                                  style: TextStyle(
-                                    fontFamily: 'Poppins',
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Social Login
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildSocialButton(Icons.g_mobiledata),
-                          const SizedBox(width: 16),
-                          _buildSocialButton(Icons.window),
-                          const SizedBox(width: 16),
-                          _buildSocialButton(Icons.business),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Register / Forgot Password
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.pushNamed(context, '/register'),
-                            child: const Text(
-                              'Register',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Colors.white70,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              // Forgot password feature coming soon
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Forgot password feature coming soon'),
+                  child: Form(
+                    // Added Form widget
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Logo with subtle breathing fade animation
+                        Center(
+                          child: Image.asset(
+                            'assets/images/2026.png',
+                            height: 120,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Text(
+                                '✕ Khonology',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 56,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
                                 ),
                               );
                             },
-                            child: const Text(
-                              'Forgot Password',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Color(0xFFE9293A),
-                                fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Email
+                        _buildTextField(
+                          controller: _emailController,
+                          label: 'Email',
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Email required';
+                            if (!v.contains('@')) return 'Invalid email';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Password
+                        _buildTextField(
+                          controller: _passwordController,
+                          label: 'Password',
+                          obscureText: !_passwordVisible,
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _passwordVisible
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: Colors.white54,
+                              size: 20,
+                            ),
+                            onPressed: () => setState(
+                                () => _passwordVisible = !_passwordVisible),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty)
+                              return 'Password required';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Login Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56, // Set height to 56
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _login,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(
+                                  0xFFC10D00), // Set background color to #C10D00
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                    50), // Set border radius to 50
+                              ),
+                              elevation: 0, // Remove glowing effect
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'LOGIN', // All caps text
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Social Login
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildSocialButton(Icons.g_mobiledata),
+                            const SizedBox(width: 16),
+                            _buildSocialButton(Icons.window),
+                            const SizedBox(width: 16),
+                            _buildSocialButton(Icons.business),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Register / Forgot Password
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pushNamed(context, '/register'),
+                              child: const Text(
+                                'Register',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                            TextButton(
+                              onPressed: () {
+                                // Forgot password feature coming soon
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'Forgot password feature coming soon'),
+                                  ),
+                                );
+                              },
+                              child: const Text(
+                                'Forgot Password',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Color(0xFFE9293A),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

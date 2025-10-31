@@ -77,6 +77,11 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _register() async {
+    print('Attempting to register...'); // Debug print
+    if (_formKey.currentState == null) {
+      print('Error: _formKey.currentState is null during registration.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -165,249 +170,254 @@ class _RegisterPageState extends State<RegisterPage> {
                       maxWidth: isMobile
                           ? double.infinity
                           : 550), // Adjusted max width
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Logo with subtle breathing fade animation
-                      Center(
-                        child: Image.asset(
-                          'assets/images/2026.png',
-                          height: 120,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Text(
-                              '✕ Khonology',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 56,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Logo with subtle breathing fade animation
+                        Center(
+                          child: Image.asset(
+                            'assets/images/2026.png',
+                            height: 120,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Text(
+                                '✕ Khonology',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 56,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // First & Last Name Row
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                controller: _firstNameController,
+                                label: 'First Name',
+                                validator: (v) =>
+                                    v == null || v.isEmpty ? 'Required' : null,
                               ),
-                            );
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTextField(
+                                controller: _lastNameController,
+                                label: 'Last Name',
+                                validator: (v) =>
+                                    v == null || v.isEmpty ? 'Required' : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Email
+                        _buildTextField(
+                          controller: _emailController,
+                          label: 'Email',
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Email required';
+                            if (!v.contains('@')) return 'Invalid email';
+                            return null;
                           },
                         ),
-                      ),
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 12),
 
-                      // First & Last Name Row
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTextField(
-                              controller: _firstNameController,
-                              label: 'First Name',
-                              validator: (v) =>
-                                  v == null || v.isEmpty ? 'Required' : null,
+                        // Role Dropdown
+                        _buildRoleDropdown(),
+                        const SizedBox(height: 12),
+
+                        // Password
+                        _buildTextField(
+                          controller: _passwordController,
+                          label: 'Password',
+                          obscureText: !_passwordVisible,
+                          onChanged: _evaluatePassword,
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _passwordVisible
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: Colors.white54,
+                              size: 20,
                             ),
+                            onPressed: () => setState(
+                                () => _passwordVisible = !_passwordVisible),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTextField(
-                              controller: _lastNameController,
-                              label: 'Last Name',
-                              validator: (v) =>
-                                  v == null || v.isEmpty ? 'Required' : null,
+                          validator: (v) {
+                            if (v == null || v.isEmpty)
+                              return 'Password required';
+                            if (v.length < 8) return 'Min 8 characters';
+                            if (!RegExp(r'[A-Z]').hasMatch(v))
+                              return 'Need uppercase';
+                            if (!RegExp(r'[0-9]').hasMatch(v))
+                              return 'Need number';
+                            if (!RegExp(
+                                    r'[!@#\$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;]')
+                                .hasMatch(v)) {
+                              return 'Need special char';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Confirm Password
+                        _buildTextField(
+                          controller: _confirmPasswordController,
+                          label: 'Confirm Password',
+                          obscureText: !_confirmPasswordVisible,
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _confirmPasswordVisible
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              color: Colors.white54,
+                              size: 20,
                             ),
+                            onPressed: () => setState(() =>
+                                _confirmPasswordVisible =
+                                    !_confirmPasswordVisible),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
+                          validator: (v) {
+                            if (v == null || v.isEmpty)
+                              return 'Confirm password';
+                            if (v != _passwordController.text)
+                              return 'Passwords don\'t match';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 20),
 
-                      // Email
-                      _buildTextField(
-                        controller: _emailController,
-                        label: 'Email',
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Email required';
-                          if (!v.contains('@')) return 'Invalid email';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Role Dropdown
-                      _buildRoleDropdown(),
-                      const SizedBox(height: 12),
-
-                      // Password
-                      _buildTextField(
-                        controller: _passwordController,
-                        label: 'Password',
-                        obscureText: !_passwordVisible,
-                        onChanged: _evaluatePassword,
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _passwordVisible
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: Colors.white54,
-                            size: 20,
+                        // Password Strength Loader
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2A2A2A),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          onPressed: () => setState(
-                              () => _passwordVisible = !_passwordVisible),
-                        ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty)
-                            return 'Password required';
-                          if (v.length < 8) return 'Min 8 characters';
-                          if (!RegExp(r'[A-Z]').hasMatch(v))
-                            return 'Need uppercase';
-                          if (!RegExp(r'[0-9]').hasMatch(v))
-                            return 'Need number';
-                          if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;]')
-                              .hasMatch(v)) {
-                            return 'Need special char';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Confirm Password
-                      _buildTextField(
-                        controller: _confirmPasswordController,
-                        label: 'Confirm Password',
-                        obscureText: !_confirmPasswordVisible,
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _confirmPasswordVisible
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: Colors.white54,
-                            size: 20,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Password Strength',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: _passwordStrength,
+                                  minHeight: 8,
+                                  backgroundColor: const Color(0xFF1A1A1A),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    _getPasswordStrengthBarColor(),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          onPressed: () => setState(() =>
-                              _confirmPasswordVisible =
-                                  !_confirmPasswordVisible),
                         ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Confirm password';
-                          if (v != _passwordController.text)
-                            return 'Passwords don\'t match';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 20),
+                        const SizedBox(height: 24),
 
-                      // Password Strength Loader
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2A2A2A),
-                          borderRadius: BorderRadius.circular(8),
+                        // Register Button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56, // Set height to 56
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _register,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(
+                                  0xFFC10D00), // Set background color to #C10D00
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                    50), // Set border radius to 50
+                              ),
+                              elevation: 0, // Remove glowing effect
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'REGISTER', // All caps text
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(height: 24),
+
+                        // Social Login
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text(
-                              'Password Strength',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Colors.white70,
-                                fontSize: 14,
+                            _buildSocialButton(Icons.g_mobiledata),
+                            const SizedBox(width: 16),
+                            _buildSocialButton(Icons.window),
+                            const SizedBox(width: 16),
+                            _buildSocialButton(Icons.business),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Login / Forgot Password
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pushNamed(context, '/login'),
+                              child: const Text(
+                                'Login',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: _passwordStrength,
-                                minHeight: 8,
-                                backgroundColor: const Color(0xFF1A1A1A),
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  _getPasswordStrengthBarColor(),
+                            TextButton(
+                              onPressed: () {
+                                // Forgot password feature coming soon
+                              },
+                              child: const Text(
+                                'Forgot Password',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: Color(0xFFE9293A),
+                                  fontSize: 14,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Register Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56, // Set height to 56
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _register,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(
-                                0xFFC10D00), // Set background color to #C10D00
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                  50), // Set border radius to 50
-                            ),
-                            elevation: 0, // Remove glowing effect
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text(
-                                  'REGISTER', // All caps text
-                                  style: TextStyle(
-                                    fontFamily: 'Poppins',
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Social Login
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildSocialButton(Icons.g_mobiledata),
-                          const SizedBox(width: 16),
-                          _buildSocialButton(Icons.window),
-                          const SizedBox(width: 16),
-                          _buildSocialButton(Icons.business),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Login / Forgot Password
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.pushNamed(context, '/login'),
-                            child: const Text(
-                              'Login',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Colors.white70,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              // Forgot password feature coming soon
-                            },
-                            child: const Text(
-                              'Forgot Password',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Color(0xFFE9293A),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
