@@ -13,6 +13,8 @@ import 'pages/admin/govern_page.dart';
 import 'pages/approver/approvals_page.dart';
 import 'pages/shared/preview_page.dart';
 import 'pages/creator/content_library_page.dart';
+import 'pages/creator/templates_page.dart';
+import 'pages/creator/template_builder.dart';
 import 'pages/approver/approver_dashboard_page.dart';
 import 'pages/admin/admin_dashboard_page.dart';
 import 'pages/test_signature_page.dart';
@@ -234,6 +236,11 @@ class MyApp extends StatelessWidget {
           '/content_library': (context) => const ContentLibraryPage(),
           '/content': (context) =>
               const ContentLibraryPage(), // Add missing route
+          '/templates': (context) => const TemplatesPage(),
+          '/template-builder': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            return TemplateBuilder(templateId: args?['templateId']);
+          },
           '/approvals': (context) => const ApprovalsPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
