@@ -115,7 +115,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Animated background layers with crossfade
+          // Static background layers (no animation)
           _buildBackgroundLayers(),
 
           // Dark gradient overlay for text contrast
@@ -133,8 +133,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
             ),
           ),
 
-          // Floating geometric shapes (parallax) - desktop only
-          if (!isMobile) _buildFloatingShapes(),
+          // Removed floating shapes/animations
 
           // Main content
           SafeArea(
@@ -149,21 +148,20 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     minHeight: size.height - (isMobile ? 80 : 120),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Animated headline
-                      _buildAnimatedHeadline(isMobile),
-
-                      SizedBox(height: isMobile ? 24 : 40),
-
-                      // Subheading
-                      _buildSubheading(isMobile),
+                      // Khonology logo at top, centered
+                      Image.asset(
+                        'assets/images/khono.png',
+                        height: isMobile ? 56 : 72,
+                        fit: BoxFit.contain,
+                      ),
 
                       SizedBox(height: isMobile ? 40 : 56),
 
-                      // CTA buttons
+                      // CTA buttons (static)
                       _buildCTAButtons(isMobile),
                     ],
                   ),
@@ -180,35 +178,22 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Base background image
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 1200),
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
-          child: Image.asset(
-            _backgroundImages[_currentFrameIndex],
-            key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                color: const Color(0xFF000000),
-                child: const Center(
-                  child: Icon(Icons.error, color: Colors.white54, size: 48),
-                ),
-              );
-            },
-          ),
-        ),
-        // Pulsing light overlay (dark to light breathing)
-        AnimatedBuilder(
-          animation: _parallaxController,
-          builder: (context, child) {
-            // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
-            final darkness = 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
+        // Base background image (static)
+        Image.asset(
+          _backgroundImages[_currentFrameIndex],
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: const Color(0xFF000000),
+              child: const Center(
+                child: Icon(Icons.error, color: Colors.white54, size: 48),
+              ),
             );
           },
+        ),
+        // Static dark overlay for contrast
+        Container(
+          color: Colors.black.withOpacity(0.45),
         ),
       ],
     );
@@ -343,71 +328,57 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   }
 
   Widget _buildCTAButtons(bool isMobile) {
-    return FadeTransition(
-      opacity: _ctaController,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.95, end: 1.0).animate(
-          CurvedAnimation(parent: _ctaController, curve: Curves.easeOut),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/images/khono.png',
-                height: 56,
-                fit: BoxFit.contain,
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Buttons only (logo moved to top of screen)
+          ElevatedButton(
+            onPressed: () => Navigator.pushNamed(context, '/register'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFC10D00),
+              foregroundColor: Colors.white,
+              minimumSize: Size(isMobile ? 220 : 240, isMobile ? 52 : 56),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(50),
               ),
-              const SizedBox(height: 24),
-
-              ElevatedButton(
-                onPressed: () => Navigator.pushNamed(context, '/register'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC10D00),
-                  foregroundColor: Colors.white,
-                  minimumSize: Size(isMobile ? 220 : 240, isMobile ? 52 : 56),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(50),
-                  ),
-                  elevation: 0,
-                ),
-                child: Text(
-                  'GET STARTED',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: isMobile ? 16 : 20,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+              elevation: 0,
+            ),
+            child: Text(
+              'GET STARTED',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: isMobile ? 16 : 20,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
               ),
-
-              const SizedBox(height: 16),
-
-              ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC10D00),
-                  foregroundColor: Colors.white,
-                  minimumSize: Size(isMobile ? 220 : 240, isMobile ? 52 : 56),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(50),
-                  ),
-                  elevation: 0,
-                ),
-                child: Text(
-                  'LEARN MORE',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: isMobile ? 16 : 20,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+
+          const SizedBox(height: 16),
+
+          ElevatedButton(
+            onPressed: () {},
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFC10D00),
+              foregroundColor: Colors.white,
+              minimumSize: Size(isMobile ? 220 : 240, isMobile ? 52 : 56),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(50),
+              ),
+              elevation: 0,
+            ),
+            child: Text(
+              'LEARN MORE',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: isMobile ? 16 : 20,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

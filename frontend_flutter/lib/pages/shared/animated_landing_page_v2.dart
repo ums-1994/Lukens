@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 
 /// Khonology Landing Page with Precise Animation Timeline
 /// Total Duration: 5.0 seconds with staggered element reveals

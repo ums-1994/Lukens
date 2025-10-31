@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
 
 class GuestCollaborationPage extends StatefulWidget {
