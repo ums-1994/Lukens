@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' show ImageFilter;
-import 'cinematic_sequence_page.dart';
+import 'animated_landing_page.dart';
 
 class StartupPage extends StatelessWidget {
   const StartupPage({super.key});
@@ -8,10 +8,10 @@ class StartupPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Use the cinematic sequence with all 9 frames
-    return const CinematicSequencePage();
+    // return const CinematicSequencePage();
 
     // Alternative: Use V1 (previous version)
-    // return const AnimatedLandingPage();
+    return const AnimatedLandingPage();
 
     // Old simple startup page (commented out, can be restored if needed)
     /*

@@ -9,7 +9,21 @@ from sqlalchemy.pool import StaticPool
 from models_client import Base
 
 # Load environment variables from .env file
-load_dotenv()
+if os.path.exists('backend/config.py'):
+    # Load from config.py if it exists (for ignored .env files)
+    from backend.config import (
+        BACKEND_TYPE, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+    )
+    # Set environment variables for consistency
+    os.environ['BACKEND_TYPE'] = BACKEND_TYPE
+    os.environ['DB_HOST'] = DB_HOST
+    os.environ['DB_PORT'] = str(DB_PORT)
+    os.environ['DB_NAME'] = DB_NAME
+    os.environ['DB_USER'] = DB_USER
+    os.environ['DB_PASSWORD'] = DB_PASSWORD
+else:
+    # Fallback to .env file
+    load_dotenv()
 
 # Database URL configuration
 DATABASE_URL = os.getenv(
