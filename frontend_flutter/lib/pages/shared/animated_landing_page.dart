@@ -192,15 +192,13 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           return Stack(
             children: [
               // Dark background with geometric shapes
-              _buildBackground(),
+              // _buildBackground(),
 
               // Layout: Left content, Right 3D scene
               Row(
                 children: [
                   // Left side - Text content
-                  Expanded(
-                    child: _buildMainContent(),
-                  ),
+                  Expanded(child: _buildMainContent()),
 
                   // Removed Right side - 3D Tube
                   // Expanded(
@@ -212,53 +210,6 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildBackground() {
-    return Opacity(
-      opacity: 1.0, // Ensure full opacity
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/nathi.png',
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Gradient overlay for contrast
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF000000),
-                  Color(0xFF0B0B0C),
-                  Color(0xFF1A1A1B),
-                ],
-              ),
-            ),
-          ),
-          // Geometric shapes
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: Container(
-              width: 400,
-              height: 400,
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF2C3E50).withOpacity(0.1),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -390,35 +341,6 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                           ),
                           child: const Text(
                             'GET STARTED',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Transform.scale(
-                      scale: _buttonScale.value,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(50),
-                        ),
-                        child: ElevatedButton(
-                          onPressed: () {},
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFC10D00),
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(240, 56),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(50),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: const Text(
-                            'LEARN MORE',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w600,
