@@ -1,8 +1,11 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
+import 'dart:ui' show ImageFilter;
 import 'package:provider/provider.dart';
 import '../../api.dart';
-import 'content_library_dialog.dart';
+import '../../services/auth_service.dart';
+import '../../services/asset_service.dart';
+import '../../widgets/role_switcher.dart';
 
 class ProposalWizard extends StatefulWidget {
   const ProposalWizard({super.key});
@@ -18,6 +21,11 @@ class _ProposalWizardState extends State<ProposalWizard>
   int _currentStep = 0;
   static const int _totalSteps = 5;
   bool _isLoading = false;
+
+  // Sidebar state
+  bool _isSidebarCollapsed = true;
+  late AnimationController _animationController;
+  String _currentPage = 'Templates';
 
   // Form data
   final Map<String, dynamic> _formData = {
@@ -162,6 +170,12 @@ class _ProposalWizardState extends State<ProposalWizard>
     super.initState();
     _pageController = PageController();
     _tabController = TabController(length: _totalSteps, vsync: this);
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    // Start collapsed
+    _animationController.value = 1.0;
     // Pre-select required modules so they are checked by default
     final required = _contentModules
         .where((m) => m['required'] == true)
@@ -176,6 +190,7 @@ class _ProposalWizardState extends State<ProposalWizard>
   void dispose() {
     _pageController.dispose();
     _tabController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -199,22 +214,33 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
   }
 
-  String _getStepTitle(int step) {
-    switch (step) {
-      case 0:
-        return 'Template Selection';
-      case 1:
-        return 'Client Details';
-      case 2:
-        return 'Project Details';
-      case 3:
-        return 'Content Selection';
-      case 4:
-        return 'Review';
-      default:
-        return '';
-    }
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
   }
+
+  // String _getStepTitle(int step) {
+  //   switch (step) {
+  //     case 0:
+  //       return 'Template Selection';
+  //     case 1:
+  //       return 'Client Details';
+  //     case 2:
+  //       return 'Project Details';
+  //     case 3:
+  //       return 'Content Selection';
+  //     case 4:
+  //       return 'Review';
+  //     default:
+  //       return '';
+  //   }
+  // }
 
   void _selectTemplate(String templateId) {
     setState(() {
@@ -295,143 +321,325 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   @override
   Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final userRole = app.currentUser?['role'] ?? 'Financial Manager';
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Text(
-          'New Proposal',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          // Top navigation bar
+          // Header
           Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/home'),
-                  child: Row(
-                    children: const [
-                      Icon(Icons.arrow_back,
-                          size: 20, color: Color(0xFF64748B)),
-                      SizedBox(width: 8),
-                      Text(
-                        'Back to Dashboard',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
+            height: 60,
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C3E50),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Templates',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      const CompactRoleSwitcher(),
+                      const SizedBox(width: 20),
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/User_Profile.png',
+                          width: 105,
+                          height: 105,
+                          fit: BoxFit.cover,
                         ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getUserName(app.currentUser),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            userRole,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 10),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, color: Colors.white),
+                        onSelected: (value) {
+                          if (value == 'logout') {
+                            _handleLogout(context, app);
+                          }
+                        },
+                        itemBuilder: (BuildContext context) => [
+                          const PopupMenuItem<String>(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                Icon(Icons.logout),
+                                SizedBox(width: 8),
+                                Text('Logout'),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 3,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          'Step ${_currentStep + 1} of $_totalSteps: ${_getStepTitle(_currentStep)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF0F172A),
+                ],
+              ),
+            ),
+          ),
+
+          // Main Content with Sidebar
+          Expanded(
+            child: Row(
+              children: [
+                // Collapsible Sidebar
+                GestureDetector(
+                  onTap: () {
+                    if (_isSidebarCollapsed) _toggleSidebar();
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: ClipRRect(
+                    // Re-added ClipRRect
+                    borderRadius: BorderRadius.circular(
+                        0), // No rounded corners for sidebar
+                    child: BackdropFilter(
+                      // Re-added BackdropFilter
+                      filter: ImageFilter.blur(
+                          sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: _isSidebarCollapsed ? 90.0 : 250.0,
+                        color: Colors.black
+                            .withOpacity(0.32), // Adjusted opacity to 0.32
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              // Toggle button
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                child: InkWell(
+                                  onTap: _toggleSidebar,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(
+                                          0.12), // Adjusted opacity to 0.12
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: _isSidebarCollapsed
+                                          ? MainAxisAlignment.center
+                                          : MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        if (!_isSidebarCollapsed)
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            child: Text(
+                                              'Navigation',
+                                              style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12),
+                                            ),
+                                          ),
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal:
+                                                  _isSidebarCollapsed ? 0 : 8),
+                                          child: Icon(
+                                            _isSidebarCollapsed
+                                                ? Icons.keyboard_arrow_right
+                                                : Icons.keyboard_arrow_left,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              // Navigation items
+                              _buildNavItem(
+                                  'Dashboard',
+                                  'assets/images/Dahboard.png',
+                                  _currentPage == 'Dashboard',
+                                  context),
+                              _buildNavItem(
+                                  'My Proposals',
+                                  'assets/images/My_Proposals.png',
+                                  _currentPage == 'My Proposals',
+                                  context),
+                              _buildNavItem(
+                                  'Templates',
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Templates',
+                                  context),
+                              _buildNavItem(
+                                  'Content Library',
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Content Library',
+                                  context),
+                              _buildNavItem(
+                                  'Collaboration',
+                                  'assets/images/collaborations.png',
+                                  _currentPage == 'Collaboration',
+                                  context),
+                              _buildNavItem(
+                                  'Approvals Status',
+                                  'assets/images/Time Allocation_Approval_Blue.png',
+                                  _currentPage == 'Approvals Status',
+                                  context),
+                              _buildNavItem(
+                                  'Analytics (My Pipeline)',
+                                  'assets/images/analytics.png',
+                                  _currentPage == 'Analytics (My Pipeline)',
+                                  context),
+                              const SizedBox(height: 20),
+                              // Divider
+                              if (!_isSidebarCollapsed)
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  height: 1,
+                                  color: Colors.black.withOpacity(
+                                      0.35), // Adjusted divider color to be blackish
+                                ),
+                              const SizedBox(height: 12),
+                              // Logout button
+                              _buildNavItem(
+                                  'Logout',
+                                  'assets/images/Logout_KhonoBuzz.png',
+                                  false,
+                                  context),
+                              const SizedBox(height: 20),
+                            ],
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${((_currentStep + 1) / _totalSteps * 100).round()}% Complete',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ),
 
-          // Step indicator
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(
-                  color: Color(0xFFE2E8F0),
-                  width: 1,
+                // Content Area
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header Row: title, search, actions
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: const [
+                                    Text('Templates',
+                                        style: TextStyle(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF2c3e50))),
+                                    SizedBox(height: 6),
+                                    Text(
+                                        'Manage all your business templates and SOWs',
+                                        style: TextStyle(
+                                            color: Color(0xFF718096))),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 20),
+                              Expanded(
+                                flex: 1,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        decoration: InputDecoration(
+                                          hintText: 'Search templates...',
+                                          prefixIcon: const Icon(Icons.search),
+                                          border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            borderSide: const BorderSide(
+                                                color: Color(0xFFE5E5E5)),
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            borderSide: const BorderSide(
+                                                color: Color(0xFFE5E5E5)),
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            borderSide: const BorderSide(
+                                                color: Color(0xFF3498DB),
+                                                width: 2),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF3498DB),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: IconButton(
+                                        onPressed: () {},
+                                        icon: const Icon(Icons.tune_outlined,
+                                            color: Colors.white),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          // Template Selection
+                          _buildTemplateSelection(),
+                          const SizedBox(height: 24),
+                          // Client Details
+                          _buildClientDetails(),
+                          const SizedBox(height: 24),
+                          // Project Details
+                          _buildProjectDetails(),
+                          const SizedBox(height: 24),
+                          // Content Selection
+                          _buildContentSelection(),
+                          const SizedBox(height: 24),
+                          // Review Page
+                          _buildReviewPage(),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_totalSteps * 2 - 1, (i) {
-                if (i.isEven) {
-                  final step = i ~/ 2;
-                  final label = step == 0
-                      ? 'Template'
-                      : step == 1
-                          ? 'Client'
-                          : step == 2
-                              ? 'Project'
-                              : step == 3
-                                  ? 'Content'
-                                  : 'Review';
-                  return _buildStepIndicator(step, label);
-                } else {
-                  return _buildStepConnector();
-                }
-              }),
-            ),
-          ),
-
-          // Content
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildTemplateSelection(),
-                _buildClientDetails(),
-                _buildProjectDetails(),
-                _buildContentSelection(),
-                _buildContentEditor(),
-                _buildReviewPage(),
               ],
             ),
           ),
@@ -629,181 +837,181 @@ class _ProposalWizardState extends State<ProposalWizard>
     );
   }
 
-  Future<void> _openContentLibraryAndInsert(String moduleId) async {
-    // Open content library page as a dialog and return selected content
-    final selected = await showDialog<Map<String, dynamic>?>(
-      context: context,
-      builder: (context) => Dialog(
-        child: SizedBox(
-          width: 900,
-          height: 600,
-          child: ContentLibrarySelectionDialog(),
-        ),
-      ),
-    );
+  // Future<void> _openContentLibraryAndInsert(String moduleId) async {
+  //   // Open content library page as a dialog and return selected content
+  //   final selected = await showDialog<Map<String, dynamic>?>(
+  //     context: context,
+  //     builder: (context) => Dialog(
+  //       child: SizedBox(
+  //         width: 900,
+  //         height: 600,
+  //         child: ContentLibrarySelectionDialog(),
+  //       ),
+  //     ),
+  //   );
 
-    if (selected != null) {
-      final Map<String, String> contents =
-          Map<String, String>.from(_formData['moduleContents'] ?? {});
-      contents[moduleId] = selected['content'] ?? '';
-      setState(() {
-        _formData['moduleContents'] = contents;
-      });
-    }
-  }
+  //   if (selected != null) {
+  //     final Map<String, String> contents =
+  //         Map<String, String>.from(_formData['moduleContents'] ?? {});
+  //     contents[moduleId] = selected['content'] ?? '';
+  //     setState(() {
+  //       _formData['moduleContents'] = contents;
+  //     });
+  //   }
+  // }
 
-  Widget _buildContentEditor() {
-    final selectedIds = List<String>.from(_formData['selectedModules'] ?? []);
-    final contents =
-        Map<String, String>.from(_formData['moduleContents'] ?? {});
+  // Widget _buildContentEditor() {
+  //   final selectedIds = List<String>.from(_formData['selectedModules'] ?? []);
+  //   final contents =
+  //       Map<String, String>.from(_formData['moduleContents'] ?? {});
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Add Content',
-              style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2C3E50))),
-          const SizedBox(height: 8),
-          const Text(
-              'Fill in the selected sections (you can complete this later)',
-              style: TextStyle(fontSize: 16, color: Colors.grey)),
-          const SizedBox(height: 24),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: selectedIds.map((moduleId) {
-                  final module = _contentModules.firstWhere(
-                      (m) => m['id'] == moduleId,
-                      orElse: () => {'name': moduleId, 'description': ''});
-                  final controller =
-                      TextEditingController(text: contents[moduleId] ?? '');
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 18.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(module['name'] ?? '',
-                            style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF2C3E50))),
-                        const SizedBox(height: 8),
-                        Container(
-                          decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              color: Colors.white),
-                          child: Column(
-                            children: [
-                              TextFormField(
-                                controller: controller,
-                                onChanged: (v) {
-                                  final Map<String, String> c =
-                                      Map<String, String>.from(
-                                          _formData['moduleContents'] ?? {});
-                                  c[moduleId] = v;
-                                  _formData['moduleContents'] = c;
-                                },
-                                maxLines: 6,
-                                decoration: InputDecoration(
-                                    hintText:
-                                        'Provide a high-level overview of the project...',
-                                    border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide.none)),
-                              ),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  TextButton.icon(
-                                    onPressed: () =>
-                                        _openContentLibraryAndInsert(moduleId),
-                                    icon: const Icon(
-                                        Icons.library_books_outlined),
-                                    label: const Text('Insert from Library'),
-                                  )
-                                ],
-                              )
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  //   return Padding(
+  //     padding: const EdgeInsets.all(20),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         const Text('Add Content',
+  //             style: TextStyle(
+  //                 fontSize: 24,
+  //                 fontWeight: FontWeight.bold,
+  //                 color: Color(0xFF2C3E50))),
+  //         const SizedBox(height: 8),
+  //         const Text(
+  //             'Fill in the selected sections (you can complete this later)',
+  //             style: TextStyle(fontSize: 16, color: Colors.grey)),
+  //         const SizedBox(height: 24),
+  //         Expanded(
+  //           child: SingleChildScrollView(
+  //             child: Column(
+  //               children: selectedIds.map((moduleId) {
+  //                 final module = _contentModules.firstWhere(
+  //                     (m) => m['id'] == moduleId,
+  //                     orElse: () => {'name': moduleId, 'description': ''});
+  //                 final controller =
+  //                     TextEditingController(text: contents[moduleId] ?? '');
+  //                 return Padding(
+  //                   padding: const EdgeInsets.only(bottom: 18.0),
+  //                   child: Column(
+  //                     crossAxisAlignment: CrossAxisAlignment.start,
+  //                     children: [
+  //                       Text(module['name'] ?? '',
+  //                           style: const TextStyle(
+  //                               fontSize: 16,
+  //                               fontWeight: FontWeight.w600,
+  //                               color: Color(0xFF2C3E50))),
+  //                       const SizedBox(height: 8),
+  //                       Container(
+  //                         decoration: BoxDecoration(
+  //                             borderRadius: BorderRadius.circular(8),
+  //                             color: Colors.white),
+  //                         child: Column(
+  //                           children: [
+  //                             TextFormField(
+  //                               controller: controller,
+  //                               onChanged: (v) {
+  //                                 final Map<String, String> c =
+  //                                     Map<String, String>.from(
+  //                                         _formData['moduleContents'] ?? {});
+  //                                 c[moduleId] = v;
+  //                                 _formData['moduleContents'] = c;
+  //                               },
+  //                               maxLines: 6,
+  //                               decoration: InputDecoration(
+  //                                   hintText:
+  //                                       'Provide a high-level overview of the project...',
+  //                                   border: OutlineInputBorder(
+  //                                       borderRadius: BorderRadius.circular(8),
+  //                                       borderSide: BorderSide.none)),
+  //                             ),
+  //                             Row(
+  //                               mainAxisAlignment: MainAxisAlignment.end,
+  //                               children: [
+  //                                 TextButton.icon(
+  //                                   onPressed: () =>
+  //                                       _openContentLibraryAndInsert(moduleId),
+  //                                   icon: const Icon(
+  //                                       Icons.library_books_outlined),
+  //                                   label: const Text('Insert from Library'),
+  //                                 )
+  //                               ],
+  //                             )
+  //                           ],
+  //                         ),
+  //                       ),
+  //                       const SizedBox(height: 12),
+  //                     ],
+  //                   ),
+  //                 );
+  //               }).toList(),
+  //             ),
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
-  Widget _buildStepIndicator(int step, String label) {
-    final isActive = step <= _currentStep;
-    final isCompleted = step < _currentStep;
+  // Widget _buildStepIndicator(int step, String label) {
+  //   final isActive = step <= _currentStep;
+  //   final isCompleted = step < _currentStep;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: isCompleted
-                ? const Color(0xFF10B981)
-                : isActive
-                    ? const Color(0xFF3B82F6)
-                    : const Color(0xFFE2E8F0),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isCompleted
-                  ? const Color(0xFF10B981)
-                  : isActive
-                      ? const Color(0xFF3B82F6)
-                      : const Color(0xFFE2E8F0),
-              width: 2,
-            ),
-          ),
-          child: Center(
-            child: isCompleted
-                ? const Icon(Icons.check, color: Colors.white, size: 18)
-                : Text(
-                    '${step + 1}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isActive ? Colors.white : const Color(0xFF64748B),
-                    ),
-                  ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: isActive ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
+  //   return Column(
+  //     mainAxisSize: MainAxisSize.min,
+  //     children: [
+  //       Container(
+  //         width: 36,
+  //         height: 36,
+  //         decoration: BoxDecoration(
+  //           color: isCompleted
+  //               ? const Color(0xFF10B981)
+  //               : isActive
+  //                   ? const Color(0xFF3B82F6)
+  //                   : const Color(0xFFE2E8F0),
+  //           shape: BoxShape.circle,
+  //           border: Border.all(
+  //             color: isCompleted
+  //                 ? const Color(0xFF10B981)
+  //                 : isActive
+  //                     ? const Color(0xFF3B82F6)
+  //                     : const Color(0xFFE2E8F0),
+  //             width: 2,
+  //           ),
+  //         ),
+  //         child: Center(
+  //           child: isCompleted
+  //               ? const Icon(Icons.check, color: Colors.white, size: 18)
+  //               : Text(
+  //                   '${step + 1}',
+  //                   style: TextStyle(
+  //                     fontSize: 14,
+  //                     fontWeight: FontWeight.w600,
+  //                     color: isActive ? Colors.white : const Color(0xFF64748B),
+  //                   ),
+  //                 ),
+  //         ),
+  //       ),
+  //       const SizedBox(height: 8),
+  //       Text(
+  //         label,
+  //         style: TextStyle(
+  //           fontSize: 14,
+  //           color: isActive ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+  //           fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
 
-  Widget _buildStepConnector() {
-    return Expanded(
-      child: Container(
-        height: 2,
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        color: const Color(0xFFE2E8F0),
-      ),
-    );
-  }
+  // Widget _buildStepConnector() {
+  //   return Expanded(
+  //     child: Container(
+  //       height: 2,
+  //       margin: const EdgeInsets.symmetric(horizontal: 8),
+  //       color: const Color(0xFFE2E8F0),
+  //     ),
+  //   );
+  // }
 
   Widget _buildTemplateSelection() {
     return Padding(
@@ -1328,5 +1536,219 @@ class _ProposalWizardState extends State<ProposalWizard>
       }).toList(),
       onChanged: (value) => onChanged(value ?? ''),
     );
+  }
+
+  Widget _buildNavItem(
+      String label, String assetPath, bool isActive, BuildContext context) {
+    if (_isSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: () {
+              setState(() => _currentPage = label);
+              _navigateToPage(context, label);
+            },
+            borderRadius: BorderRadius.circular(30),
+            child: ClipRRect(
+              // Re-added ClipRRect
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                // Re-added BackdropFilter
+                filter: ImageFilter.blur(
+                    sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.black
+                        .withOpacity(0.12), // Adjusted opacity to 0.12
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isActive
+                          ? const Color(0xFFE9293A).withOpacity(
+                              0.7) // Active red border, adjusted opacity
+                          : const Color(0xFFE9293A).withOpacity(
+                              0.3), // Inactive translucent red border, adjusted opacity
+                      width: isActive ? 2 : 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black
+                            .withOpacity(0.1), // Adjusted shadow opacity
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(6),
+                  child: ClipOval(
+                    child: AssetService.buildImageWidget(assetPath,
+                        fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() => _currentPage = label);
+          _navigateToPage(context, label);
+        },
+        child: ClipRRect(
+          // Re-added ClipRRect
+          borderRadius: BorderRadius.circular(8),
+          child: BackdropFilter(
+            // Re-added BackdropFilter
+            filter:
+                ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? const Color(0xFFE9293A).withOpacity(
+                        0.32) // Active translucent red, adjusted opacity
+                    : Colors.transparent, // Inactive transparent
+                borderRadius: BorderRadius.circular(8),
+                border: isActive
+                    ? Border.all(
+                        color: const Color(0xFFE9293A).withOpacity(0.7),
+                        width: 1)
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.black
+                          .withOpacity(0.12), // Adjusted opacity to 0.12
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isActive
+                            ? const Color(0xFFE9293A).withOpacity(
+                                0.7) // Active red border, adjusted opacity
+                            : const Color(0xFFE9293A).withOpacity(
+                                0.3), // Inactive translucent red border, adjusted opacity
+                        width: isActive ? 2 : 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black
+                              .withOpacity(0.1), // Adjusted shadow opacity
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(6),
+                    child: ClipOval(
+                      child: AssetService.buildImageWidget(assetPath,
+                          fit: BoxFit.contain),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: isActive
+                            ? Colors.white
+                            : Colors.white70, // Adjusted text color
+                        fontSize: 14,
+                        fontWeight:
+                            isActive ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                  if (isActive)
+                    const Icon(Icons.arrow_forward_ios,
+                        size: 12, color: Colors.white),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushNamed(context, '/creator_dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        // Already on templates page
+        break;
+      case 'Content Library':
+        Navigator.pushNamed(context, '/content_library');
+        break;
+      case 'Collaboration':
+        Navigator.pushNamed(context, '/collaboration');
+        break;
+      case 'Approvals Status':
+        Navigator.pushNamed(context, '/approvals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        _handleLogout(context, context.read<AppState>());
+        break;
+    }
+  }
+
+  void _handleLogout(BuildContext context, AppState app) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _getUserName(Map<String, dynamic>? user) {
+    if (user == null) return 'User';
+    String? name = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email']?.split('@')[0];
+    return name ?? 'User';
   }
 }

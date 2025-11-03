@@ -1,11 +1,12 @@
 // ignore_for_file: deprecated_member_use, unused_element
 import 'package:flutter/material.dart';
+import 'dart:ui' show ImageFilter;
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../api.dart';
-import '../../services/auth_service.dart';
-import '../../services/asset_service.dart';
+import '../../widgets/footer.dart';
+import '../../widgets/role_switcher.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -84,6 +85,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final userRole = app.currentUser?['role'] ?? 'Financial Manager';
 
     // Filter items by selected category and current folder
     List<dynamic> displayItems = [];
@@ -137,662 +139,394 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     }
 
     // Calculate pagination
-    final totalPages = (filteredItems.length / itemsPerPage).ceil();
     final startIdx = (currentPage - 1) * itemsPerPage;
     final endIdx = (startIdx + itemsPerPage).clamp(0, filteredItems.length);
     final pagedItems = filteredItems.sublist(startIdx, endIdx);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Row(
+      body: Column(
         children: [
-          // Collapsible Sidebar (matching dashboard)
-          GestureDetector(
-            onTap: () {
-              if (_isSidebarCollapsed) _toggleSidebar();
-            },
-            behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: _isSidebarCollapsed ? 90.0 : 250.0,
-              color: const Color(0xFF34495E),
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
-                    // Toggle button
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: InkWell(
-                        onTap: _toggleSidebar,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C3E50),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: _isSidebarCollapsed
-                                ? MainAxisAlignment.center
-                                : MainAxisAlignment.spaceBetween,
-                            children: [
-                              if (!_isSidebarCollapsed)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 12),
-                                  child: Text(
-                                    'Navigation',
-                                    style: TextStyle(
-                                        color: Colors.white, fontSize: 12),
-                                  ),
-                                ),
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: _isSidebarCollapsed ? 0 : 8),
-                                child: Icon(
-                                  _isSidebarCollapsed
-                                      ? Icons.keyboard_arrow_right
-                                      : Icons.keyboard_arrow_left,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Navigation items
-                    _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                        _currentPage == 'Dashboard', context),
-                    _buildNavItem(
-                        'My Proposals',
-                        'assets/images/My_Proposals.png',
-                        _currentPage == 'My Proposals',
-                        context),
-                    _buildNavItem(
-                        'Templates',
-                        'assets/images/content_library.png',
-                        _currentPage == 'Templates',
-                        context),
-                    _buildNavItem(
-                        'Content Library',
-                        'assets/images/content_library.png',
-                        _currentPage == 'Content Library',
-                        context),
-                    _buildNavItem(
-                        'Collaboration',
-                        'assets/images/collaborations.png',
-                        _currentPage == 'Collaboration',
-                        context),
-                    _buildNavItem(
-                        'Approvals Status',
-                        'assets/images/Time Allocation_Approval_Blue.png',
-                        _currentPage == 'Approvals Status',
-                        context),
-                    _buildNavItem(
-                        'Analytics (My Pipeline)',
-                        'assets/images/analytics.png',
-                        _currentPage == 'Analytics (My Pipeline)',
-                        context),
-                    const SizedBox(height: 20),
-                    // Divider
-                    if (!_isSidebarCollapsed)
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        height: 1,
-                        color: const Color(0xFF2C3E50),
-                      ),
-                    const SizedBox(height: 12),
-                    // Logout button
-                    _buildNavItem('Logout',
-                        'assets/images/Logout_KhonoBuzz.png', false, context),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Category Sidebar
+          // Header
           Container(
-            width: 280,
-            decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(right: BorderSide(color: Colors.grey[300]!))),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            height: 60,
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C3E50),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      "Categories",
-                      style: Theme.of(context).textTheme.headlineSmall,
+                  const Text(
+                    'Content Library',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  ...categories.map((category) {
-                    final count = app.contentBlocks
-                        .where((item) =>
-                            (item["category"] ?? "Sections").toLowerCase() ==
-                            category.toLowerCase())
-                        .length;
-
-                    return Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          setState(() {
-                            selectedCategory = category;
-                            currentPage = 1;
-                            currentFolderId = null;
-                          });
+                  Row(
+                    children: [
+                      const CompactRoleSwitcher(),
+                      const SizedBox(width: 20),
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/User_Profile.png',
+                          width: 105,
+                          height: 105,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getUserName(app.currentUser),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            userRole,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 10),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, color: Colors.white),
+                        onSelected: (value) {
+                          if (value == 'logout') {
+                            _handleLogout(context, app);
+                          }
                         },
-                        child: Container(
-                          color: selectedCategory == category
-                              ? const Color(0xFFE8F0F7)
-                              : Colors.transparent,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          child: Row(
+                        itemBuilder: (BuildContext context) => [
+                          const PopupMenuItem<String>(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                Icon(Icons.logout),
+                                SizedBox(width: 8),
+                                Text('Logout'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Main Content with Sidebar
+          Expanded(
+            child: Row(
+              children: [
+                // Collapsible Sidebar
+                GestureDetector(
+                  onTap: () {
+                    if (_isSidebarCollapsed) _toggleSidebar();
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: ClipRRect(
+                    // Re-added ClipRRect
+                    borderRadius: BorderRadius.circular(
+                        0), // No rounded corners for sidebar
+                    child: BackdropFilter(
+                      // Re-added BackdropFilter
+                      filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: _isSidebarCollapsed ? 90.0 : 250.0,
+                        color: Colors.black
+                            .withOpacity(0.32), // Adjusted opacity to 0.32
+                        child: SingleChildScrollView(
+                          child: Column(
                             children: [
-                              Icon(
-                                _getCategoryIcon(category),
-                                color: selectedCategory == category
-                                    ? const Color(0xFF1E3A8A)
-                                    : Colors.grey[600],
-                                size: 20,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  category,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: selectedCategory == category
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                    color: selectedCategory == category
-                                        ? const Color(0xFF1E3A8A)
-                                        : Colors.grey[700],
+                              const SizedBox(height: 16),
+                              // Toggle button
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                child: InkWell(
+                                  onTap: _toggleSidebar,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(
+                                          0.12), // Adjusted opacity to 0.12
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: _isSidebarCollapsed
+                                          ? MainAxisAlignment.center
+                                          : MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        if (!_isSidebarCollapsed)
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            child: Text(
+                                              'Navigation',
+                                              style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12),
+                                            ),
+                                          ),
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal:
+                                                  _isSidebarCollapsed ? 0 : 8),
+                                          child: Icon(
+                                            _isSidebarCollapsed
+                                                ? Icons.keyboard_arrow_right
+                                                : Icons.keyboard_arrow_left,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                              Text(
-                                category == "Templates"
-                                    ? count.toString()
-                                    : "-",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
+                              const SizedBox(height: 12),
+                              // Navigation items
+                              _buildNavItem(
+                                  'Dashboard',
+                                  'assets/images/Dashboard.png',
+                                  _currentPage == 'Dashboard'),
+                              _buildNavItem(
+                                  'My Proposals',
+                                  'assets/images/My_Proposals.png',
+                                  _currentPage == 'My Proposals'),
+                              _buildNavItem(
+                                  'Templates',
+                                  'assets/images/Templates.png',
+                                  _currentPage == 'Templates'),
+                              _buildNavItem(
+                                  'Content Library',
+                                  'assets/images/Content_Library.png',
+                                  _currentPage == 'Content Library'),
+                              _buildNavItem(
+                                  'Collaboration',
+                                  'assets/images/Collaboration.png',
+                                  _currentPage == 'Collaboration'),
+                              _buildNavItem(
+                                  'Approvals Status',
+                                  'assets/images/Approval_Status.png',
+                                  _currentPage == 'Approvals Status'),
+                              _buildNavItem(
+                                  'Analytics (My Pipeline)',
+                                  'assets/images/Analytics.png',
+                                  _currentPage == 'Analytics (My Pipeline)'),
+                              const SizedBox(height: 20),
+                              // Divider
+                              if (!_isSidebarCollapsed)
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  height: 1,
+                                  color: Colors.black.withOpacity(
+                                      0.35), // Adjusted divider color to be blackish
                                 ),
+                              const SizedBox(height: 12),
+                              // Logout button
+                              _buildNavItem(
+                                  'Logout', 'assets/images/Logout.png', false),
+                              const SizedBox(height: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Content Area
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: const Color(0xFFE9293A).withOpacity(0.5),
+                                width: 1),
+                          ),
+                          child: Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          currentFolderId != null
+                                              ? (app.contentBlocks.firstWhere(
+                                                      (element) =>
+                                                          element['id'] ==
+                                                          currentFolderId,
+                                                      orElse: () =>
+                                                          {})['label'] ??
+                                                  'Folder')
+                                              : _capitalize(selectedCategory),
+                                          style: const TextStyle(
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white),
+                                        ),
+                                        Text(
+                                          currentFolderId != null
+                                              ? 'Items in this folder'
+                                              : 'Manage all your reusable content blocks',
+                                          style: TextStyle(
+                                              color: Colors.white
+                                                  .withOpacity(0.7)),
+                                        ),
+                                      ],
+                                    ),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 200,
+                                          child: TextField(
+                                            decoration: InputDecoration(
+                                              hintText: "Search content...",
+                                              hintStyle: TextStyle(
+                                                  color: Colors.white
+                                                      .withOpacity(0.7)),
+                                              prefixIcon: Icon(Icons.search,
+                                                  color: Colors.white
+                                                      .withOpacity(0.7)),
+                                              border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  borderSide: BorderSide.none),
+                                              filled: true,
+                                              fillColor: Colors.black
+                                                  .withOpacity(0.12),
+                                            ),
+                                            style: const TextStyle(
+                                                color: Colors.white),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12.0),
+                                          decoration: BoxDecoration(
+                                              color: Colors.black
+                                                  .withOpacity(0.12),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                  color: const Color(0xFFE9293A)
+                                                      .withOpacity(0.5),
+                                                  width: 1)),
+                                          child: DropdownButtonHideUnderline(
+                                            child: DropdownButton<String>(
+                                              value: sortBy,
+                                              dropdownColor:
+                                                  Colors.black.withOpacity(0.8),
+                                              icon: Icon(Icons.arrow_drop_down,
+                                                  color: Colors.white
+                                                      .withOpacity(0.7)),
+                                              style: TextStyle(
+                                                  color: Colors.white
+                                                      .withOpacity(0.9)),
+                                              items: sortOptions
+                                                  .map((String value) =>
+                                                      DropdownMenuItem<String>(
+                                                          value: value,
+                                                          child: Text(value)))
+                                                  .toList(),
+                                              onChanged: (String? newValue) {
+                                                setState(() {
+                                                  sortBy = newValue ?? sortBy;
+                                                });
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        ..._buildAppBarActions(),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (currentFolderId != null)
+                                FolderBreadcrumbs(
+                                  path: app.getFolderPath(currentFolderId),
+                                  onNavigate: (folderId) {
+                                    setState(() {
+                                      currentFolderId = folderId;
+                                    });
+                                  },
+                                ),
+                              Expanded(
+                                child: _buildContentArea(pagedItems, app),
                               ),
                             ],
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
-          // Main Content
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header with back button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          if (currentFolderId != null)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: IconButton(
-                                icon: const Icon(Icons.arrow_back),
-                                onPressed: () =>
-                                    setState(() => currentFolderId = null),
-                                tooltip: "Go back",
-                              ),
-                            ),
-                          Text(
-                            "$selectedCategory /",
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          if (currentFolderId != null) ...[
-                            const SizedBox(width: 8),
-                            Text(
-                              app.contentBlocks.firstWhere(
-                                    (item) => item["id"] == currentFolderId,
-                                    orElse: () => {"label": "Folder"},
-                                  )["label"] ??
-                                  "Folder",
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF0066CC),
-                                  ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      Row(
-                        children: _buildHeaderButtons(context, app),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  // Filter/Sort Bar
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.sort, size: 18, color: Colors.grey),
-                        const SizedBox(width: 12),
-                        DropdownButton<String>(
-                          value: sortBy,
-                          underline: Container(),
-                          isDense: true,
-                          items: sortOptions.map((option) {
-                            return DropdownMenuItem(
-                              value: option,
-                              child: Text(option,
-                                  style: const TextStyle(fontSize: 13)),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              sortBy = value!;
-                              currentPage = 1;
-                            });
-                          },
-                        ),
-                      ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  // Pagination Info
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "${startIdx + 1}-${endIdx} of ${filteredItems.length}",
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      Row(
-                        children: [
-                          IconButton(
-                            onPressed: currentPage > 1
-                                ? () => setState(() => currentPage--)
-                                : null,
-                            icon: const Icon(Icons.chevron_left),
-                            iconSize: 20,
-                          ),
-                          IconButton(
-                            onPressed: currentPage < totalPages
-                                ? () => setState(() => currentPage++)
-                                : null,
-                            icon: const Icon(Icons.chevron_right),
-                            iconSize: 20,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  // Content List or Grid
-                  Expanded(
-                    child: pagedItems.isEmpty
-                        ? Center(
-                            child: Text(
-                              "No items in $selectedCategory",
-                              style: TextStyle(color: Colors.grey[600]),
-                            ),
-                          )
-                        : (selectedCategory == "Images" ||
-                                selectedCategory == "Sections")
-                            ? GridView.builder(
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
-                                  childAspectRatio: 0.8,
-                                ),
-                                itemCount: pagedItems.length,
-                                itemBuilder: (ctx, i) {
-                                  final item = pagedItems[i];
-                                  final isFolder = item["is_folder"] ?? false;
-
-                                  if (isFolder) {
-                                    // Folder - show as card with folder icon
-                                    return GestureDetector(
-                                      onTap: () => setState(
-                                          () => currentFolderId = item["id"]),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          border: Border.all(
-                                              color: Colors.grey[300]!,
-                                              width: 1.5),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black
-                                                  .withOpacity(0.05),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 2),
-                                            )
-                                          ],
-                                        ),
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Icon(Icons.folder,
-                                                color: const Color(0xFF4A90E2),
-                                                size: 48),
-                                            const SizedBox(height: 12),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8),
-                                              child: Text(
-                                                item["label"] ??
-                                                    item["key"] ??
-                                                    "Folder",
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.center,
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF0066CC),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }
-
-                                  // File/Image card item
-                                  bool isImage = selectedCategory == "Images";
-                                  String? imageUrl =
-                                      isImage ? item["content"] : null;
-
-                                  return GestureDetector(
-                                    onLongPress: () {
-                                      showDialog(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          title: const Text("Options"),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () {
-                                                Navigator.pop(ctx);
-                                                _showEditDialog(
-                                                    context, app, item);
-                                              },
-                                              child: const Text("Edit"),
-                                            ),
-                                            TextButton(
-                                              onPressed: () {
-                                                Navigator.pop(ctx);
-                                                _deleteItem(
-                                                    context, app, item["id"]);
-                                              },
-                                              child: const Text("Delete"),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                            color: Colors.grey[300]!,
-                                            width: 1.5),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.05),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          )
-                                        ],
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          Expanded(
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  const BorderRadius.only(
-                                                topLeft: Radius.circular(12),
-                                                topRight: Radius.circular(12),
-                                              ),
-                                              child: isImage && imageUrl != null
-                                                  ? Image.network(
-                                                      imageUrl,
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (context,
-                                                          error, stackTrace) {
-                                                        return Container(
-                                                          color:
-                                                              Colors.grey[200],
-                                                          child: const Icon(
-                                                              Icons
-                                                                  .image_not_supported,
-                                                              color:
-                                                                  Colors.grey),
-                                                        );
-                                                      },
-                                                      loadingBuilder: (context,
-                                                          child,
-                                                          loadingProgress) {
-                                                        if (loadingProgress ==
-                                                            null) return child;
-                                                        return Container(
-                                                          color:
-                                                              Colors.grey[200],
-                                                          child: const Center(
-                                                            child: SizedBox(
-                                                              width: 20,
-                                                              height: 20,
-                                                              child:
-                                                                  CircularProgressIndicator(
-                                                                strokeWidth: 2,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                    )
-                                                  : Container(
-                                                      color: Colors.grey[100],
-                                                      child: Center(
-                                                        child: Column(
-                                                          mainAxisAlignment:
-                                                              MainAxisAlignment
-                                                                  .center,
-                                                          children: [
-                                                            Icon(
-                                                              _getFileIcon(item[
-                                                                      "label"] ??
-                                                                  ""),
-                                                              size: 48,
-                                                              color: const Color(
-                                                                  0xFF4A90E2),
-                                                            ),
-                                                            const SizedBox(
-                                                                height: 8),
-                                                            Text(
-                                                              _getFileExtension(
-                                                                  item["label"] ??
-                                                                      ""),
-                                                              style: TextStyle(
-                                                                fontSize: 11,
-                                                                color: Colors
-                                                                    .grey[600],
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                    ),
-                                            ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(12),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  item["label"] ??
-                                                      item["key"] ??
-                                                      "",
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF0066CC),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  _formatDate(
-                                                      item["created_at"] ?? ""),
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: Colors.grey[500],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              )
-                            : ListView.builder(
-                                itemCount: pagedItems.length,
-                                itemBuilder: (ctx, i) {
-                                  final item = pagedItems[i];
-                                  final isFolder = item["is_folder"] ?? false;
-
-                                  return GestureDetector(
-                                    onTap: isFolder
-                                        ? () => setState(
-                                            () => currentFolderId = item["id"])
-                                        : null,
-                                    child: Container(
-                                      margin: const EdgeInsets.only(bottom: 12),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 16, vertical: 16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color: Colors.grey[300]!),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            isFolder
-                                                ? Icons.folder
-                                                : Icons.description_outlined,
-                                            color: isFolder
-                                                ? const Color(0xFF4A90E2)
-                                                : const Color(0xFFFFA500),
-                                            size: 28,
-                                          ),
-                                          const SizedBox(width: 16),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  item["label"] ?? item["key"],
-                                                  style: const TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF0066CC),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  isFolder
-                                                      ? "Folder"
-                                                      : (item["content"] ?? "")
-                                                          .toString(),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey[600],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          PopupMenuButton(
-                                            itemBuilder: (context) => [
-                                              PopupMenuItem(
-                                                child: const Text("Edit"),
-                                                onTap: () => _showEditDialog(
-                                                    context, app, item),
-                                              ),
-                                              PopupMenuItem(
-                                                child: const Text("Delete"),
-                                                onTap: () => _deleteItem(
-                                                    context, app, item["id"]),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
+          const Footer(),
         ],
       ),
     );
+  }
+
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushNamed(context, '/creator_dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushNamed(context, '/proposal-wizard');
+        break;
+      case 'Content Library':
+        // Already on content library
+        break;
+      case 'Collaboration':
+        Navigator.pushNamed(context, '/collaboration');
+        break;
+      case 'Approvals Status':
+        Navigator.pushNamed(context, '/approvals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        _handleLogout(context, context.read<AppState>());
+        break;
+    }
   }
 
   IconData _getCategoryIcon(String category) {
@@ -914,186 +648,221 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     );
   }
 
-  void _uploadFile(BuildContext context, AppState app) async {
-    try {
-      // Determine allowed file types based on category
-      List<String> allowedExtensions;
-      String fileTypeLabel;
+  String _getUserName(Map<String, dynamic>? user) {
+    if (user == null) return 'User';
 
-      if (selectedCategory == "Images") {
-        allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
-        fileTypeLabel = "image";
-      } else if (selectedCategory == "Sections") {
-        allowedExtensions = [
-          'pdf',
-          'doc',
-          'docx',
-          'txt',
-          'rtf',
-          'odt',
-          'jpg',
-          'jpeg',
-          'png'
-        ];
-        fileTypeLabel = "document";
-      } else {
-        allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
-        fileTypeLabel = "file";
-      }
+    // Try different possible field names for the user's name
+    String? name = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email']?.split('@')[0];
 
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: allowedExtensions,
-        allowMultiple: false,
-      );
+    return name ?? 'User';
+  }
 
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.single;
-
-        if (file.bytes != null || file.path != null) {
-          final fileName = file.name;
-
-          // Create a unique key for the file
-          final fileKey = fileName
-              .replaceAll(RegExp(r'\.[^.]+$'), '')
-              .toLowerCase()
-              .replaceAll(RegExp(r'[^a-z0-9_]'), '_');
-
-          if (mounted) {
-            // Show loading dialog
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (ctx) => AlertDialog(
-                title: const Text("Uploading"),
-                content: Row(
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(width: 16),
-                    Text("Uploading $fileTypeLabel to Cloudinary..."),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          try {
-            // Upload to Cloudinary via backend
-            // Use appropriate upload method based on category
-            // Use bytes on web, path on native platforms
-            final uploadResult = selectedCategory == "Sections"
-                ? (file.bytes != null
-                    ? await app.uploadTemplateToCloudinary("",
-                        fileBytes: file.bytes, fileName: fileName)
-                    : await app.uploadTemplateToCloudinary(file.path!))
-                : (file.bytes != null
-                    ? await app.uploadImageToCloudinary("",
-                        fileBytes: file.bytes, fileName: fileName)
-                    : await app.uploadImageToCloudinary(file.path!));
-
-            if (mounted) Navigator.pop(context); // Close loading dialog
-
-            if (uploadResult != null && uploadResult['success'] == true) {
-              final cloudinaryUrl = uploadResult['url'];
-              final publicId = uploadResult['public_id'];
-
-              // Save to backend database
-              // If we're inside a folder, set parent_id to link the file to the folder
-              await app.createContentWithCloudinary(
-                fileKey,
-                fileName,
-                cloudinaryUrl,
-                publicId,
-                selectedCategory,
-                parentId: currentFolderId,
-              );
-
-              // Force UI refresh
-              if (mounted) {
-                setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                        "${fileTypeLabel[0].toUpperCase()}${fileTypeLabel.substring(1)} '$fileName' uploaded successfully to $selectedCategory"),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            } else {
-              final errorMsg = uploadResult?['error'] ?? 'Upload failed';
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("Error uploading $fileTypeLabel: $errorMsg"),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            }
-          } catch (e) {
-            if (mounted) {
-              Navigator.pop(context); // Close loading dialog
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content:
-                      Text("Error uploading $fileTypeLabel: ${e.toString()}"),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error: ${e.toString()}"),
-            backgroundColor: Colors.red,
+  void _handleLogout(BuildContext context, AppState app) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
           ),
-        );
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop(true);
+              if (app.currentUser != null) {
+                app.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              }
+            },
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      if (app.currentUser != null) {
+        app.logout();
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
       }
     }
   }
 
-  // DUPLICATE - Kept for reference, actual implementation below
-  /*
-  List<Widget> _buildHeaderButtons_DUPLICATE(BuildContext context, AppState app) {
-    return [
-      ElevatedButton.icon(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (ctx) => const editor.TemplateEditorPage(),
-            ),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text("Create from Scratch"),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF0066CC),
-          foregroundColor: Colors.white,
-        ),
-      ),
-      const SizedBox(width: 8),
-      ElevatedButton.icon(
-        onPressed: () => _showImportDialog(context, app),
-        icon: const Icon(Icons.upload_file),
-        label: const Text("Import Template"),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.grey[600],
-          foregroundColor: Colors.white,
-        ),
-      ),
-    ];
+  String _capitalize(String s) {
+    if (s.isEmpty) return '';
+    return s[0].toUpperCase() + s.substring(1);
   }
 
-  void _showImportDialog_DUPLICATE(BuildContext context, AppState app) {
+  Widget _buildNavItem(String title, String imagePath, bool isSelected) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _currentPage = title;
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.black.withOpacity(0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: Image.asset(
+                  imagePath,
+                  width: 24,
+                  height: 24,
+                  color:
+                      isSelected ? Colors.white : Colors.white.withOpacity(0.7),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: TextStyle(
+                  color:
+                      isSelected ? Colors.white : Colors.white.withOpacity(0.7),
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContentArea(List<dynamic> items, AppState app) {
+    return ListView.builder(
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final isFolder = item['is_folder'] ?? false;
+        final isTrash = item['category'] == 'Trash';
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.08),
+                  border: Border.all(
+                      color: isTrash
+                          ? Colors.red.withOpacity(0.5)
+                          : Colors.transparent,
+                      width: 1),
+                ),
+                child: ListTile(
+                  leading: Icon(
+                    _getCategoryIcon(item['category'] ?? 'Sections'),
+                    color: isTrash ? Colors.red : Colors.white.withOpacity(0.7),
+                  ),
+                  title: Text(
+                    item['label'] ?? item['key'],
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    item['description'] ?? '',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                    ),
+                  ),
+                  trailing: isFolder
+                      ? Icon(Icons.folder, color: Colors.white.withOpacity(0.7))
+                      : Icon(
+                          _getFileIcon(item['label'] ?? item['key']),
+                          color: Colors.white.withOpacity(0.7),
+                        ),
+                  onTap: () {
+                    if (isFolder) {
+                      setState(() {
+                        currentFolderId = item['id'];
+                      });
+                    } else {
+                      _showItemDetails(item, app);
+                    }
+                  },
+                  onLongPress: () {
+                    if (!isFolder) {
+                      _showItemActions(item, app);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showItemDetails(dynamic item, AppState app) {
+    final isFolder = item['is_folder'] ?? false;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Import Template"),
-        content: const Text("Import template functionality coming soon"),
+        title: Text(item['label'] ?? item['key']),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isFolder)
+                const Text(
+                    "This is a folder. Double-tap to open it or long-press for actions."),
+              if (!isFolder)
+                Text(
+                  item['content'] ?? '',
+                  style: const TextStyle(fontSize: 16, color: Colors.white),
+                ),
+              if (!isFolder)
+                Text(
+                  "Created: ${_formatDate(item['created_at'] ?? '')}",
+                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                ),
+              if (!isFolder)
+                Text(
+                  "Last Edited: ${_formatDate(item['updated_at'] ?? '')}",
+                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                ),
+              if (!isFolder)
+                Text(
+                  "Key: ${item['key']}",
+                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                ),
+              if (!isFolder)
+                Text(
+                  "Category: ${_capitalize(item['category'] ?? 'Sections')}",
+                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                ),
+              if (!isFolder)
+                Text(
+                  "Parent: ${app.contentBlocks.firstWhere((e) => e['id'] == item['parent_id'], orElse: () => {
+                        'label': 'Root'
+                      })['label']}",
+                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                ),
+            ],
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1103,155 +872,350 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       ),
     );
   }
-  */
 
-  List<Widget> _buildHeaderButtons_OLD(BuildContext context, AppState app) {
-    List<Widget> buttons = [];
-
-    switch (selectedCategory) {
-      case "Templates":
-        // Only "Create New" button
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _showCreateDialog(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add, size: 18),
-                SizedBox(width: 8),
-                Text("Create New"),
-              ],
-            ),
+  void _showItemActions(dynamic item, AppState app) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(item['label'] ?? item['key']),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit, color: Colors.blue),
+                title: const Text("Edit"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showEditItemDialog(item, app);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text("Delete"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showDeleteConfirmation(item, app);
+                },
+              ),
+              if (item['is_folder'] ?? false)
+                ListTile(
+                  leading:
+                      const Icon(Icons.create_new_folder, color: Colors.green),
+                  title: const Text("New Folder"),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showNewFolderDialog();
+                  },
+                ),
+              if (!(item['is_folder'] ?? false))
+                ListTile(
+                  leading: const Icon(Icons.upload_file, color: Colors.purple),
+                  title: const Text("Upload File"),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _uploadFile();
+                  },
+                ),
+            ],
           ),
-        );
-        break;
-
-      case "Sections":
-        // Both "Upload" and "New Folder" buttons
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _uploadFile(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.upload_file, size: 18),
-                SizedBox(width: 8),
-                Text("Upload"),
-              ],
-            ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
           ),
-        );
-        buttons.add(const SizedBox(width: 12));
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _showNewFolderDialog(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.create_new_folder, size: 18),
-                SizedBox(width: 8),
-                Text("New Folder"),
-              ],
-            ),
-          ),
-        );
-        break;
-
-      case "Images":
-        // Both "Upload" and "New Folder" buttons
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _uploadFile(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.upload_file, size: 18),
-                SizedBox(width: 8),
-                Text("Upload"),
-              ],
-            ),
-          ),
-        );
-        buttons.add(const SizedBox(width: 12));
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _showNewFolderDialog(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.create_new_folder, size: 18),
-                SizedBox(width: 8),
-                Text("New Folder"),
-              ],
-            ),
-          ),
-        );
-        break;
-
-      case "Snippets":
-        // Only "New Folder" button
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _showNewFolderDialog(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.create_new_folder, size: 18),
-                SizedBox(width: 8),
-                Text("New Folder"),
-              ],
-            ),
-          ),
-        );
-        break;
-    }
-
-    return buttons;
+        ],
+      ),
+    );
   }
 
-  void _showCreateDialog(BuildContext context, AppState app) {
+  void _showEditItemDialog(dynamic item, AppState app) {
+    final isFolder = item['is_folder'] ?? false;
+
+    final TextEditingController labelCtrl =
+        TextEditingController(text: item['label']);
+    final TextEditingController contentCtrl =
+        TextEditingController(text: item['content']);
+    final TextEditingController keyCtrl =
+        TextEditingController(text: item['key']);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(item['label'] ?? item['key']),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isFolder)
+                TextField(
+                  controller: labelCtrl,
+                  decoration: const InputDecoration(
+                    labelText: "Folder Name",
+                    hintText: "Enter new folder name",
+                  ),
+                ),
+              if (!isFolder)
+                TextField(
+                  controller: labelCtrl,
+                  decoration: const InputDecoration(
+                    labelText: "Template Name",
+                    hintText: "Enter new template name",
+                  ),
+                ),
+              if (!isFolder)
+                TextField(
+                  controller: keyCtrl,
+                  decoration: const InputDecoration(
+                    labelText: "Template Key",
+                    hintText: "Enter new template key",
+                  ),
+                ),
+              if (!isFolder)
+                TextField(
+                  controller: contentCtrl,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: "Template Content",
+                    hintText: "Enter new template content",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final label = labelCtrl.text.trim();
+              final key = keyCtrl.text.trim();
+              final content = contentCtrl.text.trim();
+
+              if (isFolder) {
+                if (label.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text("Folder name cannot be empty")),
+                  );
+                  return;
+                }
+                try {
+                  final result = await app.updateContent(
+                    item['id'],
+                    label: label,
+                    parentId: item['parent_id'],
+                    isFolder: true,
+                  );
+                  if (result) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Folder updated successfully")),
+                    );
+                    setState(() {});
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Failed to update folder")),
+                    );
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content:
+                            Text("Error updating folder: ${e.toString()}")),
+                  );
+                }
+              } else {
+                if (key.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text("Template key cannot be empty")),
+                  );
+                  return;
+                }
+                if (label.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text("Template name cannot be empty")),
+                  );
+                  return;
+                }
+                try {
+                  final result = await app.updateContent(
+                    item['id'],
+                    label: label,
+                    key: key,
+                    content: content,
+                    category: item['category'],
+                    parentId: item['parent_id'],
+                  );
+                  if (result) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Template updated successfully")),
+                    );
+                    setState(() {});
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text("Failed to update template")),
+                    );
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content:
+                            Text("Error updating template: ${e.toString()}")),
+                  );
+                }
+              }
+            },
+            child: const Text("Save Changes"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(dynamic item, AppState app) {
+    final isFolder = item['is_folder'] ?? false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(item['label'] ?? item['key']),
+        content: Text(isFolder
+            ? "Are you sure you want to delete this folder and all its contents?"
+            : "Are you sure you want to delete this item? This action cannot be undone."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await app.deleteContent(item['id']);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(isFolder
+                            ? "Folder and contents deleted"
+                            : "Item deleted"),
+                        backgroundColor: Colors.red),
+                  );
+                  setState(() {});
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text("Failed to delete item: ${e.toString()}"),
+                        backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNewFolderDialog() {
+    final app = context.read<AppState>();
+    final folderNameCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Create New Folder"),
+        content: TextField(
+          controller: folderNameCtrl,
+          decoration: const InputDecoration(
+            labelText: "Folder Name",
+            hintText: "Enter folder name",
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (folderNameCtrl.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Please enter a folder name")),
+                );
+                return;
+              }
+
+              try {
+                final folderKey = folderNameCtrl.text
+                    .toLowerCase()
+                    .replaceAll(" ", "_")
+                    .replaceAll(RegExp(r'[^a-z0-9_]'), '');
+
+                final result = await app.createContent(
+                  key: folderKey,
+                  label: folderNameCtrl.text.trim(),
+                  content: "",
+                  category: selectedCategory,
+                  parentId: currentFolderId,
+                  isFolder: true,
+                );
+
+                Navigator.pop(ctx);
+
+                if (result) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(
+                              "Folder '${folderNameCtrl.text}' created successfully")),
+                    );
+                    setState(() {});
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Failed to create folder"),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Error creating folder: ${e.toString()}"),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00CED1),
+            ),
+            child: const Text("Create"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1277,7 +1241,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 subtitle: const Text("Choose from predefined templates"),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showTemplateGalleryDialog(context, app);
+                  _showTemplateGalleryDialog();
                 },
               ),
               const SizedBox(height: 12),
@@ -1288,7 +1252,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 subtitle: const Text("Import from a file"),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showUploadTemplateDialog(context, app);
+                  _showUploadTemplateDialog();
                 },
               ),
             ],
@@ -1304,7 +1268,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     );
   }
 
-  void _showScratchTemplateDialog(BuildContext context, AppState app) {
+  void _showScratchTemplateDialog() {
+    final app = context.read<AppState>();
     keyCtrl.clear();
     labelCtrl.clear();
     contentCtrl.clear();
@@ -1388,7 +1353,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     );
   }
 
-  void _showTemplateGalleryDialog(BuildContext context, AppState app) {
+  void _showTemplateGalleryDialog() {
     final galleryTemplates = [
       {
         "name": "Executive Summary",
@@ -1418,69 +1383,73 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Templates Gallery"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: galleryTemplates.map((template) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Material(
-                  child: InkWell(
-                    onTap: () {
-                      labelCtrl.text = template["name"]!;
-                      contentCtrl.text = template["content"]!;
-                      keyCtrl.text =
-                          template["name"]!.toLowerCase().replaceAll(" ", "_");
-                      Navigator.pop(ctx);
-                      _showScratchTemplateDialog(context, app);
-                    },
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text("Templates Gallery"),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: galleryTemplates.map((template) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
                     borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            template["name"]!,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                  ),
+                  child: Material(
+                    child: InkWell(
+                      onTap: () {
+                        labelCtrl.text = template["name"]!;
+                        contentCtrl.text = template["content"]!;
+                        keyCtrl.text = template["name"]!
+                            .toLowerCase()
+                            .replaceAll(" ", "_");
+                        Navigator.pop(ctx);
+                        _showScratchTemplateDialog();
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              template["name"]!,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            template["description"]!,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey[600],
+                            const SizedBox(height: 4),
+                            Text(
+                              template["description"]!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Close"),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Close"),
-          ),
-        ],
       ),
     );
   }
 
-  void _showUploadTemplateDialog(BuildContext context, AppState app) {
+  void _showUploadTemplateDialog() {
+    final app = context.read<AppState>();
     String? selectedFileName;
     String? fileContent;
 
@@ -1726,566 +1695,96 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     );
   }
 
-  // DUPLICATE - Commented out, using version below instead
-  /*
-  Widget _buildModernNavbar_DUPLICATE() {
-    return Container(
-      width: 80,
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1419),
-        border: Border(right: BorderSide(color: Colors.grey[900]!)),
-      ),
-      child: Column(
-        children: [
-          // Logo Section
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF00CED1), Color(0xFF20B2AA)],
-                ),
-              ),
-              child: const Icon(Icons.library_books,
-                  color: Colors.white, size: 28),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Navigation Items
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildNavItem(
-                    icon: Icons.dashboard_outlined,
-                    label: 'Dashboard',
-                    isActive: _currentNavIdx == 0,
-                    onTap: () {
-                      // In a real app, navigate to Dashboard
-                      setState(() => _currentNavIdx = 0);
-                      // You can navigate here using Navigator
-                    },
-                  ),
-                  _buildNavItem(
-                    icon: Icons.description_outlined,
-                    label: 'My Proposals',
-                    isActive: _currentNavIdx == 1,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 1);
-                    },
-                  ),
-                  _buildNavItem(
-                    icon: Icons.note_outlined,
-                    label: 'Templates',
-                    isActive: _currentNavIdx == 2,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 2);
-                    },
-                  ),
-                  _buildNavItem(
-                    icon: Icons.collections,
-                    label: 'Content Library',
-                    isActive: _currentNavIdx == 3,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 3);
-                    },
-                  ),
-                  _buildNavItem(
-                    icon: Icons.people_outline,
-                    label: 'Collaboration',
-                    isActive: _currentNavIdx == 4,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 4);
-                    },
-                  ),
-                  _buildNavItem(
-                    icon: Icons.check_circle_outline,
-                    label: 'Approvals',
-                    isActive: _currentNavIdx == 5,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 5);
-                    },
-                  ),
-                  _buildNavItem(
-                    icon: Icons.trending_up,
-                    label: 'Analytics',
-                    isActive: _currentNavIdx == 6,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 6);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Help & Logout
-          Tooltip(
-            message: 'Help',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Help is on the way!")),
-                  );
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.help_outline,
-                    color: Colors.grey[600],
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Tooltip(
-            message: 'Logout',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Confirm Logout'),
-                      content: const Text('Are you sure you want to logout?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('Cancel'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            Navigator.of(context).pushNamedAndRemoveUntil(
-                              '/',
-                              (route) => false,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                          ),
-                          child: const Text('Logout'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.logout,
-                    color: Colors.grey[600],
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
-  */
-
-  // DUPLICATE - Commented out, using version below instead
-  /*
-  Widget _buildNavItem_DUPLICATE({
-    required IconData icon,
-    required String label,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: label,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          decoration: BoxDecoration(
-            color: isActive
-                ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: isActive
-                ? Border.all(color: const Color(0xFF00CED1), width: 2)
-                : null,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                size: 26,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label.split(' ')[0],
-                style: TextStyle(
-                  fontSize: 9,
-                  color: isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  */
-
-  // Build header buttons (varies by category)
-  List<Widget> _buildHeaderButtons(BuildContext context, AppState app) {
-    List<Widget> buttons = [];
+  List<Widget> _buildAppBarActions() {
+    List<Widget> actions = [];
 
     switch (selectedCategory) {
+      case "Templates":
+        actions.add(
+          Tooltip(
+            message: "Create New Template",
+            child: IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: () => _showCreateDialog(),
+            ),
+          ),
+        );
+        break;
       case "Sections":
-        // Both "Upload" and "New Folder" buttons
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _uploadFile(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.upload_file, size: 18),
-                SizedBox(width: 8),
-                Text("Upload"),
-              ],
-            ),
-          ),
-        );
-        buttons.add(const SizedBox(width: 12));
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _showNewFolderDialog(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.create_new_folder, size: 18),
-                SizedBox(width: 8),
-                Text("New Folder"),
-              ],
-            ),
-          ),
-        );
-        break;
-
       case "Images":
-        // Both "Upload" and "New Folder" buttons
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _uploadFile(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.upload_file, size: 18),
-                SizedBox(width: 8),
-                Text("Upload"),
-              ],
+        actions.add(
+          Tooltip(
+            message: "Upload File",
+            child: IconButton(
+              icon: const Icon(Icons.upload_file, color: Colors.white),
+              onPressed: () => _uploadFile(),
             ),
           ),
         );
-        buttons.add(const SizedBox(width: 12));
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _showNewFolderDialog(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.create_new_folder, size: 18),
-                SizedBox(width: 8),
-                Text("New Folder"),
-              ],
+        actions.add(const SizedBox(width: 8)); // Add SizedBox separately
+        actions.add(
+          Tooltip(
+            message: "New Folder",
+            child: IconButton(
+              icon: const Icon(Icons.create_new_folder, color: Colors.white),
+              onPressed: () => _showNewFolderDialog(),
             ),
           ),
         );
         break;
-
       case "Snippets":
-        // Only "New Folder" button
-        buttons.add(
-          ElevatedButton(
-            onPressed: () => _showNewFolderDialog(context, app),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+        actions.add(
+          Tooltip(
+            message: "New Snippet",
+            child: IconButton(
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: () => _showScratchTemplateDialog(),
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.create_new_folder, size: 18),
-                SizedBox(width: 8),
-                Text("New Folder"),
-              ],
+          ),
+        );
+        actions.add(const SizedBox(width: 8)); // Add SizedBox separately
+        actions.add(
+          Tooltip(
+            message: "New Folder",
+            child: IconButton(
+              icon: const Icon(Icons.create_new_folder, color: Colors.white),
+              onPressed: () => _showNewFolderDialog(),
+            ),
+          ),
+        );
+        break;
+      case "Trash":
+        actions.add(
+          Tooltip(
+            message: "Restore All",
+            child: IconButton(
+              icon: const Icon(Icons.restore, color: Colors.white),
+              onPressed: () => _restoreAllTrash(),
+            ),
+          ),
+        );
+        actions.add(const SizedBox(width: 8)); // Add SizedBox separately
+        actions.add(
+          Tooltip(
+            message: "Empty Trash",
+            child: IconButton(
+              icon: const Icon(Icons.delete_forever, color: Colors.red),
+              onPressed: () => _emptyTrash(),
             ),
           ),
         );
         break;
     }
-
-    return buttons;
+    return actions;
   }
 
-  // Build individual navigation item
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushNamed(context, '/dashboard');
-        break;
-      case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        Navigator.pushNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        // Already on content library
-        break;
-      case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
-        break;
-      case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
-        break;
-      case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
-        break;
-      case 'Logout':
-        _handleLogout(context);
-        break;
-    }
-  }
-
-  void _handleLogout(BuildContext context) {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                // Perform logout
-                final app = context.read<AppState>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _addImageUrl(BuildContext context, AppState app) {
-    final labelCtrl = TextEditingController();
-    final contentCtrl = TextEditingController();
-
+  void _restoreAllTrash() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Add Image URL"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: labelCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Image Name",
-                  hintText: "Enter image name",
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: contentCtrl,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: "Image URL",
-                  hintText: "Enter image URL",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
+        title: const Text("Restore All Items"),
+        content: const Text(
+            "Are you sure you want to restore all items from Trash?"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -2293,327 +1792,274 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           ),
           ElevatedButton(
             onPressed: () async {
-              if (labelCtrl.text.isEmpty || contentCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Please fill all fields")),
-                );
-                return;
-              }
-
+              Navigator.pop(ctx);
               try {
-                await app.createContent(
-                  key: labelCtrl.text.toLowerCase().replaceAll(" ", "_"),
-                  label: labelCtrl.text.trim(),
-                  content: contentCtrl.text.trim(),
-                  category: selectedCategory,
-                  parentId: currentFolderId,
-                );
+                final app = context.read<AppState>();
+                await app.restoreAllTrash();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text("All items restored from Trash"),
+                        backgroundColor: Colors.green),
+                  );
+                  setState(() {});
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text("Failed to restore items: $e"),
+                        backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text("Restore"),
+          ),
+        ],
+      ),
+    );
+  }
 
-                Navigator.pop(ctx);
+  void _emptyTrash() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Empty Trash"),
+        content: const Text(
+            "Are you sure you want to permanently delete all items in Trash? This action cannot be undone."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                final app = context.read<AppState>();
+                await app.emptyTrash();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text("Trash emptied successfully"),
+                        backgroundColor: Colors.green),
+                  );
+                  setState(() {});
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text("Failed to empty trash: $e"),
+                        backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Empty"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _uploadFile() async {
+    final app = context.read<AppState>();
+    try {
+      // Determine allowed file types based on category
+      List<String> allowedExtensions;
+      String fileTypeLabel;
+
+      if (selectedCategory == "Images") {
+        allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+        fileTypeLabel = "image";
+      } else if (selectedCategory == "Sections") {
+        allowedExtensions = [
+          'pdf',
+          'doc',
+          'docx',
+          'txt',
+          'rtf',
+          'odt',
+          'jpg',
+          'jpeg',
+          'png'
+        ];
+        fileTypeLabel = "document";
+      } else {
+        allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+        fileTypeLabel = "file";
+      }
+
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: allowedExtensions,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.single;
+
+        if (file.bytes != null || file.path != null) {
+          final fileName = file.name;
+
+          // Create a unique key for the file
+          final fileKey = await app.getUniqueContentKey(fileName);
+
+          if (mounted) {
+            // Show loading dialog
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                title: const Text("Uploading"),
+                content: Row(
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(width: 16),
+                    Text("Uploading $fileTypeLabel to Cloudinary..."),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          try {
+            // Upload to Cloudinary via backend
+            // Use appropriate upload method based on category
+            // Use bytes on web, path on native platforms
+            final uploadResult = selectedCategory == "Sections"
+                ? (file.bytes != null
+                    ? await app.uploadTemplateToCloudinary("",
+                        fileBytes: file.bytes, fileName: fileName)
+                    : await app.uploadTemplateToCloudinary(file.path!))
+                : (file.bytes != null
+                    ? await app.uploadImageToCloudinary("",
+                        fileBytes: file.bytes, fileName: fileName)
+                    : await app.uploadImageToCloudinary(file.path!));
+
+            if (mounted) Navigator.pop(context); // Close loading dialog
+
+            if (uploadResult != null && uploadResult['success'] == true) {
+              final cloudinaryUrl = uploadResult['url'];
+              final publicId = uploadResult['public_id'];
+
+              // Save to backend database
+              // If we're inside a folder, set parent_id to link the file to the folder
+              await app.createContent(
+                key: fileKey,
+                label: fileName,
+                content: cloudinaryUrl,
+                publicId: publicId,
+                category: selectedCategory,
+                parentId: currentFolderId,
+              );
+
+              // Force UI refresh
+              if (mounted) {
+                setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("Image uploaded successfully"),
+                  SnackBar(
+                    content: Text(
+                        "${fileTypeLabel[0].toUpperCase()}${fileTypeLabel.substring(1)} '$fileName' uploaded successfully to $selectedCategory"),
                     backgroundColor: Colors.green,
                   ),
                 );
-                setState(() {});
-              } catch (e) {
+              }
+            } else {
+              final errorMsg = uploadResult?['error'] ?? 'Upload failed';
+              if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text("Failed to upload image: $e"),
+                    content: Text("Error uploading $fileTypeLabel: $errorMsg"),
                     backgroundColor: Colors.red,
                   ),
                 );
               }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text("Upload"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showImportDialog(BuildContext context, AppState app) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Import Template"),
-        content: const Text("Import template functionality coming soon"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Close"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Delete item handler
-  void _deleteItem(BuildContext context, AppState app, int itemId) async {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Delete Item"),
-        content: const Text(
-            "Are you sure you want to delete this item? It will be moved to Trash."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx); // Close dialog
-
-              // Show loading state
+            }
+          } catch (e) {
+            if (mounted) {
+              Navigator.pop(context); // Close loading dialog
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Deleting item..."),
-                  duration: Duration(seconds: 2),
+                SnackBar(
+                  content:
+                      Text("Error uploading $fileTypeLabel: ${e.toString()}"),
+                  backgroundColor: Colors.red,
                 ),
               );
-
-              try {
-                final result = await app.deleteContent(itemId);
-
-                if (result) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Item moved to Trash"),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    setState(() {}); // Refresh UI
-                  }
-                } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Failed to delete item"),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("Error deleting item: ${e.toString()}"),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text("Delete"),
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error: ${e.toString()}"),
+            backgroundColor: Colors.red,
           ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
+}
 
-  // Edit item handler
-  void _showEditDialog(
-      BuildContext context, AppState app, Map<String, dynamic> item) {
-    final labelCtrl = TextEditingController(text: item["label"] ?? "");
-    final contentCtrl = TextEditingController(text: item["content"] ?? "");
+class FolderBreadcrumbs extends StatelessWidget {
+  final List<dynamic> path;
+  final ValueChanged<int?> onNavigate;
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Edit Item"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: labelCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Label",
-                  hintText: "Enter item label",
+  const FolderBreadcrumbs({
+    super.key,
+    required this.path,
+    required this.onNavigate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => onNavigate(null),
+              child: Text(
+                "Home",
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.7),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: contentCtrl,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  labelText: "Content",
-                  hintText: "Enter item content",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (labelCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Please enter a label")),
-                );
-                return;
-              }
-
-              try {
-                Navigator.pop(ctx);
-
-                // Show loading message
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("Updating item..."),
-                    duration: Duration(seconds: 2),
+            ),
+            ...path.map((folder) {
+              return Row(
+                children: [
+                  Icon(Icons.chevron_right,
+                      color: Colors.white.withOpacity(0.7), size: 16),
+                  GestureDetector(
+                    onTap: () => onNavigate(folder['id']),
+                    child: Text(
+                      folder['label'],
+                      style: TextStyle(
+                        color: folder == path.last
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.7),
+                        fontSize: 13,
+                        fontWeight: folder == path.last
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                      ),
+                    ),
                   ),
-                );
-
-                // Update the item
-                final result = await app.updateContent(
-                  item["id"],
-                  label: labelCtrl.text,
-                  content: contentCtrl.text,
-                );
-
-                if (result) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Item updated successfully"),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    setState(() {});
-                  }
-                } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Failed to update item"),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("Error updating item: ${e.toString()}"),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0066CC),
-            ),
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Show new folder dialog
-  void _showNewFolderDialog(BuildContext context, AppState app) {
-    final folderNameCtrl = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Create New Folder"),
-        content: TextField(
-          controller: folderNameCtrl,
-          decoration: const InputDecoration(
-            labelText: "Folder Name",
-            hintText: "Enter folder name",
-          ),
+                ],
+              );
+            }).toList(),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (folderNameCtrl.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Please enter a folder name")),
-                );
-                return;
-              }
-
-              try {
-                final folderKey = folderNameCtrl.text
-                    .toLowerCase()
-                    .replaceAll(" ", "_")
-                    .replaceAll(RegExp(r'[^a-z0-9_]'), '');
-
-                final result = await app.createContent(
-                  key: folderKey,
-                  label: folderNameCtrl.text.trim(),
-                  content: "",
-                  category: selectedCategory,
-                  parentId: currentFolderId,
-                  isFolder: true,
-                );
-
-                Navigator.pop(ctx);
-
-                if (result) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                            "Folder '${folderNameCtrl.text}' created successfully"),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    setState(() {});
-                  }
-                } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Failed to create folder"),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("Error creating folder: ${e.toString()}"),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00CED1),
-            ),
-            child: const Text("Create"),
-          ),
-        ],
       ),
     );
   }

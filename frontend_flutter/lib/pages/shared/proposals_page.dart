@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
+import 'dart:ui' show ImageFilter;
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
@@ -411,117 +412,127 @@ class _ProposalsPageState extends State<ProposalsPage>
                     if (_isSidebarCollapsed) _toggleSidebar();
                   },
                   behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
+                  child: ClipRRect(
+                    // Re-added ClipRRect
+                    borderRadius: BorderRadius.circular(
+                        0), // No rounded corners for sidebar
+                    child: BackdropFilter(
+                      // Re-added BackdropFilter
+                      filter: ImageFilter.blur(
+                          sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: _isSidebarCollapsed ? 90.0 : 250.0,
+                        color: Colors.black
+                            .withOpacity(0.32), // Adjusted opacity to 0.32
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              // Toggle button
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                child: InkWell(
+                                  onTap: _toggleSidebar,
                                   borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
+                                  child: Container(
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(
+                                          0.12), // Adjusted opacity to 0.12
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                  ],
+                                    child: Row(
+                                      mainAxisAlignment: _isSidebarCollapsed
+                                          ? MainAxisAlignment.center
+                                          : MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        if (!_isSidebarCollapsed)
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            child: Text(
+                                              'Navigation',
+                                              style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12),
+                                            ),
+                                          ),
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal:
+                                                  _isSidebarCollapsed ? 0 : 8),
+                                          child: Icon(
+                                            _isSidebarCollapsed
+                                                ? Icons.keyboard_arrow_right
+                                                : Icons.keyboard_arrow_left,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              // Navigation items
+                              _buildNavItem(
+                                  'Dashboard',
+                                  'assets/images/Dahboard.png',
+                                  _currentPage == 'Dashboard',
+                                  context),
+                              _buildNavItem(
+                                  'My Proposals',
+                                  'assets/images/My_Proposals.png',
+                                  _currentPage == 'My Proposals',
+                                  context),
+                              _buildNavItem(
+                                  'Templates',
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Templates',
+                                  context),
+                              _buildNavItem(
+                                  'Content Library',
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Content Library',
+                                  context),
+                              _buildNavItem(
+                                  'Collaboration',
+                                  'assets/images/collaborations.png',
+                                  _currentPage == 'Collaboration',
+                                  context),
+                              _buildNavItem(
+                                  'Approvals Status',
+                                  'assets/images/Time Allocation_Approval_Blue.png',
+                                  _currentPage == 'Approvals Status',
+                                  context),
+                              _buildNavItem(
+                                  'Analytics (My Pipeline)',
+                                  'assets/images/analytics.png',
+                                  _currentPage == 'Analytics (My Pipeline)',
+                                  context),
+                              const SizedBox(height: 20),
+                              // Divider
+                              if (!_isSidebarCollapsed)
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  height: 1,
+                                  color: Colors.black.withOpacity(
+                                      0.35), // Adjusted divider color to be blackish
+                                ),
+                              const SizedBox(height: 12),
+                              // Logout button
+                              _buildNavItem(
+                                  'Logout',
+                                  'assets/images/Logout_KhonoBuzz.png',
+                                  false,
+                                  context),
+                              const SizedBox(height: 20),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              _currentPage == 'My Proposals',
-                              context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Collaboration',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
-                              context),
-                          _buildNavItem(
-                              'Approvals Status',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approvals Status',
-                              context),
-                          _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              _currentPage == 'Analytics (My Pipeline)',
-                              context),
-
-                          const SizedBox(height: 20),
-
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-
-                          const SizedBox(height: 12),
-
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -779,30 +790,43 @@ class _ProposalsPageState extends State<ProposalsPage>
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+            child: ClipRRect(
+              // Re-added ClipRRect
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                // Re-added BackdropFilter
+                filter: ImageFilter.blur(
+                    sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.black
+                        .withOpacity(0.12), // Adjusted opacity to 0.12
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isActive
+                          ? const Color(0xFFE9293A).withOpacity(
+                              0.7) // Active red border, adjusted opacity
+                          : const Color(0xFFE9293A).withOpacity(
+                              0.3), // Inactive translucent red border, adjusted opacity
+                      width: isActive ? 2 : 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black
+                            .withOpacity(0.1), // Adjusted shadow opacity
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
+                  padding: const EdgeInsets.all(6),
+                  child: ClipOval(
+                    child: AssetService.buildImageWidget(assetPath,
+                        fit: BoxFit.contain),
+                  ),
+                ),
               ),
             ),
           ),
@@ -818,58 +842,79 @@ class _ProposalsPageState extends State<ProposalsPage>
           setState(() => _currentPage = label);
           _navigateToPage(context, label);
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+        child: ClipRRect(
+          // Re-added ClipRRect
+          borderRadius: BorderRadius.circular(8),
+          child: BackdropFilter(
+            // Re-added BackdropFilter
+            filter:
+                ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? const Color(0xFFE9293A).withOpacity(
+                        0.32) // Active translucent red, adjusted opacity
+                    : Colors.transparent, // Inactive transparent
+                borderRadius: BorderRadius.circular(8),
+                border: isActive
+                    ? Border.all(
+                        color: const Color(0xFFE9293A).withOpacity(0.7),
+                        width: 1)
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.black
+                          .withOpacity(0.12), // Adjusted opacity to 0.12
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isActive
+                            ? const Color(0xFFE9293A).withOpacity(
+                                0.7) // Active red border, adjusted opacity
+                            : const Color(0xFFE9293A).withOpacity(
+                                0.3), // Inactive translucent red border, adjusted opacity
+                        width: isActive ? 2 : 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black
+                              .withOpacity(0.1), // Adjusted shadow opacity
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    padding: const EdgeInsets.all(6),
+                    child: ClipOval(
+                      child: AssetService.buildImageWidget(assetPath,
+                          fit: BoxFit.contain),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: isActive
+                            ? Colors.white
+                            : Colors.white70, // Adjusted text color
+                        fontSize: 14,
+                        fontWeight:
+                            isActive ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                  if (isActive)
+                    const Icon(Icons.arrow_forward_ios,
+                        size: 12, color: Colors.white),
+                ],
               ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
+            ),
           ),
         ),
       ),
@@ -879,7 +924,7 @@ class _ProposalsPageState extends State<ProposalsPage>
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushNamed(context, '/home');
+        Navigator.pushNamed(context, '/creator_dashboard');
         break;
       case 'My Proposals':
         // Already on proposals page

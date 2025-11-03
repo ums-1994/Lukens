@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' show ImageFilter;
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import 'content_library_page.dart';
@@ -180,9 +181,8 @@ class _AppShellState extends State<AppShell> {
                   label.split(' ')[0],
                   style: TextStyle(
                     fontSize: 9,
-                    color: isActive
-                        ? const Color(0xFF00CED1)
-                        : Colors.grey[600],
+                    color:
+                        isActive ? const Color(0xFF00CED1) : Colors.grey[600],
                     fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                   ),
                   textAlign: TextAlign.center,
@@ -226,26 +226,41 @@ class _AppShellState extends State<AppShell> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 80, color: Colors.grey[300]),
-            const SizedBox(height: 24),
-            Text(
-              '$title is coming soon',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[700],
+      body: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: const Color(0xFFE9293A).withValues(alpha: 0.5),
+                  width: 1),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 80, color: Colors.white70),
+                  const SizedBox(height: 24),
+                  Text(
+                    '$title is coming soon',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'This feature is under development',
+                    style: TextStyle(fontSize: 14, color: Colors.white70),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              'This feature is under development',
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            ),
-          ],
+          ),
         ),
       ),
     );

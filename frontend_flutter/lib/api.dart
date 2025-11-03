@@ -188,6 +188,9 @@ class AppState extends ChangeNotifier {
     String? content,
     String? category,
     String? publicId,
+    String? key,
+    bool? isFolder,
+    int? parentId,
   }) async {
     try {
       final body = {
@@ -195,6 +198,9 @@ class AppState extends ChangeNotifier {
         if (content != null) "content": content,
         if (category != null) "category": category,
         if (publicId != null) "public_id": publicId,
+        if (key != null) "key": key,
+        if (isFolder != null) "is_folder": isFolder,
+        if (parentId != null) "parent_id": parentId,
       };
 
       if (body.isEmpty) return false;
@@ -235,6 +241,82 @@ class AppState extends ChangeNotifier {
       print('Error permanently deleting content: $e');
       return false;
     }
+  }
+
+  // Method to get a unique key for new content (e.g., image files)
+  Future<String> getUniqueContentKey(String baseName) async {
+    String key = baseName.replaceAll(RegExp(r'\.[^.]+$'), '').toLowerCase();
+    key = key.replaceAll(RegExp(r'[^a-z0-9_]'), '_');
+    int counter = 0;
+    String finalKey = key;
+    while (contentBlocks.any((element) => element["key"] == finalKey)) {
+      counter++;
+      finalKey = "${key}_$counter";
+    }
+    return finalKey;
+  }
+
+  // New method to restore all trash items
+  Future<bool> restoreAllTrash() async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/content/trash/restore_all"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error restoring all trash: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error restoring all trash: $e');
+      return false;
+    }
+  }
+
+  // New method to empty trash
+  Future<bool> emptyTrash() async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/content/trash/empty"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      } else {
+        print('Error emptying trash: ${r.statusCode} - ${r.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error emptying trash: $e');
+      return false;
+    }
+  }
+
+  // New method to get folder path
+  List<dynamic> getFolderPath(int? folderId) {
+    List<dynamic> path = [];
+    if (folderId == null) return path;
+
+    var current = contentBlocks.firstWhere((item) => item['id'] == folderId,
+        orElse: () => null);
+
+    while (current != null) {
+      path.insert(0, current); // Add to the beginning
+      final parentId = current['parent_id'];
+      if (parentId != null) {
+        current = contentBlocks.firstWhere((item) => item['id'] == parentId,
+            orElse: () => null);
+      } else {
+        current = null;
+      }
+    }
+    return path;
   }
 
   Future<void> fetchProposals() async {
