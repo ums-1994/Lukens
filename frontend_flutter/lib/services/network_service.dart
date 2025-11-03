@@ -179,7 +179,7 @@ class NetworkService {
     return true; // Default to retry for unknown errors
   }
 
-  /// Parse JSON response with error handling
+  /// Parse JSON response with enhanced backend error handling
   static Map<String, dynamic> parseJsonResponse(
     http.Response response, {
     String? context,
@@ -188,6 +188,78 @@ class NetworkService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
+        // Try to parse enhanced backend error response
+        try {
+          final errorResponse = json.decode(response.body) as Map<String, dynamic>;
+          if (errorResponse.containsKey('error')) {
+            final error = errorResponse['error'] as Map<String, dynamic>;
+            
+            // Extract enhanced error information
+            final userMessage = error['user_message'] as String? ?? 
+                               error['message'] as String? ?? 
+                               'An error occurred';
+            final traceId = error['trace_id'] as String?;
+            final retryAfter = error['retry_after'] as int?;
+            final category = error['code'] as String?;
+            final severity = error['severity'] as String?;
+            
+            // Log enhanced error information
+            ErrorService.logError(
+              'Backend error response',
+              context: context,
+              additionalData: {
+                'statusCode': response.statusCode,
+                'traceId': traceId,
+                'category': category,
+                'severity': severity,
+                'retryAfter': retryAfter,
+              },
+            );
+            
+            // Handle retry-after for rate limiting
+            if (retryAfter != null && category == 'RATE_LIMIT') {
+              ErrorService.handleError(
+                '$userMessage (Retry in ${retryAfter}s)',
+                context: context,
+                severity: ErrorSeverity.medium,
+              );
+            } else {
+              // Map backend severity to frontend severity
+              ErrorSeverity errorSeverity = ErrorSeverity.medium;
+              if (severity != null) {
+                switch (severity.toLowerCase()) {
+                  case 'low':
+                    errorSeverity = ErrorSeverity.low;
+                    break;
+                  case 'high':
+                    errorSeverity = ErrorSeverity.high;
+                    break;
+                  case 'critical':
+                    errorSeverity = ErrorSeverity.critical;
+                    break;
+                }
+              }
+              
+              ErrorService.handleError(
+                userMessage,
+                context: context,
+                severity: errorSeverity,
+              );
+            }
+            
+            throw AppException(userMessage, context: context);
+          }
+        } catch (e) {
+          // Fall back to standard error handling if parsing fails
+          final userMessage = ErrorService.handleApiError(
+            response.statusCode,
+            response.body,
+            context: context,
+          );
+          throw AppException(userMessage, context: context);
+        }
+        
+        // Fallback if no error object found
         final userMessage = ErrorService.handleApiError(
           response.statusCode,
           response.body,

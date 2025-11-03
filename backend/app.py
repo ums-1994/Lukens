@@ -21,7 +21,7 @@ import psycopg2.extras
 import cloudinary
 import cloudinary.uploader
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, g
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -31,11 +31,23 @@ from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 
+# Import our new error handling system
+from error_handler import (
+    ErrorHandler, AppError, ValidationError, AuthenticationError, 
+    PermissionError, DatabaseError, handle_errors, validate_required_fields, 
+    validate_email, require_auth
+)
+from middleware import RequestMiddleware, require_auth as auth_decorator, rate_limit, validate_json
+
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
+
+# Initialize error handling and middleware
+error_handler = ErrorHandler(app)
+middleware = RequestMiddleware(app)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -720,47 +732,90 @@ def admin_required(f):
 # Authentication endpoints
 
 @app.post("/register")
+@handle_errors
+@validate_json(['username', 'email', 'password'])
+@rate_limit(max_requests=5, window=3600)  # 5 registrations per hour
 def register():
+    """Enhanced user registration with comprehensive error handling"""
+    data = g.json_data
+    
+    # Validate email format
+    validate_email(data['email'])
+    
+    # Validate password strength
+    if len(data['password']) < 8:
+        raise ValidationError(
+            message="Password too short",
+            field="password",
+            user_message="Password must be at least 8 characters long"
+        )
+    
+    username = data['username']
+    email = data['email']
+    password = data['password']
+    full_name = data.get('full_name', '')
+    role = data.get('role', 'user')
+    
     try:
-        data = request.get_json()
-        if data is None:
-            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
-        
-        username = data.get('username')
-        email = data.get('email')
-        password = data.get('password')
-        full_name = data.get('full_name')
-        role = data.get('role', 'user')
-        
-        if not all([username, email, password]):
-            return {'detail': 'Missing required fields'}, 400
-        
         password_hash = hash_password(password)
         
         conn = _pg_conn()
         cursor = conn.cursor()
-        try:
-            cursor.execute(
-                '''INSERT INTO users (username, email, password_hash, full_name, role)
-                   VALUES (%s, %s, %s, %s, %s)''',
-                (username, email, password_hash, full_name, role)
+        
+        # Check if user already exists
+        cursor.execute("SELECT id FROM users WHERE email = %s OR username = %s", 
+                      (email, username))
+        
+        if cursor.fetchone():
+            raise ValidationError(
+                message="User already exists",
+                field="email",
+                user_message="An account with this email or username already exists"
             )
-            conn.commit()
-        except psycopg2.IntegrityError:
-            conn.rollback()
-            return {'detail': 'Username or email already exists'}, 409
-        finally:
+        
+        # Insert new user
+        cursor.execute(
+            '''INSERT INTO users (username, email, password_hash, full_name, role)
+               VALUES (%s, %s, %s, %s, %s)
+               RETURNING id''',
+            (username, email, password_hash, full_name, role)
+        )
+        
+        user_id = cursor.fetchone()[0]
+        conn.commit()
+        
+        app.logger.info(f"User registered successfully: {email} [ID: {user_id}]")
+        
+        return {
+            'success': True,
+            'message': 'Registration successful. You can now login.',
+            'email': email,
+            'user_id': user_id
+        }, 201
+        
+    except psycopg2.IntegrityError as e:
+        conn.rollback()
+        if 'email' in str(e):
+            raise ValidationError(
+                message="Email already exists",
+                field="email",
+                user_message="An account with this email already exists"
+            )
+        elif 'username' in str(e):
+            raise ValidationError(
+                message="Username already exists", 
+                field="username",
+                user_message="This username is already taken"
+            )
+        else:
+            raise DatabaseError(
+                message=f"Database integrity error: {str(e)}",
+                user_message="Registration failed due to data conflict"
+            )
+    
+    finally:
+        if 'conn' in locals():
             release_pg_conn(conn)
-        
-        # Email verification disabled - users can login immediately
-        # verification_token = generate_verification_token(email)
-        # send_verification_email(email, verification_token)
-        
-        return {'detail': 'Registration successful. You can now login.', 'email': email}, 200
-    except Exception as e:
-        print(f'Registration error: {e}')
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
 
 @app.post("/login")
 def login():
@@ -787,33 +842,73 @@ def login():
         return {'detail': str(e)}, 500
 
 @app.post("/login-email")
+@handle_errors
+@validate_json(['email', 'password'])
+@rate_limit(max_requests=10, window=900)  # 10 login attempts per 15 minutes
 def login_email():
+    """Enhanced email login with comprehensive error handling"""
+    data = g.json_data
+    
+    # Validate email format
+    validate_email(data['email'])
+    
+    email = data['email']
+    password = data['password']
+    
     try:
-        data = request.get_json()
-        if data is None:
-            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
-        
-        email = data.get('email')
-        password = data.get('password')
-        
-        if not email or not password:
-            return {'detail': 'Missing email or password'}, 400
-        
         conn = _pg_conn()
         cursor = conn.cursor()
-        cursor.execute('SELECT password_hash FROM users WHERE email = %s', (email,))
-        result = cursor.fetchone()
+        
+        # Get user by email with additional info
+        cursor.execute('''
+            SELECT id, username, email, password_hash, full_name, role
+            FROM users WHERE email = %s
+        ''', (email,))
+        
+        user = cursor.fetchone()
         release_pg_conn(conn)
         
-        if not result or not result[0] or not verify_password(result[0], password):
-            return {'detail': 'Invalid credentials'}, 401
+        if not user:
+            raise AuthenticationError(
+                message="User not found",
+                user_message="Invalid email or password"
+            )
         
+        user_id, username, user_email, password_hash, full_name, role = user
+        
+        # Verify password
+        if not password_hash or not verify_password(password_hash, password):
+            raise AuthenticationError(
+                message="Invalid password",
+                user_message="Invalid email or password"
+            )
+        
+        # Generate token
         token = generate_token(email)
-        return {'access_token': token, 'token_type': 'bearer'}, 200
+        
+        app.logger.info(f"User logged in successfully: {email} [ID: {user_id}]")
+        
+        return {
+            'access_token': token,
+            'token_type': 'bearer',
+            'user': {
+                'id': user_id,
+                'username': username,
+                'email': user_email,
+                'full_name': full_name,
+                'role': role
+            }
+        }, 200
+        
     except Exception as e:
-        print(f'Login error: {e}')
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
+        if isinstance(e, (AuthenticationError, ValidationError)):
+            raise  # Re-raise our custom errors
+        
+        # Handle unexpected errors
+        raise DatabaseError(
+            message=f"Login error: {str(e)}",
+            user_message="Login service temporarily unavailable. Please try again."
+        )
 
 
 @app.post("/forgot-password")
