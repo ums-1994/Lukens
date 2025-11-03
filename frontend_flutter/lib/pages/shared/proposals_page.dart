@@ -143,7 +143,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF2c3e50),
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: 24),
@@ -159,9 +159,10 @@ class _ProposalsPageState extends State<ProposalsPage>
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFe2e8f0)),
+                      border: Border.all(
+                          color: const Color(0xFFC10D00).withOpacity(0.5)),
                       borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey[50],
+                      color: Colors.black.withOpacity(0.12),
                     ),
                     child: Row(
                       children: [
@@ -169,12 +170,12 @@ class _ProposalsPageState extends State<ProposalsPage>
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF3498DB).withOpacity(0.1),
+                            color: const Color(0xFFC10D00).withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
                             Icons.edit_outlined,
-                            color: Color(0xFF3498DB),
+                            color: Color(0xFFC10D00),
                             size: 20,
                           ),
                         ),
@@ -188,7 +189,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFF2c3e50),
+                                  color: Colors.white,
                                 ),
                               ),
                               SizedBox(height: 4),
@@ -196,14 +197,13 @@ class _ProposalsPageState extends State<ProposalsPage>
                                 'Create a blank proposal',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Color(0xFF718096),
+                                  color: Colors.white70,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right,
-                            color: Color(0xFF718096)),
+                        const Icon(Icons.chevron_right, color: Colors.white70),
                       ],
                     ),
                   ),
@@ -222,9 +222,10 @@ class _ProposalsPageState extends State<ProposalsPage>
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFe2e8f0)),
+                      border: Border.all(
+                          color: const Color(0xFFC10D00).withOpacity(0.5)),
                       borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey[50],
+                      color: Colors.black.withOpacity(0.12),
                     ),
                     child: Row(
                       children: [
@@ -237,7 +238,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                           ),
                           child: const Icon(
                             Icons.library_books_outlined,
-                            color: Color(0xFF2ECC71),
+                            color: Color(0xFFC10D00),
                             size: 20,
                           ),
                         ),
@@ -251,7 +252,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFF2c3e50),
+                                  color: Colors.white,
                                 ),
                               ),
                               SizedBox(height: 4),
@@ -259,14 +260,13 @@ class _ProposalsPageState extends State<ProposalsPage>
                                 'Select a template to get started',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Color(0xFF718096),
+                                  color: Colors.white70,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right,
-                            color: Color(0xFF718096)),
+                        const Icon(Icons.chevron_right, color: Colors.white70),
                       ],
                     ),
                   ),
@@ -331,7 +331,7 @@ class _ProposalsPageState extends State<ProposalsPage>
           Container(
             height: 60,
             decoration: const BoxDecoration(
-              color: Color(0xFF2C3E50),
+              color: Color(0xFFC10D00),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -559,12 +559,12 @@ class _ProposalsPageState extends State<ProposalsPage>
                                         style: TextStyle(
                                             fontSize: 28,
                                             fontWeight: FontWeight.w700,
-                                            color: Color(0xFF2c3e50))),
+                                            color: Colors.white)),
                                     SizedBox(height: 6),
                                     Text(
                                         'Manage all your business proposals and SOWs',
-                                        style: TextStyle(
-                                            color: Color(0xFF718096))),
+                                        style:
+                                            TextStyle(color: Colors.white70)),
                                   ],
                                 ),
                               ),
@@ -600,7 +600,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                                       label: const Text('New Proposal'),
                                       style: ElevatedButton.styleFrom(
                                           backgroundColor:
-                                              const Color(0xFF2563EB),
+                                              const Color(0xFFC10D00),
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 16, vertical: 12)),
@@ -615,149 +615,237 @@ class _ProposalsPageState extends State<ProposalsPage>
 
                           // Filter card
                           Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text('All Proposals',
-                                          style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF2c3e50))),
-                                      Row(
-                                        children: [
-                                          Container(
-                                              width: 200,
-                                              child: TextField(
-                                                controller: _searchController,
-                                                decoration:
-                                                    const InputDecoration(
-                                                  hintText:
-                                                      'Search proposals...',
-                                                  contentPadding:
-                                                      EdgeInsets.symmetric(
-                                                          horizontal: 12,
-                                                          vertical: 8),
-                                                  border: OutlineInputBorder(),
+                            color: Colors
+                                .transparent, // Set card color to transparent
+                            elevation: 0, // Remove elevation
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: BackdropFilter(
+                                filter:
+                                    ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: const Color(0xFFC10D00)
+                                            .withOpacity(0.5),
+                                        width: 1),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16.0),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text('All Proposals',
+                                                style: TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors
+                                                        .white)), // Changed to Colors.white
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  // Wrap TextField in Expanded
+                                                  child: TextField(
+                                                    controller:
+                                                        _searchController,
+                                                    decoration: InputDecoration(
+                                                      hintText:
+                                                          'Search proposals...',
+                                                      hintStyle: TextStyle(
+                                                          color: Colors
+                                                              .white70), // Hint text color
+                                                      contentPadding:
+                                                          const EdgeInsets
+                                                              .symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 8),
+                                                      border:
+                                                          OutlineInputBorder(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                        borderSide: BorderSide(
+                                                            color: const Color(
+                                                                    0xFFC10D00)
+                                                                .withOpacity(
+                                                                    0.5)), // Red border
+                                                      ),
+                                                      enabledBorder:
+                                                          OutlineInputBorder(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                        borderSide: BorderSide(
+                                                            color: const Color(
+                                                                    0xFFC10D00)
+                                                                .withOpacity(
+                                                                    0.5)), // Red border
+                                                      ),
+                                                      focusedBorder:
+                                                          OutlineInputBorder(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                        borderSide: BorderSide(
+                                                            color: const Color(
+                                                                0xFFC10D00)), // Red border on focus
+                                                      ),
+                                                    ),
+                                                    style: TextStyle(
+                                                        color: Colors
+                                                            .white), // Input text color
+                                                    onChanged: (_) =>
+                                                        setState(() {}),
+                                                  ),
                                                 ),
-                                              )),
-                                          const SizedBox(width: 12),
-                                          Container(
-                                            decoration: BoxDecoration(
-                                                border: Border.all(
-                                                    color: const Color(
-                                                        0xFFe2e8f0)),
-                                                borderRadius:
-                                                    BorderRadius.circular(6)),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  // Wrap in Expanded
+                                                  child: Container(
+                                                    decoration: BoxDecoration(
+                                                        border: Border.all(
+                                                            color: const Color(
+                                                                    0xFFC10D00)
+                                                                .withOpacity(
+                                                                    0.5)), // Red border
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(6)),
+                                                    child:
+                                                        DropdownButtonHideUnderline(
+                                                      child: DropdownButton<
+                                                          String>(
+                                                        value: _filterStatus,
+                                                        dropdownColor: Colors
+                                                            .black
+                                                            .withOpacity(
+                                                                0.8), // Dropdown background color
+                                                        style: TextStyle(
+                                                            color: Colors
+                                                                .white), // Dropdown item text color
+                                                        items: [
+                                                          'All Statuses',
+                                                          'Draft',
+                                                          'Sent',
+                                                          'Approved',
+                                                          'Declined'
+                                                        ]
+                                                            .map((String
+                                                                    value) =>
+                                                                DropdownMenuItem<
+                                                                        String>(
+                                                                    value:
+                                                                        value,
+                                                                    child: Text(
+                                                                        value)))
+                                                            .toList(),
+                                                        onChanged: (String?
+                                                                newValue) =>
+                                                            setState(() =>
+                                                                _filterStatus =
+                                                                    newValue ??
+                                                                        'All Statuses'),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 16),
+                                        // Proposals list / empty state
+                                        if (_isLoading)
+                                          const Center(
+                                              child: Padding(
+                                                  padding: EdgeInsets.all(32.0),
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    color: Color(0xFFC10D00),
+                                                  ))) // Red progress indicator
+                                        else if (proposals.isEmpty)
+                                          Center(
                                             child: Padding(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                      horizontal: 12.0),
-                                              child:
-                                                  DropdownButtonHideUnderline(
-                                                child: DropdownButton<String>(
-                                                  value: _filterStatus,
-                                                  items: [
-                                                    'All Statuses',
-                                                    'Draft',
-                                                    'Sent',
-                                                    'Approved',
-                                                    'Declined'
-                                                  ]
-                                                      .map((String value) =>
-                                                          DropdownMenuItem<
-                                                                  String>(
-                                                              value: value,
-                                                              child:
-                                                                  Text(value)))
-                                                      .toList(),
-                                                  onChanged: (String?
-                                                          newValue) =>
-                                                      setState(() =>
-                                                          _filterStatus =
-                                                              newValue ??
-                                                                  'All Statuses'),
-                                                ),
+                                                      vertical: 48.0),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                      Icons
+                                                          .description_outlined,
+                                                      size: 64,
+                                                      color: Colors.white70),
+                                                  const SizedBox(height: 16),
+                                                  Text('No proposals yet',
+                                                      style: TextStyle(
+                                                          fontSize: 20,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Colors.white)),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                      'Create your first proposal to get started',
+                                                      style: TextStyle(
+                                                          color:
+                                                              Colors.white70)),
+                                                  const SizedBox(height: 20),
+                                                  ElevatedButton.icon(
+                                                    onPressed:
+                                                        _showCreateNewDialog,
+                                                    icon: const Icon(Icons.add),
+                                                    label: const Text(
+                                                        'Create Your First Proposal'),
+                                                    style: ElevatedButton.styleFrom(
+                                                        backgroundColor:
+                                                            const Color(
+                                                                0xFFC10D00),
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                horizontal: 18,
+                                                                vertical: 12),
+                                                        shape: RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        8))),
+                                                  )
+                                                ],
                                               ),
                                             ),
+                                          )
+                                        else
+                                          ListView.separated(
+                                            shrinkWrap: true,
+                                            physics:
+                                                const NeverScrollableScrollPhysics(),
+                                            itemCount: filtered.length,
+                                            separatorBuilder:
+                                                (context, index) =>
+                                                    const Divider(
+                                              height: 1,
+                                              color: Colors.white12,
+                                            ), // White divider
+                                            itemBuilder: (context, index) {
+                                              final proposal = filtered[index];
+                                              return ProposalItem(
+                                                  proposal: proposal,
+                                                  onRefresh: _loadProposals);
+                                            },
                                           ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-
-                                  // Proposals list / empty state
-                                  if (_isLoading)
-                                    const Center(
-                                        child: Padding(
-                                            padding: EdgeInsets.all(32.0),
-                                            child: CircularProgressIndicator()))
-                                  else if (proposals.isEmpty)
-                                    Center(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 48.0),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.description_outlined,
-                                                size: 64,
-                                                color: Colors.grey[400]),
-                                            const SizedBox(height: 16),
-                                            Text('No proposals yet',
-                                                style: TextStyle(
-                                                    fontSize: 20,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.grey[700])),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                                'Create your first proposal to get started',
-                                                style: TextStyle(
-                                                    color: Colors.grey[600])),
-                                            const SizedBox(height: 20),
-                                            ElevatedButton.icon(
-                                              onPressed: _showCreateNewDialog,
-                                              icon: const Icon(Icons.add),
-                                              label: const Text(
-                                                  'Create Your First Proposal'),
-                                              style: ElevatedButton.styleFrom(
-                                                  backgroundColor:
-                                                      const Color(0xFF2563EB),
-                                                  foregroundColor: Colors.white,
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 18,
-                                                      vertical: 12),
-                                                  shape: RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              8))),
-                                            )
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    ListView.separated(
-                                      shrinkWrap: true,
-                                      physics:
-                                          const NeverScrollableScrollPhysics(),
-                                      itemCount: filtered.length,
-                                      separatorBuilder: (context, index) =>
-                                          const Divider(height: 1),
-                                      itemBuilder: (context, index) {
-                                        final proposal = filtered[index];
-                                        return ProposalItem(
-                                            proposal: proposal,
-                                            onRefresh: _loadProposals);
-                                      },
+                                      ],
                                     ),
-                                ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1025,31 +1113,31 @@ class ProposalItem extends StatelessWidget {
     Color statusColor;
     switch ((proposal['status'] ?? '').toString().toLowerCase()) {
       case 'draft':
-        statusColor = const Color(0xFF856404);
+        statusColor = const Color(0xFFC10D00);
         break;
       case 'sent':
-        statusColor = const Color(0xFF004085);
+        statusColor = const Color(0xFFC10D00);
         break;
       case 'approved':
-        statusColor = const Color(0xFF155724);
+        statusColor = const Color(0xFFC10D00);
         break;
       default:
-        statusColor = Colors.grey;
+        statusColor = Colors.white70;
     }
 
     Color statusBgColor;
     switch ((proposal['status'] ?? '').toString().toLowerCase()) {
       case 'draft':
-        statusBgColor = const Color(0xFFffeeba);
+        statusBgColor = const Color(0xFFC10D00).withOpacity(0.32);
         break;
       case 'sent':
-        statusBgColor = const Color(0xFFb8daff);
+        statusBgColor = const Color(0xFFC10D00).withOpacity(0.32);
         break;
       case 'approved':
-        statusBgColor = const Color(0xFFc3e6cb);
+        statusBgColor = const Color(0xFFC10D00).withOpacity(0.32);
         break;
       default:
-        statusBgColor = Colors.grey[200]!;
+        statusBgColor = Colors.black.withOpacity(0.12);
     }
 
     return Padding(
@@ -1062,19 +1150,19 @@ class ProposalItem extends StatelessWidget {
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(proposal['title'] ?? 'Untitled Proposal',
                   style: const TextStyle(
-                      fontWeight: FontWeight.w600, color: Color(0xFF2c3e50))),
+                      fontWeight: FontWeight.w600, color: Colors.white)),
               const SizedBox(height: 8),
               Wrap(spacing: 16, children: [
                 Text(
                     'Last modified: ${_formatDate(proposal['updated_at'] ?? proposal['updatedAt'])}',
-                    style: const TextStyle(
-                        fontSize: 13, color: Color(0xFF718096))),
+                    style:
+                        const TextStyle(fontSize: 13, color: Colors.white70)),
                 if (proposal['client_name'] != null ||
                     proposal['client'] != null)
                   Text(
                       'Client: ${proposal['client_name'] ?? proposal['client']}',
-                      style: const TextStyle(
-                          fontSize: 13, color: Color(0xFF718096))),
+                      style:
+                          const TextStyle(fontSize: 13, color: Colors.white70)),
               ])
             ]),
           ),
@@ -1105,7 +1193,7 @@ class ProposalItem extends StatelessWidget {
                       ? 'Edit'
                       : 'View'),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4a6cf7),
+                  backgroundColor: const Color(0xFFC10D00),
                   foregroundColor: Colors.white),
             ),
             const SizedBox(width: 8),

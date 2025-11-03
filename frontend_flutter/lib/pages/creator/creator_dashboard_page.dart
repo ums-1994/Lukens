@@ -885,10 +885,8 @@ class _DashboardPageState extends State<DashboardPage>
                   'GlobalTech Cloud Migration',
                   '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
                   'Review Needed',
-                  const Color(0xFFB8DAFF)
-                      .withOpacity(0.35), // Adjusted status color
-                  const Color(
-                      0xFF004085), // Keep text color as is or adjust if needed
+                  const Color(0xFFC10D00), // Changed to red
+                  Colors.white, // Changed to white
                 ),
               ],
             ),

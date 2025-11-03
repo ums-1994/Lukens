@@ -1,9 +1,8 @@
-// ignore_for_file: deprecated_member_use
+// ignore_for_file: deprecated_member_use, dead_code
 import 'package:flutter/material.dart';
 import 'dart:ui' show ImageFilter;
 import 'package:provider/provider.dart';
 import '../../api.dart';
-import '../../color_extensions.dart';
 
 class ProposalStatusDashboard extends StatefulWidget {
   const ProposalStatusDashboard({super.key});
@@ -157,6 +156,21 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
         return 'Client approved';
       default:
         return 'Unknown status';
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date).inDays;
+
+    if (difference == 0) {
+      return 'Today';
+    } else if (difference == 1) {
+      return 'Yesterday';
+    } else if (difference < 7) {
+      return '$difference days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
     }
   }
 
@@ -320,7 +334,7 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                           alpha: 0.12), // Adjusted opacity to 0.12
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                          color: statusColor.withValues(
+                          color: color.withValues(
                               alpha: 0.5)), // Adjusted border opacity
                     ),
                     child: Row(
@@ -328,7 +342,7 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                       children: [
                         Icon(icon,
                             size: 16,
-                            color: statusColor.withValues(
+                            color: color.withValues(
                                 alpha: 0.7)), // Adjusted icon color
                         const SizedBox(width: 6),
                         Text(
@@ -336,91 +350,19 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: statusColor.withValues(
+                            color: color.withValues(
                                 alpha: 0.9), // Adjusted text color
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Spacer(),
-                  // Quick Actions
-                  PopupMenuButton<String>(
-                    onSelected: (value) {
-                      // Handle quick actions
-                      _handleQuickAction(value, proposal);
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'view',
-                        child: Row(
-                          children: [
-                            Icon(Icons.visibility_outlined,
-                                size: 16,
-                                color: Colors.white70), // Adjusted icon color
-                            SizedBox(width: 8),
-                            Text('View',
-                                style: TextStyle(
-                                    color:
-                                        Colors.white)), // Adjusted text color
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit_outlined,
-                                size: 16,
-                                color: Colors.white70), // Adjusted icon color
-                            SizedBox(width: 8),
-                            Text('Edit',
-                                style: TextStyle(
-                                    color:
-                                        Colors.white)), // Adjusted text color
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'duplicate',
-                        child: Row(
-                          children: [
-                            Icon(Icons.copy_outlined,
-                                size: 16,
-                                color: Colors.white70), // Adjusted icon color
-                            SizedBox(width: 8),
-                            Text('Duplicate',
-                                style: TextStyle(
-                                    color:
-                                        Colors.white)), // Adjusted text color
-                          ],
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'archive',
-                        child: Row(
-                          children: [
-                            Icon(Icons.archive_outlined,
-                                size: 16,
-                                color: Colors.white70), // Adjusted icon color
-                            SizedBox(width: 8),
-                            Text('Archive',
-                                style: TextStyle(
-                                    color:
-                                        Colors.white)), // Adjusted text color
-                          ],
-                        ),
-                      ),
-                    ],
-                    child: const Icon(Icons.more_vert,
-                        color: Colors.white70), // Adjusted icon color
-                  ),
                 ],
               ),
               const SizedBox(height: 12),
               // Proposal Title
               Text(
-                proposal['title'] ?? 'Untitled Proposal',
+                '$count $status Proposals',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -429,34 +371,12 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
               ),
               const SizedBox(height: 8),
               // Client and Date
-              Row(
-                children: [
-                  Icon(Icons.business_outlined,
-                      size: 16,
-                      color: Colors.white70), // Changed icon color to white70
-                  const SizedBox(width: 6),
-                  Text(
-                    proposal['clientName'] ?? 'No Client',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white70, // Changed text color to white70
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  Icon(Icons.calendar_today_outlined,
-                      size: 16,
-                      color: Colors.white70), // Changed icon color to white70
-                  const SizedBox(width: 6),
-                  Text(
-                    _formatDate(
-                        DateTime.tryParse(proposal['createdAt'] ?? '') ??
-                            DateTime.now()),
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white70, // Changed text color to white70
-                    ),
-                  ),
-                ],
+              Text(
+                _getStatusDescription(status),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white70, // Changed text color to white70
+                ),
               ),
               const SizedBox(height: 12),
               // Progress Bar (if in review)
@@ -465,8 +385,8 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                   value: 0.6, // Mock progress
                   backgroundColor: Colors.white
                       .withValues(alpha: 0.2), // Adjusted background color
-                  valueColor: AlwaysStoppedAnimation<Color>(statusColor
-                      .withValues(alpha: 0.8)), // Adjusted value color
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      color.withValues(alpha: 0.8)), // Adjusted value color
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -484,56 +404,22 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
     );
   }
 
-  void _handleQuickAction(String action, dynamic proposal) {
-    switch (action) {
-      case 'view':
-        // Navigate to proposal view
-        break;
-      case 'edit':
-        // Navigate to proposal edit
-        break;
-      case 'duplicate':
-        // Duplicate proposal
-        break;
-      case 'archive':
-        // Archive proposal
-        break;
-    }
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date).inDays;
-
-    if (difference == 0) {
-      return 'Today';
-    } else if (difference == 1) {
-      return 'Yesterday';
-    } else if (difference < 7) {
-      return '$difference days ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
-
   Widget _buildFiltersAndControls() {
     return ClipRRect(
-      // Added ClipRRect
-      borderRadius: BorderRadius.circular(12), // Rounded corners for blur
+      borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
-        // Added BackdropFilter
-        filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+        filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.12), // Translucent blackish background
+            color: Colors.black.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
                 color: const Color(0xFFE9293A).withValues(alpha: 0.5),
-                width: 1), // Red outline
+                width: 1),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05), // Adjusted shadow opacity
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -541,103 +427,92 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
           ),
           child: Row(
             children: [
-              // Status Filter
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Filter by Status',
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Filter by Status',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButton<String>(
+                      value: _selectedFilter,
+                      isExpanded: true,
+                      underline: Container(),
+                      dropdownColor: Colors.black.withValues(alpha: 0.8),
+                      style: const TextStyle(color: Colors.white),
+                      items: _statusFilters.map((String filter) {
+                        return DropdownMenuItem<String>(
+                          value: filter,
+                          child: Text(filter,
                               style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white, // Changed text color to white
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            DropdownButton<String>(
-                              value: _selectedFilter,
-                              isExpanded: true,
-                              underline: Container(),
-                              dropdownColor: Colors.black
-                                  .withValues(alpha: 0.8), // Darken dropdown background
-                              style: const TextStyle(
-                                  color: Colors.white), // Set default text color
-                              items: _statusFilters.map((String filter) {
-                                return DropdownMenuItem<String>(
-                                  value: filter,
-                                  child: Text(filter,
-                                      style: TextStyle(
-                                          color: filter == 'All' &&
-                                                  _selectedFilter == 'All'
-                                              ? const Color(0xFFC10D00)
-                                              : Colors.white)), // Ensure dropdown items are white
-                                );
-                              }).toList(),
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  _selectedFilter = newValue!;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      // Sort By
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Sort by',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white, // Changed text color to white
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            DropdownButton<String>(
-                              value: _sortBy,
-                              isExpanded: true,
-                              underline: Container(),
-                              dropdownColor: Colors.black
-                                  .withValues(alpha: 0.8), // Darken dropdown background
-                              style: const TextStyle(
-                                  color: Colors.white), // Set default text color
-                              items: _sortOptions.map((String option) {
-                                return DropdownMenuItem<String>(
-                                  value: option,
-                                  child: Text(option,
-                                      style: const TextStyle(
-                                          color: Colors
-                                              .white)), // Ensure dropdown items are white
-                                );
-                              }).toList(),
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  _sortBy = newValue!;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      // Refresh Button
-                      IconButton(
-                        onPressed: _refreshData,
-                        icon: const Icon(Icons.refresh,
-                            color: Colors.white), // Changed icon color to white
-                        tooltip: 'Refresh',
-                      ),
-                    ],
-                  ),
+                                  color: filter == 'All' &&
+                                          _selectedFilter == 'All'
+                                      ? const Color(0xFFC10D00)
+                                      : Colors.white)),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedFilter = newValue!;
+                        });
+                      },
+                    ),
+                  ],
                 ),
               ),
-            ),
-          );
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Sort by',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButton<String>(
+                      value: _sortBy,
+                      isExpanded: true,
+                      underline: Container(),
+                      dropdownColor: Colors.black.withValues(alpha: 0.8),
+                      style: const TextStyle(color: Colors.white),
+                      items: _sortOptions.map((String option) {
+                        return DropdownMenuItem<String>(
+                          value: option,
+                          child: Text(option,
+                              style: const TextStyle(color: Colors.white)),
+                        );
+                      }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _sortBy = newValue!;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 20),
+              IconButton(
+                onPressed: _refreshData,
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                tooltip: 'Refresh',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildProposalsList(List<dynamic> proposals) {
@@ -651,14 +526,16 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
           child: Container(
             padding: const EdgeInsets.all(40),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.12), // Translucent blackish background
+              color: Colors.black
+                  .withValues(alpha: 0.12), // Translucent blackish background
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                   color: const Color(0xFFE9293A).withValues(alpha: 0.5),
                   width: 1), // Red outline
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05), // Adjusted shadow opacity
+                  color: Colors.black
+                      .withValues(alpha: 0.05), // Adjusted shadow opacity
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -722,22 +599,26 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
 
             return ClipRRect(
               // Added ClipRRect
-              borderRadius: BorderRadius.circular(12), // Rounded corners for blur
+              borderRadius:
+                  BorderRadius.circular(12), // Rounded corners for blur
               child: BackdropFilter(
                 // Added BackdropFilter
-                filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
+                filter: ImageFilter.blur(
+                    sigmaX: 2.0, sigmaY: 2.0), // 2% blur effect
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.12), // Translucent blackish background
+                    color: Colors.black.withValues(
+                        alpha: 0.12), // Translucent blackish background
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                         color: const Color(0xFFE9293A).withValues(alpha: 0.5),
                         width: 1), // Red outline
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05), // Adjusted shadow opacity
+                        color: Colors.black
+                            .withValues(alpha: 0.05), // Adjusted shadow opacity
                         blurRadius: 10,
                         offset: const Offset(0, 2),
                       ),
@@ -747,32 +628,31 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                     children: [
                       // Status Badge
                       Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color:
-                              statusColor.withValues(alpha: 0.12), // Adjusted opacity to 0.12
+                          color: statusColor.withValues(
+                              alpha: 0.12), // Adjusted opacity to 0.12
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: statusColor
-                                  .withValues(alpha: 0.5)), // Adjusted border opacity
+                              color: statusColor.withValues(
+                                  alpha: 0.5)), // Adjusted border opacity
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                                _getStatusIcon(status),
+                            Icon(_getStatusIcon(status),
                                 size: 16,
-                                color: statusColor
-                                    .withValues(alpha: 0.7)), // Adjusted icon color
+                                color: statusColor.withValues(
+                                    alpha: 0.7)), // Adjusted icon color
                             const SizedBox(width: 6),
                             Text(
                               status,
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: statusColor
-                                    .withValues(alpha: 0.9), // Adjusted text color
+                                color: statusColor.withValues(
+                                    alpha: 0.9), // Adjusted text color
                               ),
                             ),
                           ],
@@ -789,7 +669,8 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white, // Changed text color to white
+                                color:
+                                    Colors.white, // Changed text color to white
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -797,17 +678,19 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                               proposal['clientName'] ?? 'No Client',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.white70, // Changed text color to white70
+                                color: Colors
+                                    .white70, // Changed text color to white70
                               ),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _formatDate(
-                                  DateTime.tryParse(proposal['createdAt'] ?? '') ??
-                                      DateTime.now()),
+                              _formatDate(DateTime.tryParse(
+                                      proposal['createdAt'] ?? '') ??
+                                  DateTime.now()),
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.white70, // Changed text color to white70
+                                color: Colors
+                                    .white70, // Changed text color to white70
                               ),
                             ),
                           ],
@@ -815,76 +698,6 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
                       ),
                       const SizedBox(width: 12),
                       // Quick Actions
-                      PopupMenuButton<String>(
-                        onSelected: (value) {
-                          // Handle quick actions
-                          _handleQuickAction(value, proposal);
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'view',
-                            child: Row(
-                              children: [
-                                Icon(Icons.visibility_outlined,
-                                    size: 16,
-                                    color: Colors.white70), // Adjusted icon color
-                                SizedBox(width: 8),
-                                Text('View',
-                                    style: TextStyle(
-                                        color:
-                                            Colors.white)), // Adjusted text color
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Row(
-                              children: [
-                                Icon(Icons.edit_outlined,
-                                    size: 16,
-                                    color: Colors.white70), // Adjusted icon color
-                                SizedBox(width: 8),
-                                Text('Edit',
-                                    style: TextStyle(
-                                        color:
-                                            Colors.white)), // Adjusted text color
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'duplicate',
-                            child: Row(
-                              children: [
-                                Icon(Icons.copy_outlined,
-                                    size: 16,
-                                    color: Colors.white70), // Adjusted icon color
-                                SizedBox(width: 8),
-                                Text('Duplicate',
-                                    style: TextStyle(
-                                        color:
-                                            Colors.white)), // Adjusted text color
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'archive',
-                            child: Row(
-                              children: [
-                                Icon(Icons.archive_outlined,
-                                    size: 16,
-                                    color: Colors.white70), // Adjusted icon color
-                                SizedBox(width: 8),
-                                Text('Archive',
-                                    style: TextStyle(
-                                        color:
-                                            Colors.white)), // Adjusted text color
-                              ],
-                            ),
-                          ),
-                        ],
-                        child: const Icon(Icons.more_vert,
-                            color: Colors.white70), // Adjusted icon color
-                      ),
                     ],
                   ),
                 ),
@@ -894,37 +707,5 @@ class _ProposalStatusDashboardState extends State<ProposalStatusDashboard>
         ),
       ],
     );
-  }
-}
-
-void _handleQuickAction(String action, dynamic proposal) {
-  switch (action) {
-    case 'view':
-      // Navigate to proposal view
-      break;
-    case 'edit':
-      // Navigate to proposal edit
-      break;
-    case 'duplicate':
-      // Duplicate proposal
-      break;
-    case 'archive':
-      // Archive proposal
-      break;
-  }
-}
-
-String _formatDate(DateTime date) {
-  final now = DateTime.now();
-  final difference = now.difference(date).inDays;
-
-  if (difference == 0) {
-    return 'Today';
-  } else if (difference == 1) {
-    return 'Yesterday';
-  } else if (difference < 7) {
-    return '$difference days ago';
-  } else {
-    return '${date.day}/${date.month}/${date.year}';
   }
 }

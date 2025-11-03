@@ -18,18 +18,19 @@ import traceback
 
 import psycopg2
 import psycopg2.extras
-import cloudinary
-import cloudinary.uploader
+import cloudinary  # pyright: ignore[reportMissingImports]
+import cloudinary.uploader  # pyright: ignore[reportMissingImports]
 from cryptography.fernet import Fernet
 from flask import Flask, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import CORS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from flask_limiter import Limiter  # pyright: ignore[reportMissingImports]
+from flask_limiter.util import get_remote_address  # pyright: ignore[reportMissingImports]
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from asgiref.wsgi import WsgiToAsgi
+from asgiref.wsgi import WsgiToAsgi  # pyright: ignore[reportMissingImports]
 import openai
 from dotenv import load_dotenv
+import werkzeug.exceptions
 
 # Load environment variables
 load_dotenv()
@@ -160,7 +161,7 @@ def init_pg_schema():
         title VARCHAR(500) NOT NULL,
         client VARCHAR(500) NOT NULL,
         owner_id INTEGER NOT NULL,
-        status VARCHAR(50) DEFAULT 'Draft',
+        status VARCHAR(50) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         template_key VARCHAR(255),
@@ -465,13 +466,13 @@ def notify_proposal_collaborators(proposal_id, notification_type, title, message
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Get proposal owner
-            cursor.execute("SELECT user_id FROM proposals WHERE id = %s", (proposal_id,))
+            cursor.execute("SELECT owner_id FROM proposals WHERE id = %s", (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return
             
             # Get owner's user ID
-            cursor.execute("SELECT id FROM users WHERE username = %s", (proposal['user_id'],))
+            cursor.execute("SELECT id FROM users WHERE username = %s", (proposal['owner_id'],))
             owner = cursor.fetchone()
             if owner and owner['id'] != exclude_user_id:
                 create_notification(owner['id'], notification_type, title, message, proposal_id, metadata)
@@ -839,7 +840,7 @@ def forgot_password():
             return {'detail': 'If this email exists, a password reset link will be sent'}, 200
         
         # Generate reset token
-        reset_token = generate_verification_token(email)
+        reset_token = secrets.token_urlsafe(32)
         
         # Send password reset email
         send_password_reset_email(email, reset_token)
@@ -1068,9 +1069,9 @@ def get_proposals(username):
             
             # Query all columns that exist in the database
             cursor.execute(
-                '''SELECT id, user_id, title, content, status, client_name, client_email, 
+                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
                           budget, timeline_days, created_at, updated_at
-                   FROM proposals WHERE user_id = %s
+                   FROM proposals WHERE owner_id = %s
                    ORDER BY created_at DESC''',
                 (username,)
             )
@@ -1079,8 +1080,7 @@ def get_proposals(username):
             for row in rows:
                 proposals.append({
                     'id': row[0],
-                    'user_id': row[1],
-                    'owner_id': row[1],  # For compatibility
+                    'owner_id': row[1],
                     'title': row[2],
                     'content': row[3],
                     'status': row[4],
@@ -1116,41 +1116,30 @@ def create_proposal(username):
             client_email = data.get('client_email') or ''
             
             cursor.execute(
-                '''INSERT INTO proposals (user_id, title, content, status, client_name, client_email, budget, timeline_days)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
-                (
-                    username,
-                    data.get('title', 'Untitled Document'),
-                    data.get('content'),
-                    data.get('status', 'draft'),
-                    client_name,
-                    client_email,
-                    data.get('budget'),
-                    data.get('timeline_days')
-                )
-            )
-            result = cursor.fetchone()
+                '''INSERT INTO proposals (owner_id, title, content, status, client_name, client_email, budget, timeline_days)
+                   RETURNING id, owner_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+                (username, data.get('title', 'Untitled Document'), data.get('content'), data.get('status', 'draft'), client_name, client_email, data.get('budget'), data.get('timeline_days')))
+            new_proposal = cursor.fetchone()
+            
             conn.commit()
             
             proposal = {
-                'id': result[0],
-                'user_id': result[1],
-                'owner_id': result[1],  # For compatibility
-                'title': result[2],
-                'content': result[3],
-                'status': result[4],
-                'client_name': result[5],
-                'client': result[5],
-                'client_email': result[6],
-                'budget': float(result[7]) if result[7] else None,
-                'timeline_days': result[8],
-                'created_at': result[9].isoformat() if result[9] else None,
-                'updated_at': result[10].isoformat() if result[10] else None,
-                'updatedAt': result[10].isoformat() if result[10] else None,
+                'id': new_proposal[0],
+                'owner_id': new_proposal[1],
+                'title': new_proposal[2],
+                'content': new_proposal[3],
+                'status': new_proposal[4],
+                'client_name': new_proposal[5],
+                'client': new_proposal[5],
+                'client_email': new_proposal[6],
+                'budget': float(new_proposal[7]) if new_proposal[7] else None,
+                'timeline_days': new_proposal[8],
+                'created_at': new_proposal[9].isoformat() if new_proposal[9] else None,
+                'updated_at': new_proposal[10].isoformat() if new_proposal[10] else None,
+                'updatedAt': new_proposal[10].isoformat() if new_proposal[10] else None,
             }
             
-            print(f"✅ Proposal created successfully with ID: {result[0]}")
+            print(f"✅ Proposal created successfully with ID: {new_proposal[0]}")
             return proposal, 201
     except Exception as e:
         print(f"❌ Error creating proposal: {e}")
@@ -1228,8 +1217,7 @@ def get_proposal(username, proposal_id):
         cursor.execute(
             '''SELECT id, title, client, owner_id, status, created_at, updated_at, template_key, content, sections, pdf_url
                FROM proposals WHERE id = %s''',
-            (proposal_id,)
-        )
+            (proposal_id,))
         result = cursor.fetchone()
         release_pg_conn(conn)
         
@@ -1301,7 +1289,7 @@ def send_for_approval(username, proposal_id):
             
             # Check if proposal exists and belongs to user
             cursor.execute(
-                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                'SELECT id, title, status FROM proposals WHERE id = %s AND owner_id = %s',
                 (proposal_id, username)
             )
             proposal = cursor.fetchone()
@@ -1348,7 +1336,7 @@ def approve_proposal(username, proposal_id):
             
             # Get proposal details including client email
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, user_id 
+                '''SELECT id, title, client_name, client_email, owner_id 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -1565,8 +1553,9 @@ def get_pending_approvals(username):
         cursor = conn.cursor()
         cursor.execute(
             '''SELECT id, title, client, owner_id, status, created_at
-               FROM proposals WHERE status = 'Submitted' ORDER BY created_at DESC'''
-        )
+               FROM proposals WHERE status = %s
+               ORDER BY created_at DESC''',
+            ('Submitted',))
         rows = cursor.fetchall()
         release_pg_conn(conn)
         proposals = []
@@ -1700,9 +1689,8 @@ def get_client_proposal(username, proposal_id):
         cursor = conn.cursor()
         cursor.execute(
             '''SELECT id, title, client, owner_id, status, created_at, content
-               FROM proposals WHERE id = %s AND client_can_edit = true''',
-            (proposal_id,)
-        )
+               FROM proposals WHERE id = %s AND owner_id = (SELECT id FROM users WHERE username = %s)''',
+            (proposal_id, username))
         result = cursor.fetchone()
         release_pg_conn(conn)
         
@@ -1933,10 +1921,10 @@ def get_proposal_comments(proposal_id):
                         "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
                     })
                 return comments
-    except HTTPException:
+    except werkzeug.exceptions.InternalServerError:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise werkzeug.exceptions.InternalServerError(str(e))
 
 # Proposal Versions endpoints
 @app.post("/api/proposals/<int:proposal_id>/versions")
@@ -2429,7 +2417,7 @@ def invite_collaborator(username, proposal_id):
             
             # Check if proposal exists and belongs to user
             cursor.execute(
-                'SELECT title FROM proposals WHERE id = %s AND user_id = %s',
+                'SELECT title FROM proposals WHERE id = %s AND owner_id = %s',
                 (proposal_id, username)
             )
             proposal = cursor.fetchone()
@@ -2537,7 +2525,7 @@ def get_collaborators(username, proposal_id):
             
             # Verify ownership
             cursor.execute(
-                'SELECT id FROM proposals WHERE id = %s AND user_id = %s',
+                'SELECT id FROM proposals WHERE id = %s AND owner_id = %s',
                 (proposal_id, username)
             )
             if not cursor.fetchone():
@@ -2587,7 +2575,7 @@ def remove_collaborator(username, invitation_id):
                 SELECT ci.id 
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
-                WHERE ci.id = %s AND (ci.invited_by = %s OR p.user_id = %s)
+                WHERE ci.id = %s AND (ci.invited_by = %s OR p.owner_id = %s)
             """, (invitation_id, user_id, username))
             
             if not cursor.fetchone():
@@ -2625,7 +2613,7 @@ def get_collaboration_access():
                     ci.expires_at,
                     p.title,
                     p.content,
-                    p.user_id,
+                    p.owner_id,
                     u.email as owner_email,
                     u.full_name as owner_name
                 FROM collaboration_invitations ci
@@ -2884,10 +2872,10 @@ def get_client_proposal_details(proposal_id):
             # Get proposal details
             cursor.execute("""
                 SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client_name, p.client_email, p.user_id,
+                       p.client_name, p.client_email, p.owner_id,
                        u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
-                LEFT JOIN users u ON p.user_id = u.username
+                LEFT JOIN users u ON p.owner_id = u.username
                 WHERE p.id = %s AND p.client_email = %s
             """, (proposal_id, invitation['invited_email']))
             
@@ -3031,7 +3019,7 @@ def client_approve_proposal(proposal_id):
                 UPDATE proposals 
                 SET status = 'Client Approved', updated_at = NOW()
                 WHERE id = %s AND client_email = %s
-                RETURNING id, title, client_name, user_id
+                RETURNING id, title, client_name, owner_id
             """, (proposal_id, invitation['invited_email']))
             
             proposal = cursor.fetchone()
@@ -3294,11 +3282,11 @@ def resolve_suggestion(username, proposal_id, suggestion_id):
             
             # Verify user owns the proposal
             cursor.execute("""
-                SELECT user_id FROM proposals WHERE id = %s
+                SELECT owner_id FROM proposals WHERE id = %s
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
+            if not proposal or proposal['owner_id'] != username:
                 return {'detail': 'Only proposal owner can resolve suggestions'}, 403
             
             # Update suggestion
@@ -3671,7 +3659,7 @@ def get_activity_timeline(username, proposal_id):
                 SELECT p.id FROM proposals p
                 LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
                 WHERE p.id = %s 
-                AND (p.user_id = %s OR ci.invited_email = %s)
+                AND (p.owner_id = %s OR ci.invited_email = %s)
             """, (proposal_id, username, current_user['email']))
             
             if not cursor.fetchone():
@@ -3723,7 +3711,7 @@ def compare_proposal_versions(username, proposal_id):
                 SELECT p.id FROM proposals p
                 LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
                 WHERE p.id = %s 
-                AND (p.user_id = %s OR ci.invited_email = %s)
+                AND (p.owner_id = %s OR ci.invited_email = %s)
             """, (proposal_id, username, current_user['email']))
             
             if not cursor.fetchone():
