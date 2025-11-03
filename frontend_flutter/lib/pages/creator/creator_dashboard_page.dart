@@ -128,7 +128,7 @@ class _DashboardPageState extends State<DashboardPage>
           Container(
             height: 60,
             decoration: const BoxDecoration(
-              color: Color(0xFF2C3E50),
+              color: Color(0xFFC10D00),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -958,11 +958,11 @@ class _DashboardPageState extends State<DashboardPage>
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.inbox_outlined, size: 64, color: Colors.grey[400]),
+                  Icon(Icons.inbox_outlined, size: 64, color: Colors.white70),
                   const SizedBox(height: 12),
                   Text(
                     'No proposals found',
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 16, color: Colors.white70),
                   ),
                 ],
               ),
@@ -1158,28 +1158,35 @@ class _DashboardPageState extends State<DashboardPage>
           onTap: () {
             _navigateToSystemComponent(context, component['label']!);
           },
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FA),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                  color: const Color(0xFFDDD), style: BorderStyle.solid),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  component['icon']!,
-                  style:
-                      const TextStyle(fontSize: 24, color: Color(0xFF3498DB)),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                      color: const Color(0xFFE9293A).withValues(alpha: 0.5),
+                      width: 1),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  component['label']!,
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.center,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      component['icon']!,
+                      style: const TextStyle(fontSize: 24, color: Colors.white),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      component['label']!,
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.white70),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -1266,12 +1273,12 @@ class _DashboardPageState extends State<DashboardPage>
           style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50)),
+              color: Colors.white), // Changed to Colors.white
         ),
         const SizedBox(height: 8),
         const Text(
           'Organization-wide overview and pending approvals',
-          style: TextStyle(color: Colors.grey),
+          style: TextStyle(color: Colors.white70), // Changed to Colors.white70
         ),
         const SizedBox(height: 24),
 
@@ -1290,12 +1297,15 @@ class _DashboardPageState extends State<DashboardPage>
             child: Column(
               children: [
                 const Icon(Icons.pending_actions,
-                    size: 48, color: Color(0xFFE67E22)),
+                    size: 48,
+                    color: Colors.white70), // Changed to Colors.white70
                 const SizedBox(height: 12),
                 Text(
                   '${counts['Pending CEO Approval'] ?? 0} proposals pending your approval',
                   style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w600),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white), // Changed to Colors.white
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
@@ -1335,12 +1345,12 @@ class _DashboardPageState extends State<DashboardPage>
           style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50)),
+              color: Colors.white), // Changed to Colors.white
         ),
         const SizedBox(height: 8),
         const Text(
           'Create and manage proposals for client engagement',
-          style: TextStyle(color: Colors.grey),
+          style: TextStyle(color: Colors.white70), // Changed to Colors.white70
         ),
         const SizedBox(height: 24),
 
@@ -1387,12 +1397,12 @@ class _DashboardPageState extends State<DashboardPage>
           style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50)),
+              color: Colors.white), // Changed to Colors.white
         ),
         const SizedBox(height: 8),
         const Text(
           'View and manage proposals sent to you',
-          style: TextStyle(color: Colors.grey),
+          style: TextStyle(color: Colors.white70), // Changed to Colors.white70
         ),
         const SizedBox(height: 24),
 
@@ -1428,11 +1438,16 @@ class _DashboardPageState extends State<DashboardPage>
                   child: const Center(
                     child: Column(
                       children: [
-                        Icon(Icons.inbox, size: 64, color: Colors.grey),
+                        Icon(Icons.inbox,
+                            size: 64,
+                            color: Colors.white70), // Changed to Colors.white70
                         SizedBox(height: 16),
                         Text(
                           'No proposals yet',
-                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                          style: TextStyle(
+                              fontSize: 18,
+                              color:
+                                  Colors.white70), // Changed to Colors.white70
                         ),
                       ],
                     ),

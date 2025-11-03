@@ -685,14 +685,34 @@ class _GovernancePanelState extends State<GovernancePanel>
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            'Action: ${issue['action']}',
-            style: TextStyle(
-              fontSize: 11,
-              color: priorityColor,
-              fontStyle: FontStyle.italic,
-            ),
+          Row(
+            children: [
+              Text(
+                'Action: ${issue['action']}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: priorityColor,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
           ),
+          const Spacer(),
+          if (issue['action'] == 'Review and fix')
+            ElevatedButton(
+              onPressed: () {
+                // Handle review action
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    const Color(0xFFC10D00), // Red color for "Review Needed"
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                textStyle: const TextStyle(fontSize: 10),
+              ),
+              child: const Text('Review Needed'),
+            ),
         ],
       ),
     );
