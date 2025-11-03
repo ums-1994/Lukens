@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/role_switcher.dart';
+import '../../widgets/async_widget.dart';
+import '../../services/error_service.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
@@ -57,12 +59,21 @@ class _DashboardPageState extends State<DashboardPage>
       if (app.authToken == null && AuthService.token != null) {
         app.authToken = AuthService.token;
         app.currentUser = AuthService.currentUser;
-        print(
-            '✅ Synced token from AuthService: ${AuthService.token?.substring(0, 20)}...');
+        ErrorService.logError(
+          'Synced token from AuthService',
+          context: 'DashboardPage._refreshData',
+          additionalData: {
+            'tokenLength': AuthService.token?.length,
+          },
+        );
       }
 
       if (app.authToken == null) {
-        print('❌ No auth token available - cannot fetch data');
+        ErrorService.handleError(
+          'Authentication required. Please log in again.',
+          context: 'DashboardPage._refreshData',
+          severity: ErrorSeverity.high,
+        );
         return;
       }
 
@@ -70,10 +81,21 @@ class _DashboardPageState extends State<DashboardPage>
         app.fetchProposals(),
         app.fetchDashboard(),
       ]);
-      print(
-          '✅ Dashboard data refreshed - ${app.proposals.length} proposals loaded');
+      
+      ErrorService.logError(
+        'Dashboard data refreshed successfully',
+        context: 'DashboardPage._refreshData',
+        additionalData: {
+          'proposalsCount': app.proposals.length,
+        },
+      );
     } catch (e) {
-      print('❌ Error refreshing dashboard: $e');
+      ErrorService.handleError(
+        'Failed to refresh dashboard data. Please try again.',
+        error: e,
+        context: 'DashboardPage._refreshData',
+        severity: ErrorSeverity.medium,
+      );
     } finally {
       if (mounted) {
         setState(() => _isRefreshing = false);

@@ -30,10 +30,19 @@ import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
 import 'services/role_service.dart';
+import 'services/error_service.dart';
+import 'widgets/error_boundary.dart';
 import 'api.dart';
+
+// Global navigator key for error handling
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize error service with navigator key
+  ErrorService.initialize(navigatorKey);
+  
   try {
     if (kIsWeb) {
       // Initialize Firebase for web using options matching web/firebase-config.js
@@ -53,10 +62,25 @@ Future<void> main() async {
       await Firebase.initializeApp();
     }
   } catch (e) {
-    // Ignore if already initialized or not required
+    ErrorService.logError(
+      'Firebase initialization failed',
+      error: e,
+      context: 'main',
+    );
+    // Continue without Firebase if initialization fails
   }
+  
   // Restore persisted auth session on startup (web)
-  AuthService.restoreSessionFromStorage();
+  try {
+    AuthService.restoreSessionFromStorage();
+  } catch (e) {
+    ErrorService.logError(
+      'Failed to restore auth session',
+      error: e,
+      context: 'main',
+    );
+  }
+  
   runApp(const MyApp());
 }
 
@@ -70,15 +94,26 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => AppState()),
         ChangeNotifierProvider(create: (context) => RoleService()),
       ],
-      child: MaterialApp(
-        title: 'Lukens',
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: Colors.blue,
-          fontFamily: 'Poppins',
-          scaffoldBackgroundColor: Colors.transparent,
-        ),
-        home: const AuthWrapper(),
+      child: ErrorBoundary(
+        onError: (error, stackTrace) {
+          ErrorService.handleError(
+            'Uncaught application error',
+            error: error,
+            stackTrace: stackTrace,
+            context: 'ErrorBoundary',
+            severity: ErrorSeverity.critical,
+          );
+        },
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          title: 'Lukens',
+          theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: Colors.blue,
+            fontFamily: 'Poppins',
+            scaffoldBackgroundColor: Colors.transparent,
+          ),
+          home: const AuthWrapper(),
         builder: (context, child) {
           return Stack(
             children: [
@@ -274,6 +309,7 @@ class MyApp extends StatelessWidget {
             );
           },
         },
+        ),
       ),
     );
   }

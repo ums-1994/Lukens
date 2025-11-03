@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/smtp_auth_service.dart';
+import '../../services/error_service.dart';
+import '../../widgets/async_widget.dart';
 import 'login_page.dart';
 import 'dart:math' as math;
 
@@ -146,13 +148,11 @@ class _RegisterPageState extends State<RegisterPage>
         setState(() => _isLoading = false);
 
         if (result != null) {
-          // Skip email verification - go directly to login
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registration successful! Please login.'),
-              backgroundColor: Colors.green,
-            ),
+          ErrorService.showSuccess(
+            'Registration successful! Please login with your new account.',
+            context: 'RegisterPage._register',
           );
+          
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -160,20 +160,35 @@ class _RegisterPageState extends State<RegisterPage>
             ),
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registration failed. Please try again.'),
-              backgroundColor: Colors.red,
-            ),
+          ErrorService.handleError(
+            'Registration failed. Please check your information and try again.',
+            context: 'RegisterPage._register',
+            severity: ErrorSeverity.medium,
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        final message = e.toString().replaceFirst('Exception: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        
+        // Extract meaningful error message
+        String errorMessage = 'Registration failed. Please try again.';
+        final errorString = e.toString();
+        if (errorString.contains('Exception: ')) {
+          errorMessage = errorString.replaceFirst('Exception: ', '');
+        } else if (errorString.contains('email-already-in-use')) {
+          errorMessage = 'An account with this email already exists. Please use a different email or try logging in.';
+        } else if (errorString.contains('weak-password')) {
+          errorMessage = 'Password is too weak. Please choose a stronger password.';
+        } else if (errorString.contains('invalid-email')) {
+          errorMessage = 'Please enter a valid email address.';
+        }
+        
+        ErrorService.handleError(
+          errorMessage,
+          error: e,
+          context: 'RegisterPage._register',
+          severity: ErrorSeverity.medium,
         );
       }
     }

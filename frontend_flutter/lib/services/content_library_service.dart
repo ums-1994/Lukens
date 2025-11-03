@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'error_service.dart';
+import 'network_service.dart';
 
 class ContentLibraryService {
   static const String baseUrl = 'http://localhost:8000';
@@ -31,39 +33,56 @@ class ContentLibraryService {
         url += '?category=$category';
       }
 
-      final response = await http.get(
-        Uri.parse(url),
+      final response = await NetworkService.get(
+        url,
         headers: _getHeaders(token: token),
+        context: 'ContentLibraryService.getContentModules',
       );
 
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+      final responseData = NetworkService.parseJsonResponse(
+        response,
+        context: 'ContentLibraryService.getContentModules',
+      );
 
-        // Backend returns {'content': [array]} format
-        final List<dynamic> data =
-            responseData is Map && responseData.containsKey('content')
-                ? responseData['content']
-                : (responseData is List ? responseData : []);
+      // Backend returns {'content': [array]} format
+      final List<dynamic> data =
+          responseData is Map && responseData.containsKey('content')
+              ? responseData['content']
+              : (responseData is List ? responseData : []);
 
-        return data
-            .map((item) => {
-                  'id': item['id'],
-                  'key': item['key'],
-                  'title': item['label'] ?? item['key'],
-                  'label': item['label'] ?? item['key'],
-                  'content': item['content'] ?? '',
-                  'category': item['category'] ?? 'Templates',
-                  'is_folder': item['is_folder'] ?? false,
-                  'parent_id': item['parent_id'],
-                  'public_id': item['public_id'],
-                  'created_at': item['created_at'],
-                  'updated_at': item['updated_at'],
-                })
-            .toList();
-      }
-      return [];
+      final result = data
+          .map((item) => {
+                'id': item['id'],
+                'key': item['key'],
+                'title': item['label'] ?? item['key'],
+                'label': item['label'] ?? item['key'],
+                'content': item['content'] ?? '',
+                'category': item['category'] ?? 'Templates',
+                'is_folder': item['is_folder'] ?? false,
+                'parent_id': item['parent_id'],
+                'public_id': item['public_id'],
+                'created_at': item['created_at'],
+                'updated_at': item['updated_at'],
+              })
+          .toList();
+
+      ErrorService.logError(
+        'Content modules fetched successfully',
+        context: 'ContentLibraryService.getContentModules',
+        additionalData: {
+          'category': category,
+          'moduleCount': result.length,
+        },
+      );
+
+      return result;
     } catch (e) {
-      print('Error fetching content modules: $e');
+      ErrorService.handleError(
+        'Failed to load content modules',
+        error: e,
+        context: 'ContentLibraryService.getContentModules',
+        showToUser: false,
+      );
       return [];
     }
   }

@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'error_service.dart';
+import 'network_service.dart';
 
 class AIAnalysisService {
   static const String _baseUrl = 'http://localhost:8000';
@@ -13,15 +15,25 @@ class AIAnalysisService {
   // Check if AI is configured (check backend status)
   static Future<bool> get isConfigured async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/ai/status'));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['ai_enabled'] == true;
-      }
+      final response = await NetworkService.get(
+        '$_baseUrl/ai/status',
+        context: 'AIAnalysisService.isConfigured',
+      );
+      
+      final data = NetworkService.parseJsonResponse(
+        response,
+        context: 'AIAnalysisService.isConfigured',
+      );
+      
+      return data['ai_enabled'] == true;
     } catch (e) {
-      print('AI status check failed: $e');
+      ErrorService.logError(
+        'AI status check failed',
+        error: e,
+        context: 'AIAnalysisService.isConfigured',
+      );
+      return false;
     }
-    return false;
   }
 
   // AI-powered risk analysis (Wildcard Challenge)
@@ -33,20 +45,32 @@ class AIAnalysisService {
         if (_authToken != null) 'Authorization': 'Bearer $_authToken',
       };
 
-      final response = await http.post(
-        Uri.parse('$_baseUrl/ai/analyze-risks'),
+      final response = await NetworkService.post(
+        '$_baseUrl/ai/analyze-risks',
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
+        context: 'AIAnalysisService.analyzeProposalRisks',
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return _convertToUIFormat(data['analysis']);
-      } else {
-        throw Exception('Risk analysis failed: ${response.statusCode}');
-      }
+      final data = NetworkService.parseJsonResponse(
+        response,
+        context: 'AIAnalysisService.analyzeProposalRisks',
+      );
+      
+      ErrorService.logError(
+        'AI risk analysis completed successfully',
+        context: 'AIAnalysisService.analyzeProposalRisks',
+        additionalData: {'proposalId': proposalId},
+      );
+      
+      return _convertToUIFormat(data['analysis']);
     } catch (e) {
-      print('AI Risk Analysis Error: $e');
+      ErrorService.handleError(
+        'AI risk analysis failed. Using fallback analysis.',
+        error: e,
+        context: 'AIAnalysisService.analyzeProposalRisks',
+        showToUser: false,
+      );
       return _getMockAnalysis({});
     }
   }

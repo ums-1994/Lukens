@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/smtp_auth_service.dart';
+import '../../services/error_service.dart';
+import '../../widgets/async_widget.dart';
 
 class EmailVerificationPage extends StatefulWidget {
   final String? token;
@@ -45,17 +47,15 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
           _isVerified = true;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Email verified successfully!'),
-            backgroundColor: Colors.green,
-          ),
+        ErrorService.showSuccess(
+          'Email verified successfully! Redirecting to login...',
+          context: 'EmailVerificationPage._verifyEmail',
         );
 
-        // Navigate to login page after 2 seconds
+        // Navigate to login after a delay
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
-            Navigator.pushNamed(context, '/login');
+            Navigator.pushReplacementNamed(context, '/login');
           }
         });
       }
@@ -63,8 +63,15 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = e.toString();
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
         });
+
+        ErrorService.handleError(
+          _errorMessage ?? 'Email verification failed. Please try again.',
+          error: e,
+          context: 'EmailVerificationPage._verifyEmail',
+          severity: ErrorSeverity.medium,
+        );
       }
     }
   }

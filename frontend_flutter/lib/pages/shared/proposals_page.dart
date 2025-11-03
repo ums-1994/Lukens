@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
+import '../../services/error_service.dart';
+import '../../widgets/async_widget.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../widgets/footer.dart';
@@ -64,8 +66,7 @@ class _ProposalsPageState extends State<ProposalsPage>
     });
   }
 
-  Future<void> _loadProposals() async {
-    setState(() => _isLoading = true);
+  Future<List<Map<String, dynamic>>> _loadProposals() async {
     try {
       // Get token from AuthService (backend JWT) - same as document editor
       final token = AuthService.token;
@@ -81,33 +82,36 @@ class _ProposalsPageState extends State<ProposalsPage>
       }
 
       if (_token != null && _token!.isNotEmpty) {
-        print('✅ Loading proposals with token...');
+        ErrorService.logError(
+          'Loading proposals with authentication',
+          context: 'ProposalsPage._loadProposals',
+        );
         final data = await ApiService.getProposals(_token!);
-        if (mounted) {
-          setState(() {
-            proposals = List<Map<String, dynamic>>.from(data);
-            print('✅ Loaded ${proposals.length} proposals');
-          });
-        }
+        final proposalsList = List<Map<String, dynamic>>.from(data);
+        
+        ErrorService.logError(
+          'Proposals loaded successfully',
+          context: 'ProposalsPage._loadProposals',
+          additionalData: {'proposalsCount': proposalsList.length},
+        );
+        
+        return proposalsList;
       } else {
-        print('⚠️ No authentication token found');
-        if (mounted) {
-          setState(() {
-            proposals = [];
-          });
-        }
+        ErrorService.handleError(
+          'Authentication required. Please log in to view proposals.',
+          context: 'ProposalsPage._loadProposals',
+          severity: ErrorSeverity.high,
+        );
+        return [];
       }
     } catch (e) {
-      print('❌ Error loading proposals: $e');
-      if (mounted) {
-        setState(() {
-          proposals = [];
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      ErrorService.handleError(
+        'Failed to load proposals. Please try again.',
+        error: e,
+        context: 'ProposalsPage._loadProposals',
+        severity: ErrorSeverity.medium,
+      );
+      return [];
     }
   }
 
