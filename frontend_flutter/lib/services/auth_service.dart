@@ -69,7 +69,9 @@ class AuthService {
             _token = storedToken;
             _currentUser = storedUser;
             print('✅ Session restored successfully!');
-            print('✅ Token: ${_token!.substring(0, 20)}...');
+            final tok = _token!;
+            final preview = tok.length > 20 ? tok.substring(0, 20) : tok;
+            print('✅ Token: $preview...');
             print('✅ User email: ${_currentUser!['email']}');
           } else {
             print('❌ Token or user is null in parsed data');
@@ -263,7 +265,8 @@ class AuthService {
   // Set user data manually (for Firebase compatibility)
   static void setUserData(Map<String, dynamic> userData, String token) {
     print('💾 AuthService.setUserData called');
-    print('💾 Setting token: ${token.substring(0, 20)}...');
+    final preview = token.length > 20 ? token.substring(0, 20) : token;
+    print('💾 Setting token: $preview...');
     print('💾 Setting user: ${userData['email']}');
     _currentUser = userData;
     _token = token;

@@ -77,7 +77,21 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
           textTheme: GoogleFonts.poppinsTextTheme(),
+          scaffoldBackgroundColor: Colors.transparent,
         ),
+        builder: (context, child) {
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/Global BG.jpg',
+                  fit: BoxFit.cover,
+                ),
+              ),
+              if (child != null) child,
+            ],
+          );
+        },
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
@@ -274,6 +288,7 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
+  bool _bypassApplied = false;
   @override
   void initState() {
     super.initState();
@@ -356,7 +371,22 @@ class _AuthWrapperState extends State<AuthWrapper> {
       });
       return const HomeShell();
     } else {
-      return const StartupPage();
+      // BYPASS AUTH: Auto-login with a default user for SSO integration phase
+      if (!_bypassApplied) {
+        _bypassApplied = true;
+        final defaultUser = {
+          'email': 'admin@khonology.com',
+          'full_name': 'Admin User',
+          'role': 'Financial Manager',
+        };
+        const fakeToken = 'dev-bypass-token';
+        // Persist in AuthService and sync AppState on next frame
+        AuthService.setUserData(defaultUser, fakeToken);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          context.read<AppState>().init();
+        });
+      }
+      return const HomeShell();
     }
   }
 }
@@ -394,13 +424,7 @@ class _HomeShellState extends State<HomeShell> {
       _current = _labelForIdx(idx);
     }
     return Scaffold(
-      body: Row(
-        children: [
-          // Modern Navigation Sidebar
-          _buildModernSidebar(),
-          Expanded(child: pages[idx]),
-        ],
-      ),
+      body: pages[idx],
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           showDialog(

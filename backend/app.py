@@ -15,11 +15,35 @@ from urllib.parse import urlparse, parse_qs
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import traceback
+from io import BytesIO
 
 import psycopg2
 import psycopg2.extras
 import cloudinary
 import cloudinary.uploader
+
+# PDF Generation
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.pdfgen import canvas
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+    print("⚠️ ReportLab not installed. PDF generation will be limited. Run: pip install reportlab")
+
+# DocuSign SDK
+try:
+    from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest
+    from docusign_esign.client.api_exception import ApiException
+    import jwt
+    DOCUSIGN_AVAILABLE = True
+except ImportError:
+    DOCUSIGN_AVAILABLE = False
+    print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
 from flask import Flask, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import CORS
@@ -324,6 +348,30 @@ def init_pg_schema():
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
                          ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
         
+        # DocuSign signatures table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        envelope_id VARCHAR(255) UNIQUE,
+        signer_name VARCHAR(255) NOT NULL,
+        signer_email VARCHAR(255) NOT NULL,
+        signer_title VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'sent',
+        signing_url TEXT,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        signed_at TIMESTAMP,
+        declined_at TIMESTAMP,
+        decline_reason TEXT,
+        signed_document_url TEXT,
+        created_by INTEGER,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        # Create index for faster signature queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
+                         ON proposal_signatures(proposal_id, status, sent_at DESC)''')
+        
         conn.commit()
         release_pg_conn(conn)
         print("✅ PostgreSQL schema initialized successfully")
@@ -578,6 +626,389 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
     except Exception as e:
         print(f"⚠️ Failed to process mentions: {e}")
         traceback.print_exc()
+
+# ============================================================================
+# DOCUSIGN HELPER FUNCTIONS
+# ============================================================================
+
+def get_docusign_jwt_token():
+    """
+    Get DocuSign access token using JWT authentication
+    """
+    if not DOCUSIGN_AVAILABLE:
+        raise Exception("DocuSign SDK not installed")
+    
+    try:
+        integration_key = os.getenv('DOCUSIGN_INTEGRATION_KEY')
+        user_id = os.getenv('DOCUSIGN_USER_ID')
+        auth_server = os.getenv('DOCUSIGN_AUTH_SERVER', 'account-d.docusign.com')
+        private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
+        
+        if not all([integration_key, user_id]):
+            raise Exception("DocuSign credentials not configured")
+        
+        with open(private_key_path, 'r') as key_file:
+            private_key = key_file.read()
+        
+        api_client = ApiClient()
+        api_client.set_base_path(f"https://{auth_server}")
+        
+        response = api_client.request_jwt_user_token(
+            client_id=integration_key,
+            user_id=user_id,
+            oauth_host_name=auth_server,
+            private_key_bytes=private_key,
+            expires_in=3600,
+            scopes=["signature", "impersonation"]
+        )
+        
+        user_info = api_client.get_user_info(response.access_token)
+        accounts = getattr(user_info, 'accounts', None)
+        account = None
+        if accounts:
+            for acc in accounts:
+                if getattr(acc, 'is_default', '').lower() == 'true':
+                    account = acc
+                    break
+            if account is None:
+                account = accounts[0]
+        if not account or not getattr(account, 'account_id', None):
+            raise Exception("No account_id returned from DocuSign user info")
+        account_id = account.account_id
+        base_uri = getattr(account, 'base_uri', None)
+        if not base_uri:
+            raise Exception("No base_uri returned from DocuSign user info")
+        base_path = f"{base_uri}/restapi"
+        
+        print(f"✅ DocuSign JWT authenticated. Account ID: {account_id}")
+        
+        return {
+            'access_token': response.access_token,
+            'account_id': account_id,
+            'base_path': base_path
+        }
+        
+    except Exception as e:
+        print(f"❌ Error getting DocuSign JWT token: {e}")
+        traceback.print_exc()
+        raise
+
+def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
+    """
+    Generate a PDF from proposal content using ReportLab
+    
+    Args:
+        proposal_id: ID of the proposal
+        title: Proposal title
+        content: Proposal content (can be HTML/text)
+        client_name: Optional client name
+        client_email: Optional client email
+    
+    Returns:
+        bytes: PDF content as bytes
+    """
+    if not PDF_AVAILABLE:
+        # Fallback: Return minimal PDF-like structure
+        # If reportlab is not available, create a basic text representation
+        # Note: This will not create a valid PDF, but prevents errors
+        import warnings
+        warnings.warn("ReportLab not available. PDF generation may be limited.")
+        
+        # Try to use basic canvas if available
+        try:
+            from reportlab.pdfgen import canvas
+        except ImportError:
+            # Last resort: return minimal bytes that DocuSign might accept
+            # This should rarely happen if reportlab is in requirements.txt
+            minimal_pdf = f"""
+%PDF-1.4
+PROPOSAL #{proposal_id}
+Title: {title}
+Content: {content[:500] if content else 'No content'}
+[SIGNATURE PLACEHOLDER: /sig1/]
+            """.encode('utf-8')
+            return minimal_pdf
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        # Title
+        p.setFont("Helvetica-Bold", 20)
+        p.drawString(50, height - 50, f"PROPOSAL #{proposal_id}")
+        
+        # Proposal Title
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(50, height - 80, title)
+        
+        # Client info
+        if client_name:
+            p.setFont("Helvetica", 12)
+            p.drawString(50, height - 110, f"Client: {client_name}")
+        
+        # Content
+        p.setFont("Helvetica", 10)
+        y_position = height - 150
+        
+        # Simple text content (first 2000 chars)
+        text_content = content[:2000] if content else "No content provided."
+        lines = text_content.split('\n')[:50]  # Limit to 50 lines
+        
+        for line in lines:
+            if y_position < 100:
+                p.showPage()
+                y_position = height - 50
+            # Wrap long lines
+            words = line.split()
+            current_line = ""
+            for word in words:
+                test_line = current_line + " " + word if current_line else word
+                if len(test_line) * 6 < width - 100:  # Approximate character width
+                    current_line = test_line
+                else:
+                    if current_line:
+                        p.drawString(50, y_position, current_line)
+                        y_position -= 15
+                    current_line = word
+            if current_line:
+                p.drawString(50, y_position, current_line)
+                y_position -= 15
+        
+        # Signature placeholder
+        y_position -= 30
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, y_position, "[SIGNATURE PLACEHOLDER: /sig1/]")
+        
+        # Footer
+        p.setFont("Helvetica", 8)
+        p.drawString(50, 30, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        p.save()
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
+    
+    # Proper PDF generation with ReportLab
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                           rightMargin=72, leftMargin=72,
+                           topMargin=72, bottomMargin=18)
+    
+    # Container for the 'Flowable' objects
+    elements = []
+    
+    # Define styles
+    styles = getSampleStyleSheet()
+    
+    # Title style
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor='#1a1a1a',
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
+    
+    # Heading style
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor='#2c3e50',
+        spaceAfter=12,
+        spaceBefore=12
+    )
+    
+    # Body style
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor='#333333',
+        alignment=TA_JUSTIFY,
+        spaceAfter=12,
+        leading=14
+    )
+    
+    # Add title
+    elements.append(Paragraph(f"PROPOSAL #{proposal_id}", title_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Add proposal title
+    elements.append(Paragraph(title, heading_style))
+    elements.append(Spacer(1, 0.1*inch))
+    
+    # Add client info if available
+    if client_name or client_email:
+        client_info = []
+        if client_name:
+            client_info.append(f"Client: {client_name}")
+        if client_email:
+            client_info.append(f"Email: {client_email}")
+        elements.append(Paragraph("<br/>".join(client_info), body_style))
+        elements.append(Spacer(1, 0.2*inch))
+    
+    # Add content
+    if content:
+        # Clean HTML tags if present (basic cleaning)
+        import re
+        # Remove HTML tags but keep content
+        text_content = re.sub(r'<[^>]+>', '', str(content))
+        # Split into paragraphs
+        paragraphs = text_content.split('\n\n')
+        
+        for para in paragraphs:
+            if para.strip():
+                # Escape special characters for Paragraph
+                para_escaped = para.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                elements.append(Paragraph(para_escaped, body_style))
+                elements.append(Spacer(1, 0.1*inch))
+    
+    # Add signature placeholder
+    elements.append(PageBreak())
+    elements.append(Spacer(1, 4*inch))
+    
+    sig_style = ParagraphStyle(
+        'Signature',
+        parent=styles['Normal'],
+        fontSize=14,
+        textColor='#000000',
+        alignment=TA_CENTER,
+        spaceBefore=0.5*inch
+    )
+    
+    elements.append(Paragraph("[SIGNATURE PLACEHOLDER: /sig1/]", sig_style))
+    elements.append(Spacer(1, 0.5*inch))
+    
+    # Add footer
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor='#666666',
+        alignment=TA_CENTER
+    )
+    elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
+    
+    # Build PDF
+    doc.build(elements)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_bytes
+
+def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, signer_title, return_url):
+    """
+    Create DocuSign envelope with embedded signing
+    
+    Args:
+        proposal_id: ID of the proposal
+        pdf_bytes: PDF content as bytes
+        signer_name: Name of the signer
+        signer_email: Email of the signer
+        signer_title: Title of the signer (optional)
+        return_url: URL to return to after signing
+    
+    Returns:
+        dict with envelope_id and signing_url
+    """
+    if not DOCUSIGN_AVAILABLE:
+        raise Exception("DocuSign SDK not installed")
+    
+    try:
+        auth_data = get_docusign_jwt_token()
+        access_token = auth_data['access_token']
+        account_id = auth_data['account_id']
+        base_path = auth_data.get('base_path') or os.getenv('DOCUSIGN_BASE_PATH', 'https://demo.docusign.net/restapi')
+        
+        print(f"ℹ️  Using account_id: {account_id}")
+        print(f"ℹ️  Using base_path: {base_path}")
+        
+        api_client = ApiClient()
+        api_client.host = base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+        
+        # Create document
+        document = Document(
+            document_base64=base64.b64encode(pdf_bytes).decode('utf-8'),
+            name=f'Proposal_{proposal_id}.pdf',
+            file_extension='pdf',
+            document_id='1'
+        )
+        
+        # Create signer
+        sign_here = SignHere(
+            anchor_string='/sig1/',
+            anchor_units='pixels',
+            anchor_y_offset='10',
+            anchor_x_offset='20'
+        )
+        
+        tabs = Tabs(sign_here_tabs=[sign_here])
+        
+        signer = Signer(
+            email=signer_email,
+            name=signer_name,
+            recipient_id='1',
+            routing_order='1',
+            client_user_id='1000',  # Required for embedded signing
+            tabs=tabs
+        )
+        
+        # If title provided, add custom field
+        if signer_title:
+            signer.note = f"Title: {signer_title}"
+        
+        # Create recipients
+        recipients = Recipients(signers=[signer])
+        
+        # Create envelope
+        envelope_definition = EnvelopeDefinition(
+            email_subject=f'Please sign: Proposal #{proposal_id}',
+            documents=[document],
+            recipients=recipients,
+            status='sent'  # Send immediately
+        )
+        
+        # Create envelope via API
+        envelopes_api = EnvelopesApi(api_client)
+        results = envelopes_api.create_envelope(account_id, envelope_definition=envelope_definition)
+        envelope_id = results.envelope_id
+        
+        print(f"✅ DocuSign envelope created: {envelope_id}")
+        
+        # Create recipient view (embedded signing URL)
+        recipient_view_request = RecipientViewRequest(
+            authentication_method='none',
+            client_user_id='1000',
+            recipient_id='1',
+            return_url=return_url,
+            user_name=signer_name,
+            email=signer_email
+        )
+        
+        view_results = envelopes_api.create_recipient_view(
+            account_id,
+            envelope_id,
+            recipient_view_request=recipient_view_request
+        )
+        
+        signing_url = view_results.url
+        
+        print(f"✅ Embedded signing URL created")
+        
+        return {
+            'envelope_id': envelope_id,
+            'signing_url': signing_url
+        }
+        
+    except ApiException as e:
+        print(f"❌ DocuSign API error: {e}")
+        raise
+    except Exception as e:
+        print(f"❌ Error creating DocuSign envelope: {e}")
+        traceback.print_exc()
+        raise
 
 # Utility functions
 def get_db():
@@ -3805,6 +4236,263 @@ def compare_proposal_versions(username, proposal_id):
         print(f"❌ Error comparing versions: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
+
+# ============================================================================
+# DOCUSIGN E-SIGNATURE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/proposals/<int:proposal_id>/docusign/send")
+@token_required
+def send_for_signature(username, proposal_id):
+    """Send proposal for DocuSign signature (embedded signing)"""
+    try:
+        if not DOCUSIGN_AVAILABLE:
+            return {'detail': 'DocuSign integration not available. Please install docusign-esign package.'}, 503
+        
+        data = request.get_json()
+        signer_name = data.get('signer_name')
+        signer_email = data.get('signer_email')
+        signer_title = data.get('signer_title', '')
+        return_url = data.get('return_url', 'http://localhost:8081')
+        
+        if not signer_name or not signer_email:
+            return {'detail': 'Signer name and email are required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user owns the proposal
+            cursor.execute("""
+                SELECT id, title, content FROM proposals 
+                WHERE id = %s AND user_id = %s
+            """, (proposal_id, username))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Generate PDF from proposal content
+            pdf_content = generate_proposal_pdf(
+                proposal_id=proposal_id,
+                title=proposal['title'],
+                content=proposal.get('content', ''),
+                client_name=proposal.get('client_name'),
+                client_email=proposal.get('client_email')
+            )
+            
+            # Create DocuSign envelope
+            envelope_result = create_docusign_envelope(
+                proposal_id=proposal_id,
+                pdf_bytes=pdf_content,
+                signer_name=signer_name,
+                signer_email=signer_email,
+                signer_title=signer_title,
+                return_url=return_url
+            )
+            
+            # Store signature record
+            cursor.execute("""
+                INSERT INTO proposal_signatures 
+                (proposal_id, envelope_id, signer_name, signer_email, signer_title, 
+                 signing_url, status, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, sent_at
+            """, (proposal_id, envelope_result['envelope_id'], signer_name, signer_email, 
+                  signer_title, envelope_result['signing_url'], 'sent', current_user['id']))
+            
+            signature_record = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            log_activity(
+                proposal_id,
+                current_user['id'],
+                'signature_requested',
+                f"Proposal sent to {signer_name} for signature",
+                {'envelope_id': envelope_result['envelope_id'], 'signer_email': signer_email}
+            )
+            
+            # Update proposal status
+            cursor.execute("""
+                UPDATE proposals 
+                SET status = 'Sent for Signature', updated_at = NOW()
+                WHERE id = %s
+            """, (proposal_id,))
+            conn.commit()
+            
+            print(f"✅ Proposal {proposal_id} sent for signature to {signer_email}")
+            
+            return {
+                'envelope_id': envelope_result['envelope_id'],
+                'signing_url': envelope_result['signing_url'],
+                'signature_id': signature_record['id'],
+                'sent_at': signature_record['sent_at'].isoformat() if signature_record['sent_at'] else None,
+                'message': 'Envelope created successfully'
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error sending for signature: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/signatures")
+@token_required
+def get_proposal_signatures(username, proposal_id):
+    """Get all signatures for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify access
+            cursor.execute("""
+                SELECT id FROM proposals 
+                WHERE id = %s AND user_id = %s
+            """, (proposal_id, username))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get signatures
+            cursor.execute("""
+                SELECT ps.*, u.full_name as created_by_name
+                FROM proposal_signatures ps
+                LEFT JOIN users u ON ps.created_by = u.id
+                WHERE ps.proposal_id = %s
+                ORDER BY ps.sent_at DESC
+            """, (proposal_id,))
+            
+            signatures = cursor.fetchall()
+            
+            return {
+                'signatures': [dict(sig) for sig in signatures]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting signatures: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/docusign/webhook")
+def docusign_webhook():
+    """Handle DocuSign webhook events"""
+    try:
+        # Get event data
+        event_data = request.get_json()
+        
+        # Validate HMAC signature (if configured)
+        hmac_key = os.getenv('DOCUSIGN_WEBHOOK_HMAC_KEY')
+        if hmac_key:
+            signature = request.headers.get('X-DocuSign-Signature-1')
+            # TODO: Validate signature
+        
+        event = event_data.get('event')
+        envelope_id = event_data.get('envelopeId')
+        
+        if not envelope_id:
+            return {'detail': 'No envelope ID provided'}, 400
+        
+        print(f"📬 DocuSign webhook received: {event} for envelope {envelope_id}")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Find signature record
+            cursor.execute("""
+                SELECT id, proposal_id, signer_email
+                FROM proposal_signatures 
+                WHERE envelope_id = %s
+            """, (envelope_id,))
+            
+            signature = cursor.fetchone()
+            if not signature:
+                print(f"⚠️ Signature record not found for envelope {envelope_id}")
+                return {'message': 'Signature record not found'}, 404
+            
+            # Handle different events
+            if event == 'envelope-completed':
+                # Signature completed
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'completed', signed_at = NOW()
+                    WHERE envelope_id = %s
+                """, (envelope_id,))
+                
+                cursor.execute("""
+                    UPDATE proposals 
+                    SET status = 'Signed', updated_at = NOW()
+                    WHERE id = %s
+                """, (signature['proposal_id'],))
+                
+                log_activity(
+                    signature['proposal_id'],
+                    None,
+                    'signature_completed',
+                    f"Proposal signed by {signature['signer_email']}",
+                    {'envelope_id': envelope_id}
+                )
+                
+                print(f"✅ Envelope {envelope_id} completed")
+                
+            elif event == 'envelope-declined':
+                # Signature declined
+                decline_reason = event_data.get('declineReason', 'No reason provided')
+                
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'declined', declined_at = NOW(), decline_reason = %s
+                    WHERE envelope_id = %s
+                """, (decline_reason, envelope_id))
+                
+                cursor.execute("""
+                    UPDATE proposals 
+                    SET status = 'Signature Declined', updated_at = NOW()
+                    WHERE id = %s
+                """, (signature['proposal_id'],))
+                
+                log_activity(
+                    signature['proposal_id'],
+                    None,
+                    'signature_declined',
+                    f"Signature declined by {signature['signer_email']}: {decline_reason}",
+                    {'envelope_id': envelope_id}
+                )
+                
+                print(f"⚠️ Envelope {envelope_id} declined")
+                
+            elif event == 'envelope-voided':
+                # Envelope voided
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'voided'
+                    WHERE envelope_id = %s
+                """, (envelope_id,))
+                
+                print(f"⚠️ Envelope {envelope_id} voided")
+            
+            conn.commit()
+        
+        return {'message': 'Webhook processed successfully'}, 200
+        
+    except Exception as e:
+        print(f"❌ Error processing DocuSign webhook: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+# ============================================================================
+# END DOCUSIGN ENDPOINTS
+# ============================================================================
 
 # ============================================================================
 # END COLLABORATION ADVANCED ENDPOINTS

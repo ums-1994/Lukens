@@ -29,7 +29,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
   Future<void> _determineRoute() async {
     try {
       print(
-          '🔍 Checking collaboration type for token: ${widget.token.substring(0, 20)}...');
+          '🔍 Checking collaboration type for token: ${(widget.token.length > 20 ? widget.token.substring(0, 20) : widget.token)}...');
 
       // First, try the collaborate endpoint (for collaborators)
       final collaborateResponse = await http
@@ -54,7 +54,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
         if (permissionLevel == 'edit' && authToken != null) {
           // Full editing rights - set auth token and open in document editor
           print('→ Routing to Document Editor (can edit)');
-          print('   Auth token received: ${authToken.substring(0, 20)}...');
+          print('   Auth token received: ${(authToken.length > 20 ? authToken.substring(0, 20) : authToken)}...');
 
           if (mounted && proposalData != null) {
             // Store auth token and user data for the editor to use
@@ -81,7 +81,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
         } else if (permissionLevel == 'suggest' && authToken != null) {
           // Suggest mode - can propose changes for approval
           print('→ Routing to Document Editor (suggest mode)');
-          print('   Auth token received: ${authToken.substring(0, 20)}...');
+          print('   Auth token received: ${(authToken.length > 20 ? authToken.substring(0, 20) : authToken)}...');
 
           if (mounted && proposalData != null) {
             // Store auth token and user data for the editor to use
@@ -215,7 +215,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

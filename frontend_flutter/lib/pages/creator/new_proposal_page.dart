@@ -437,7 +437,7 @@ Generate a detailed, professional proposal with all necessary sections.
         title: const Text('New Proposal'),
         backgroundColor: const Color(0xFF2C3E50),
       ),
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(

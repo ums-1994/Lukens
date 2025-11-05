@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/collaboration_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
+import '../../widgets/custom_scrollbar.dart';
 
 class CollaborationPage extends StatefulWidget {
   const CollaborationPage({super.key});
@@ -24,6 +25,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
   Stream<List<Map<String, dynamic>>>? _workspacesStream;
   Stream<List<Map<String, dynamic>>>? _notificationsStream;
   late final List<Stream<List<Map<String, dynamic>>>?> _allStreams;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -94,6 +96,12 @@ class _CollaborationPageState extends State<CollaborationPage> {
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final user = AuthService.currentUser;
     final displayName =
@@ -102,7 +110,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
     final unreadCount = _notifications.where((n) => n['read'] != true).length;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           // Header
@@ -240,12 +248,17 @@ class _CollaborationPageState extends State<CollaborationPage> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: RefreshIndicator(
-                      onRefresh: _refreshAll,
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                    child: CustomScrollbar(
+                      controller: _scrollController,
+                      child: RefreshIndicator(
+                        onRefresh: _refreshAll,
+                        child: SingleChildScrollView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(right: 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                             // Header Section
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -378,6 +391,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
                       ),
                     ),
                   ),
+                ),
                 ),
               ],
             ),
@@ -525,28 +539,29 @@ class _CollaborationPageState extends State<CollaborationPage> {
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(context, '/home');
         break;
       case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        // Templates functionality - redirect to content library for now
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Content Library':
-        Navigator.pushNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Collaboration':
         // Already on collaboration page
         break;
       case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+        Navigator.pushReplacementNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
       default:
-        Navigator.pushNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
     }
   }
 

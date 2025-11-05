@@ -142,16 +142,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     final pagedItems = filteredItems.sublist(startIdx, endIdx);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Row(
         children: [
           // Collapsible Sidebar (matching dashboard)
-          GestureDetector(
-            onTap: () {
-              if (_isSidebarCollapsed) _toggleSidebar();
-            },
-            behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
+          AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               width: _isSidebarCollapsed ? 90.0 : 250.0,
               color: const Color(0xFF34495E),
@@ -239,7 +234,6 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 ),
               ),
             ),
-          ),
           // Category Sidebar
           Container(
             width: 280,
@@ -2181,25 +2175,25 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushNamed(context, '/dashboard');
+        Navigator.pushReplacementNamed(context, '/dashboard');
         break;
       case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        // Already on content library (templates = content library)
         break;
       case 'Content Library':
         // Already on content library
         break;
       case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
+        Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+        Navigator.pushReplacementNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'Logout':
         _handleLogout(context);
