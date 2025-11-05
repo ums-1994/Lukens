@@ -373,7 +373,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'title': contentMap['title'] ?? '',
                 'sections': contentMap['sections'] ?? [],
                 'change_description': version['change_description'],
-                'author': version['created_by_name'] ?? version['created_by_email'] ?? 'User #${version['created_by']}',
+                'author': version['created_by_name'] ??
+                    version['created_by_email'] ??
+                    'User #${version['created_by']}',
               });
             } catch (e) {
               print('⚠️ Error parsing version content: $e');
@@ -3920,8 +3922,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     isDense: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                   ),
                   style: const TextStyle(
                     fontSize: 16,

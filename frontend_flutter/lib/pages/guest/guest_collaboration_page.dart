@@ -76,9 +76,9 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
     // We'll still search with an empty string which the backend handles by returning the owner/invited list
     // when a valid collab token and proposal_id are present.
 
-  _mentionStartIndex = atIndex;
-  _mentionQuery = query;
-  _searchUsersDebounced(query);
+    _mentionStartIndex = atIndex;
+    _mentionQuery = query;
+    _searchUsersDebounced(query);
   }
 
   void _hideSuggestions() {
@@ -104,7 +104,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
       // Include proposal_id and collaboration token when available so guests can search
       final params = {
         'q': q,
-        if (_proposalData != null && _proposalData!['proposal'] != null) 'proposal_id': _proposalData!['proposal']['id']?.toString(),
+        if (_proposalData != null && _proposalData!['proposal'] != null)
+          'proposal_id': _proposalData!['proposal']['id']?.toString(),
         if (_accessToken != null) 'collab_token': _accessToken!,
       }..removeWhere((k, v) => v == null);
 
@@ -112,7 +113,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
       final resp = await http.get(uri);
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as List<dynamic>;
-        final results = data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        final results =
+            data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         setState(() {
           _userSuggestions = results;
           _showSuggestions = results.isNotEmpty;
@@ -133,11 +135,18 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
   }
 
   void _insertMentionAtCursor(Map<String, dynamic> user) {
-    final username = user['username'] ?? user['email'] ?? user['name'] ?? user['id']?.toString() ?? 'user';
+    final username = user['username'] ??
+        user['email'] ??
+        user['name'] ??
+        user['id']?.toString() ??
+        'user';
     final text = _commentController.text;
     final selection = _commentController.selection;
-    final caret = selection.baseOffset >= 0 ? selection.baseOffset : text.length;
-    final start = (_mentionStartIndex != -1 && _mentionStartIndex <= caret) ? _mentionStartIndex : caret;
+    final caret =
+        selection.baseOffset >= 0 ? selection.baseOffset : text.length;
+    final start = (_mentionStartIndex != -1 && _mentionStartIndex <= caret)
+        ? _mentionStartIndex
+        : caret;
 
     final before = text.substring(0, start);
     final after = text.substring(caret);
@@ -151,7 +160,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
       }
       _commentController.text = newText;
       final newPos = (before + insertText).length;
-      _commentController.selection = TextSelection.fromPosition(TextPosition(offset: newPos));
+      _commentController.selection =
+          TextSelection.fromPosition(TextPosition(offset: newPos));
       _showSuggestions = false;
       _userSuggestions = [];
       _mentionStartIndex = -1;
@@ -337,10 +347,11 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
 
     try {
       final text = _commentController.text.trim();
-      
+
       // Get tagged user IDs from our tracked list
       final taggedUserIds = _taggedUsers
-          .where((u) => text.contains('@${u['username'] ?? u['email'] ?? u['name'] ?? u['id']}'))
+          .where((u) => text.contains(
+              '@${u['username'] ?? u['email'] ?? u['name'] ?? u['id']}'))
           .map((u) => u['id']?.toString() ?? u['email'])
           .where((id) => id != null)
           .toList();
@@ -691,14 +702,17 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
                                               ? const SizedBox(
                                                   width: 20,
                                                   height: 20,
-                                                  child: CircularProgressIndicator(
+                                                  child:
+                                                      CircularProgressIndicator(
                                                     strokeWidth: 2,
                                                     valueColor:
                                                         AlwaysStoppedAnimation<
-                                                            Color>(Colors.white),
+                                                                Color>(
+                                                            Colors.white),
                                                   ),
                                                 )
-                                              : const Icon(Icons.send, size: 20),
+                                              : const Icon(Icons.send,
+                                                  size: 20),
                                         ),
                                       ],
                                     ),
@@ -740,7 +754,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
                                             return ListTile(
                                               dense: true,
                                               title: Text(uname),
-                                              subtitle: Text(display.toString()),
+                                              subtitle:
+                                                  Text(display.toString()),
                                               onTap: () {
                                                 _insertMentionAtCursor(u);
                                               },
@@ -911,7 +926,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
           const SizedBox(height: 8),
           RichText(
             text: TextSpan(
-              style: const TextStyle(fontSize: 13, height: 1.4, color: Colors.black),
+              style: const TextStyle(
+                  fontSize: 13, height: 1.4, color: Colors.black),
               children: _buildCommentTextSpans(commentText),
             ),
           ),

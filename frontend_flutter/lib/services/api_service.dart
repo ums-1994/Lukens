@@ -41,12 +41,15 @@ class ApiService {
         'q': query,
         if (proposalId != null) 'proposal_id': proposalId.toString(),
       };
-      final uri = Uri.parse('$baseUrl/users/search').replace(queryParameters: params);
+      final uri =
+          Uri.parse('$baseUrl/users/search').replace(queryParameters: params);
 
       final headers = {
         'Content-Type': 'application/json',
-        if (token != null && token.startsWith('Bearer ')) 'Authorization': token,
-        if (token != null && !token.startsWith('Bearer ')) 'Collab-Token': token,
+        if (token != null && token.startsWith('Bearer '))
+          'Authorization': token,
+        if (token != null && !token.startsWith('Bearer '))
+          'Collab-Token': token,
       };
 
       final response = await http.get(uri, headers: headers);
