@@ -2408,11 +2408,23 @@ def create_version(username, proposal_id):
                 'version_number': result[2],
                 'content': result[3],
                 'created_by': result[4],
+                'created_by_name': None,
+                'created_by_email': None,
                 'created_at': result[5].isoformat() if result[5] else None,
                 'change_description': result[6]
             }
             
             print(f"✅ Version {result[2]} created for proposal {proposal_id}")
+            # Try to populate creator name/email
+            try:
+                cursor.execute('SELECT full_name, email FROM users WHERE id = %s', (version['created_by'],))
+                u = cursor.fetchone()
+                if u:
+                    version['created_by_name'] = u[0]
+                    version['created_by_email'] = u[1]
+            except Exception:
+                pass
+
             return version, 201
     except Exception as e:
         print(f"❌ Error creating version: {e}")
@@ -2428,14 +2440,16 @@ def get_versions(username, proposal_id):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
-                   FROM proposal_versions
-                   WHERE proposal_id = %s
-                   ORDER BY version_number DESC''',
+                '''SELECT pv.id, pv.proposal_id, pv.version_number, pv.content, pv.created_by, pv.created_at, pv.change_description,
+                          u.full_name AS created_by_name, u.email AS created_by_email
+                   FROM proposal_versions pv
+                   LEFT JOIN users u ON pv.created_by = u.id
+                   WHERE pv.proposal_id = %s
+                   ORDER BY pv.version_number DESC''',
                 (proposal_id,)
             )
             rows = cursor.fetchall()
-            
+
             versions = []
             for row in rows:
                 versions.append({
@@ -2444,6 +2458,8 @@ def get_versions(username, proposal_id):
                     'version_number': row[2],
                     'content': row[3],
                     'created_by': row[4],
+                    'created_by_name': row[7],
+                    'created_by_email': row[8],
                     'created_at': row[5].isoformat() if row[5] else None,
                     'change_description': row[6]
                 })
@@ -2464,22 +2480,26 @@ def get_version(username, proposal_id, version_number):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
-                   FROM proposal_versions
-                   WHERE proposal_id = %s AND version_number = %s''',
+                '''SELECT pv.id, pv.proposal_id, pv.version_number, pv.content, pv.created_by, pv.created_at, pv.change_description,
+                          u.full_name AS created_by_name, u.email AS created_by_email
+                   FROM proposal_versions pv
+                   LEFT JOIN users u ON pv.created_by = u.id
+                   WHERE pv.proposal_id = %s AND pv.version_number = %s''',
                 (proposal_id, version_number)
             )
             row = cursor.fetchone()
-            
+
             if not row:
                 return {'detail': 'Version not found'}, 404
-            
+
             version = {
                 'id': row[0],
                 'proposal_id': row[1],
                 'version_number': row[2],
                 'content': row[3],
                 'created_by': row[4],
+                'created_by_name': row[7],
+                'created_by_email': row[8],
                 'created_at': row[5].isoformat() if row[5] else None,
                 'change_description': row[6]
             }
@@ -2997,6 +3017,113 @@ def get_collaborators(username, proposal_id):
         print(f"❌ Error getting collaborators: {e}")
         return {'detail': str(e)}, 500
 
+
+@app.get("/users/search")
+def users_search():
+    """Search users by username, full name or email.
+
+    This endpoint accepts either a valid Authorization bearer token OR a
+    collaboration token for a specific proposal (collab_token + proposal_id).
+
+    If `proposal_id` is provided and a valid `collab_token` is presented,
+    the results will be restricted to the proposal owner and invited collaborators.
+    If no proposal_id is present, an Authorization header is required.
+    """
+    try:
+        q = request.args.get('q', '')
+        proposal_id = request.args.get('proposal_id')
+        collab_token = request.args.get('collab_token')
+
+        # Determine auth: try Authorization header first
+        authed_username = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers.get('Authorization')
+            if auth_header:
+                parts = auth_header.split(' ')
+                if len(parts) == 2 and parts[0].lower() == 'bearer':
+                    token = parts[1]
+                    authed_username = verify_token(token)
+
+        # If not authed, and proposal_id provided, allow collaboration token validation
+        collab_allowed = False
+        if not authed_username and proposal_id and collab_token:
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, invited_email, permission_level, expires_at
+                        FROM collaboration_invitations
+                        WHERE access_token = %s AND proposal_id = %s
+                    """, (collab_token, proposal_id))
+                    inv = cur.fetchone()
+                    if inv:
+                        expires_at = inv.get('expires_at')
+                        if not expires_at or datetime.now() <= expires_at:
+                            collab_allowed = True
+
+        # If no auth and no valid collab access, require auth
+        if not authed_username and not collab_allowed:
+            return {'detail': 'Authorization required'}, 401
+
+        # If no query provided, and collaboration token is valid for a proposal,
+        # return the proposal owner and invited collaborators as default suggestions.
+        if not q:
+            if proposal_id and collab_allowed:
+                with get_db_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("""
+                            SELECT u.id, u.username, u.full_name, u.email
+                            FROM users u
+                            WHERE u.id = (SELECT owner_id FROM proposals WHERE id = %s)
+                            OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
+                            LIMIT 50
+                        """, (proposal_id, proposal_id))
+                        rows = cur.fetchall()
+                        return [dict(r) for r in rows], 200
+            return [], 200
+
+        like = f"%{q}%"
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if proposal_id:
+                    # Determine which column stores the proposal owner (owner_id or user_id)
+                    cur.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'proposals' AND column_name IN ('owner_id','user_id')
+                    """)
+                    cols = [r['column_name'] if isinstance(r, dict) and 'column_name' in r else (r[0] if r else None) for r in cur.fetchall()]
+                    owner_col = 'owner_id' if 'owner_id' in cols else ('user_id' if 'user_id' in cols else 'owner_id')
+
+                    # Build SQL using the detected owner column name (safe because we only allow known names)
+                    sql = f"""
+                        SELECT u.id, u.username, u.full_name, u.email
+                        FROM users u
+                        WHERE (u.username ILIKE %s OR u.full_name ILIKE %s OR u.email ILIKE %s)
+                        AND (
+                            u.id = (SELECT {owner_col} FROM proposals WHERE id = %s)
+                            OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
+                        )
+                        LIMIT 50
+                    """
+                    cur.execute(sql, (like, like, like, proposal_id, proposal_id))
+                else:
+                    # No proposal filter: only allow when authed
+                    if not authed_username:
+                        return {'detail': 'Authorization required for global search'}, 401
+                    cur.execute("""
+                        SELECT id, username, full_name, email
+                        FROM users
+                        WHERE username ILIKE %s OR full_name ILIKE %s OR email ILIKE %s
+                        LIMIT 50
+                    """, (like, like, like))
+
+                rows = cur.fetchall()
+                return [dict(r) for r in rows], 200
+
+    except Exception as e:
+        print(f"❌ Error searching users: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @app.delete("/api/collaborations/<int:invitation_id>")
 @token_required
 def remove_collaborator(username, invitation_id):
@@ -3218,7 +3345,13 @@ def add_guest_comment():
             
             result = cursor.fetchone()
             conn.commit()
-            
+
+            # Process @mentions in the comment (guest)
+            try:
+                process_mentions(result['id'], comment_text, guest_user_id, invitation['proposal_id'])
+            except Exception as e:
+                print(f"⚠️ Failed to process mentions for guest comment: {e}")
+
             return {
                 'id': result['id'],
                 'proposal_id': result['proposal_id'],

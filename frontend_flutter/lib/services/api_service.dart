@@ -30,6 +30,37 @@ class ApiService {
     }
   }
 
+  // Search users (used for @-mention autocomplete)
+  static Future<List<dynamic>> searchUsers({
+    String? token,
+    required String query,
+    int? proposalId,
+  }) async {
+    try {
+      final params = {
+        'q': query,
+        if (proposalId != null) 'proposal_id': proposalId.toString(),
+      };
+      final uri = Uri.parse('$baseUrl/users/search').replace(queryParameters: params);
+
+      final headers = {
+        'Content-Type': 'application/json',
+        if (token != null && token.startsWith('Bearer ')) 'Authorization': token,
+        if (token != null && !token.startsWith('Bearer ')) 'Collab-Token': token,
+      };
+
+      final response = await http.get(uri, headers: headers);
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as List<dynamic>;
+      }
+      return [];
+    } catch (e) {
+      print('Error searching users: $e');
+      return [];
+    }
+  }
+
   static Future<Map<String, dynamic>?> createUserProfile({
     required String token,
     required String firstName,
@@ -405,6 +436,7 @@ class ApiService {
     required String createdBy,
     int? sectionIndex,
     String? highlightedText,
+    List<String>? taggedUsers,
   }) async {
     try {
       final response = await http.post(
@@ -415,6 +447,8 @@ class ApiService {
           'created_by': createdBy,
           'section_index': sectionIndex,
           'highlighted_text': highlightedText,
+          if (taggedUsers != null && taggedUsers.isNotEmpty)
+            'tagged_users': taggedUsers,
         }),
       );
 

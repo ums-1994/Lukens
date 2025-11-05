@@ -373,7 +373,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'title': contentMap['title'] ?? '',
                 'sections': contentMap['sections'] ?? [],
                 'change_description': version['change_description'],
-                'author': version['created_by'],
+                'author': version['created_by_name'] ?? version['created_by_email'] ?? 'User #${version['created_by']}',
               });
             } catch (e) {
               print('⚠️ Error parsing version content: $e');
@@ -3907,7 +3907,35 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   ],
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              // Section title (editable)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: TextField(
+                  focusNode: section.titleFocus,
+                  controller: section.titleController,
+                  decoration: InputDecoration(
+                    hintText: 'Section title (e.g. Introduction)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    isDense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A3A52),
+                  ),
+                  onChanged: (val) {
+                    // mark content changed for autosave
+                    _onContentChanged();
+                    setState(() {});
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
               // Content area
               Container(
                 padding: const EdgeInsets.all(12),

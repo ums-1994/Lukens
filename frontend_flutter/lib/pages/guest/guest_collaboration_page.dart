@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
+import 'dart:async';
+import 'package:flutter/gestures.dart';
 
 class GuestCollaborationPage extends StatefulWidget {
   const GuestCollaborationPage({super.key});
@@ -19,6 +20,13 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
   List<Map<String, dynamic>> _comments = [];
   final TextEditingController _commentController = TextEditingController();
   bool _isSubmittingComment = false;
+  // Mention/autocomplete state
+  Timer? _mentionDebounce;
+  List<Map<String, dynamic>> _userSuggestions = [];
+  bool _showSuggestions = false;
+  int _mentionStartIndex = -1; // index in text where current @ started
+  String _mentionQuery = '';
+  List<Map<String, dynamic>> _taggedUsers = []; // Track users that were tagged
 
   @override
   void initState() {
@@ -26,6 +34,168 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _extractTokenAndLoad();
     });
+    _commentController.addListener(_onCommentChanged);
+  }
+
+  void _onCommentChanged() {
+    final text = _commentController.text;
+    final selection = _commentController.selection;
+    final caret = selection.baseOffset;
+
+    if (caret < 0) {
+      _hideSuggestions();
+      return;
+    }
+
+    // Find last '@' before the caret that is not preceded by a non-whitespace (i.e., start or whitespace)
+    final textBefore = text.substring(0, caret);
+    final atIndex = textBefore.lastIndexOf('@');
+
+    if (atIndex == -1) {
+      _hideSuggestions();
+      return;
+    }
+
+    // Ensure '@' is start of word (start or preceded by whitespace/newline)
+    if (atIndex > 0) {
+      final charBefore = textBefore[atIndex - 1];
+      if (charBefore != ' ' && charBefore != '\n' && charBefore != '\t') {
+        _hideSuggestions();
+        return;
+      }
+    }
+
+    final query = textBefore.substring(atIndex + 1);
+    // If query contains whitespace or punctuation, not a mention
+    if (query.contains(RegExp(r"\s|[.,:;!?]"))) {
+      _hideSuggestions();
+      return;
+    }
+
+    // Allow empty query so typing just '@' shows default suggestions (owner + invited collaborators).
+    // We'll still search with an empty string which the backend handles by returning the owner/invited list
+    // when a valid collab token and proposal_id are present.
+
+  _mentionStartIndex = atIndex;
+  _mentionQuery = query;
+  _searchUsersDebounced(query);
+  }
+
+  void _hideSuggestions() {
+    if (_showSuggestions) {
+      setState(() {
+        _showSuggestions = false;
+        _userSuggestions = [];
+      });
+    }
+  }
+
+  void _searchUsersDebounced(String q) {
+    _mentionDebounce?.cancel();
+    _mentionDebounce = Timer(const Duration(milliseconds: 250), () {
+      _searchUsers(q);
+    });
+  }
+
+  Future<void> _searchUsers(String q) async {
+    // Allow empty query so backend can return default suggestions when appropriate.
+
+    try {
+      // Include proposal_id and collaboration token when available so guests can search
+      final params = {
+        'q': q,
+        if (_proposalData != null && _proposalData!['proposal'] != null) 'proposal_id': _proposalData!['proposal']['id']?.toString(),
+        if (_accessToken != null) 'collab_token': _accessToken!,
+      }..removeWhere((k, v) => v == null);
+
+      final uri = Uri.http('localhost:8000', '/users/search', params);
+      final resp = await http.get(uri);
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as List<dynamic>;
+        final results = data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        setState(() {
+          _userSuggestions = results;
+          _showSuggestions = results.isNotEmpty;
+        });
+      } else {
+        setState(() {
+          _userSuggestions = [];
+          _showSuggestions = false;
+        });
+      }
+    } catch (e) {
+      print('Error searching users: $e');
+      setState(() {
+        _userSuggestions = [];
+        _showSuggestions = false;
+      });
+    }
+  }
+
+  void _insertMentionAtCursor(Map<String, dynamic> user) {
+    final username = user['username'] ?? user['email'] ?? user['name'] ?? user['id']?.toString() ?? 'user';
+    final text = _commentController.text;
+    final selection = _commentController.selection;
+    final caret = selection.baseOffset >= 0 ? selection.baseOffset : text.length;
+    final start = (_mentionStartIndex != -1 && _mentionStartIndex <= caret) ? _mentionStartIndex : caret;
+
+    final before = text.substring(0, start);
+    final after = text.substring(caret);
+    final insertText = '@$username ';
+    final newText = before + insertText + after;
+
+    setState(() {
+      // Add user to tagged list if not already present
+      if (!_taggedUsers.any((tagged) => tagged['id'] == user['id'])) {
+        _taggedUsers.add(user);
+      }
+      _commentController.text = newText;
+      final newPos = (before + insertText).length;
+      _commentController.selection = TextSelection.fromPosition(TextPosition(offset: newPos));
+      _showSuggestions = false;
+      _userSuggestions = [];
+      _mentionStartIndex = -1;
+      _mentionQuery = '';
+    });
+  }
+
+  List<InlineSpan> _buildCommentTextSpans(String text) {
+    final spans = <InlineSpan>[];
+    final mentionRegex = RegExp(r'@([A-Za-z0-9_.]+)');
+    int lastEnd = 0;
+    for (final m in mentionRegex.allMatches(text)) {
+      if (m.start > lastEnd) {
+        spans.add(TextSpan(text: text.substring(lastEnd, m.start)));
+      }
+      final uname = m.group(0) ?? '';
+      // WidgetSpan with Tooltip and clickable mention
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: GestureDetector(
+          onTap: () {
+            // Placeholder: open profile or show message
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Open profile for ${m.group(1)}')),
+            );
+          },
+          child: Tooltip(
+            message: 'Mentioned — will be notified',
+            child: Text(
+              uname,
+              style: const TextStyle(
+                color: Color(0xFF3498DB),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ));
+      lastEnd = m.end;
+    }
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(text: text.substring(lastEnd)));
+    }
+    return spans;
   }
 
   void _extractTokenAndLoad() {
@@ -166,6 +336,15 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
     });
 
     try {
+      final text = _commentController.text.trim();
+      
+      // Get tagged user IDs from our tracked list
+      final taggedUserIds = _taggedUsers
+          .where((u) => text.contains('@${u['username'] ?? u['email'] ?? u['name'] ?? u['id']}'))
+          .map((u) => u['id']?.toString() ?? u['email'])
+          .where((id) => id != null)
+          .toList();
+
       final response = await http.post(
         Uri.parse('http://localhost:8000/api/collaborate/comment'),
         headers: {
@@ -173,12 +352,14 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         },
         body: jsonEncode({
           'token': _accessToken,
-          'comment_text': _commentController.text.trim(),
+          'comment_text': text,
+          'tagged_users': taggedUserIds,
         }),
       );
 
       if (response.statusCode == 201) {
         _commentController.clear();
+        _taggedUsers.clear(); // Clear tagged users list after successful post
         await _loadProposal(); // Reload to get updated comments
 
         if (mounted) {
@@ -468,54 +649,106 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
                               // Add comment section
                               if (canComment) ...[
                                 const Divider(height: 24),
-                                Row(
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _commentController,
-                                        decoration: InputDecoration(
-                                          hintText: 'Add a comment...',
-                                          border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextField(
+                                            controller: _commentController,
+                                            decoration: InputDecoration(
+                                              hintText: 'Add a comment...',
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 10,
+                                              ),
+                                            ),
+                                            maxLines: 2,
+                                            enabled: !_isSubmittingComment,
                                           ),
                                         ),
-                                        maxLines: 2,
-                                        enabled: !_isSubmittingComment,
-                                      ),
+                                        const SizedBox(width: 8),
+                                        ElevatedButton(
+                                          onPressed: _isSubmittingComment
+                                              ? null
+                                              : _submitComment,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFF27AE60),
+                                            padding: const EdgeInsets.all(14),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          child: _isSubmittingComment
+                                              ? const SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                            Color>(Colors.white),
+                                                  ),
+                                                )
+                                              : const Icon(Icons.send, size: 20),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 8),
-                                    ElevatedButton(
-                                      onPressed: _isSubmittingComment
-                                          ? null
-                                          : _submitComment,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            const Color(0xFF27AE60),
-                                        padding: const EdgeInsets.all(14),
-                                        shape: RoundedRectangleBorder(
+
+                                    // Suggestions dropdown
+                                    if (_showSuggestions) ...[
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        constraints: const BoxConstraints(
+                                            maxHeight: 160),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
                                           borderRadius:
                                               BorderRadius.circular(8),
+                                          border: Border.all(
+                                              color: Colors.grey.shade300),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withOpacity(0.05),
+                                              blurRadius: 6,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ListView.builder(
+                                          shrinkWrap: true,
+                                          itemCount: _userSuggestions.length,
+                                          itemBuilder: (context, i) {
+                                            final u = _userSuggestions[i];
+                                            final uname = u['username'] ??
+                                                u['email'] ??
+                                                u['name'] ??
+                                                u['id']?.toString() ??
+                                                'user';
+                                            final display = u['display_name'] ??
+                                                u['name'] ??
+                                                uname;
+                                            return ListTile(
+                                              dense: true,
+                                              title: Text(uname),
+                                              subtitle: Text(display.toString()),
+                                              onTap: () {
+                                                _insertMentionAtCursor(u);
+                                              },
+                                            );
+                                          },
                                         ),
                                       ),
-                                      child: _isSubmittingComment
-                                          ? const SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                        Color>(Colors.white),
-                                              ),
-                                            )
-                                          : const Icon(Icons.send, size: 20),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               ] else ...[
@@ -676,9 +909,11 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            commentText,
-            style: const TextStyle(fontSize: 13, height: 1.4),
+          RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 13, height: 1.4, color: Colors.black),
+              children: _buildCommentTextSpans(commentText),
+            ),
           ),
           if (timestamp.isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -717,6 +952,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
 
   @override
   void dispose() {
+    _mentionDebounce?.cancel();
+    _commentController.removeListener(_onCommentChanged);
     _commentController.dispose();
     super.dispose();
   }
