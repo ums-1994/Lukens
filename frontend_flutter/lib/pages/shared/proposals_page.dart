@@ -19,8 +19,7 @@ class _ProposalsPageState extends State<ProposalsPage>
     with TickerProviderStateMixin {
   String _filterStatus = 'All Statuses';
   final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> proposals = [];
-  bool _isLoading = true;
+  List<dynamic> proposals = [];
   String? _token;
 
   // Sidebar state
@@ -67,7 +66,6 @@ class _ProposalsPageState extends State<ProposalsPage>
   }
 
   Future<void> _loadProposals() async {
-    setState(() => _isLoading = true);
     try {
       // Get token from AuthService (backend JWT) - same as document editor
       final token = AuthService.token;
@@ -84,10 +82,12 @@ class _ProposalsPageState extends State<ProposalsPage>
 
       if (_token != null && _token!.isNotEmpty) {
         print('✅ Loading proposals with token...');
-        final data = await ApiService.getProposals(_token!);
+        // final data = await ApiService.getProposals(_token!); // Removed old call
+        await context.read<AppState>().fetchProposals(); // New call
         if (mounted) {
           setState(() {
-            proposals = List<Map<String, dynamic>>.from(data);
+            // proposals = List<Map<String, dynamic>>.from(data); // Old assignment
+            proposals = context.read<AppState>().proposals; // New assignment
             print('✅ Loaded ${proposals.length} proposals');
           });
         }
@@ -105,10 +105,6 @@ class _ProposalsPageState extends State<ProposalsPage>
         setState(() {
           proposals = [];
         });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
       }
     }
   }
@@ -311,7 +307,7 @@ class _ProposalsPageState extends State<ProposalsPage>
     final app = context.watch<AppState>();
     final userRole = app.currentUser?['role'] ?? 'Financial Manager';
 
-    final filtered = proposals.where((p) {
+    final filteredProposals = app.proposals.where((p) {
       final title = (p['title'] ?? '').toString().toLowerCase();
       final client =
           (p['client_name'] ?? p['client'] ?? '').toString().toLowerCase();
@@ -635,140 +631,150 @@ class _ProposalsPageState extends State<ProposalsPage>
                                   child: Padding(
                                     padding: const EdgeInsets.all(16.0),
                                     child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment
+                                          .start, // Align children to the start
                                       children: [
                                         Row(
                                           mainAxisAlignment:
                                               MainAxisAlignment.spaceBetween,
                                           children: [
-                                            const Text('All Proposals',
-                                                style: TextStyle(
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors
-                                                        .white)), // Changed to Colors.white
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  // Wrap TextField in Expanded
-                                                  child: TextField(
-                                                    controller:
-                                                        _searchController,
-                                                    decoration: InputDecoration(
-                                                      hintText:
-                                                          'Search proposals...',
-                                                      hintStyle: TextStyle(
-                                                          color: Colors
-                                                              .white70), // Hint text color
-                                                      contentPadding:
-                                                          const EdgeInsets
-                                                              .symmetric(
-                                                              horizontal: 12,
-                                                              vertical: 8),
-                                                      border:
-                                                          OutlineInputBorder(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(8),
-                                                        borderSide: BorderSide(
-                                                            color: const Color(
-                                                                    0xFFC10D00)
-                                                                .withOpacity(
-                                                                    0.5)), // Red border
-                                                      ),
-                                                      enabledBorder:
-                                                          OutlineInputBorder(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(8),
-                                                        borderSide: BorderSide(
-                                                            color: const Color(
-                                                                    0xFFC10D00)
-                                                                .withOpacity(
-                                                                    0.5)), // Red border
-                                                      ),
-                                                      focusedBorder:
-                                                          OutlineInputBorder(
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(8),
-                                                        borderSide: BorderSide(
-                                                            color: const Color(
-                                                                0xFFC10D00)), // Red border on focus
-                                                      ),
-                                                    ),
-                                                    style: TextStyle(
-                                                        color: Colors
-                                                            .white), // Input text color
-                                                    onChanged: (_) =>
-                                                        setState(() {}),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  // Wrap in Expanded
-                                                  child: Container(
-                                                    decoration: BoxDecoration(
-                                                        border: Border.all(
-                                                            color: const Color(
-                                                                    0xFFC10D00)
-                                                                .withOpacity(
-                                                                    0.5)), // Red border
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(6)),
-                                                    child:
-                                                        DropdownButtonHideUnderline(
-                                                      child: DropdownButton<
-                                                          String>(
-                                                        value: _filterStatus,
-                                                        dropdownColor: Colors
-                                                            .black
-                                                            .withOpacity(
-                                                                0.8), // Dropdown background color
-                                                        style: TextStyle(
+                                            Expanded(
+                                              child: const Text('All Proposals',
+                                                  style: TextStyle(
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Colors.white)),
+                                            ),
+                                            Expanded(
+                                              child: Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: TextField(
+                                                      controller:
+                                                          _searchController,
+                                                      decoration:
+                                                          InputDecoration(
+                                                        hintText:
+                                                            'Search proposals...',
+                                                        hintStyle: const TextStyle(
                                                             color: Colors
-                                                                .white), // Dropdown item text color
-                                                        items: [
-                                                          'All Statuses',
-                                                          'Draft',
-                                                          'Sent',
-                                                          'Approved',
-                                                          'Declined'
-                                                        ]
-                                                            .map((String
-                                                                    value) =>
-                                                                DropdownMenuItem<
-                                                                        String>(
-                                                                    value:
-                                                                        value,
-                                                                    child: Text(
-                                                                        value)))
-                                                            .toList(),
-                                                        onChanged: (String?
-                                                                newValue) =>
-                                                            setState(() =>
-                                                                _filterStatus =
-                                                                    newValue ??
-                                                                        'All Statuses'),
+                                                                .white70), // Hint text color
+                                                        contentPadding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                horizontal: 12,
+                                                                vertical: 8),
+                                                        border:
+                                                            OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(8),
+                                                          borderSide: BorderSide(
+                                                              color: const Color(
+                                                                      0xFFC10D00)
+                                                                  .withOpacity(
+                                                                      0.5)), // Red border
+                                                        ),
+                                                        enabledBorder:
+                                                            OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(8),
+                                                          borderSide: BorderSide(
+                                                              color: const Color(
+                                                                      0xFFC10D00)
+                                                                  .withOpacity(
+                                                                      0.5)), // Red border
+                                                        ),
+                                                        focusedBorder:
+                                                            OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(8),
+                                                          borderSide:
+                                                              const BorderSide(
+                                                                  color: Color(
+                                                                      0xFFC10D00)), // Red border on focus
+                                                        ),
+                                                      ),
+                                                      style: const TextStyle(
+                                                          color: Colors
+                                                              .white), // Input text color
+                                                      onChanged: (_) =>
+                                                          setState(() {}),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Flexible(
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 12),
+                                                      decoration: BoxDecoration(
+                                                          border: Border.all(
+                                                              color: const Color(
+                                                                      0xFFC10D00)
+                                                                  .withOpacity(
+                                                                      0.5)), // Red border
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(6)),
+                                                      child:
+                                                          DropdownButtonHideUnderline(
+                                                        child: DropdownButton<
+                                                            String>(
+                                                          value: _filterStatus,
+                                                          dropdownColor: Colors
+                                                              .black
+                                                              .withOpacity(
+                                                                  0.8), // Dropdown background color
+                                                          style: const TextStyle(
+                                                              color: Colors
+                                                                  .white), // Dropdown item text color
+                                                          items: [
+                                                            'All Statuses',
+                                                            'Draft',
+                                                            'Sent',
+                                                            'Approved',
+                                                            'Declined'
+                                                          ]
+                                                              .map((String
+                                                                      value) =>
+                                                                  DropdownMenuItem<
+                                                                          String>(
+                                                                      value:
+                                                                          value,
+                                                                      child: Text(
+                                                                          value)))
+                                                              .toList(),
+                                                          onChanged: (String?
+                                                                  newValue) =>
+                                                              setState(() =>
+                                                                  _filterStatus =
+                                                                      newValue ??
+                                                                          'All Statuses'),
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
                                           ],
                                         ),
                                         const SizedBox(height: 16),
                                         // Proposals list / empty state
-                                        if (_isLoading)
+                                        if (app.isLoading)
                                           const Center(
-                                              child: Padding(
-                                                  padding: EdgeInsets.all(32.0),
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    color: Color(0xFFC10D00),
-                                                  ))) // Red progress indicator
-                                        else if (proposals.isEmpty)
+                                            child: Padding(
+                                              padding: EdgeInsets.all(32.0),
+                                              child: CircularProgressIndicator(
+                                                color: Color(0xFFC10D00),
+                                              ),
+                                            ),
+                                          )
+                                        else if (filteredProposals.isEmpty)
                                           Center(
                                             child: Padding(
                                               padding:
@@ -828,7 +834,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                                             shrinkWrap: true,
                                             physics:
                                                 const NeverScrollableScrollPhysics(),
-                                            itemCount: filtered.length,
+                                            itemCount: filteredProposals.length,
                                             separatorBuilder:
                                                 (context, index) =>
                                                     const Divider(
@@ -836,7 +842,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                                               color: Colors.white12,
                                             ), // White divider
                                             itemBuilder: (context, index) {
-                                              final proposal = filtered[index];
+                                              final proposal =
+                                                  filteredProposals[index];
                                               return ProposalItem(
                                                   proposal: proposal,
                                                   onRefresh: _loadProposals);
@@ -857,7 +864,6 @@ class _ProposalsPageState extends State<ProposalsPage>
               ],
             ),
           ),
-
           const Footer(),
         ],
       ),

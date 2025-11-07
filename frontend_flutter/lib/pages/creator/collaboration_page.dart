@@ -292,8 +292,8 @@ class _CollaborationPageState extends State<CollaborationPage>
                       ClipOval(
                         child: Image.asset(
                           'assets/images/User_Profile.png',
-                          width: 105,
-                          height: 105,
+                          width: 40,
+                          height: 40,
                           fit: BoxFit.cover,
                         ),
                       ),

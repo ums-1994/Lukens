@@ -11,6 +11,7 @@ class AppState extends ChangeNotifier {
   List<dynamic> proposals = [];
   Map<String, dynamic>? currentProposal;
   Map<String, dynamic> dashboardCounts = {};
+  bool isLoading = false;
 
   Future<void> init() async {
     // IMPORTANT: Sync token from AuthService on startup
@@ -320,9 +321,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchProposals() async {
+    isLoading = true;
+    notifyListeners();
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals"),
+        Uri.parse("$baseUrl/proposals?include_client_name=false"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -339,6 +342,8 @@ class AppState extends ChangeNotifier {
       print('Error fetching proposals: $e');
       proposals = [];
     }
+    isLoading = false;
+    notifyListeners();
   }
 
   void _updateDashboardCounts() {

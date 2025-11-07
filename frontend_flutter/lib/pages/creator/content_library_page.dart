@@ -300,32 +300,39 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                               // Navigation items
                               _buildNavItem(
                                   'Dashboard',
-                                  'assets/images/Dashboard.png',
-                                  _currentPage == 'Dashboard'),
+                                  'assets/images/Dahboard.png',
+                                  _currentPage == 'Dashboard',
+                                  context),
                               _buildNavItem(
                                   'My Proposals',
                                   'assets/images/My_Proposals.png',
-                                  _currentPage == 'My Proposals'),
+                                  _currentPage == 'My Proposals',
+                                  context),
                               _buildNavItem(
                                   'Templates',
-                                  'assets/images/Templates.png',
-                                  _currentPage == 'Templates'),
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Templates',
+                                  context),
                               _buildNavItem(
                                   'Content Library',
-                                  'assets/images/Content_Library.png',
-                                  _currentPage == 'Content Library'),
+                                  'assets/images/content_library.png',
+                                  _currentPage == 'Content Library',
+                                  context),
                               _buildNavItem(
                                   'Collaboration',
-                                  'assets/images/Collaboration.png',
-                                  _currentPage == 'Collaboration'),
+                                  'assets/images/collaborations.png',
+                                  _currentPage == 'Collaboration',
+                                  context),
                               _buildNavItem(
                                   'Approvals Status',
-                                  'assets/images/Approval_Status.png',
-                                  _currentPage == 'Approvals Status'),
+                                  'assets/images/Time Allocation_Approval_Blue.png',
+                                  _currentPage == 'Approvals Status',
+                                  context),
                               _buildNavItem(
                                   'Analytics (My Pipeline)',
-                                  'assets/images/Analytics.png',
-                                  _currentPage == 'Analytics (My Pipeline)'),
+                                  'assets/images/analytics.png',
+                                  _currentPage == 'Analytics (My Pipeline)',
+                                  context),
                               const SizedBox(height: 20),
                               // Divider
                               if (!_isSidebarCollapsed)
@@ -339,7 +346,10 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                               const SizedBox(height: 12),
                               // Logout button
                               _buildNavItem(
-                                  'Logout', 'assets/images/Logout.png', false),
+                                  'Logout',
+                                  'assets/images/Logout_KhonoBuzz.png',
+                                  false,
+                                  context),
                               const SizedBox(height: 20),
                             ],
                           ),
@@ -698,7 +708,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     return s[0].toUpperCase() + s.substring(1);
   }
 
-  Widget _buildNavItem(String title, String imagePath, bool isSelected) {
+  Widget _buildNavItem(
+      String title, String imagePath, bool isSelected, BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: InkWell(
@@ -706,6 +717,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           setState(() {
             _currentPage = title;
           });
+          _navigateToPage(context, title);
         },
         borderRadius: BorderRadius.circular(8),
         child: Container(
@@ -728,15 +740,17 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       isSelected ? Colors.white : Colors.white.withOpacity(0.7),
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                title,
-                style: TextStyle(
-                  color:
-                      isSelected ? Colors.white : Colors.white.withOpacity(0.7),
-                  fontSize: 14,
+              if (!_isSidebarCollapsed) const SizedBox(width: 12),
+              if (!_isSidebarCollapsed)
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: isSelected
+                        ? Colors.white
+                        : Colors.white.withOpacity(0.7),
+                    fontSize: 14,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
