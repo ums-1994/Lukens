@@ -208,9 +208,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     _buildNavItem('Content Library',
                         'assets/images/content_library.png',
                         _currentPage == 'Content Library', context),
-                    _buildNavItem('Collaboration',
+                    _buildNavItem('Client Management',
                         'assets/images/collaborations.png',
-                        _currentPage == 'Collaboration', context),
+                        _currentPage == 'Client Management', context),
                     _buildNavItem('Approvals Status',
                         'assets/images/Time Allocation_Approval_Blue.png',
                         _currentPage == 'Approvals Status', context),
@@ -1778,7 +1778,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                   ),
                   _buildNavItem(
                     icon: Icons.people_outline,
-                    label: 'Collaboration',
+                    label: 'Client Management',
                     isActive: _currentNavIdx == 4,
                     onTap: () {
                       setState(() => _currentNavIdx = 4);
@@ -2186,7 +2186,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       case 'Content Library':
         // Already on content library
         break;
-      case 'Collaboration':
+      case 'Client Management':
         Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':

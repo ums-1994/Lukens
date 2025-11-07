@@ -312,9 +312,9 @@ class _DashboardPageState extends State<DashboardPage>
                               _currentPage == 'Content Library',
                               context),
                           _buildNavItem(
-                              'Collaboration',
+                              'Client Management',
                               'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
+                              _currentPage == 'Client Management',
                               context),
                           _buildNavItem(
                               'Approvals Status',
@@ -358,14 +358,14 @@ class _DashboardPageState extends State<DashboardPage>
                     padding: const EdgeInsets.all(20),
                     child: CustomScrollbar(
                       controller: _scrollController,
-                      child: RefreshIndicator(
-                        onRefresh: _refreshData,
-                        color: const Color(0xFF3498DB),
-                        child: SingleChildScrollView(
+                    child: RefreshIndicator(
+                      onRefresh: _refreshData,
+                      color: const Color(0xFF3498DB),
+                      child: SingleChildScrollView(
                           controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
+                        physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.only(right: 24),
-                          child: _buildRoleSpecificContent(userRole, counts, app),
+                        child: _buildRoleSpecificContent(userRole, counts, app),
                         ),
                       ),
                     ),
@@ -507,7 +507,7 @@ class _DashboardPageState extends State<DashboardPage>
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');
         break;
-      case 'Collaboration':
+      case 'Client Management':
         Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':

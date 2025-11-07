@@ -489,9 +489,9 @@ class _ProposalsPageState extends State<ProposalsPage>
                               _currentPage == 'Content Library',
                               context),
                           _buildNavItem(
-                              'Collaboration',
+                              'Client Management',
                               'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
+                              _currentPage == 'Client Management',
                               context),
                           _buildNavItem(
                               'Approvals Status',
@@ -536,12 +536,12 @@ class _ProposalsPageState extends State<ProposalsPage>
                     padding: const EdgeInsets.all(20),
                     child: CustomScrollbar(
                       controller: _scrollController,
-                      child: SingleChildScrollView(
+                    child: SingleChildScrollView(
                         controller: _scrollController,
                         padding: const EdgeInsets.only(right: 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           // Header Row: title, search, actions
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
@@ -759,9 +759,9 @@ class _ProposalsPageState extends State<ProposalsPage>
                           ),
                         ],
                       ),
+                      ),
                     ),
                   ),
-                ),
                 ),
               ],
             ),
@@ -900,7 +900,7 @@ class _ProposalsPageState extends State<ProposalsPage>
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');
         break;
-      case 'Collaboration':
+      case 'Client Management':
         Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':

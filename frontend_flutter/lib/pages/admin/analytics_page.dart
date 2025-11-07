@@ -381,7 +381,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                           _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', false, context),
                           _buildNavItem('Templates', 'assets/images/content_library.png', false, context),
                           _buildNavItem('Content Library', 'assets/images/content_library.png', false, context),
-                          _buildNavItem('Collaboration', 'assets/images/collaborations.png', false, context),
+                          _buildNavItem('Client Management', 'assets/images/collaborations.png', false, context),
                           _buildNavItem('Approvals Status', 'assets/images/Time Allocation_Approval_Blue.png', false, context),
                           _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', true, context),
                           const SizedBox(height: 20),
@@ -428,7 +428,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                                   Text(
                                       'Comprehensive business intelligence and performance metrics',
                                       style: PremiumTheme.bodyLarge.copyWith(color: PremiumTheme.textSecondary),
-                                    ),
+                                ),
                                   ],
                                 ),
                                 Row(
@@ -437,9 +437,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                                     const SizedBox(width: 12),
                                     _buildGlassButton('Export', Icons.download, _showExportDialog),
                                   ],
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
+                          ),
                             const SizedBox(height: 32),
 
                           // Key Metrics Row
@@ -452,8 +452,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                                 Expanded(child: _buildGlassMetricCard('Conversion Rate', '73.2%', '-2.1%', false, 'vs last month')),
                                 const SizedBox(width: 20),
                                 Expanded(child: _buildGlassMetricCard('Avg Deal Size', '\$60,583', '+5.7%', true, 'vs last month')),
-                              ],
-                            ),
+                            ],
+                          ),
                             const SizedBox(height: 32),
 
                             // Revenue Analytics Chart
@@ -461,14 +461,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                             const SizedBox(height: 32),
 
                             // Second Row of Charts
-                            Row(
+                          Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                                 Expanded(flex: 2, child: _buildGlassChartCard('Proposal Status', _buildProposalStatusChart(), height: 320)),
                                 const SizedBox(width: 20),
                                 Expanded(child: _buildGlassChartCard('Win Rate', _buildWinRatePieChart(), height: 320)),
-                              ],
-                            ),
+                            ],
+                          ),
                             const SizedBox(height: 32),
 
                           // Performance Table
@@ -517,7 +517,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                     color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
-                  ),
+                ),
                 ],
               ),
               padding: const EdgeInsets.all(6),
@@ -583,7 +583,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                 ),
                 if (isActive)
                 const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
-            ],
+              ],
           ),
         ),
       ),
@@ -688,7 +688,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                     isPositive ? Icons.trending_up : Icons.trending_down,
                     size: 16,
                     color: isPositive ? PremiumTheme.success : PremiumTheme.error,
-                  ),
+            ),
                   const SizedBox(width: 4),
             Text(
                     change,
@@ -696,13 +696,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                 fontSize: 14,
                       color: isPositive ? PremiumTheme.success : PremiumTheme.error,
                       fontWeight: FontWeight.w600,
-                    ),
-                  ),
+              ),
+            ),
                   const SizedBox(width: 6),
                   Text(subtitle, style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
                 ],
-              ),
-            ],
+            ),
+          ],
           ),
         ),
       ),
@@ -758,8 +758,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
               getTitlesWidget: (value, meta) {
                 return Text('\$${(value / 1000).toInt()}K', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12));
               },
-            ),
-          ),
+        ),
+      ),
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           bottomTitles: AxisTitles(
@@ -808,7 +808,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                   strokeColor: Colors.black.withValues(alpha: 0.3),
                 );
               },
-            ),
+                  ),
             belowBarData: BarAreaData(
               show: true,
               gradient: LinearGradient(
@@ -853,8 +853,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
               getTitlesWidget: (value, meta) {
                 return Text(value.toInt().toString(), style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12));
               },
-            ),
-          ),
+                        ),
+                      ),
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           bottomTitles: AxisTitles(
@@ -880,7 +880,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
           drawVerticalLine: false,
           horizontalInterval: 5,
           getDrawingHorizontalLine: (value) => FlLine(color: const Color(0xFF2D3748), strokeWidth: 1),
-        ),
+                      ),
         barGroups: [
           BarChartGroupData(x: 0, barRods: [BarChartRodData(toY: 8, color: const Color(0xFF8B5CF6), width: 32, borderRadius: const BorderRadius.only(topLeft: Radius.circular(6), topRight: Radius.circular(6)))]),
           BarChartGroupData(x: 1, barRods: [BarChartRodData(toY: 15, color: const Color(0xFFF59E0B), width: 32, borderRadius: const BorderRadius.only(topLeft: Radius.circular(6), topRight: Radius.circular(6)))]),
@@ -965,9 +965,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
                   _buildTableRow('Cybersecurity Assessment', '\$45,200', 'Draft', '3', '65%', const Color(0xFF8B5CF6)),
                   _buildTableRow('Data Analytics Platform', '\$156,800', 'Won', '22', '100%', const Color(0xFF10B981)),
                   _buildTableRow('Mobile App Development', '\$78,300', 'Lost', '30', '0%', const Color(0xFFEF4444)),
-                ],
-              ),
-            ],
+              ],
+            ),
+          ],
           ),
         ),
       ),
@@ -1050,7 +1050,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> with TickerProviderStateM
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');
         break;
-      case 'Collaboration':
+      case 'Client Management':
         Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':

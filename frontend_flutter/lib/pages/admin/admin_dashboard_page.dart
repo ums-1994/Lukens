@@ -204,12 +204,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     padding: const EdgeInsets.all(20),
                     child: CustomScrollbar(
                       controller: _scrollController,
-                      child: SingleChildScrollView(
+                    child: SingleChildScrollView(
                         controller: _scrollController,
                         padding: const EdgeInsets.only(right: 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           // Proposal Pipeline Overview
                           _buildSection(
                             '📊 Proposal Pipeline Overview',
@@ -231,16 +231,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           ),
                         ],
                       ),
+                      ),
                     ),
                   ),
-                ),
                 ),
               ],
             ),
           ),
 
-          // Footer
-          Container(
+            // Footer
+            Container(
               height: 50,
               decoration: BoxDecoration(
                 gradient: LinearGradient(

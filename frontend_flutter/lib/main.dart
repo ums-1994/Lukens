@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
+import 'package:url_strategy/url_strategy.dart';
 import 'pages/creator/creator_dashboard_page.dart';
 import 'pages/creator/compose_page.dart';
 import 'pages/creator/proposal_wizard.dart';
@@ -22,6 +23,8 @@ import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/creator/collaboration_page.dart';
+import 'pages/creator/client_management_page.dart';
+import 'pages/public/client_onboarding_page.dart';
 import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/shared/collaboration_router.dart';
 import 'pages/admin/analytics_page.dart';
@@ -35,6 +38,13 @@ import 'package:google_fonts/google_fonts.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Use hash-based routing for web (URLs like /#/onboard/token)
+  // This fixes deep linking issues with Flutter web dev server
+  if (kIsWeb) {
+    setHashUrlStrategy();
+  }
+  
   try {
     if (kIsWeb) {
       // Initialize Firebase for web using options matching web/firebase-config.js
@@ -95,6 +105,17 @@ class MyApp extends StatelessWidget {
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
+
+          // Handle client onboarding routes (PUBLIC - no auth required)
+          if (settings.name != null && settings.name!.startsWith('/onboard/')) {
+            print('🔍 Client onboarding route detected!');
+            final token = settings.name!.substring(9); // Remove '/onboard/'
+            print('📍 Onboarding token: $token');
+            return MaterialPageRoute(
+              builder: (context) => ClientOnboardingPage(token: token),
+              settings: settings,
+            );
+          }
 
           // Handle collaboration routes with token
           if (settings.name == '/collaborate' ||
@@ -252,7 +273,7 @@ class MyApp extends StatelessWidget {
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
-          '/collaboration': (context) => const CollaborationPage(),
+          '/collaboration': (context) => const ClientManagementPage(),
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) => const AnalyticsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),

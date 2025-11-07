@@ -428,17 +428,17 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
           Expanded(
             child: CustomScrollbar(
               controller: _scrollController,
-              child: RefreshIndicator(
-                onRefresh: _loadData,
-                child: SingleChildScrollView(
+            child: RefreshIndicator(
+              onRefresh: _loadData,
+              child: SingleChildScrollView(
                   controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
+                physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.only(right: 24),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       // My Approval Queue
                       _buildSection(
                         '📋 My Approval Queue ($_pendingCount pending)',
@@ -462,16 +462,16 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
                       ),
                     ],
                   ),
+                  ),
                 ),
               ),
             ),
           ),
-          ),
 
-          // Footer
-          Container(
-            height: 50,
-            decoration: BoxDecoration(
+            // Footer
+            Container(
+              height: 50,
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
                     Colors.transparent,

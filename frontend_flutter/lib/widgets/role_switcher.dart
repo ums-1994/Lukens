@@ -22,7 +22,7 @@ class RoleSwitcher extends StatelessWidget {
                   color: Colors.black.withValues(alpha: 0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
-                ),
+              ),
               ],
             ),
             child: Row(
@@ -33,13 +33,13 @@ class RoleSwitcher extends StatelessWidget {
                   style: const TextStyle(fontSize: 20),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  roleService.currentRoleName,
-                  style: const TextStyle(
+                    Text(
+                      roleService.currentRoleName,
+                      style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF2C3E50),
-                  ),
+                        color: Color(0xFF2C3E50),
+                      ),
                 ),
                 const SizedBox(width: 8),
                 const Icon(
@@ -70,7 +70,7 @@ class RoleSwitcher extends StatelessWidget {
                         ),
                         child: Center(
                           child: Text(
-                            roleService.getRoleIcon(role),
+                        roleService.getRoleIcon(role),
                             style: const TextStyle(fontSize: 18),
                           ),
                         ),
@@ -78,22 +78,22 @@ class RoleSwitcher extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          roleService.getRoleName(role),
-                          style: TextStyle(
-                            fontWeight: isCurrentRole
+                                  roleService.getRoleName(role),
+                                  style: TextStyle(
+                                    fontWeight: isCurrentRole
                                 ? FontWeight.w600
                                 : FontWeight.w400,
                             fontSize: 15,
                             color: const Color(0xFF2C3E50),
                           ),
-                        ),
-                      ),
+                                  ),
+                                ),
                       if (isCurrentRole)
-                        const Icon(
+                                  const Icon(
                           Icons.check,
                           size: 20,
                           color: Color(0xFF4CAF50),
-                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -108,9 +108,9 @@ class RoleSwitcher extends StatelessWidget {
               if (context.mounted) {
                 // Navigate based on role - clear navigation stack for seamless switching
                 String targetRoute;
-                if (role == UserRole.approver) {
+                  if (role == UserRole.approver) {
                   targetRoute = '/approver_dashboard';
-                } else if (role == UserRole.creator) {
+                  } else if (role == UserRole.creator) {
                   targetRoute = '/home';
                 } else if (role == UserRole.admin) {
                   targetRoute = '/admin_dashboard';
@@ -178,8 +178,8 @@ class CompactRoleSwitcher extends StatelessWidget {
                 value: role,
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                  child: Row(
-                    children: [
+                child: Row(
+                  children: [
                       Container(
                         width: 28,
                         height: 28,
@@ -204,8 +204,8 @@ class CompactRoleSwitcher extends StatelessWidget {
                           fontSize: 14,
                         ),
                       ),
-                      if (isCurrentRole) ...[
-                        const SizedBox(width: 8),
+                    if (isCurrentRole) ...[
+                      const SizedBox(width: 8),
                         const Icon(Icons.check, size: 16, color: Color(0xFF4CAF50)),
                       ],
                     ],
@@ -222,9 +222,9 @@ class CompactRoleSwitcher extends StatelessWidget {
               if (context.mounted) {
                 // Navigate based on role - clear navigation stack for seamless switching
                 String targetRoute;
-                if (role == UserRole.approver) {
+                  if (role == UserRole.approver) {
                   targetRoute = '/approver_dashboard';
-                } else if (role == UserRole.creator) {
+                  } else if (role == UserRole.creator) {
                   targetRoute = '/home';
                 } else if (role == UserRole.admin) {
                   targetRoute = '/admin_dashboard';
