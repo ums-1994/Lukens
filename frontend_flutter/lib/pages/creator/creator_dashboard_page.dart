@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
-import '../../services/role_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -69,6 +68,7 @@ class _DashboardPageState extends State<DashboardPage>
       await Future.wait([
         app.fetchProposals(),
         app.fetchDashboard(),
+        app.fetchNotifications(),
       ]);
       print(
           '✅ Dashboard data refreshed - ${app.proposals.length} proposals loaded');
@@ -106,6 +106,288 @@ class _DashboardPageState extends State<DashboardPage>
         _animationController.reverse();
       }
     });
+  }
+
+  Widget _buildNotificationButton(AppState app) {
+    final unread = app.unreadNotifications;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        SizedBox(
+          width: 44,
+          height: 44,
+          child: IconButton(
+            tooltip: 'Notifications',
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
+            onPressed: () async {
+              await app.fetchNotifications();
+              if (!mounted) return;
+              _showNotificationsSheet(app);
+            },
+          ),
+        ),
+        if (unread > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: const BoxDecoration(
+                color: Color(0xFFE74C3C),
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
+              child: Text(
+                unread > 99 ? '99+' : unread.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showNotificationsSheet(AppState app) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom),
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              final notifications = app.notifications;
+              final unreadCount = app.unreadNotifications;
+
+              return Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.7,
+                ),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 12,
+                      offset: Offset(0, -3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 16),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF2C3E50),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Notifications',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              if (unreadCount > 0)
+                                TextButton(
+                                  onPressed: () async {
+                                    await app.markAllNotificationsRead();
+                                    setModalState(() {});
+                                  },
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: const Text(
+                                    'Mark all read',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              IconButton(
+                                icon: const Icon(Icons.close,
+                                    color: Colors.white),
+                                onPressed: () => Navigator.of(context).pop(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (notifications.isEmpty)
+                      const Expanded(
+                        child: Center(
+                          child: Text(
+                            'No notifications yet.',
+                            style: TextStyle(
+                              color: Color(0xFF4A4A4A),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12, horizontal: 16),
+                          itemCount: notifications.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 16),
+                          itemBuilder: (context, index) {
+                            final rawItem = notifications[index];
+                            final Map<String, dynamic> notification =
+                                rawItem is Map<String, dynamic>
+                                    ? rawItem
+                                    : (rawItem is Map
+                                        ? rawItem.cast<String, dynamic>()
+                                        : <String, dynamic>{});
+
+                            final title =
+                                notification['title']?.toString().trim();
+                            final message =
+                                notification['message']?.toString().trim() ??
+                                    '';
+                            final proposalTitle = notification['proposal_title']
+                                ?.toString()
+                                .trim();
+                            final isRead = notification['is_read'] == true;
+                            final timeLabel = _formatNotificationTimestamp(
+                                notification['created_at']);
+
+                            final dynamic notificationIdRaw =
+                                notification['id'];
+                            final int? notificationId = notificationIdRaw is int
+                                ? notificationIdRaw
+                                : int.tryParse(
+                                    notificationIdRaw?.toString() ?? '',
+                                  );
+
+                            return ListTile(
+                              leading: Icon(
+                                isRead
+                                    ? Icons.notifications_none_outlined
+                                    : Icons.notifications_active,
+                                color: isRead
+                                    ? const Color(0xFF95A5A6)
+                                    : const Color(0xFF3498DB),
+                              ),
+                              title: Text(
+                                title?.isNotEmpty == true
+                                    ? title!
+                                    : 'Notification',
+                                style: TextStyle(
+                                  color: const Color(0xFF2C3E50),
+                                  fontWeight: isRead
+                                      ? FontWeight.w600
+                                      : FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (message.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        message,
+                                        style: const TextStyle(
+                                          color: Color(0xFF4A4A4A),
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  if (proposalTitle != null &&
+                                      proposalTitle.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        proposalTitle,
+                                        style: const TextStyle(
+                                          color: Color(0xFF7F8C8D),
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  if (timeLabel.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        timeLabel,
+                                        style: const TextStyle(
+                                          color: Color(0xFF95A5A6),
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              isThreeLine: true,
+                              trailing: !isRead && notificationId != null
+                                  ? TextButton(
+                                      onPressed: () async {
+                                        await app.markNotificationRead(
+                                            notificationId);
+                                        setModalState(() {});
+                                      },
+                                      child: const Text('Mark read'),
+                                    )
+                                  : null,
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatNotificationTimestamp(dynamic value) {
+    DateTime? timestamp;
+    if (value is String) {
+      timestamp = DateTime.tryParse(value);
+    } else if (value is DateTime) {
+      timestamp = value;
+    }
+
+    if (timestamp == null) {
+      return '';
+    }
+
+    final local = timestamp.toLocal();
+    final difference = DateTime.now().difference(local);
+
+    if (difference.inSeconds < 60) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    }
+
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day';
   }
 
   @override
@@ -146,6 +428,8 @@ class _DashboardPageState extends State<DashboardPage>
                     children: [
                       // Role Switcher
                       const CompactRoleSwitcher(),
+                      const SizedBox(width: 12),
+                      _buildNotificationButton(app),
                       const SizedBox(width: 20),
                       ClipOval(
                         child: Image.asset(

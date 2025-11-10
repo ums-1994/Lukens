@@ -8,6 +8,7 @@ import hmac
 import secrets
 import smtplib
 import difflib
+import html
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -471,7 +472,17 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
 # NOTIFICATION HELPER
 # ============================================================================
 
-def create_notification(user_id, notification_type, title, message, proposal_id=None, metadata=None):
+def create_notification(
+    user_id,
+    notification_type,
+    title,
+    message,
+    proposal_id=None,
+    metadata=None,
+    send_email_flag=False,
+    email_subject=None,
+    email_body=None,
+):
     """
     Create a notification for a user
     
@@ -482,21 +493,70 @@ def create_notification(user_id, notification_type, title, message, proposal_id=
         message: Notification message
         proposal_id: Optional proposal ID
         metadata: Optional dict with additional data
+        send_email_flag: Whether to send an email in addition to the in-app notification
+        email_subject: Optional override for the email subject
+        email_body: Optional override for the email body (HTML)
     """
     try:
+        recipient_info = None
         with get_db_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("""
                 INSERT INTO notifications (user_id, proposal_id, notification_type, title, message, metadata)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (user_id, proposal_id, notification_type, title, message, json.dumps(metadata) if metadata else None))
+            notification_row = cursor.fetchone()
+
+            if send_email_flag:
+                cursor.execute(
+                    "SELECT email, full_name FROM users WHERE id = %s",
+                    (user_id,)
+                )
+                recipient_info = cursor.fetchone()
+
             conn.commit()
+
+        if notification_row:
             print(f"✅ Notification created for user {user_id}: {title}")
+
+        if send_email_flag and recipient_info and recipient_info.get('email'):
+            recipient_email = recipient_info['email']
+            recipient_name = recipient_info.get('full_name') or recipient_email
+            subject = email_subject or title
+
+            html_content = email_body or f"""
+            <html>
+                <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+                    <p>Hi {recipient_name},</p>
+                    <p>{message}</p>
+                    {f'<p><strong>Proposal ID:</strong> {proposal_id}</p>' if proposal_id else ''}
+                    <p style="font-size: 12px; color: #888;">You received this notification because you are part of a proposal on ProposalHub.</p>
+                </body>
+            </html>
+            """
+
+            try:
+                send_email(recipient_email, subject, html_content)
+                print(f"📧 Notification email sent to {recipient_email}")
+            except Exception as email_err:
+                print(f"⚠️ Failed to send notification email to {recipient_email}: {email_err}")
+
     except Exception as e:
         print(f"⚠️ Failed to create notification: {e}")
         # Don't raise - notification should not break main functionality
 
-def notify_proposal_collaborators(proposal_id, notification_type, title, message, exclude_user_id=None, metadata=None):
+def notify_proposal_collaborators(
+    proposal_id,
+    notification_type,
+    title,
+    message,
+    exclude_user_id=None,
+    metadata=None,
+    send_email_flag=False,
+    email_subject=None,
+    email_body=None,
+):
     """
     Notify all collaborators on a proposal
     
@@ -522,7 +582,17 @@ def notify_proposal_collaborators(proposal_id, notification_type, title, message
             cursor.execute("SELECT id FROM users WHERE username = %s", (proposal['user_id'],))
             owner = cursor.fetchone()
             if owner and owner['id'] != exclude_user_id:
-                create_notification(owner['id'], notification_type, title, message, proposal_id, metadata)
+                create_notification(
+                    owner['id'],
+                    notification_type,
+                    title,
+                    message,
+                    proposal_id,
+                    metadata,
+                    send_email_flag=send_email_flag,
+                    email_subject=email_subject,
+                    email_body=email_body,
+                )
             
             # Get all collaborators
             cursor.execute("""
@@ -535,7 +605,17 @@ def notify_proposal_collaborators(proposal_id, notification_type, title, message
             collaborators = cursor.fetchall()
             for collab in collaborators:
                 if collab['id'] != exclude_user_id:
-                    create_notification(collab['id'], notification_type, title, message, proposal_id, metadata)
+                    create_notification(
+                        collab['id'],
+                        notification_type,
+                        title,
+                        message,
+                        proposal_id,
+                        metadata,
+                        send_email_flag=send_email_flag,
+                        email_subject=email_subject,
+                        email_body=email_body,
+                    )
                     
     except Exception as e:
         print(f"⚠️ Failed to notify collaborators: {e}")
@@ -616,7 +696,20 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
                     'You were mentioned',
                     f"{commenter_name} mentioned you in a comment",
                     proposal_id,
-                    {'comment_id': comment_id, 'mentioned_by': mentioned_by_user_id}
+                    {'comment_id': comment_id, 'mentioned_by': mentioned_by_user_id},
+                    send_email_flag=True,
+                    email_subject=f"[ProposalHub] {commenter_name} mentioned you",
+                    email_body=f"""
+                    <html>
+                        <body style='font-family: Arial, sans-serif; line-height:1.6;'>
+                            <p>{html.escape(commenter_name)} mentioned you in a comment on proposal #{proposal_id}.</p>
+                            <blockquote style='margin: 0; padding-left: 15px; border-left: 3px solid #27ae60; color: #555;'>
+                                {html.escape(comment_text)}
+                            </blockquote>
+                            <p style='font-size: 12px; color: #888;'>Sign in to ProposalHub to respond.</p>
+                        </body>
+                    </html>
+                    """
                 )
                 
                 print(f"✅ Notified @{mentioned_user['email']} about mention")
@@ -1779,6 +1872,23 @@ def approve_proposal(username, proposal_id):
             client_email = proposal.get('client_email')
             creator = proposal.get('user_id')
             proposal_content = proposal.get('content')
+            display_title = title or f"Proposal {proposal_id}"
+            
+            cursor.execute(
+                "SELECT id, full_name, username, email FROM users WHERE username = %s",
+                (username,)
+            )
+            approver_user = cursor.fetchone()
+            approver_user_id = approver_user['id'] if approver_user else None
+            if approver_user:
+                approver_name = (
+                    approver_user.get('full_name')
+                    or approver_user.get('username')
+                    or approver_user.get('email')
+                    or username
+                )
+            else:
+                approver_name = username
             
             # Update status to Sent to Client
             cursor.execute(
@@ -1792,6 +1902,26 @@ def approve_proposal(username, proposal_id):
             if status_row:
                 new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
+                
+                notify_proposal_collaborators(
+                    proposal_id,
+                    'proposal_approved',
+                    'Proposal Approved',
+                    f"{approver_name} approved the proposal '{display_title}' and sent it to the client.",
+                    exclude_user_id=approver_user_id,
+                    metadata={'status': new_status},
+                    send_email_flag=True,
+                    email_subject=f"[ProposalHub] {display_title} was approved",
+                    email_body=f"""
+                    <html>
+                        <body style='font-family: Arial, sans-serif; line-height:1.6;'>
+                            <p>{html.escape(approver_name)} approved the proposal <strong>{html.escape(display_title)}</strong> and sent it to the client.</p>
+                            <p>Status is now <strong>{html.escape(new_status)}</strong>.</p>
+                            <p style='font-size: 12px; color: #888;'>Sign in to ProposalHub to review the latest activity.</p>
+                        </body>
+                    </html>
+                    """
+                )
                 
                 signing_url = None
                 envelope_id = None
@@ -2323,6 +2453,10 @@ def create_comment(username, proposal_id):
             
             user_id = user['id']
             
+            cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
+            proposal_row = cursor.fetchone()
+            proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
+            
             # Create comment
             cursor.execute("""
                 INSERT INTO document_comments 
@@ -2352,7 +2486,20 @@ def create_comment(username, proposal_id):
                 'New Comment',
                 f"{user['full_name']} commented{section_text}",
                 exclude_user_id=user_id,
-                metadata={'comment_id': result['id'], 'section_index': section_index}
+                metadata={'comment_id': result['id'], 'section_index': section_index},
+                send_email_flag=True,
+                email_subject=f"[ProposalHub] New comment on {proposal_title}",
+                email_body=f"""
+                <html>
+                    <body style='font-family: Arial, sans-serif; line-height:1.6;'>
+                        <p>{html.escape(user['full_name'])} added a comment{section_text} on <strong>{html.escape(proposal_title)}</strong>.</p>
+                        <blockquote style='margin: 0; padding-left: 15px; border-left: 3px solid #3498db; color: #555;'>
+                            {html.escape(comment_text)}
+                        </blockquote>
+                        <p style='font-size: 12px; color: #888;'>Sign in to ProposalHub to reply or take action.</p>
+                    </body>
+                </html>
+                """
             )
             
             # Process @mentions in the comment
@@ -3218,7 +3365,7 @@ def get_collaboration_access():
                     'status': signature['status'],
                     'sent_at': signature['sent_at'].isoformat() if signature['sent_at'] else None,
                     'signed_at': signature['signed_at'].isoformat() if signature['signed_at'] else None
-                }
+            }
             
             # Add auth token for edit/suggest permission
             if auth_token:
@@ -3281,6 +3428,14 @@ def add_guest_comment():
             guest_user_id = cursor.fetchone()['id']
             conn.commit()
             
+            cursor.execute('SELECT full_name FROM users WHERE id = %s', (guest_user_id,))
+            guest_user_row = cursor.fetchone()
+            guest_display_name = guest_user_row['full_name'] if guest_user_row and guest_user_row.get('full_name') else guest_email
+
+            cursor.execute('SELECT title FROM proposals WHERE id = %s', (invitation['proposal_id'],))
+            proposal_row = cursor.fetchone()
+            proposal_title = proposal_row['title'] if proposal_row else f"Proposal {invitation['proposal_id']}"
+
             # Add comment
             cursor.execute("""
                 INSERT INTO document_comments 
@@ -3299,6 +3454,40 @@ def add_guest_comment():
             
             result = cursor.fetchone()
             conn.commit()
+
+            section_text = f" on section {section_index}" if section_index is not None else ""
+
+            log_activity(
+                invitation['proposal_id'],
+                guest_user_id,
+                'comment_added',
+                f"{guest_display_name} added a comment{section_text}",
+                {'comment_id': result['id'], 'section_index': section_index}
+            )
+
+            notify_proposal_collaborators(
+                invitation['proposal_id'],
+                'comment_added',
+                'New Comment',
+                f"{guest_display_name} commented{section_text}",
+                exclude_user_id=guest_user_id,
+                metadata={'comment_id': result['id'], 'section_index': section_index},
+                send_email_flag=True,
+                email_subject=f"[ProposalHub] New comment on {proposal_title}",
+                email_body=f"""
+                <html>
+                    <body style='font-family: Arial, sans-serif; line-height:1.6;'>
+                        <p>{html.escape(guest_display_name)} added a comment{section_text} on <strong>{html.escape(proposal_title)}</strong>.</p>
+                        <blockquote style='margin: 0; padding-left: 15px; border-left: 3px solid #3498db; color: #555;'>
+                            {html.escape(comment_text)}
+                        </blockquote>
+                        <p style='font-size: 12px; color: #888;'>Sign in to ProposalHub to reply or take action.</p>
+                    </body>
+                </html>
+                """
+            )
+
+            process_mentions(result['id'], comment_text, guest_user_id, invitation['proposal_id'])
             
             return {
                 'id': result['id'],
@@ -3315,6 +3504,231 @@ def add_guest_comment():
         print(f"❌ Error adding guest comment: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
+
+
+@app.get("/users/search")
+def search_users_for_mentions():
+    """Search proposal collaborators for @mention functionality."""
+    try:
+        query = (request.args.get('q') or '').strip()
+        query_lower = query.lower()
+        proposal_id = request.args.get('proposal_id', type=int)
+        collab_token = request.headers.get('Collab-Token') or request.args.get('collab_token')
+        auth_header = request.headers.get('Authorization', '')
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            requesting_user_id = None
+            requesting_email = None
+
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(' ')[1]
+                username = verify_token(token)
+                if not username:
+                    return {'detail': 'Invalid or expired token'}, 401
+
+                cursor.execute(
+                    "SELECT id, email FROM users WHERE username = %s",
+                    (username,)
+                )
+                user_row = cursor.fetchone()
+                if not user_row:
+                    return {'detail': 'User not found'}, 404
+
+                requesting_user_id = user_row['id']
+                requesting_email = user_row['email']
+
+            elif collab_token:
+                cursor.execute(
+                    """
+                    SELECT proposal_id, expires_at, invited_email
+                    FROM collaboration_invitations
+                    WHERE access_token = %s
+                    """,
+                    (collab_token,)
+                )
+                invitation = cursor.fetchone()
+                if not invitation:
+                    return {'detail': 'Invalid collaboration token'}, 404
+
+                if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                    return {'detail': 'This invitation has expired'}, 403
+
+                if proposal_id is None:
+                    proposal_id = invitation['proposal_id']
+
+                requesting_email = invitation['invited_email']
+
+                cursor.execute(
+                    "SELECT id FROM users WHERE LOWER(email) = LOWER(%s)",
+                    (invitation['invited_email'],)
+                )
+                user_row = cursor.fetchone()
+                if user_row:
+                    requesting_user_id = user_row['id']
+            else:
+                return {'detail': 'Authorization required'}, 401
+
+            if proposal_id is None:
+                return [], 200
+
+            cursor.execute(
+                "SELECT * FROM proposals WHERE id = %s",
+                (proposal_id,)
+            )
+            proposal_row = cursor.fetchone()
+            if not proposal_row:
+                return [], 200
+
+            proposal_data = dict(proposal_row)
+
+            candidate_user_ids = set()
+            username_candidates = set()
+
+            owner_id = proposal_data.get('owner_id')
+            if isinstance(owner_id, int):
+                candidate_user_ids.add(owner_id)
+            elif owner_id:
+                username_candidates.add(str(owner_id))
+
+            proposal_user_field = proposal_data.get('user_id')
+            if isinstance(proposal_user_field, int):
+                candidate_user_ids.add(proposal_user_field)
+            elif proposal_user_field:
+                username_candidates.add(str(proposal_user_field))
+
+            cursor.execute(
+                """
+                SELECT invited_by, invited_email
+                FROM collaboration_invitations
+                WHERE proposal_id = %s
+                """,
+                (proposal_id,)
+            )
+            invitation_rows = cursor.fetchall()
+            pending_emails = set()
+            for row in invitation_rows:
+                invited_by = row.get('invited_by')
+                if isinstance(invited_by, int):
+                    candidate_user_ids.add(invited_by)
+                invited_email = row.get('invited_email')
+                if invited_email:
+                    pending_emails.add(invited_email.strip())
+
+            def normalize_email(value):
+                return value.strip().lower() if value else None
+
+            results = []
+            seen_ids = set()
+            seen_emails = set()
+
+            def add_user_row(row):
+                if not row:
+                    return
+                uid = row.get('id')
+                email_normalized = normalize_email(row.get('email'))
+                if uid and uid in seen_ids:
+                    return
+                if email_normalized and email_normalized in seen_emails:
+                    return
+                results.append({
+                    'id': uid,
+                    'full_name': row.get('full_name'),
+                    'email': row.get('email'),
+                    'username': row.get('username'),
+                })
+                if uid:
+                    seen_ids.add(uid)
+                if email_normalized:
+                    seen_emails.add(email_normalized)
+
+            if candidate_user_ids:
+                cursor.execute(
+                    """
+                    SELECT id, full_name, email, username
+                    FROM users
+                    WHERE id = ANY(%s)
+                    """,
+                    (list(candidate_user_ids),)
+                )
+                for row in cursor.fetchall():
+                    add_user_row(row)
+
+            for uname in username_candidates:
+                cursor.execute(
+                    """
+                    SELECT id, full_name, email, username
+                    FROM users
+                    WHERE LOWER(username) = LOWER(%s)
+                       OR LOWER(email) = LOWER(%s)
+                    """,
+                    (uname, uname)
+                )
+                add_user_row(cursor.fetchone())
+
+            if requesting_user_id:
+                cursor.execute(
+                    """
+                    SELECT id, full_name, email, username
+                    FROM users
+                    WHERE id = %s
+                    """,
+                    (requesting_user_id,)
+                )
+                add_user_row(cursor.fetchone())
+            elif requesting_email:
+                pending_emails.add(requesting_email)
+                cursor.execute(
+                    """
+                    SELECT id, full_name, email, username
+                    FROM users
+                    WHERE LOWER(email) = LOWER(%s)
+                    """,
+                    (requesting_email,)
+                )
+                add_user_row(cursor.fetchone())
+
+            filtered = []
+            for user in results:
+                if not query_lower:
+                    filtered.append(user)
+                    continue
+                values = [
+                    user.get('full_name'),
+                    user.get('email'),
+                    user.get('username'),
+                ]
+                if any(val and query_lower in val.lower() for val in values):
+                    filtered.append(user)
+
+            normalized_pending = {
+                normalize_email(email): email
+                for email in pending_emails
+                if email
+            }
+
+            for email_lower, original_email in normalized_pending.items():
+                if email_lower and email_lower in seen_emails:
+                    continue
+                if query_lower and email_lower and query_lower not in email_lower:
+                    continue
+                filtered.append({
+                    'id': None,
+                    'full_name': None,
+                    'email': original_email,
+                    'username': None,
+                })
+                if email_lower:
+                    seen_emails.add(email_lower)
+
+            return filtered, 200
+
+    except Exception as e:
+        print(f"❌ Error searching users for mentions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 
 # ============================================================
 # CLIENT PORTAL ENDPOINTS (Token-based, no auth required)

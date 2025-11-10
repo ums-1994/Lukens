@@ -70,6 +70,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   ];
   List<Map<String, dynamic>> _comments = [];
   late TextEditingController _commentController;
+  final FocusNode _commentFocusNode = FocusNode();
   String _commentFilterStatus = 'all';
   String _highlightedText = '';
   int? _selectedSectionForComment;
@@ -81,6 +82,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   bool _hasUnsavedChanges = false;
   List<Map<String, dynamic>> _versionHistory = [];
   int _currentVersionNumber = 1;
+  Timer? _mentionDebounce;
+  List<Map<String, dynamic>> _mentionSuggestions = [];
+  bool _isSearchingMentions = false;
+  int _mentionStartIndex = -1;
+  String _mentionQuery = '';
 
   // Backend integration
   int? _savedProposalId; // Store the actual backend proposal ID
@@ -102,6 +108,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _clientNameController = TextEditingController();
     _clientEmailController = TextEditingController();
     _commentController = TextEditingController();
+    _commentController.addListener(_handleCommentTextChanged);
+    _commentFocusNode.addListener(_handleCommentFocusChange);
 
     // Check if AI-generated sections are provided
     if (widget.aiGeneratedSections != null &&
@@ -555,7 +563,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _titleController.dispose();
     _clientNameController.dispose();
     _clientEmailController.dispose();
+    _commentController.removeListener(_handleCommentTextChanged);
     _commentController.dispose();
+    _commentFocusNode.removeListener(_handleCommentFocusChange);
+    _commentFocusNode.dispose();
+    _mentionDebounce?.cancel();
     for (var section in _sections) {
       section.controller.dispose();
       section.titleController.dispose();
@@ -753,6 +765,260 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return 'U';
   }
 
+  void _handleCommentFocusChange() {
+    if (!_commentFocusNode.hasFocus) {
+      _clearMentionState();
+    }
+  }
+
+  void _handleCommentTextChanged() {
+    if (!_commentFocusNode.hasFocus) {
+      _clearMentionState();
+      return;
+    }
+
+    final selection = _commentController.selection;
+    if (!selection.isValid) {
+      _clearMentionState();
+      return;
+    }
+
+    final caretIndex = selection.baseOffset;
+    if (caretIndex < 0) {
+      _clearMentionState();
+      return;
+    }
+
+    final text = _commentController.text;
+    if (caretIndex > text.length) {
+      _clearMentionState();
+      return;
+    }
+
+    final prefix = text.substring(0, caretIndex);
+    final atIndex = prefix.lastIndexOf('@');
+    if (atIndex == -1) {
+      _clearMentionState();
+      return;
+    }
+
+    if (atIndex > 0) {
+      final charBefore = prefix[atIndex - 1];
+      if (!RegExp(r'\s').hasMatch(charBefore)) {
+        _clearMentionState();
+        return;
+      }
+    }
+
+    final query = prefix.substring(atIndex + 1);
+    if (query.contains(
+        RegExp('[\\s@#\$%^&*()+\\-=/\\\\{}\\[\\]|;:\'",<>?]'))) {
+      _clearMentionState();
+      return;
+    }
+
+    final suffix = text.substring(caretIndex);
+    if (suffix.isNotEmpty &&
+        !RegExp(r'^[A-Za-z0-9_.]*').hasMatch(suffix[0])) {
+      _clearMentionState();
+      return;
+    }
+
+    if (!RegExp(r'^[A-Za-z0-9_.]*$').hasMatch(query)) {
+      _clearMentionState();
+      return;
+    }
+
+    if (_mentionStartIndex != atIndex || _mentionQuery != query) {
+      setState(() {
+        _mentionStartIndex = atIndex;
+        _mentionQuery = query;
+      });
+    }
+
+    _mentionDebounce?.cancel();
+
+    _mentionDebounce = Timer(const Duration(milliseconds: 250), () {
+      _loadMentionSuggestions(query);
+    });
+  }
+
+  void _clearMentionState() {
+    if (_mentionSuggestions.isEmpty &&
+        _mentionStartIndex == -1 &&
+        _mentionQuery.isEmpty &&
+        !_isSearchingMentions) {
+      return;
+    }
+    setState(() {
+      _mentionSuggestions = [];
+      _mentionStartIndex = -1;
+      _mentionQuery = '';
+      _isSearchingMentions = false;
+    });
+  }
+
+  Future<void> _loadMentionSuggestions(String query) async {
+    final currentQuery = query;
+    final token = await _getAuthToken();
+    if (token == null) {
+      return;
+    }
+
+    setState(() {
+      _isSearchingMentions = true;
+    });
+
+    try {
+      final results = await ApiService.searchUsers(
+        token: 'Bearer $token',
+        query: currentQuery,
+        proposalId: _savedProposalId,
+      );
+
+      if (!mounted || _mentionQuery != currentQuery) {
+        return;
+      }
+
+      final suggestions = results
+          .map((item) {
+            if (item is Map<String, dynamic>) {
+              return item;
+            }
+            if (item is Map) {
+              return item.cast<String, dynamic>();
+            }
+            return null;
+          })
+          .whereType<Map<String, dynamic>>()
+          .where((user) =>
+              (user['username']?.toString().isNotEmpty ?? false) ||
+              (user['email']?.toString().isNotEmpty ?? false))
+          .toList();
+
+      setState(() {
+        _mentionSuggestions = suggestions;
+        _isSearchingMentions = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _mentionSuggestions = [];
+        _isSearchingMentions = false;
+      });
+      print('⚠️ Error loading mention suggestions: $e');
+    }
+  }
+
+  void _insertMention(Map<String, dynamic> user) {
+    if (_mentionStartIndex == -1) return;
+
+    String mentionKey =
+        (user['username']?.toString().trim() ?? '').replaceAll(' ', '');
+    if (mentionKey.isEmpty) {
+      final email = user['email']?.toString() ?? '';
+      if (email.contains('@')) {
+        mentionKey = email.split('@').first;
+      }
+    }
+
+    mentionKey = mentionKey.replaceAll(RegExp(r'[^A-Za-z0-9_.]'), '');
+    if (mentionKey.isEmpty) {
+      return;
+    }
+
+    final text = _commentController.text;
+    final selection = _commentController.selection;
+    final caretIndex = selection.isValid ? selection.baseOffset : text.length;
+    final start = _mentionStartIndex;
+    final before = text.substring(0, start);
+    final after = caretIndex <= text.length ? text.substring(caretIndex) : '';
+    final mentionText = '@$mentionKey ';
+
+    final newText = '$before$mentionText$after';
+    _commentController.value = TextEditingValue(
+      text: newText,
+      selection:
+          TextSelection.collapsed(offset: start + mentionText.length),
+    );
+
+    setState(() {
+      _mentionSuggestions = [];
+      _mentionStartIndex = -1;
+      _mentionQuery = '';
+      _isSearchingMentions = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Mentioned @$mentionKey — they will be notified'),
+        backgroundColor: const Color(0xFF00BCD4),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildMentionRichText(
+    String text, {
+    TextStyle? style,
+  }) {
+    if (text.isEmpty) {
+      return Text(
+        '',
+        style: style ??
+            const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Color(0xFF1A1A1A),
+            ),
+      );
+    }
+
+    final defaultStyle = style ??
+        const TextStyle(
+          fontSize: 13,
+          height: 1.4,
+          color: Color(0xFF1A1A1A),
+        );
+    final mentionStyle = defaultStyle.copyWith(
+      color: const Color(0xFF00BCD4),
+      fontWeight: FontWeight.w600,
+    );
+
+    final spans = <TextSpan>[];
+    final mentionRegex = RegExp(r'@([A-Za-z0-9_.]+)');
+    int lastIndex = 0;
+
+    for (final match in mentionRegex.allMatches(text)) {
+      if (match.start > lastIndex) {
+        spans.add(TextSpan(
+          text: text.substring(lastIndex, match.start),
+          style: defaultStyle,
+        ));
+      }
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: mentionStyle,
+      ));
+      lastIndex = match.end;
+    }
+
+    if (lastIndex < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastIndex),
+        style: defaultStyle,
+      ));
+    }
+
+    if (spans.isEmpty) {
+      spans.add(TextSpan(text: text, style: defaultStyle));
+    }
+
+    return RichText(
+      text: TextSpan(children: spans, style: defaultStyle),
+    );
+  }
+
   Future<void> _addComment() async {
     if (_commentController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -767,6 +1033,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final commentText = _commentController.text;
     final commenterName = _getCommenterName();
     _commentController.clear();
+    _clearMentionState();
 
     final newComment = {
       'id': DateTime.now().millisecondsSinceEpoch,
@@ -1690,7 +1957,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         );
       },
-    );
+    ).whenComplete(_clearMentionState);
   }
 
   // Get text alignment based on current selection
@@ -5720,6 +5987,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   void _showCommentDialog() {
+    _clearMentionState();
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -5834,12 +6102,117 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     maxLines: 4,
                     decoration: InputDecoration(
                       labelText: 'Comment',
-                      hintText: 'Enter your comment here...',
+                      hintText:
+                          'Enter your comment here... use @ to tag teammates',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
+                    focusNode: _commentFocusNode,
                   ),
+                  if (_isSearchingMentions &&
+                      _mentionQuery.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: const [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Searching teammates...',
+                          style: TextStyle(fontSize: 12),
+                        )
+                      ],
+                    ),
+                  ] else if (_mentionSuggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _mentionSuggestions.length,
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          color: Colors.grey[200],
+                        ),
+                        itemBuilder: (context, index) {
+                          final user = _mentionSuggestions[index];
+                          final name = user['full_name']?.toString() ??
+                              user['first_name']?.toString() ??
+                              user['email']?.toString() ??
+                              'User';
+                          final email = user['email']?.toString();
+                          final username = user['username']?.toString();
+                          return ListTile(
+                            dense: true,
+                            onTap: () => _insertMention(user),
+                            leading: CircleAvatar(
+                              radius: 14,
+                              backgroundColor: const Color(0xFF00BCD4),
+                              child: Text(
+                                name.isNotEmpty
+                                    ? name[0].toUpperCase()
+                                    : '@',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              [
+                                if (username != null && username.isNotEmpty)
+                                  '@$username',
+                                if (email != null && email.isNotEmpty) email,
+                              ].join(' • '),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            trailing: const Icon(
+                              Icons.alternate_email,
+                              color: Color(0xFF00BCD4),
+                              size: 18,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ] else if (_mentionQuery.isNotEmpty &&
+                      !_isSearchingMentions) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.search_off,
+                            size: 16, color: Colors.orange),
+                        const SizedBox(width: 6),
+                        Text(
+                          'No teammates found for "$_mentionQuery"',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   // Action buttons
@@ -5849,6 +6222,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       TextButton(
                         onPressed: () {
                           _commentController.clear();
+                          _clearMentionState();
                           Navigator.pop(context);
                         },
                         child: const Text('Cancel'),
@@ -6101,7 +6475,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ],
 
           // Comment text
-          Text(
+          _buildMentionRichText(
             comment['comment_text'] ?? '',
             style: const TextStyle(
               fontSize: 13,
@@ -6361,6 +6735,91 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         'generate'; // 'generate', 'improve', or 'full_proposal'
     String selectedSectionType = 'general';
     bool isGenerating = false;
+    TextEditingController? generatedController;
+    Map<String, TextEditingController>? generatedSectionControllers;
+    String? generationMode; // 'section', 'full', 'improve'
+    final BuildContext rootContext = context;
+
+    void resetGeneratedState() {
+      generatedController?.dispose();
+      generatedController = null;
+      if (generatedSectionControllers != null) {
+        for (final controller in generatedSectionControllers!.values) {
+          controller.dispose();
+        }
+        generatedSectionControllers = null;
+      }
+      generationMode = null;
+    }
+
+    void applyGeneratedResult(String mode,
+        {String? content, Map<String, String>? sections}) {
+      if (!mounted) return;
+      String message = '';
+      setState(() {
+        if (mode == 'full' && sections != null) {
+          for (var section in _sections) {
+            section.controller.dispose();
+            section.titleController.dispose();
+            section.contentFocus.dispose();
+            section.titleFocus.dispose();
+          }
+          _sections.clear();
+
+          sections.forEach((title, body) {
+            final newSection = _DocumentSection(
+              title: title,
+              content: body,
+            );
+            _sections.add(newSection);
+            newSection.controller.addListener(_onContentChanged);
+            newSection.titleController.addListener(_onContentChanged);
+            newSection.contentFocus.addListener(() => setState(() {}));
+            newSection.titleFocus.addListener(() => setState(() {}));
+          });
+          _selectedSectionIndex = 0;
+          _hasUnsavedChanges = true;
+          message =
+              'AI drafted proposal inserted. Review and adjust before sending.';
+        } else if (content != null) {
+          if (_sections.isEmpty) {
+            final newSection = _DocumentSection(
+              title: 'Untitled Section',
+              content: '',
+            );
+            _sections.add(newSection);
+            newSection.controller.addListener(_onContentChanged);
+            newSection.titleController.addListener(_onContentChanged);
+            newSection.contentFocus.addListener(() => setState(() {}));
+            newSection.titleFocus.addListener(() => setState(() {}));
+            _selectedSectionIndex = 0;
+          }
+
+          final section = _sections[_selectedSectionIndex];
+          if (mode == 'improve') {
+            section.controller.text = content;
+            message = 'AI improvements applied to the selected section.';
+          } else {
+            if (section.controller.text.trim().isEmpty) {
+              section.controller.text = content;
+            } else {
+              section.controller.text += '\n\n$content';
+            }
+            message = 'AI drafted content inserted into the section.';
+          }
+          _hasUnsavedChanges = true;
+        }
+      });
+
+      if (message.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: const Color(0xFF27AE60),
+          ),
+        );
+      }
+    }
 
     showDialog(
       context: context,
@@ -6446,6 +6905,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             child: InkWell(
                               onTap: () {
                                 setDialogState(() {
+                                  resetGeneratedState();
                                   selectedAction = 'generate';
                                 });
                               },
@@ -6492,6 +6952,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             child: InkWell(
                               onTap: () {
                                 setDialogState(() {
+                                  resetGeneratedState();
                                   selectedAction = 'full_proposal';
                                 });
                               },
@@ -6538,6 +6999,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             child: InkWell(
                               onTap: () {
                                 setDialogState(() {
+                                  resetGeneratedState();
                                   selectedAction = 'improve';
                                 });
                               },
@@ -6673,6 +7135,169 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         ),
                       ),
 
+                      if ((generationMode == 'section' ||
+                              generationMode == 'improve') &&
+                          generatedController != null) ...[
+                        const SizedBox(height: 20),
+                        Text(
+                          generationMode == 'improve'
+                              ? 'Review AI Improvements'
+                              : 'AI Draft Preview',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: generatedController,
+                          maxLines: 12,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            hintText: generationMode == 'improve'
+                                ? 'Review the improved draft and make any changes before applying.'
+                                : 'Review the AI draft and make changes before inserting.',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              final edited =
+                                  generatedController!.text.trim();
+                              if (edited.isEmpty) {
+                                ScaffoldMessenger.of(rootContext).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'Draft cannot be empty. Please provide some content.'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              resetGeneratedState();
+                              Navigator.of(rootContext).pop();
+                              applyGeneratedResult(
+                                generationMode == 'improve'
+                                    ? 'improve'
+                                    : 'section',
+                                content: edited,
+                              );
+                            },
+                            icon: Icon(
+                              generationMode == 'improve'
+                                  ? Icons.auto_fix_high
+                                  : Icons.download_done,
+                              size: 18,
+                            ),
+                            label: Text(
+                              generationMode == 'improve'
+                                  ? 'Apply Improvements'
+                                  : 'Insert Draft',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF27AE60),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      if (generationMode == 'full' &&
+                          generatedSectionControllers != null &&
+                          generatedSectionControllers!.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        const Text(
+                          'AI Proposal Draft',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 280),
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: generatedSectionControllers!.entries
+                                .map((entry) {
+                              return Padding(
+                                padding:
+                                    const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      entry.key,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1A3A52),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    TextField(
+                                      controller: entry.value,
+                                      maxLines: 6,
+                                      decoration: InputDecoration(
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        hintText:
+                                            'Adjust the draft for this section.',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              if (generatedSectionControllers == null ||
+                                  generatedSectionControllers!.isEmpty) {
+                                ScaffoldMessenger.of(rootContext)
+                                    .showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'No sections available to insert.'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              final editedSections = <String, String>{};
+                              generatedSectionControllers!.forEach(
+                                  (title, controller) {
+                                editedSections[title] =
+                                    controller.text.trim();
+                              });
+                              resetGeneratedState();
+                              Navigator.of(rootContext).pop();
+                              applyGeneratedResult('full',
+                                  sections: editedSections);
+                            },
+                            icon: const Icon(Icons.download_done, size: 18),
+                            label: const Text('Insert Proposal Draft'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF27AE60),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 24),
 
                       // Action buttons
@@ -6682,7 +7307,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           TextButton(
                             onPressed: isGenerating
                                 ? null
-                                : () => Navigator.pop(context),
+                                : () {
+                                    resetGeneratedState();
+                                    Navigator.pop(context);
+                                  },
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 12),
@@ -6693,8 +7321,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                     if ((selectedAction == 'generate' ||
                                             selectedAction ==
                                                 'full_proposal') &&
-                                        promptController.text.isEmpty) {
-                                      ScaffoldMessenger.of(context)
+                                        promptController.text.trim().isEmpty) {
+                                      ScaffoldMessenger.of(rootContext)
                                           .showSnackBar(
                                         const SnackBar(
                                           content: Text(
@@ -6707,6 +7335,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
                                     setDialogState(() {
                                       isGenerating = true;
+                                      resetGeneratedState();
                                     });
 
                                     try {
@@ -6717,7 +7346,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                       }
 
                                       if (selectedAction == 'generate') {
-                                        // Generate new content
                                         final result =
                                             await ApiService.generateAIContent(
                                           token: token,
@@ -6733,51 +7361,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
                                         if (result != null &&
                                             result['content'] != null) {
-                                          if (mounted) {
-                                            Navigator.pop(context);
+                                          final generatedText =
+                                              (result['content'] as String)
+                                                  .trim();
+                                          if (generatedText.isEmpty) {
+                                            throw Exception(
+                                                'AI returned an empty draft.');
                                           }
-
-                                          // Insert into current section
-                                          if (_selectedSectionIndex <
-                                              _sections.length) {
-                                            setState(() {
-                                              final section = _sections[
-                                                  _selectedSectionIndex];
-                                              if (section
-                                                  .controller.text.isEmpty) {
-                                                section.controller.text =
-                                                    result['content'];
-                                              } else {
-                                                section.controller.text +=
-                                                    '\n\n${result['content']}';
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: generatedText);
+                                            if (generatedSectionControllers !=
+                                                null) {
+                                              for (final controller
+                                                  in generatedSectionControllers!
+                                                      .values) {
+                                                controller.dispose();
                                               }
-                                            });
-                                          }
-
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context)
+                                            }
+                                            generatedSectionControllers = null;
+                                            generationMode = 'section';
+                                          });
+                                          ScaffoldMessenger.of(rootContext)
                                                 .showSnackBar(
                                               const SnackBar(
-                                                content: Row(
-                                                  children: [
-                                                    Icon(Icons.check_circle,
-                                                        color: Colors.white),
-                                                    SizedBox(width: 8),
-                                                    Text(
-                                                        'AI content generated successfully!'),
-                                                  ],
-                                                ),
-                                                backgroundColor: Colors.green,
-                                              ),
-                                            );
-                                          }
+                                              content: Text(
+                                                  'Draft ready. Review and edit below before inserting.'),
+                                              backgroundColor:
+                                                  Color(0xFF00BCD4),
+                                            ),
+                                          );
                                         } else {
                                           throw Exception(
-                                              'Failed to generate content');
+                                              'Failed to generate content.');
                                         }
                                       } else if (selectedAction ==
                                           'full_proposal') {
-                                        // Generate full multi-section proposal
                                         final result = await ApiService
                                             .generateFullProposal(
                                           token: token,
@@ -6789,91 +7410,63 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         );
 
                                         if (result != null &&
-                                            result['sections'] != null) {
-                                          if (mounted) {
-                                            Navigator.pop(context);
-                                          }
-
-                                          // Clear existing sections and create new ones
-                                          final generatedSections =
+                                            result['sections'] is Map) {
+                                          final Map<String, dynamic>
+                                              generatedSections =
+                                              Map<String, dynamic>.from(
                                               result['sections']
-                                                  as Map<String, dynamic>;
-
-                                          setState(() {
-                                            // Dispose existing sections
-                                            for (var section in _sections) {
-                                              section.controller.dispose();
-                                              section.titleController.dispose();
-                                              section.contentFocus.dispose();
-                                              section.titleFocus.dispose();
+                                                      as Map<dynamic, dynamic>);
+                                          if (generatedSections.isEmpty) {
+                                            throw Exception(
+                                                'AI did not return any sections.');
+                                          }
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController = null;
+                                            if (generatedSectionControllers !=
+                                                null) {
+                                              for (final controller
+                                                  in generatedSectionControllers!
+                                                      .values) {
+                                                controller.dispose();
+                                              }
                                             }
-                                            _sections.clear();
-
-                                            // Create new sections from AI response
+                                            generatedSectionControllers = {};
                                             generatedSections
                                                 .forEach((title, content) {
-                                              final newSection =
-                                                  _DocumentSection(
-                                                title: title,
-                                                content: content as String,
-                                              );
-                                              _sections.add(newSection);
-
-                                              // Add listeners
-                                              newSection.controller.addListener(
-                                                  _onContentChanged);
-                                              newSection.titleController
-                                                  .addListener(
-                                                      _onContentChanged);
-                                              newSection.contentFocus
-                                                  .addListener(
-                                                      () => setState(() {}));
-                                              newSection.titleFocus.addListener(
-                                                  () => setState(() {}));
+                                              generatedSectionControllers![
+                                                  title] = TextEditingController(
+                                                  text: (content ?? '')
+                                                      .toString()
+                                                      .trim());
                                             });
-
-                                            _selectedSectionIndex = 0;
+                                            generationMode = 'full';
                                           });
-
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context)
+                                          ScaffoldMessenger.of(rootContext)
                                                 .showSnackBar(
                                               SnackBar(
-                                                content: Row(
-                                                  children: [
-                                                    const Icon(
-                                                        Icons.check_circle,
-                                                        color: Colors.white),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Text(
-                                                          'Full proposal generated with ${generatedSections.length} sections!'),
-                                                    ),
-                                                  ],
-                                                ),
-                                                backgroundColor: Colors.green,
-                                                duration:
-                                                    const Duration(seconds: 3),
-                                              ),
-                                            );
-                                          }
+                                              content: Text(
+                                                  'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
+                                              backgroundColor:
+                                                  const Color(0xFF00BCD4),
+                                            ),
+                                          );
                                         } else {
                                           throw Exception(
-                                              'Failed to generate full proposal');
+                                              'Failed to generate full proposal.');
                                         }
                                       } else {
-                                        // Improve existing content
                                         if (_selectedSectionIndex >=
                                             _sections.length) {
                                           throw Exception(
-                                              'No section selected');
+                                              'No section selected to improve.');
                                         }
 
                                         final currentContent =
                                             _sections[_selectedSectionIndex]
                                                 .controller
                                                 .text;
-                                        if (currentContent.isEmpty) {
+                                        if (currentContent.trim().isEmpty) {
                                           throw Exception(
                                               'Current section is empty. Nothing to improve.');
                                         }
@@ -6888,20 +7481,34 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         if (result != null &&
                                             result['improved_version'] !=
                                                 null) {
-                                          if (mounted) {
-                                            Navigator.pop(context);
+                                          final improvedText =
+                                              (result['improved_version']
+                                                      as String)
+                                                  .trim();
+                                          if (improvedText.isEmpty) {
+                                            throw Exception(
+                                                'AI returned an empty improvement.');
                                           }
 
-                                          // Replace with improved content
-                                          setState(() {
-                                            _sections[_selectedSectionIndex]
-                                                    .controller
-                                                    .text =
-                                                result['improved_version'];
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: improvedText);
+                                            if (generatedSectionControllers !=
+                                                null) {
+                                              for (final controller
+                                                  in generatedSectionControllers!
+                                                      .values) {
+                                                controller.dispose();
+                                              }
+                                            }
+                                            generatedSectionControllers = null;
+                                            generationMode = 'improve';
                                           });
 
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context)
+                                          if (result['summary'] != null) {
+                                            ScaffoldMessenger.of(rootContext)
                                                 .showSnackBar(
                                               SnackBar(
                                                 content: Column(
@@ -6910,62 +7517,47 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
                                                   children: [
-                                                    const Row(
-                                                      children: [
-                                                        Icon(Icons.check_circle,
-                                                            color:
-                                                                Colors.white),
-                                                        SizedBox(width: 8),
-                                                        Text(
-                                                            'Content improved!'),
-                                                      ],
-                                                    ),
-                                                    if (result['summary'] !=
-                                                        null)
-                                                      Padding(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .only(top: 4),
-                                                        child: Text(
-                                                          result['summary'],
-                                                          style:
-                                                              const TextStyle(
-                                                                  fontSize: 12),
-                                                        ),
+                                                    const Text(
+                                                      'Improvements ready. Review below.',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
                                                       ),
+                                                    ),
+                                                    Text(result['summary']
+                                                        as String),
                                                   ],
                                                 ),
-                                                backgroundColor: Colors.green,
-                                                duration:
-                                                    const Duration(seconds: 4),
+                                                backgroundColor:
+                                                    const Color(0xFF00BCD4),
+                                                duration: const Duration(
+                                                    seconds: 4),
+                                              ),
+                                            );
+                                          } else {
+                                            ScaffoldMessenger.of(rootContext)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                    'Improvements ready. Review and edit below before applying.'),
+                                                backgroundColor:
+                                                    Color(0xFF00BCD4),
                                               ),
                                             );
                                           }
                                         } else {
                                           throw Exception(
-                                              'Failed to improve content');
+                                              'Failed to improve content.');
                                         }
                                       }
                                     } catch (e) {
                                       if (mounted) {
-                                        Navigator.pop(context);
-                                        ScaffoldMessenger.of(context)
+                                        ScaffoldMessenger.of(rootContext)
                                             .showSnackBar(
                                           SnackBar(
-                                            content: Row(
-                                              children: [
-                                                const Icon(Icons.error,
-                                                    color: Colors.white),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
+                                            content: Text(
                                                       'Error: ${e.toString()}'),
-                                                ),
-                                              ],
-                                            ),
                                             backgroundColor: Colors.red,
-                                            duration:
-                                                const Duration(seconds: 4),
                                           ),
                                         );
                                       }

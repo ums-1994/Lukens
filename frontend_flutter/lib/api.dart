@@ -11,6 +11,8 @@ class AppState extends ChangeNotifier {
   List<dynamic> proposals = [];
   Map<String, dynamic>? currentProposal;
   Map<String, dynamic> dashboardCounts = {};
+  List<dynamic> notifications = [];
+  int unreadNotifications = 0;
 
   Future<void> init() async {
     // IMPORTANT: Sync token from AuthService on startup
@@ -26,7 +28,8 @@ class AppState extends ChangeNotifier {
         fetchTemplates(),
         fetchContent(),
         fetchProposals(),
-        fetchDashboard()
+        fetchDashboard(),
+        fetchNotifications(),
       ]);
     }
     notifyListeners();
@@ -234,6 +237,81 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       print('Error permanently deleting content: $e');
       return false;
+    }
+  }
+
+  Future<void> fetchNotifications() async {
+    if (authToken == null) {
+      notifications = [];
+      unreadNotifications = 0;
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse("$baseUrl/api/notifications"),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final rawNotifications = data is Map && data['notifications'] is List
+            ? List<dynamic>.from(data['notifications'])
+            : <dynamic>[];
+
+        notifications = rawNotifications;
+        unreadNotifications = data is Map && data['unread_count'] is int
+            ? data['unread_count'] as int
+            : 0;
+      } else {
+        print(
+            'Error fetching notifications: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error fetching notifications: $e');
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> markNotificationRead(int notificationId) async {
+    if (authToken == null) return;
+
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/api/notifications/$notificationId/mark-read"),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        await fetchNotifications();
+      } else {
+        print(
+            'Error marking notification as read: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error marking notification as read: $e');
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    if (authToken == null) return;
+
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/api/notifications/mark-all-read"),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        await fetchNotifications();
+      } else {
+        print(
+            'Error marking all notifications as read: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error marking all notifications as read: $e');
     }
   }
 
