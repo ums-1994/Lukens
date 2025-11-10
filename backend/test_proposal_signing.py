@@ -77,10 +77,8 @@ def test_proposal_signing():
     print("\n🔐 Testing JWT Authentication:")
     try:
         from app import get_docusign_jwt_token
-        token_data = get_docusign_jwt_token()
-        print(f"  ✅ JWT token obtained: {token_data['access_token'][:30]}...")
-        print(f"  ✅ JWT account ID: {token_data['account_id']}")
-        print(f"  ✅ JWT base path: {token_data['base_path']}")
+        token = get_docusign_jwt_token()
+        print(f"  ✅ JWT token obtained: {token[:30]}...")
     except Exception as e:
         print(f"  ❌ JWT authentication failed: {e}")
         return False
@@ -106,4 +104,6 @@ def test_proposal_signing():
 
 if __name__ == "__main__":
     test_proposal_signing()
+
+
 

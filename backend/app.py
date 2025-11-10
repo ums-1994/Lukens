@@ -647,12 +647,15 @@ def get_docusign_jwt_token():
         if not all([integration_key, user_id]):
             raise Exception("DocuSign credentials not configured")
         
+        # Read private key
         with open(private_key_path, 'r') as key_file:
             private_key = key_file.read()
         
+        # Create API client
         api_client = ApiClient()
         api_client.set_base_path(f"https://{auth_server}")
         
+        # Request JWT token
         response = api_client.request_jwt_user_token(
             client_id=integration_key,
             user_id=user_id,
@@ -662,35 +665,10 @@ def get_docusign_jwt_token():
             scopes=["signature", "impersonation"]
         )
         
-        user_info = api_client.get_user_info(response.access_token)
-        accounts = getattr(user_info, 'accounts', None)
-        account = None
-        if accounts:
-            for acc in accounts:
-                if getattr(acc, 'is_default', '').lower() == 'true':
-                    account = acc
-                    break
-            if account is None:
-                account = accounts[0]
-        if not account or not getattr(account, 'account_id', None):
-            raise Exception("No account_id returned from DocuSign user info")
-        account_id = account.account_id
-        base_uri = getattr(account, 'base_uri', None)
-        if not base_uri:
-            raise Exception("No base_uri returned from DocuSign user info")
-        base_path = f"{base_uri}/restapi"
-        
-        print(f"✅ DocuSign JWT authenticated. Account ID: {account_id}")
-        
-        return {
-            'access_token': response.access_token,
-            'account_id': account_id,
-            'base_path': base_path
-        }
+        return response.access_token
         
     except Exception as e:
         print(f"❌ Error getting DocuSign JWT token: {e}")
-        traceback.print_exc()
         raise
 
 def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
@@ -916,14 +894,21 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         raise Exception("DocuSign SDK not installed")
     
     try:
-        auth_data = get_docusign_jwt_token()
-        access_token = auth_data['access_token']
-        account_id = auth_data['account_id']
-        base_path = auth_data.get('base_path') or os.getenv('DOCUSIGN_BASE_PATH', 'https://demo.docusign.net/restapi')
+        # Get access token
+        access_token = get_docusign_jwt_token()
         
-        print(f"ℹ️  Using account_id: {account_id}")
-        print(f"ℹ️  Using base_path: {base_path}")
+        # Get account ID - must be set in .env
+        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+        if not account_id:
+            raise Exception("DOCUSIGN_ACCOUNT_ID is required. Get it from: https://demo.docusign.net → Settings → My Account Information → Account ID")
         
+        # Validate account ID format (should be a GUID)
+        if len(account_id) < 30 or '-' not in account_id:
+            raise Exception(f"Invalid DOCUSIGN_ACCOUNT_ID format: {account_id}. Should be a GUID like: 70784c46-78c0-45af-8207-f4b8e8a43ea")
+        
+        base_path = os.getenv('DOCUSIGN_BASE_PATH', 'https://demo.docusign.net/restapi')
+        
+        # Create API client
         api_client = ApiClient()
         api_client.host = base_path
         api_client.set_default_header("Authorization", f"Bearer {access_token}")
@@ -1775,11 +1760,11 @@ def approve_proposal(username, proposal_id):
         comments = data.get('comments', '')
         
         with get_db_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Get proposal details including client email
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, user_id 
+                '''SELECT id, title, client_name, client_email, user_id, content 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -1788,7 +1773,12 @@ def approve_proposal(username, proposal_id):
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            proposal_id, title, client_name, client_email, creator = proposal
+            proposal_id = proposal['id']
+            title = proposal.get('title')
+            client_name = proposal.get('client_name')
+            client_email = proposal.get('client_email')
+            creator = proposal.get('user_id')
+            proposal_content = proposal.get('content')
             
             # Update status to Sent to Client
             cursor.execute(
@@ -1796,11 +1786,15 @@ def approve_proposal(username, proposal_id):
                    WHERE id = %s RETURNING status''',
                 ('Sent to Client', proposal_id)
             )
-            result = cursor.fetchone()
+            status_row = cursor.fetchone()
             conn.commit()
             
-            if result:
+            if status_row:
+                new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
+                
+                signing_url = None
+                envelope_id = None
                 
                 # Send email to client if email is provided
                 if client_email and client_email.strip():
@@ -1808,7 +1802,7 @@ def approve_proposal(username, proposal_id):
                         # Get user ID for the invitation
                         cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                         user = cursor.fetchone()
-                        user_id = user[0] if user else None
+                        user_id = user['id'] if user else None
                         
                         # Generate secure access token for collaboration
                         access_token = secrets.token_urlsafe(32)
@@ -1825,6 +1819,68 @@ def approve_proposal(username, proposal_id):
                         
                         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
                         proposal_url = f"{frontend_url}/#/collaborate?token={access_token}"
+                        return_url = f"{frontend_url}/#/collaborate?token={access_token}&signed=true"
+                        
+                        # Automatically create DocuSign envelope for client signature
+                        try:
+                            pdf_bytes = generate_proposal_pdf(
+                                proposal_id=proposal_id,
+                                title=title or f"Proposal {proposal_id}",
+                                content=proposal_content,
+                                client_name=client_name,
+                                client_email=client_email
+                            )
+                            
+                            envelope_result = create_docusign_envelope(
+                                proposal_id=proposal_id,
+                                pdf_bytes=pdf_bytes,
+                                signer_name=client_name or client_email or 'Client',
+                                signer_email=client_email,
+                                signer_title=None,
+                                return_url=return_url
+                            )
+                            
+                            signing_url = envelope_result.get('signing_url')
+                            envelope_id = envelope_result.get('envelope_id')
+                            
+                            cursor.execute("""
+                                INSERT INTO proposal_signatures 
+                                (proposal_id, envelope_id, signer_name, signer_email, signer_title, signing_url, status, created_by)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (envelope_id) DO UPDATE 
+                                    SET signing_url = EXCLUDED.signing_url,
+                                        status = EXCLUDED.status,
+                                        sent_at = NOW()
+                                RETURNING id
+                            """, (
+                                proposal_id,
+                                envelope_id,
+                                client_name or client_email or 'Client',
+                                client_email,
+                                None,
+                                signing_url,
+                                'sent',
+                                user_id
+                            ))
+                            cursor.fetchone()
+                            conn.commit()
+                            print(f"✅ DocuSign envelope {envelope_id} created and signing URL stored")
+                        except Exception as signature_error:
+                            print(f"[WARN] Failed to create DocuSign envelope automatically: {signature_error}")
+                            traceback.print_exc()
+                        
+                        sign_button_html = ""
+                        if signing_url:
+                            sign_button_html = f"""
+                                <div style="text-align: center; margin: 10px 0 30px;">
+                                    <a href="{signing_url}" 
+                                       style="background-color: #1A73E8; color: white; padding: 15px 32px; 
+                                              text-decoration: none; border-radius: 5px; display: inline-block;
+                                              font-weight: bold;">
+                                        Sign Proposal
+                                    </a>
+                                </div>
+                            """
                         
                         email_body = f"""
                         <html>
@@ -1842,6 +1898,8 @@ def approve_proposal(username, proposal_id):
                                     <p><strong>Title:</strong> {title}</p>
                                     <p><strong>Status:</strong> <span style="color: #2ECC71;">Approved & Ready for Review</span></p>
                                 </div>
+                                
+                                {sign_button_html}
                                 
                                 <div style="text-align: center; margin: 30px 0;">
                                     <a href="{proposal_url}" 
@@ -1875,8 +1933,10 @@ def approve_proposal(username, proposal_id):
                 
                 return {
                     'detail': 'Proposal approved and sent to client',
-                    'status': result[0],
-                    'email_sent': bool(client_email and client_email.strip())
+                    'status': new_status,
+                    'email_sent': bool(client_email and client_email.strip()),
+                    'signing_url': signing_url,
+                    'envelope_id': envelope_id
                 }, 200
             else:
                 return {'detail': 'Failed to update proposal status'}, 500
@@ -2408,23 +2468,11 @@ def create_version(username, proposal_id):
                 'version_number': result[2],
                 'content': result[3],
                 'created_by': result[4],
-                'created_by_name': None,
-                'created_by_email': None,
                 'created_at': result[5].isoformat() if result[5] else None,
                 'change_description': result[6]
             }
             
             print(f"✅ Version {result[2]} created for proposal {proposal_id}")
-            # Try to populate creator name/email
-            try:
-                cursor.execute('SELECT full_name, email FROM users WHERE id = %s', (version['created_by'],))
-                u = cursor.fetchone()
-                if u:
-                    version['created_by_name'] = u[0]
-                    version['created_by_email'] = u[1]
-            except Exception:
-                pass
-
             return version, 201
     except Exception as e:
         print(f"❌ Error creating version: {e}")
@@ -2440,16 +2488,14 @@ def get_versions(username, proposal_id):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT pv.id, pv.proposal_id, pv.version_number, pv.content, pv.created_by, pv.created_at, pv.change_description,
-                          u.full_name AS created_by_name, u.email AS created_by_email
-                   FROM proposal_versions pv
-                   LEFT JOIN users u ON pv.created_by = u.id
-                   WHERE pv.proposal_id = %s
-                   ORDER BY pv.version_number DESC''',
+                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
+                   FROM proposal_versions
+                   WHERE proposal_id = %s
+                   ORDER BY version_number DESC''',
                 (proposal_id,)
             )
             rows = cursor.fetchall()
-
+            
             versions = []
             for row in rows:
                 versions.append({
@@ -2458,8 +2504,6 @@ def get_versions(username, proposal_id):
                     'version_number': row[2],
                     'content': row[3],
                     'created_by': row[4],
-                    'created_by_name': row[7],
-                    'created_by_email': row[8],
                     'created_at': row[5].isoformat() if row[5] else None,
                     'change_description': row[6]
                 })
@@ -2480,26 +2524,22 @@ def get_version(username, proposal_id, version_number):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT pv.id, pv.proposal_id, pv.version_number, pv.content, pv.created_by, pv.created_at, pv.change_description,
-                          u.full_name AS created_by_name, u.email AS created_by_email
-                   FROM proposal_versions pv
-                   LEFT JOIN users u ON pv.created_by = u.id
-                   WHERE pv.proposal_id = %s AND pv.version_number = %s''',
+                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
+                   FROM proposal_versions
+                   WHERE proposal_id = %s AND version_number = %s''',
                 (proposal_id, version_number)
             )
             row = cursor.fetchone()
-
+            
             if not row:
                 return {'detail': 'Version not found'}, 404
-
+            
             version = {
                 'id': row[0],
                 'proposal_id': row[1],
                 'version_number': row[2],
                 'content': row[3],
                 'created_by': row[4],
-                'created_by_name': row[7],
-                'created_by_email': row[8],
                 'created_at': row[5].isoformat() if row[5] else None,
                 'change_description': row[6]
             }
@@ -3017,113 +3057,6 @@ def get_collaborators(username, proposal_id):
         print(f"❌ Error getting collaborators: {e}")
         return {'detail': str(e)}, 500
 
-
-@app.get("/users/search")
-def users_search():
-    """Search users by username, full name or email.
-
-    This endpoint accepts either a valid Authorization bearer token OR a
-    collaboration token for a specific proposal (collab_token + proposal_id).
-
-    If `proposal_id` is provided and a valid `collab_token` is presented,
-    the results will be restricted to the proposal owner and invited collaborators.
-    If no proposal_id is present, an Authorization header is required.
-    """
-    try:
-        q = request.args.get('q', '')
-        proposal_id = request.args.get('proposal_id')
-        collab_token = request.args.get('collab_token')
-
-        # Determine auth: try Authorization header first
-        authed_username = None
-        if 'Authorization' in request.headers:
-            auth_header = request.headers.get('Authorization')
-            if auth_header:
-                parts = auth_header.split(' ')
-                if len(parts) == 2 and parts[0].lower() == 'bearer':
-                    token = parts[1]
-                    authed_username = verify_token(token)
-
-        # If not authed, and proposal_id provided, allow collaboration token validation
-        collab_allowed = False
-        if not authed_username and proposal_id and collab_token:
-            with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute("""
-                        SELECT id, invited_email, permission_level, expires_at
-                        FROM collaboration_invitations
-                        WHERE access_token = %s AND proposal_id = %s
-                    """, (collab_token, proposal_id))
-                    inv = cur.fetchone()
-                    if inv:
-                        expires_at = inv.get('expires_at')
-                        if not expires_at or datetime.now() <= expires_at:
-                            collab_allowed = True
-
-        # If no auth and no valid collab access, require auth
-        if not authed_username and not collab_allowed:
-            return {'detail': 'Authorization required'}, 401
-
-        # If no query provided, and collaboration token is valid for a proposal,
-        # return the proposal owner and invited collaborators as default suggestions.
-        if not q:
-            if proposal_id and collab_allowed:
-                with get_db_connection() as conn:
-                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        cur.execute("""
-                            SELECT u.id, u.username, u.full_name, u.email
-                            FROM users u
-                            WHERE u.id = (SELECT owner_id FROM proposals WHERE id = %s)
-                            OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
-                            LIMIT 50
-                        """, (proposal_id, proposal_id))
-                        rows = cur.fetchall()
-                        return [dict(r) for r in rows], 200
-            return [], 200
-
-        like = f"%{q}%"
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                if proposal_id:
-                    # Determine which column stores the proposal owner (owner_id or user_id)
-                    cur.execute("""
-                        SELECT column_name FROM information_schema.columns
-                        WHERE table_name = 'proposals' AND column_name IN ('owner_id','user_id')
-                    """)
-                    cols = [r['column_name'] if isinstance(r, dict) and 'column_name' in r else (r[0] if r else None) for r in cur.fetchall()]
-                    owner_col = 'owner_id' if 'owner_id' in cols else ('user_id' if 'user_id' in cols else 'owner_id')
-
-                    # Build SQL using the detected owner column name (safe because we only allow known names)
-                    sql = f"""
-                        SELECT u.id, u.username, u.full_name, u.email
-                        FROM users u
-                        WHERE (u.username ILIKE %s OR u.full_name ILIKE %s OR u.email ILIKE %s)
-                        AND (
-                            u.id = (SELECT {owner_col} FROM proposals WHERE id = %s)
-                            OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
-                        )
-                        LIMIT 50
-                    """
-                    cur.execute(sql, (like, like, like, proposal_id, proposal_id))
-                else:
-                    # No proposal filter: only allow when authed
-                    if not authed_username:
-                        return {'detail': 'Authorization required for global search'}, 401
-                    cur.execute("""
-                        SELECT id, username, full_name, email
-                        FROM users
-                        WHERE username ILIKE %s OR full_name ILIKE %s OR email ILIKE %s
-                        LIMIT 50
-                    """, (like, like, like))
-
-                rows = cur.fetchall()
-                return [dict(r) for r in rows], 200
-
-    except Exception as e:
-        print(f"❌ Error searching users: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
 @app.delete("/api/collaborations/<int:invitation_id>")
 @token_required
 def remove_collaborator(username, invitation_id):
@@ -3184,6 +3117,7 @@ def get_collaboration_access():
                     p.title,
                     p.content,
                     p.user_id,
+                    p.status as proposal_status,
                     u.email as owner_email,
                     u.full_name as owner_name
                 FROM collaboration_invitations ci
@@ -3255,6 +3189,7 @@ def get_collaboration_access():
                     'id': invitation['proposal_id'],
                     'title': invitation['title'],
                     'content': invitation['content'],
+                    'status': invitation['proposal_status'],
                     'owner_email': invitation['owner_email'],
                     'owner_name': invitation['owner_name']
                 },
@@ -3265,6 +3200,25 @@ def get_collaboration_access():
                 'can_suggest': invitation['permission_level'] in ['suggest', 'edit'],
                 'can_edit': invitation['permission_level'] == 'edit'
             }
+            
+            # Include latest DocuSign signature info
+            cursor.execute("""
+                SELECT envelope_id, signing_url, status, sent_at, signed_at
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+            """, (invitation['proposal_id'],))
+            
+            signature = cursor.fetchone()
+            if signature:
+                response['signature'] = {
+                    'envelope_id': signature['envelope_id'],
+                    'signing_url': signature['signing_url'],
+                    'status': signature['status'],
+                    'sent_at': signature['sent_at'].isoformat() if signature['sent_at'] else None,
+                    'signed_at': signature['signed_at'].isoformat() if signature['signed_at'] else None
+                }
             
             # Add auth token for edit/suggest permission
             if auth_token:
@@ -3345,13 +3299,7 @@ def add_guest_comment():
             
             result = cursor.fetchone()
             conn.commit()
-
-            # Process @mentions in the comment (guest)
-            try:
-                process_mentions(result['id'], comment_text, guest_user_id, invitation['proposal_id'])
-            except Exception as e:
-                print(f"⚠️ Failed to process mentions for guest comment: {e}")
-
+            
             return {
                 'id': result['id'],
                 'proposal_id': result['proposal_id'],
@@ -3402,8 +3350,25 @@ def get_client_proposals():
             
             # Get all proposals for this client email
             cursor.execute("""
-                SELECT p.id, p.title, p.status, p.created_at, p.updated_at, p.client_name, p.client_email
+                SELECT 
+                    p.id, 
+                    p.title, 
+                    p.status, 
+                    p.created_at, 
+                    p.updated_at, 
+                    p.client_name, 
+                    p.client_email,
+                    ps.signing_url,
+                    ps.status AS signature_status,
+                    ps.envelope_id
                 FROM proposals p
+                LEFT JOIN LATERAL (
+                    SELECT envelope_id, signing_url, status
+                    FROM proposal_signatures
+                    WHERE proposal_id = p.id
+                    ORDER BY sent_at DESC
+                    LIMIT 1
+                ) ps ON TRUE
                 WHERE p.client_email = %s
                 ORDER BY p.updated_at DESC
             """, (client_email,))
@@ -3459,6 +3424,15 @@ def get_client_proposal_details(proposal_id):
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
             
+            cursor.execute("""
+                SELECT envelope_id, signing_url, status, sent_at, signed_at
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+            """, (proposal_id,))
+            signature = cursor.fetchone()
+            
             # Get comments
             cursor.execute("""
                 SELECT dc.id, dc.comment_text, dc.created_at, dc.created_by,
@@ -3487,6 +3461,7 @@ def get_client_proposal_details(proposal_id):
             
             return {
                 'proposal': dict(proposal),
+                'signature': dict(signature) if signature else None,
                 'comments': [dict(c) for c in comments],
                 'activity': activity
             }, 200

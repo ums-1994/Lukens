@@ -1,6 +1,11 @@
-import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher_string.dart';
+import 'package:web/web.dart' as web;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:ui_web' as ui;
 
 class ClientProposalViewer extends StatefulWidget {
   final int proposalId;
@@ -20,6 +25,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   bool _isLoading = true;
   String? _error;
   Map<String, dynamic>? _proposalData;
+  Map<String, dynamic>? _signatureData;
+  String? _signingUrl;
+  String? _signatureStatus;
   List<Map<String, dynamic>> _comments = [];
   List<Map<String, dynamic>> _activityLog = [];
   final TextEditingController _commentController = TextEditingController();
@@ -49,6 +57,11 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         final data = jsonDecode(response.body);
         setState(() {
           _proposalData = data['proposal'];
+          _signatureData = data['signature'] != null
+              ? Map<String, dynamic>.from(data['signature'])
+              : null;
+          _signingUrl = _signatureData?['signing_url']?.toString();
+          _signatureStatus = _signatureData?['status']?.toString();
           _comments = (data['comments'] as List?)
                   ?.map((c) => Map<String, dynamic>.from(c))
                   .toList() ??
@@ -134,21 +147,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     }
   }
 
-  void _showApproveDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => SignatureDialog(
-        proposalId: widget.proposalId,
-        accessToken: widget.accessToken,
-        action: 'approve',
-        onSuccess: () {
-          Navigator.pop(context); // Close dialog
-          Navigator.pop(context); // Go back to dashboard
-        },
-      ),
-    );
-  }
-
   void _showRejectDialog() {
     showDialog(
       context: context,
@@ -213,8 +211,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
     final proposal = _proposalData!;
     final status = proposal['status'] as String? ?? 'Unknown';
-    final canTakeAction = status.toLowerCase().contains('sent to client') ||
-        status.toLowerCase().contains('pending');
+    final signatureStatus = (_signatureStatus ?? '').toLowerCase();
+    final canTakeAction = !signatureStatus.contains('completed');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F9),
@@ -303,6 +301,28 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Widget _buildActionBar() {
+    final signatureStatus = (_signatureStatus ?? '').toLowerCase();
+    final isSigned = signatureStatus.contains('completed');
+    final isDeclined = signatureStatus.contains('declined');
+    final hasSigningUrl = _signingUrl != null && _signingUrl!.isNotEmpty;
+    final statusColor = isSigned
+        ? Colors.green
+        : isDeclined
+            ? Colors.red
+            : Colors.blue;
+    final statusIcon = isSigned
+        ? Icons.verified
+        : isDeclined
+            ? Icons.cancel
+            : Icons.info_outline;
+    final message = isSigned
+        ? 'This proposal has been signed. Thank you for completing the process.'
+        : isDeclined
+            ? 'You previously declined this proposal. Contact your Khonology partner for assistance.'
+            : hasSigningUrl
+                ? 'Please review the proposal and sign using the secure DocuSign link.'
+                : 'This proposal is ready for review.';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -318,40 +338,151 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+          Icon(statusIcon, color: statusColor, size: 20),
           const SizedBox(width: 8),
-          const Text(
-            'This proposal requires your review and decision',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-          const Spacer(),
-          OutlinedButton.icon(
-            onPressed: _showRejectDialog,
-            icon: const Icon(Icons.cancel, size: 18),
-            label: const Text('Reject'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red,
-              side: const BorderSide(color: Colors.red),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          if (!isSigned)
+            OutlinedButton.icon(
+              onPressed: _showRejectDialog,
+              icon: const Icon(Icons.cancel, size: 18),
+              label: const Text('Reject'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            onPressed: _showApproveDialog,
-            icon: const Icon(Icons.check_circle, size: 18),
-            label: const Text('Approve & Sign'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF27AE60),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          if (!isSigned && hasSigningUrl) ...[
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              onPressed: _openSigningModal,
+              icon: const Icon(Icons.draw, size: 18),
+              label: const Text('Sign Proposal'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A73E8),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
             ),
-          ),
+          ] else if (!isSigned && !hasSigningUrl) ...[
+            const SizedBox(width: 12),
+            TextButton(
+              onPressed: _loadProposal,
+              child: const Text('Refresh'),
+            )
+          ]
         ],
       ),
     );
+  }
+
+  Future<void> _openSigningModal() async {
+    if (_signingUrl == null || _signingUrl!.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Signing link not available yet. Please try again later.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    
+    if (!kIsWeb) {
+      await launchUrlString(_signingUrl!, mode: LaunchMode.externalApplication);
+      return;
+    }
+    
+    final protocol = web.window.location.protocol;
+    if (protocol != 'https:' && !protocol.contains('chrome-extension')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Embedded signing requires HTTPS. Opening DocuSign in a new tab instead.',
+            ),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+      await launchUrlString(_signingUrl!, mode: LaunchMode.externalApplication);
+      return;
+    }
+    
+    final viewId =
+        'docusign-signing-${DateTime.now().millisecondsSinceEpoch.toString()}';
+    // ignore: undefined_prefixed_name
+    ui.platformViewRegistry.registerViewFactory(viewId, (int viewId) {
+      final iframe = web.HTMLIFrameElement()
+        ..src = _signingUrl!
+        ..style.border = 'none'
+        ..allow = 'fullscreen'
+        ..width = '100%'
+        ..height = '100%';
+      return iframe;
+    });
+    
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(24),
+        child: SizedBox(
+          width: 900,
+          height: 700,
+          child: Column(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
+                child: Row(
+                  children: [
+                    const Text(
+                      'Sign Proposal',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.open_in_new, color: Colors.white),
+                      tooltip: 'Open in new tab',
+                      onPressed: () => launchUrlString(
+                          _signingUrl!,
+                          mode: LaunchMode.externalApplication),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    )
+                  ],
+                ),
+              ),
+              Expanded(
+                child: HtmlElementView(viewType: viewId),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    
+    await _loadProposal();
   }
 
   Widget _buildTabBar() {
@@ -867,252 +998,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   @override
   void dispose() {
     _commentController.dispose();
-    super.dispose();
-  }
-}
-
-// Signature Dialog for Approval
-class SignatureDialog extends StatefulWidget {
-  final int proposalId;
-  final String accessToken;
-  final String action;
-  final VoidCallback onSuccess;
-
-  const SignatureDialog({
-    super.key,
-    required this.proposalId,
-    required this.accessToken,
-    required this.action,
-    required this.onSuccess,
-  });
-
-  @override
-  State<SignatureDialog> createState() => _SignatureDialogState();
-}
-
-class _SignatureDialogState extends State<SignatureDialog> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _commentsController = TextEditingController();
-  bool _isSubmitting = false;
-  bool _agreedToTerms = false;
-
-  Future<void> _submit() async {
-    if (_nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your full name'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (!_agreedToTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please agree to the terms'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      final response = await http.post(
-        Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}/approve'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'token': widget.accessToken,
-          'signer_name': _nameController.text.trim(),
-          'signer_title': _titleController.text.trim(),
-          'comments': _commentsController.text.trim(),
-          'signature_date': DateTime.now().toIso8601String(),
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Proposal approved successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          widget.onSuccess();
-        }
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['detail'] ?? 'Failed to approve');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 600,
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.check_circle,
-                      color: Colors.green, size: 28),
-                ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Text(
-                    'Approve & Sign Proposal',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Please provide your signature details to approve this proposal.',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _nameController,
-              decoration: InputDecoration(
-                labelText: 'Full Name *',
-                hintText: 'Enter your full name',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixIcon: const Icon(Icons.person),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                labelText: 'Title / Position',
-                hintText: 'e.g., CEO, Director',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixIcon: const Icon(Icons.work),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _commentsController,
-              decoration: InputDecoration(
-                labelText: 'Comments (Optional)',
-                hintText: 'Add any comments or notes',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixIcon: const Icon(Icons.comment),
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
-              ),
-              child: Row(
-                children: [
-                  Checkbox(
-                    value: _agreedToTerms,
-                    onChanged: (value) =>
-                        setState(() => _agreedToTerms = value ?? false),
-                  ),
-                  const Expanded(
-                    child: Text(
-                      'I agree that this electronic signature is legally binding and has the same legal effect as a handwritten signature.',
-                      style: TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed:
-                      _isSubmitting ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _isSubmitting ? null : _submit,
-                  icon: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.check),
-                  label: const Text('Approve & Sign'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF27AE60),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _titleController.dispose();
-    _commentsController.dispose();
     super.dispose();
   }
 }
