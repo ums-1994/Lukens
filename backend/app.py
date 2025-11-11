@@ -574,6 +574,13 @@ def create_notification(
                 add_column('type', notification_type)
             if 'resource_type' in column_names:
                 add_column('resource_type', notification_type)
+            if 'resource_id' in column_names:
+                resource_id = None
+                if metadata and isinstance(metadata, dict):
+                    resource_id = metadata.get('resource_id')
+                if resource_id is None:
+                    resource_id = proposal_id
+                add_column('resource_id', resource_id)
 
             if 'title' in column_names:
                 add_column('title', title)
@@ -656,16 +663,59 @@ def notify_proposal_collaborators(
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get proposal owner
-            cursor.execute("SELECT user_id FROM proposals WHERE id = %s", (proposal_id,))
+
+            # Fetch proposal details once
+            cursor.execute(
+                "SELECT user_id, title FROM proposals WHERE id = %s",
+                (proposal_id,),
+            )
             proposal = cursor.fetchone()
             if not proposal:
                 return
-            
-            # Get owner's user ID
-            cursor.execute("SELECT id FROM users WHERE username = %s", (proposal['user_id'],))
-            owner = cursor.fetchone()
+
+            proposal_title = (
+                proposal.get('title')
+                if isinstance(proposal, dict)
+                else None
+            ) or f"Proposal #{proposal_id}"
+
+            base_metadata = {
+                'proposal_id': proposal_id,
+                'proposal_title': proposal_title,
+                'resource_id': proposal_id,
+            }
+            if isinstance(metadata, dict):
+                base_metadata.update(metadata)
+
+            def _resolve_user_row(identifier):
+                if identifier is None:
+                    return None
+                if isinstance(identifier, int):
+                    cursor.execute(
+                        "SELECT id FROM users WHERE id = %s",
+                        (identifier,),
+                    )
+                    return cursor.fetchone()
+                # Try to treat as numeric string id
+                try:
+                    numeric_id = int(identifier)
+                except (TypeError, ValueError):
+                    numeric_id = None
+                if numeric_id is not None:
+                    cursor.execute(
+                        "SELECT id FROM users WHERE id = %s",
+                        (numeric_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        return row
+                cursor.execute(
+                    "SELECT id FROM users WHERE username = %s",
+                    (identifier,),
+                )
+                return cursor.fetchone()
+
+            owner = _resolve_user_row(proposal.get('user_id'))
             if owner and owner['id'] != exclude_user_id:
                 create_notification(
                     owner['id'],
@@ -673,30 +723,34 @@ def notify_proposal_collaborators(
                     title,
                     message,
                     proposal_id,
-                    metadata,
+                    base_metadata,
                     send_email_flag=send_email_flag,
                     email_subject=email_subject,
                     email_body=email_body,
                 )
-            
-            # Get all collaborators
-            cursor.execute("""
+
+            # Get accepted collaborators (users with accepted invitation)
+            cursor.execute(
+                """
                 SELECT DISTINCT u.id
                 FROM collaboration_invitations ci
                 JOIN users u ON ci.invited_email = u.email
                 WHERE ci.proposal_id = %s AND ci.status = 'accepted'
-            """, (proposal_id,))
-            
+                """,
+                (proposal_id,),
+            )
+
             collaborators = cursor.fetchall()
             for collab in collaborators:
-                if collab['id'] != exclude_user_id:
+                collab_id = collab.get('id') if isinstance(collab, dict) else collab[0]
+                if collab_id and collab_id != exclude_user_id:
                     create_notification(
-                        collab['id'],
+                        collab_id,
                         notification_type,
                         title,
                         message,
                         proposal_id,
-                        metadata,
+                        base_metadata,
                         send_email_flag=send_email_flag,
                         email_subject=email_subject,
                         email_body=email_body,
@@ -1994,7 +2048,11 @@ def approve_proposal(username, proposal_id):
                     'Proposal Approved',
                     f"{approver_name} approved the proposal '{display_title}' and sent it to the client.",
                     exclude_user_id=approver_user_id,
-                    metadata={'status': new_status},
+                    metadata={
+                        'status': new_status,
+                        'action': 'approved',
+                        'approver_id': approver_user_id,
+                    },
                     send_email_flag=True,
                     email_subject=f"[ProposalHub] {display_title} was approved",
                     email_body=f"""
@@ -2224,17 +2282,88 @@ def update_proposal_status(username, proposal_id):
 @app.post("/proposals/<int:proposal_id>/send_to_client")
 @token_required
 def send_to_client(username, proposal_id):
+    """Allow proposal owner/collaborator to send proposal to the client."""
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''UPDATE proposals SET status = 'Sent to Client' WHERE id = %s''',
-            (proposal_id,)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Proposal sent to client'}, 200
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT id, title, client_name, client_email, user_id
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            cursor.execute(
+                "SELECT id, full_name, username, email FROM users WHERE username = %s",
+                (username,),
+            )
+            sender = cursor.fetchone()
+            if sender:
+                sender_id = sender.get('id')
+                sender_name = (
+                    sender.get('full_name')
+                    or sender.get('username')
+                    or sender.get('email')
+                    or username
+                )
+            else:
+                sender_id = None
+                sender_name = username
+
+            cursor.execute(
+                """
+                UPDATE proposals
+                SET status = %s, updated_at = NOW()
+                WHERE id = %s
+                RETURNING status
+                """,
+                ('Sent to Client', proposal_id),
+            )
+            status_row = cursor.fetchone()
+            conn.commit()
+
+            new_status = status_row['status'] if status_row else 'Sent to Client'
+            proposal_title = proposal.get('title') or f"Proposal #{proposal_id}"
+            client_label = proposal.get('client_name') or proposal.get('client_email') or 'the client'
+
+            notify_proposal_collaborators(
+                proposal_id,
+                'proposal_sent_to_client',
+                'Proposal Sent to Client',
+                f"{sender_name} sent the proposal '{proposal_title}' to {client_label}.",
+                exclude_user_id=sender_id,
+                metadata={
+                    'status': new_status,
+                    'action': 'sent_to_client',
+                    'client_email': proposal.get('client_email'),
+                },
+                send_email_flag=True,
+                email_subject=f"[ProposalHub] {proposal_title} was sent to the client",
+                email_body=f"""
+                <html>
+                    <body style='font-family: Arial, sans-serif; line-height:1.6;'>
+                        <p>{html.escape(sender_name)} sent the proposal <strong>{html.escape(proposal_title)}</strong> to {html.escape(client_label)}.</p>
+                        <p>Status is now <strong>{html.escape(new_status)}</strong>.</p>
+                        <p style='font-size: 12px; color: #888;'>Sign in to ProposalHub to review the latest activity.</p>
+                    </body>
+                </html>
+                """,
+            )
+
+            return {
+                'detail': 'Proposal sent to client',
+                'status': new_status,
+            }, 200
+
     except Exception as e:
+        print(f"❌ Error sending proposal to client: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/proposals/<int:proposal_id>/client_decline")

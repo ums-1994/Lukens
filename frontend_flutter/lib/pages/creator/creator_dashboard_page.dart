@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/role_switcher.dart';
@@ -277,6 +279,15 @@ class _DashboardPageState extends State<DashboardPage>
                                   );
 
                             return ListTile(
+                              onTap: () async {
+                                Navigator.of(bottomSheetContext).pop();
+                                await _handleNotificationTap(
+                                  app,
+                                  notification,
+                                  notificationId: notificationId,
+                                  isAlreadyRead: isRead,
+                                );
+                              },
                               leading: Icon(
                                 isRead
                                     ? Icons.notifications_none_outlined
@@ -358,6 +369,106 @@ class _DashboardPageState extends State<DashboardPage>
         );
       },
     );
+  }
+
+  Map<String, dynamic> _parseNotificationMetadata(dynamic raw) {
+    if (raw == null) return <String, dynamic>{};
+    if (raw is Map<String, dynamic>) return Map<String, dynamic>.from(raw);
+    if (raw is Map) {
+      try {
+        return raw.cast<String, dynamic>();
+      } catch (_) {
+        return <String, dynamic>{};
+      }
+    }
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return decoded.cast<String, dynamic>();
+        }
+      } catch (e) {
+        debugPrint('⚠️ Failed to decode notification metadata: $e');
+      }
+    }
+    return <String, dynamic>{};
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is String && value.trim().isNotEmpty) {
+      return int.tryParse(value.trim());
+    }
+    return null;
+  }
+
+  String? _asIdString(dynamic value) {
+    if (value == null) return null;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') {
+        return null;
+      }
+      return trimmed;
+    }
+    return value.toString();
+  }
+
+  Future<void> _handleNotificationTap(
+    AppState app,
+    Map<String, dynamic> notification, {
+    int? notificationId,
+    bool isAlreadyRead = false,
+  }) async {
+    final metadata = _parseNotificationMetadata(notification['metadata']);
+
+    String? proposalId = _asIdString(
+      metadata['proposal_id'] ?? notification['proposal_id'],
+    );
+
+    // Fallback for legacy resource identifiers pointing to proposals
+    proposalId ??= _asIdString(metadata['resource_id']);
+
+    final proposalTitle =
+        notification['proposal_title']?.toString().trim().isNotEmpty == true
+            ? notification['proposal_title'].toString().trim()
+            : notification['title']?.toString().trim();
+
+    if (notificationId != null && !isAlreadyRead) {
+      try {
+        await app.markNotificationRead(notificationId);
+      } catch (e) {
+        debugPrint('⚠️ Failed to mark notification as read: $e');
+      }
+    }
+
+    if (!mounted) return;
+
+    if (proposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This notification is missing proposal details.'),
+        ),
+      );
+      return;
+    }
+
+    final args = <String, dynamic>{
+      'proposalId': proposalId,
+      if (proposalTitle != null && proposalTitle.isNotEmpty)
+        'proposalTitle': proposalTitle,
+    };
+
+    final sectionIndex = _asInt(metadata['section_index']);
+    final commentId = _asInt(metadata['comment_id']);
+    if (sectionIndex != null) {
+      args['initialSectionIndex'] = sectionIndex;
+    }
+    if (commentId != null) {
+      args['initialCommentId'] = commentId;
+    }
+
+    Navigator.of(context).pushNamed('/blank-document', arguments: args);
   }
 
   String _formatNotificationTimestamp(dynamic value) {
