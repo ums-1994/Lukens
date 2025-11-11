@@ -436,6 +436,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       });
       print('✅ Loaded ${comments.length} comments');
+
+      if (mounted) {
+        try {
+          await context.read<AppState>().fetchNotifications();
+        } catch (e) {
+          print('⚠️ Error refreshing notifications: $e');
+        }
+      }
     } catch (e) {
       print('⚠️ Error loading comments: $e');
     }
@@ -871,7 +879,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     try {
       final results = await ApiService.searchUsers(
-        token: 'Bearer $token',
+        authToken: token,
         query: currentQuery,
         proposalId: _savedProposalId,
       );
@@ -1085,6 +1093,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             });
             print('✅ Comment saved to database');
+
+            if (mounted) {
+              try {
+                await context.read<AppState>().fetchNotifications();
+              } catch (e) {
+                print('⚠️ Error refreshing notifications after comment: $e');
+              }
+            }
           }
         }
       } catch (e) {

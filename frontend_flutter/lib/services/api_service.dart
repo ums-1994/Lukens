@@ -32,7 +32,8 @@ class ApiService {
 
   // Search users (used for @-mention autocomplete)
   static Future<List<dynamic>> searchUsers({
-    String? token,
+    String? authToken,
+    String? collabToken,
     required String query,
     int? proposalId,
   }) async {
@@ -44,12 +45,14 @@ class ApiService {
       final uri =
           Uri.parse('$baseUrl/users/search').replace(queryParameters: params);
 
-      final headers = {
+      final headers = <String, String>{
         'Content-Type': 'application/json',
-        if (token != null && token.startsWith('Bearer '))
-          'Authorization': token,
-        if (token != null && !token.startsWith('Bearer '))
-          'Collab-Token': token,
+        if (authToken != null && authToken.trim().isNotEmpty)
+          'Authorization': authToken.trim().startsWith('Bearer ')
+              ? authToken.trim()
+              : 'Bearer ${authToken.trim()}',
+        if (collabToken != null && collabToken.trim().isNotEmpty)
+          'Collab-Token': collabToken.trim(),
       };
 
       final response = await http.get(uri, headers: headers);

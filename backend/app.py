@@ -327,6 +327,40 @@ def init_pg_schema():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
         )''')
+
+        # Ensure notification table has latest columns/constraints
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS proposal_id INTEGER
+        ''')
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS notification_type VARCHAR(100)
+        ''')
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS title VARCHAR(255)
+        ''')
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS message TEXT
+        ''')
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS metadata JSONB
+        ''')
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE
+        ''')
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ''')
+        cursor.execute('''
+            ALTER TABLE notifications
+            ADD COLUMN IF NOT EXISTS read_at TIMESTAMP
+        ''')
         
         # Create index for faster notification queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user 
@@ -501,11 +535,62 @@ def create_notification(
         recipient_info = None
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Determine which notifications table/columns exist (legacy support)
             cursor.execute("""
-                INSERT INTO notifications (user_id, proposal_id, notification_type, title, message, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """, (user_id, proposal_id, notification_type, title, message, json.dumps(metadata) if metadata else None))
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name IN ('notifications', 'notificationss')
+            """)
+            table_rows = cursor.fetchall()
+            if not table_rows:
+                raise Exception("Notifications table not found")
+
+            table_names = {row['table_name'] for row in table_rows}
+            table_name = 'notifications' if 'notifications' in table_names else table_rows[0]['table_name']
+
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = %s
+            """, (table_name,))
+            column_names = {row['column_name'] for row in cursor.fetchall()}
+
+            metadata_json = json.dumps(metadata) if metadata else None
+
+            columns = []
+            values = []
+
+            def add_column(col_name, value):
+                columns.append(col_name)
+                values.append(value)
+
+            add_column('user_id', user_id)
+
+            if 'notification_type' in column_names:
+                add_column('notification_type', notification_type)
+            if 'type' in column_names:
+                add_column('type', notification_type)
+            if 'resource_type' in column_names:
+                add_column('resource_type', notification_type)
+
+            if 'title' in column_names:
+                add_column('title', title)
+            if 'message' in column_names:
+                add_column('message', message)
+            if 'proposal_id' in column_names:
+                add_column('proposal_id', proposal_id)
+            if 'metadata' in column_names:
+                add_column('metadata', metadata_json)
+
+            placeholders = ', '.join(['%s'] * len(columns))
+            columns_sql = ', '.join(columns)
+
+            cursor.execute(
+                f"INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders}) RETURNING id",
+                values,
+            )
             notification_row = cursor.fetchone()
 
             if send_email_flag:
@@ -4436,16 +4521,17 @@ def get_notifications(username):
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
-            
+            current_user_id = int(current_user['id'])
+
             # Get user's notifications
             cursor.execute("""
                 SELECT n.*, p.title as proposal_title
                 FROM notifications n
                 LEFT JOIN proposals p ON n.proposal_id = p.id
-                WHERE n.user_id = %s
+                WHERE n.user_id::INTEGER = %s
                 ORDER BY n.created_at DESC
                 LIMIT 50
-            """, (current_user['id'],))
+            """, (current_user_id,))
             
             notifications = cursor.fetchall()
             
@@ -4453,10 +4539,11 @@ def get_notifications(username):
             cursor.execute("""
                 SELECT COUNT(*) as unread_count
                 FROM notifications
-                WHERE user_id = %s AND is_read = FALSE
-            """, (current_user['id'],))
+                WHERE user_id::INTEGER = %s AND is_read = FALSE
+            """, (current_user_id,))
             
-            unread_count = cursor.fetchone()['unread_count']
+            unread_row = cursor.fetchone()
+            unread_count = unread_row['unread_count'] if unread_row else 0
             
             return {
                 'notifications': [dict(n) for n in notifications],
