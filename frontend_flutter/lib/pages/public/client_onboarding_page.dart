@@ -37,6 +37,11 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
   String? _invitedEmail;
   String? _expectedCompany;
   String? _expiresAt;
+  bool _emailVerified = false;
+  bool _codeSent = false;
+  bool _sendingCode = false;
+  bool _verifyingCode = false;
+  final _verificationCodeController = TextEditingController();
 
   @override
   void initState() {
@@ -58,6 +63,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
     _budgetRangeController.dispose();
     _timelineController.dispose();
     _additionalInfoController.dispose();
+    _verificationCodeController.dispose();
     super.dispose();
   }
 
@@ -73,6 +79,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
           _invitedEmail = data['invited_email'];
           _expectedCompany = data['expected_company'];
           _expiresAt = data['expires_at'];
+          _emailVerified = data['email_verified'] ?? false;
           _emailController.text = _invitedEmail ?? '';
           _companyNameController.text = _expectedCompany ?? '';
           _loading = false;
@@ -88,6 +95,84 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
       setState(() {
         _errorMessage = 'Failed to validate invitation. Please check your connection.';
         _loading = false;
+      });
+    }
+  }
+
+  Future<void> _sendVerificationCode() async {
+    if (_invitedEmail == null) return;
+    
+    setState(() => _sendingCode = true);
+    
+    try {
+      final response = await http.post(
+        Uri.parse('http://localhost:8000/onboard/${widget.token}/verify-email'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': _invitedEmail}),
+      );
+      
+      if (response.statusCode == 200) {
+        setState(() {
+          _codeSent = true;
+          _sendingCode = false;
+        });
+      } else {
+        final error = json.decode(response.body);
+        setState(() {
+          _errorMessage = error['error'] ?? 'Failed to send verification code';
+          _sendingCode = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to send verification code. Please try again.';
+        _sendingCode = false;
+      });
+    }
+  }
+
+  Future<void> _verifyCode() async {
+    if (_verificationCodeController.text.trim().length != 6) {
+      setState(() {
+        _errorMessage = 'Please enter a 6-digit code';
+      });
+      return;
+    }
+    
+    if (_invitedEmail == null) return;
+    
+    setState(() {
+      _verifyingCode = true;
+      _errorMessage = null;
+    });
+    
+    try {
+      final response = await http.post(
+        Uri.parse('http://localhost:8000/onboard/${widget.token}/verify-code'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'code': _verificationCodeController.text.trim(),
+          'email': _invitedEmail,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        setState(() {
+          _emailVerified = true;
+          _verifyingCode = false;
+          _errorMessage = null;
+        });
+      } else {
+        final error = json.decode(response.body);
+        setState(() {
+          _errorMessage = error['error'] ?? 'Invalid verification code';
+          _verifyingCode = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to verify code. Please try again.';
+        _verifyingCode = false;
       });
     }
   }
@@ -160,11 +245,13 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
               padding: const EdgeInsets.all(24),
               child: _loading
                   ? _buildLoading()
-                  : _errorMessage != null
+                  : _errorMessage != null && !_codeSent && !_emailVerified
                       ? _buildError()
                       : _submitted
                           ? _buildSuccess()
-                          : _buildForm(),
+                          : !_emailVerified
+                              ? _buildVerification()
+                              : _buildForm(),
             ),
           ),
         ),
@@ -231,6 +318,191 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
                 style: const TextStyle(color: PremiumTheme.textSecondary, fontSize: 16),
                 textAlign: TextAlign.center,
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerification() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 500),
+          padding: const EdgeInsets.all(48),
+          decoration: PremiumTheme.glassCard(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.teal.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.email_outlined, size: 64, color: PremiumTheme.teal),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Email Verification Required',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'For your security, please verify your email address before continuing.',
+                style: const TextStyle(color: PremiumTheme.textSecondary, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              if (!_codeSent) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.email, color: PremiumTheme.teal, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _invitedEmail ?? '',
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _sendingCode ? null : _sendVerificationCode,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: PremiumTheme.teal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _sendingCode
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Send Verification Code',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
+              ] else ...[
+                const Text(
+                  'We\'ve sent a 6-digit verification code to your email.',
+                  style: TextStyle(color: PremiumTheme.textSecondary, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  ),
+                  child: TextField(
+                    controller: _verificationCodeController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    maxLength: 6,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 8,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '000000',
+                      hintStyle: TextStyle(
+                        color: PremiumTheme.textTertiary,
+                        fontSize: 24,
+                        letterSpacing: 8,
+                      ),
+                      border: InputBorder.none,
+                      counterText: '',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                    ),
+                  ),
+                ),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: PremiumTheme.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: PremiumTheme.error.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: PremiumTheme.error, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: PremiumTheme.error, fontSize: 14),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _verifyingCode ? null : _verifyCode,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: PremiumTheme.teal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _verifyingCode
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Verify Code',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: _sendingCode ? null : _sendVerificationCode,
+                  child: const Text(
+                    'Resend Code',
+                    style: TextStyle(color: PremiumTheme.teal, fontSize: 14),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

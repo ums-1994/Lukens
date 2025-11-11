@@ -94,20 +94,6 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 # Initialize OpenAI with API key
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
-# ============================================================================
-# REGISTER BLUEPRINTS (Refactored routes)
-# ============================================================================
-# Import and register blueprints for refactored routes
-try:
-    from api.routes import auth, clients, onboarding
-    app.register_blueprint(auth.bp)
-    app.register_blueprint(clients.bp)
-    app.register_blueprint(onboarding.bp)
-    print("[OK] Registered refactored blueprints: auth, clients, onboarding")
-except Exception as e:
-    print(f"[WARN] Could not register blueprints: {e}")
-    print("[INFO] Falling back to legacy routes in app.py")
-
 # Database initialization - PostgreSQL only
 BACKEND_TYPE = 'postgresql'
 
@@ -1179,6 +1165,195 @@ def admin_required(f):
         return f(username=username, *args, **kwargs)
     return decorated
 
+# Authentication endpoints
+
+@app.post("/register")
+def register():
+    try:
+        data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        full_name = data.get('full_name')
+        role = data.get('role', 'user')
+        
+        if not all([username, email, password]):
+            return {'detail': 'Missing required fields'}, 400
+        
+        password_hash = hash_password(password)
+        
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                '''INSERT INTO users (username, email, password_hash, full_name, role)
+                   VALUES (%s, %s, %s, %s, %s)''',
+                (username, email, password_hash, full_name, role)
+            )
+            conn.commit()
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            return {'detail': 'Username or email already exists'}, 409
+        finally:
+            release_pg_conn(conn)
+        
+        # Email verification disabled - users can login immediately
+        # verification_token = generate_verification_token(email)
+        # send_verification_email(email, verification_token)
+        
+        return {'detail': 'Registration successful. You can now login.', 'email': email}, 200
+    except Exception as e:
+        print(f'Registration error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/login")
+def login():
+    try:
+        data = request.form
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return {'detail': 'Missing username or password'}, 400
+        
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE username = %s', (username,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if not result or not result[0] or not verify_password(result[0], password):
+            return {'detail': 'Invalid credentials'}, 401
+        
+        token = generate_token(username)
+        return {'access_token': token, 'token_type': 'bearer'}, 200
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+@app.post("/login-email")
+def login_email():
+    try:
+        data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return {'detail': 'Missing email or password'}, 400
+        
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE email = %s', (email,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if not result or not result[0] or not verify_password(result[0], password):
+            return {'detail': 'Invalid credentials'}, 401
+        
+        token = generate_token(email)
+        return {'access_token': token, 'token_type': 'bearer'}, 200
+    except Exception as e:
+        print(f'Login error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/forgot-password")
+def forgot_password():
+    try:
+        data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
+        email = data.get('email')
+        if not email:
+            return {'detail': 'Missing email'}, 400
+        
+        # Check if user exists
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if not result:
+            # For security, don't reveal whether email exists
+            return {'detail': 'If this email exists, a password reset link will be sent'}, 200
+        
+        # Generate reset token
+        reset_token = generate_verification_token(email)
+        
+        # Send password reset email
+        send_password_reset_email(email, reset_token)
+        
+        return {'detail': 'If this email exists, a password reset link will be sent', 'message': 'Password reset link has been sent to your email'}, 200
+    except Exception as e:
+        print(f'Forgot password error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/me")
+@token_required
+def get_current_user(username):
+    try:
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users WHERE username = %s''',
+            (username,)
+        )
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        if result:
+            return {
+                'id': result[0],
+                'username': result[1],
+                'email': result[2],
+                'full_name': result[3],
+                'role': result[4],
+                'department': result[5],
+                'is_active': result[6]
+            }
+        
+        return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+@app.get("/user/profile")
+@token_required
+def get_user_profile(username):
+    """Alias for /me endpoint for Flutter compatibility"""
+    try:
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users WHERE username = %s''',
+            (username,)
+        )
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        if result:
+            return {
+                'id': result[0],
+                'username': result[1],
+                'email': result[2],
+                'full_name': result[3],
+                'role': result[4],
+                'department': result[5],
+                'is_active': result[6]
+            }
+        return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
 # Content library endpoints
 
 @app.get("/content")
@@ -2206,10 +2381,10 @@ def get_proposal_comments(proposal_id):
                         "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
                     })
                 return comments
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[ERROR] Error in get_comments: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Proposal Versions endpoints
 @app.post("/api/proposals/<int:proposal_id>/versions")
@@ -4367,13 +4542,7 @@ def _get_logo_html():
     # Fallback to text logo
     return '<h1 style="margin: 0; font-family: \'Poppins\', Arial, sans-serif; font-size: 32px; font-weight: bold; color: #FFFFFF; letter-spacing: -0.5px;">✕ Khonology</h1>'
 
-# ============================================================================
-# CLIENT MANAGEMENT ENDPOINTS - MIGRATED TO api/routes/clients.py
-# ============================================================================
-# NOTE: These routes have been migrated to the 'clients' blueprint.
-# The blueprint routes are registered above and will take precedence.
-# TODO: Remove these old route definitions after confirming everything works.
-
+# Send client invitation
 @app.post("/clients/invite")
 @token_required
 def send_client_invitation(username=None):
@@ -4629,13 +4798,7 @@ def cancel_invitation(username=None, invitation_id=None):
         print(f"❌ Error cancelling invitation: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ============================================================================
-# ONBOARDING ENDPOINTS - MIGRATED TO api/routes/onboarding.py
-# ============================================================================
-# NOTE: These routes have been migrated to the 'onboarding' blueprint.
-# The blueprint routes are registered above and will take precedence.
-# TODO: Remove these old route definitions after confirming everything works.
-
+# Send email verification code (PUBLIC - no auth)
 @app.post("/onboard/<token>/verify-email")
 def send_verification_code(token):
     """Send verification code to email (public endpoint)"""

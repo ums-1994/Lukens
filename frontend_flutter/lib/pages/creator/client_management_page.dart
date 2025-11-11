@@ -24,6 +24,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   List<Map<String, dynamic>> _clients = [];
   List<Map<String, dynamic>> _invitations = [];
   String _selectedTab = 'clients'; // clients, invitations
+  String _inviteFilter = 'all'; // all, verified, unverified
   String _searchQuery = '';
   String _currentPage = 'Client Management';
   bool _isSidebarCollapsed = false;
@@ -765,6 +766,30 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ),
                 ),
               ),
+              if (_selectedTab == 'invitations') ...[
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _inviteFilter,
+                      dropdownColor: const Color(0xFF0E1726),
+                      items: const [
+                        DropdownMenuItem(value: 'all', child: Text('All', style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(value: 'verified', child: Text('Verified', style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(value: 'unverified', child: Text('Unverified', style: TextStyle(color: Colors.white))),
+                      ],
+                      onChanged: (val) => setState(() => _inviteFilter = val ?? 'all'),
+                      icon: const Icon(Icons.filter_alt, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 12),
               IconButton(
                 onPressed: _loadData,
@@ -1156,6 +1181,15 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
 
   Widget _buildInvitationsTable() {
     var filteredInvitations = _invitations;
+    // Apply verified/unverified filter
+    if (_inviteFilter != 'all') {
+      final wantVerified = _inviteFilter == 'verified';
+      filteredInvitations = filteredInvitations.where((inv) {
+        final emailVerified = (inv['email_verified'] == true) ||
+            (inv['email_verified_at'] != null && inv['email_verified_at'].toString().isNotEmpty);
+        return wantVerified ? emailVerified : !emailVerified;
+      }).toList();
+    }
     if (_searchQuery.isNotEmpty) {
       filteredInvitations = _invitations.where((invite) {
         final email = invite['invited_email']?.toString().toLowerCase() ?? '';
@@ -1237,6 +1271,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final email = invite['invited_email'] ?? 'N/A';
     final company = invite['expected_company'] ?? 'Not specified';
     final status = invite['status'] ?? 'pending';
+    final emailVerified = (invite['email_verified'] == true) ||
+        (invite['email_verified_at'] != null && invite['email_verified_at'].toString().isNotEmpty);
     
     final sentDate = invite['invited_at'] != null
         ? DateFormat('MMM dd, yyyy').format(DateTime.parse(invite['invited_at'].toString()))
@@ -1269,9 +1305,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 border: Border.all(color: _getStatusColor(status), width: 1),
               ),
               child: Text(
-                status.toUpperCase(),
+                emailVerified ? 'VERIFIED' : status.toUpperCase(),
                 style: TextStyle(
-                  color: _getStatusColor(status),
+                  color: emailVerified ? PremiumTheme.success : _getStatusColor(status),
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1286,6 +1322,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               onSelected: (value) => _handleInvitationAction(value, invite),
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'resend', child: Text('Resend')),
+                if (!emailVerified) const PopupMenuItem(value: 'send_code', child: Text('Send Verification Code')),
                 const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
               ],
             ),
@@ -1320,6 +1357,14 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         final success = await ClientService.resendInvitation(token, inviteId);
         _showSnackBar(
           success ? 'Invitation resent!' : 'Failed to resend invitation',
+          isSuccess: success,
+        );
+        if (success) _loadData();
+        break;
+      case 'send_code':
+        final success = await ClientService.sendVerificationCode(token, inviteId);
+        _showSnackBar(
+          success ? 'Verification code sent!' : 'Failed to send code',
           isSuccess: success,
         );
         if (success) _loadData();

@@ -146,6 +146,20 @@ class ClientService {
     }
   }
 
+  /// Send email verification code for an invitation (admin action)
+  static Future<bool> sendVerificationCode(String token, int invitationId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/clients/invitations/$invitationId/send-code'),
+        headers: _getHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error sending verification code: $e');
+      return false;
+    }
+  }
+
   /// Cancel invitation
   static Future<bool> cancelInvitation(String token, int invitationId) async {
     try {
