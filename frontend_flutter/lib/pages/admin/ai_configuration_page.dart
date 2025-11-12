@@ -76,7 +76,7 @@ class _AIConfigurationPageState extends State<AIConfigurationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF5F7F9),
       appBar: AppBar(
         title: const Text('AI Configuration'),
         backgroundColor: const Color(0xFF2C3E50),

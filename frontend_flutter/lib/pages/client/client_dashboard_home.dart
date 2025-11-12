@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'client_proposal_viewer.dart';
-import '../../theme/premium_theme.dart';
 
 class ClientDashboardHome extends StatefulWidget {
   const ClientDashboardHome({super.key});
@@ -206,12 +205,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
 
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
-        child: Column(
-          children: [
-            // Header
-            _buildHeader(),
+      backgroundColor: const Color(0xFFF5F7F9),
+      body: Column(
+        children: [
+          // Header
+          _buildHeader(),
 
           // Content
           Expanded(
@@ -231,24 +229,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
             ),
           ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.transparent,
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: const BoxDecoration(
+        color: Color(0xFF2C3E50),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -258,14 +255,21 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Client Portal',
-                  style: PremiumTheme.titleLarge.copyWith(fontSize: 26),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   'Welcome back, ${_clientEmail ?? 'Client'}',
-                  style: PremiumTheme.bodyMedium.copyWith(fontSize: 15),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
                 ),
               ],
             ),
@@ -324,75 +328,99 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _buildStatCard(
       String title, String value, IconData icon, Color color) {
-    // Map colors to gradients
-    Gradient gradient;
-    if (color == Colors.orange) {
-      gradient = PremiumTheme.orangeGradient;
-    } else if (color == Colors.green) {
-      gradient = PremiumTheme.tealGradient;
-    } else if (color == Colors.red) {
-      gradient = PremiumTheme.redGradient;
-    } else {
-      gradient = PremiumTheme.blueGradient;
-    }
-    
-    return PremiumStatCard(
-      title: title,
-      value: value,
-      icon: icon,
-      gradient: gradient,
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const Spacer(),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildProposalsSection() {
-    return GlassContainer(
-      borderRadius: 24,
-      padding: EdgeInsets.zero,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(20),
             child: Row(
               children: [
-                Text(
+                const Text(
                   'Your Proposals',
-                  style: PremiumTheme.titleMedium.copyWith(fontSize: 22),
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2C3E50),
+                  ),
                 ),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    '${_proposals.length} ${_proposals.length == 1 ? 'proposal' : 'proposals'}',
-                    style: PremiumTheme.bodyMedium.copyWith(fontSize: 13),
+                Text(
+                  '${_proposals.length} ${_proposals.length == 1 ? 'proposal' : 'proposals'}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
                   ),
                 ),
               ],
             ),
           ),
 
-          Container(
-            height: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.transparent,
-                  PremiumTheme.glassWhiteBorder,
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
+          const Divider(height: 1),
 
           // Table
           if (_proposals.isEmpty)
@@ -515,27 +543,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: color.withOpacity(0.3),
-          width: 1.5,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: color),
-          const SizedBox(width: 7),
+          const SizedBox(width: 6),
           Text(
             status,
             style: TextStyle(
               color: color,
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
             ),
           ),
         ],

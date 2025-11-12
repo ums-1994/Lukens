@@ -13,7 +13,7 @@ class _ApproverAdminPageState extends State<ApproverAdminPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF5F7F9),
       body: Column(
         children: [
           // Header
@@ -262,7 +262,7 @@ class _ApproverAdminPageState extends State<ApproverAdminPage> {
       case 'Content Library':
         path = 'assets/images/content_library.png';
         break;
-      case 'Client Management':
+      case 'Collaboration':
         path = 'assets/images/collaborations.png';
         break;
       case 'Approvals Status':

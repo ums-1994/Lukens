@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/collaboration_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
-import '../../widgets/custom_scrollbar.dart';
 
 class CollaborationPage extends StatefulWidget {
   const CollaborationPage({super.key});
@@ -25,7 +24,6 @@ class _CollaborationPageState extends State<CollaborationPage> {
   Stream<List<Map<String, dynamic>>>? _workspacesStream;
   Stream<List<Map<String, dynamic>>>? _notificationsStream;
   late final List<Stream<List<Map<String, dynamic>>>?> _allStreams;
-  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -96,12 +94,6 @@ class _CollaborationPageState extends State<CollaborationPage> {
   }
 
   @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final user = AuthService.currentUser;
     final displayName =
@@ -110,7 +102,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
     final unreadCount = _notifications.where((n) => n['read'] != true).length;
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF5F7F9),
       body: Column(
         children: [
           // Header
@@ -234,7 +226,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
                         _buildNavItem('📝', 'My Proposals', false, context),
                         _buildNavItem('📂', 'Templates', false, context),
                         _buildNavItem('🧩', 'Content Library', false, context),
-                        _buildNavItem('👥', 'Client Management', true, context),
+                        _buildNavItem('👥', 'Collaboration', true, context),
                         _buildNavItem('📋', 'Approvals Status', false, context),
                         _buildNavItem(
                             '🔍', 'Analytics (My Pipeline)', false, context),
@@ -248,14 +240,9 @@ class _CollaborationPageState extends State<CollaborationPage> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: CustomScrollbar(
-                      controller: _scrollController,
                     child: RefreshIndicator(
                       onRefresh: _refreshAll,
                       child: SingleChildScrollView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.only(right: 24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -267,7 +254,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Client Management',
+                                      'Collaboration',
                                       style: TextStyle(
                                         fontSize: 24,
                                         fontWeight: FontWeight.w600,
@@ -276,7 +263,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
                                     ),
                                     SizedBox(height: 8),
                                     Text(
-                                      'Manage your clients and track onboarding progress',
+                                      'Manage teams, comments, and shared workspaces',
                                       style: TextStyle(
                                         color: Color(0xFF718096),
                                       ),
@@ -387,7 +374,6 @@ class _CollaborationPageState extends State<CollaborationPage> {
                             if (_selectedTab == 'notifications')
                               _buildNotificationsContent(),
                           ],
-                        ),
                         ),
                       ),
                     ),
@@ -523,7 +509,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
       case 'Content Library':
         path = 'assets/images/content_library.png';
         break;
-      case 'Client Management':
+      case 'Collaboration':
         path = 'assets/images/collaborations.png';
         break;
       case 'Approvals Status':
@@ -539,29 +525,28 @@ class _CollaborationPageState extends State<CollaborationPage> {
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/home');
+        Navigator.pushNamed(context, '/creator_dashboard');
         break;
       case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
+        Navigator.pushNamed(context, '/proposals');
         break;
       case 'Templates':
-        // Templates functionality - redirect to content library for now
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushNamed(context, '/templates');
         break;
       case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushNamed(context, '/content_library');
         break;
-      case 'Client Management':
-        // Already on client management page
+      case 'Collaboration':
+        // Already on collaboration page
         break;
       case 'Approvals Status':
-        Navigator.pushReplacementNamed(context, '/approvals');
+        Navigator.pushNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushReplacementNamed(context, '/analytics');
+        Navigator.pushNamed(context, '/analytics');
         break;
       default:
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        Navigator.pushNamed(context, '/creator_dashboard');
     }
   }
 

@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/role_switcher.dart';
-import '../../widgets/custom_scrollbar.dart';
-import '../../theme/premium_theme.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
@@ -22,7 +20,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
   bool _isLoading = true;
   int _pendingCount = 0;
   int _approvedCount = 0;
-  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -31,12 +28,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -75,8 +66,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
       }
 
       if (token != null) {
-        final preview = token.length > 20 ? token.substring(0, 20) : token;
-        print('🔑 Token value: $preview...');
+        print('🔑 Token value: ${token.substring(0, 20)}...');
       }
 
       if (token == null) {
@@ -329,31 +319,27 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
-        child: Column(
-          children: [
-            // Header
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
+      backgroundColor: const Color(0xFFF5F7F9),
+      body: Column(
+        children: [
+          // Header
+          Container(
+            height: 60,
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C3E50),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'CEO Approval Dashboard',
-                    style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                  const Text(
+                    'Proposal & SOW Builder - Approver Dashboard',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Row(
                     children: [
@@ -426,14 +412,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
 
           // Main Content
           Expanded(
-            child: CustomScrollbar(
-              controller: _scrollController,
             child: RefreshIndicator(
               onRefresh: _loadData,
               child: SingleChildScrollView(
-                  controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.only(right: 24),
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -462,57 +444,62 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
                       ),
                     ],
                   ),
-                  ),
                 ),
               ),
             ),
           ),
 
-            // Footer
-            Container(
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.3),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                border: Border(
-                  top: BorderSide(
-                    color: PremiumTheme.glassWhiteBorder,
-                    width: 1,
-                  ),
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  'Khonology Proposal & SOW Builder | Approver Dashboard',
-                  style: PremiumTheme.bodyMedium.copyWith(fontSize: 13),
+          // Footer
+          Container(
+            height: 50,
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0xFFDDD))),
+            ),
+            child: const Center(
+              child: Text(
+                'Khonology Proposal & SOW Builder | Approver Dashboard',
+                style: TextStyle(
+                  color: Color(0xFF7F8C8D),
+                  fontSize: 14,
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildSection(String title, Widget content) {
-    return GlassContainer(
-      borderRadius: 24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: PremiumTheme.titleMedium,
-          ),
-          const SizedBox(height: 20),
-          content,
-        ],
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFCCC)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.only(bottom: 10),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFEEE))),
+              ),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
+            ),
+            const SizedBox(height: 15),
+            content,
+          ],
+        ),
       ),
     );
   }
@@ -582,20 +569,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
         );
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(18),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              PremiumTheme.orange.withOpacity(0.15),
-              PremiumTheme.orange.withOpacity(0.08),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: PremiumTheme.orange.withOpacity(0.3),
-            width: 1.5,
-          ),
+          color: const Color(0xFFFFF3CD),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: const Color(0xFFF39C12)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -612,9 +591,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
                       Expanded(
                         child: Text(
                           name,
-                          style: PremiumTheme.bodyLarge.copyWith(
+                          style: const TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: PremiumTheme.textPrimary,
+                            fontSize: 14,
                           ),
                         ),
                       ),
@@ -707,18 +686,48 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
   }
 
   Widget _buildMetricCard(String title, String value, String subtitle) {
-    final gradients = {
-      'Pending My Approval': PremiumTheme.orangeGradient,
-      'Recently Approved': PremiumTheme.tealGradient,
-      'Approval Rate': PremiumTheme.blueGradient,
-      'Avg. Response Time': PremiumTheme.purpleGradient,
-    };
-    
-    return PremiumStatCard(
-      title: title,
-      value: value,
-      subtitle: subtitle,
-      gradient: gradients[title] ?? PremiumTheme.blueGradient,
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF2C3E50),
+              ),
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF3498DB),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF7F8C8D),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -770,15 +779,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
   Widget _buildApprovedItem(String name, String meta, String status,
       Color statusColor, Color textColor) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: PremiumTheme.glassWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: PremiumTheme.glassWhiteBorder,
-          width: 1,
-        ),
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFFDDD)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,

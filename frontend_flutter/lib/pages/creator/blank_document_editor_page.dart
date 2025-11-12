@@ -2409,8 +2409,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   'Content Library',
                   'assets/images/content_library.png',
                   _currentPage == 'Content Library'),
-              _buildNavItem('Client Management', 'assets/images/collaborations.png',
-                  _currentPage == 'Client Management'),
+              _buildNavItem('Collaboration', 'assets/images/collaborations.png',
+                  _currentPage == 'Collaboration'),
               _buildNavItem(
                   'Approvals Status',
                   'assets/images/Time Allocation_Approval_Blue.png',
@@ -2571,8 +2571,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content-library');
         break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/collaboration');
+      case 'Collaboration':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Collaboration - Coming soon'),
+            backgroundColor: Color(0xFF00BCD4),
+          ),
+        );
         break;
       case 'Approvals Status':
         ScaffoldMessenger.of(context).showSnackBar(

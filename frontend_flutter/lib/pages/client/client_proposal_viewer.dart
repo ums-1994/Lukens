@@ -165,7 +165,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFFF5F7F9),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -181,7 +181,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
     if (_error != null) {
       return Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFFF5F7F9),
         appBar: AppBar(
           backgroundColor: const Color(0xFF2C3E50),
           title: const Text('Error'),
@@ -215,7 +215,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     final canTakeAction = !signatureStatus.contains('completed');
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF5F7F9),
       body: Column(
         children: [
           // Header

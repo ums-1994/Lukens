@@ -1,51 +1,32 @@
 import 'package:flutter/material.dart';
-import '../../theme/premium_theme.dart';
-import '../../widgets/custom_scrollbar.dart';
 
-class AdminDashboardPage extends StatefulWidget {
+class AdminDashboardPage extends StatelessWidget {
   const AdminDashboardPage({super.key});
-
-  @override
-  State<AdminDashboardPage> createState() => _AdminDashboardPageState();
-}
-
-class _AdminDashboardPageState extends State<AdminDashboardPage> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
-        child: Column(
-          children: [
-            // Header
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
+      backgroundColor: const Color(0xFFF5F7F9),
+      body: Column(
+        children: [
+          // Header
+          Container(
+            height: 60,
+            decoration: const BoxDecoration(
+              color: Color(0xFF2C3E50),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Admin Dashboard',
-                    style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                  const Text(
+                    'Proposal & SOW Builder - Admin Dashboard',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Row(
                     children: [
@@ -140,25 +121,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           Expanded(
             child: Row(
               children: [
-                // Sidebar with Glass Effect
+                // Sidebar
                 Container(
                   width: 250,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.black.withOpacity(0.3),
-                        Colors.black.withOpacity(0.2),
-                      ],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-                    border: Border(
-                      right: BorderSide(
-                        color: PremiumTheme.glassWhiteBorder,
-                        width: 1,
-                      ),
-                    ),
-                  ),
+                  color: const Color(0xFF34495E),
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
@@ -202,11 +168,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: CustomScrollbar(
-                      controller: _scrollController,
                     child: SingleChildScrollView(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.only(right: 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -231,7 +193,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           ),
                         ],
                       ),
-                      ),
                     ),
                   ),
                 ),
@@ -239,36 +200,25 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
           ),
 
-            // Footer
-            Container(
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.3),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                border: Border(
+          // Footer
+          Container(
+            height: 50,
+            decoration: const BoxDecoration(
+              border: Border(
                   top: BorderSide(
-                    color: PremiumTheme.glassWhiteBorder,
-                    width: 1,
-                  ),
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  'Khonology Proposal & SOW Builder | Admin Dashboard',
-                  style: PremiumTheme.bodyMedium.copyWith(
-                    fontSize: 13,
-                  ),
+                      color: Color(0xFFDDD), style: BorderStyle.solid)),
+            ),
+            child: const Center(
+              child: Text(
+                'Khonology Proposal & SOW Builder | Admin Dashboard',
+                style: TextStyle(
+                  color: Color(0xFF7F8C8D),
+                  fontSize: 14,
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -283,31 +233,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ),
       child: InkWell(
         onTap: () {
-          if (label == 'Dashboard') {
-            // Already on dashboard, do nothing
-          } else if (label == 'Analytics & Reports') {
-            Navigator.pushNamed(context, '/analytics');
-          } else if (label == 'AI Configuration') {
+          if (label == 'AI Configuration') {
             Navigator.pushNamed(context, '/ai-configuration');
-          } else if (label == 'System Settings') {
-            Navigator.pushNamed(context, '/settings');
-          } else if (label == 'User Management') {
-            // TODO: Add user management page
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('User Management - Coming Soon')),
-            );
-          } else if (label == 'Template Management') {
-            // TODO: Add template management page
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Template Management - Coming Soon')),
-            );
-          } else if (label == 'Content Library Management') {
-            Navigator.pushNamed(context, '/content-library');
-          } else if (label == 'Governance Rules') {
-            // TODO: Add governance rules page
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Governance Rules - Coming Soon')),
-            );
           }
         },
         borderRadius: BorderRadius.circular(8),
@@ -351,18 +278,38 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Widget _buildSection(String title, Widget content) {
-    return GlassContainer(
-      borderRadius: 24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: PremiumTheme.titleMedium,
-          ),
-          const SizedBox(height: 20),
-          content,
-        ],
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border:
+            Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.only(bottom: 10),
+              decoration: const BoxDecoration(
+                border: Border(
+                    bottom: BorderSide(
+                        color: Color(0xFFEEE), style: BorderStyle.solid)),
+              ),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
+            ),
+            const SizedBox(height: 15),
+            content,
+          ],
+        ),
       ),
     );
   }
@@ -390,22 +337,18 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   Widget _buildFilterButton(String text, bool isActive) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        gradient: isActive ? PremiumTheme.blueGradient : null,
-        color: isActive ? null : PremiumTheme.glassWhite,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isActive ? Colors.transparent : PremiumTheme.glassWhiteBorder,
-          width: 1,
-        ),
+        color: isActive ? const Color(0xFF3498DB) : const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(4),
+        border:
+            Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
       ),
       child: Text(
         text,
         style: TextStyle(
-          color: isActive ? Colors.white : PremiumTheme.textPrimary,
-          fontSize: 13,
-          fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+          color: isActive ? Colors.white : const Color(0xFF7F8C8D),
+          fontSize: 12,
         ),
       ),
     );
@@ -518,18 +461,36 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           itemCount: metrics.length,
           itemBuilder: (context, index) {
             final metric = metrics[index];
-            final gradients = [
-              PremiumTheme.blueGradient,
-              PremiumTheme.tealGradient,
-              PremiumTheme.purpleGradient,
-              PremiumTheme.orangeGradient,
-              PremiumTheme.blueGradient,
-              PremiumTheme.tealGradient,
-            ];
-            return PremiumStatCard(
-              title: metric['label']!,
-              value: metric['value']!,
-              gradient: gradients[index % gradients.length],
+            return Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F9FA),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(15),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      metric['value']!,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2C3E50),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      metric['label']!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF7F8C8D),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         ),

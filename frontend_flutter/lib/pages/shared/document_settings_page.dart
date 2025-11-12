@@ -43,7 +43,7 @@ class _DocumentSettingsPageState extends State<DocumentSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
         children: [
           // Header with back button and progress indicator

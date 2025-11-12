@@ -295,7 +295,7 @@ class _ProposalWizardState extends State<ProposalWizard>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         title: const Text(

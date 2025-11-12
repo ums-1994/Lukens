@@ -150,7 +150,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: const Color(0xFFF5F7F9),
       appBar: AppBar(
         title: Text(widget.proposalTitle),
         backgroundColor: const Color(0xFF2C3E50),
