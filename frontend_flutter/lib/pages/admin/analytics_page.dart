@@ -135,7 +135,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                         _buildNavItem('📝', 'My Proposals', false, context),
                         _buildNavItem('📂', 'Templates', false, context),
                         _buildNavItem('🧩', 'Content Library', false, context),
-                        _buildNavItem('👥', 'Collaboration', false, context),
+                        _buildNavItem('👥', 'Client Management', false, context),
                         _buildNavItem('📋', 'Approvals Status', false, context),
                         _buildNavItem(
                             '🔍', 'Analytics (My Pipeline)', true, context),
@@ -655,7 +655,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       case 'Content Library':
         path = 'assets/images/content_library.png';
         break;
-      case 'Collaboration':
+      case 'Client Management':
         path = 'assets/images/collaborations.png';
         break;
       case 'Approvals Status':
@@ -682,7 +682,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       case 'Content Library':
         Navigator.pushNamed(context, '/content_library');
         break;
-      case 'Collaboration':
+      case 'Client Management':
         Navigator.pushNamed(context, '/collaboration');
         break;
       case 'Approvals Status':

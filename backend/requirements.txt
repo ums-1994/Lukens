@@ -19,7 +19,7 @@ psycopg2-binary==2.9.9
 cloudinary==1.36.0
 
 # Document extraction
-PyPDF2==4.0.1
+PyPDF2==3.0.1
 python-docx==0.8.11
 
 # DocuSign E-Signature Integration

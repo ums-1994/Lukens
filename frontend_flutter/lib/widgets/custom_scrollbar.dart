@@ -1,0 +1,37 @@
+﻿import 'package:flutter/material.dart';
+
+/// Custom visible scrollbar widget for consistent scrolling across all pages
+class CustomScrollbar extends StatelessWidget {
+  final Widget child;
+  final ScrollController? controller;
+  final double thickness;
+  final Color? thumbColor;
+  final Color? trackColor;
+  final Color? trackBorderColor;
+
+  const CustomScrollbar({
+    super.key,
+    required this.child,
+    this.controller,
+    this.thickness = 16,
+    this.thumbColor = const Color(0xFF06B6D4),
+    this.trackColor = const Color(0xFF1A1F26),
+    this.trackBorderColor = const Color(0xFF2D3748),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RawScrollbar(
+      controller: controller,
+      thumbVisibility: true,
+      thickness: thickness,
+      radius: const Radius.circular(8),
+      thumbColor: thumbColor,
+      trackColor: trackColor,
+      trackVisibility: true,
+      trackBorderColor: trackBorderColor,
+      child: child,
+    );
+  }
+}
+

@@ -262,7 +262,7 @@ class _ApproverAdminPageState extends State<ApproverAdminPage> {
       case 'Content Library':
         path = 'assets/images/content_library.png';
         break;
-      case 'Collaboration':
+      case 'Client Management':
         path = 'assets/images/collaborations.png';
         break;
       case 'Approvals Status':

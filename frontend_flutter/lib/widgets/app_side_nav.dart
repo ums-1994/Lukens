@@ -23,7 +23,7 @@ class AppSideNav extends StatelessWidget {
     {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
     {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
     {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
-    {'label': 'Collaboration', 'icon': 'assets/images/collaborations.png'},
+    {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
     {'label': 'Approvals Status', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
     {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
   ];

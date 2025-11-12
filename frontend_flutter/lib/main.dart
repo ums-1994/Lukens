@@ -15,6 +15,7 @@ import 'pages/shared/preview_page.dart';
 import 'pages/creator/content_library_page.dart';
 import 'pages/creator/templates_page.dart';
 import 'pages/creator/template_builder.dart';
+import 'pages/creator/client_management_page.dart';
 import 'pages/approver/approver_dashboard_page.dart';
 import 'pages/admin/admin_dashboard_page.dart';
 import 'pages/test_signature_page.dart';
@@ -23,7 +24,6 @@ import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
-import 'pages/creator/collaboration_page.dart';
 import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/shared/collaboration_router.dart';
 import 'pages/admin/analytics_page.dart';
@@ -79,7 +79,21 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
           textTheme: GoogleFonts.poppinsTextTheme(),
+          scaffoldBackgroundColor: Colors.transparent,
         ),
+        builder: (context, child) {
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/Global BG.jpg',
+                  fit: BoxFit.cover,
+                ),
+              ),
+              if (child != null) child,
+            ],
+          );
+        },
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
@@ -245,7 +259,7 @@ class MyApp extends StatelessWidget {
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
-          '/collaboration': (context) => const CollaborationPage(),
+          '/collaboration': (context) => const ClientManagementPage(),
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) => const AnalyticsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
@@ -383,7 +397,7 @@ class _HomeShellState extends State<HomeShell> {
     DashboardPage(), // 0
     ProposalsPage(), // 1
     ContentLibraryPage(), // 2
-    CollaborationPage(), // 3
+    ClientManagementPage(), // 3
     ApprovalsPage(), // 4
     AnalyticsPage(), // 5
     PreviewPage(), // 6 (optional)
@@ -520,12 +534,12 @@ class _HomeShellState extends State<HomeShell> {
                   _buildModernNavItem(
                     icon: Icons.collections,
                     label: 'Content Library',
-                    index: 3,
+                    index: 2,
                   ),
                   _buildModernNavItem(
                     icon: Icons.people_outline,
-                    label: 'Collaboration',
-                    index: 4,
+                    label: 'Client Management',
+                    index: 3,
                   ),
                   _buildModernNavItem(
                     icon: Icons.done_all_outlined,
@@ -638,17 +652,16 @@ class _HomeShellState extends State<HomeShell> {
       case 'My Proposals':
         return 1;
       case 'Templates':
-        return 2;
       case 'Content Library':
+        return 2;
+      case 'Client Management':
         return 3;
-      case 'Collaboration':
-        return 4;
       case 'Approvals Status':
-        return 5;
+        return 4;
       case 'Analytics (My Pipeline)':
-        return 6;
+        return 5;
       case 'Preview':
-        return 7;
+        return 6;
       default:
         return 0;
     }
@@ -661,16 +674,14 @@ class _HomeShellState extends State<HomeShell> {
       case 1:
         return 'My Proposals';
       case 2:
-        return 'Templates';
-      case 3:
         return 'Content Library';
+      case 3:
+        return 'Client Management';
       case 4:
-        return 'Collaboration';
-      case 5:
         return 'Approvals Status';
-      case 6:
+      case 5:
         return 'Analytics (My Pipeline)';
-      case 7:
+      case 6:
         return 'Preview';
       default:
         return 'Dashboard';
