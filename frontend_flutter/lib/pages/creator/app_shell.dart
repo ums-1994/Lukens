@@ -224,7 +224,7 @@ class _AppShellState extends State<AppShell> {
 
   Widget _buildPlaceholder(String title, IconData icon) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(title),
         backgroundColor: Colors.white,

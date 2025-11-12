@@ -284,7 +284,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
       return;
     }
 
-    print('✅ Token extracted successfully: ${token.substring(0, 20)}...');
+    final preview = token.length > 20 ? token.substring(0, 20) : token;
+    print('✅ Token extracted successfully: $preview...');
     setState(() {
       _accessToken = token;
     });
@@ -448,7 +449,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
     final permissionLevel = _proposalData?['permission_level'] ?? 'view';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
+      backgroundColor: Colors.transparent,
       body: Column(
         children: [
           // Header

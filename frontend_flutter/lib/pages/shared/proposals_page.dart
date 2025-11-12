@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../widgets/glass_page.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../widgets/footer.dart';
+import '../../widgets/custom_scrollbar.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -25,6 +27,7 @@ class _ProposalsPageState extends State<ProposalsPage>
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
   String _currentPage = 'My Proposals';
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -322,8 +325,9 @@ class _ProposalsPageState extends State<ProposalsPage>
     }).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
-      body: Column(
+      backgroundColor: Colors.transparent,
+      body: GlassPage(
+        child: Column(
         children: [
           // Header (same as dashboard)
           Container(
@@ -485,9 +489,9 @@ class _ProposalsPageState extends State<ProposalsPage>
                               _currentPage == 'Content Library',
                               context),
                           _buildNavItem(
-                              'Collaboration',
+                              'Client Management',
                               'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
+                              _currentPage == 'Client Management',
                               context),
                           _buildNavItem(
                               'Approvals Status',
@@ -530,7 +534,11 @@ class _ProposalsPageState extends State<ProposalsPage>
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
+                    child: CustomScrollbar(
+                      controller: _scrollController,
                     child: SingleChildScrollView(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.only(right: 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -751,6 +759,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                           ),
                         ],
                       ),
+                      ),
                     ),
                   ),
                 ),
@@ -760,6 +769,7 @@ class _ProposalsPageState extends State<ProposalsPage>
 
           const Footer(),
         ],
+        ),
       ),
     );
   }
@@ -878,25 +888,26 @@ class _ProposalsPageState extends State<ProposalsPage>
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushNamed(context, '/home');
+        Navigator.pushReplacementNamed(context, '/home');
         break;
       case 'My Proposals':
         // Already on proposals page
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        // Templates functionality - redirect to content library for now
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Content Library':
-        Navigator.pushNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
-      case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+        Navigator.pushReplacementNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'Logout':
         _handleLogout(context, context.read<AppState>());

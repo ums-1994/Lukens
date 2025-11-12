@@ -1,12 +1,13 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/role_switcher.dart';
+import '../../widgets/custom_scrollbar.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
+import '../../services/role_service.dart';
+import '../../theme/premium_theme.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -22,6 +23,7 @@ class _DashboardPageState extends State<DashboardPage>
   String _currentPage = 'Dashboard';
   bool _isRefreshing = false;
   String _statusFilter = 'all'; // all, draft, published, pending, approved
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -58,8 +60,9 @@ class _DashboardPageState extends State<DashboardPage>
       if (app.authToken == null && AuthService.token != null) {
         app.authToken = AuthService.token;
         app.currentUser = AuthService.currentUser;
-        print(
-            '✅ Synced token from AuthService: ${AuthService.token?.substring(0, 20)}...');
+        final t = AuthService.token ?? '';
+        final preview = t.length > 20 ? t.substring(0, 20) : t;
+        print('✅ Synced token from AuthService: $preview...');
       }
 
       if (app.authToken == null) {
@@ -70,7 +73,6 @@ class _DashboardPageState extends State<DashboardPage>
       await Future.wait([
         app.fetchProposals(),
         app.fetchDashboard(),
-        app.fetchNotifications(),
       ]);
       print(
           '✅ Dashboard data refreshed - ${app.proposals.length} proposals loaded');
@@ -96,6 +98,7 @@ class _DashboardPageState extends State<DashboardPage>
   @override
   void dispose() {
     _animationController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -110,397 +113,6 @@ class _DashboardPageState extends State<DashboardPage>
     });
   }
 
-  Widget _buildNotificationButton(AppState app) {
-    final unread = app.unreadNotifications;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        SizedBox(
-          width: 44,
-          height: 44,
-          child: IconButton(
-            tooltip: 'Notifications',
-            icon: const Icon(Icons.notifications_none, color: Colors.white),
-            onPressed: () async {
-              await app.fetchNotifications();
-              if (!mounted) return;
-              _showNotificationsSheet(app);
-            },
-          ),
-        ),
-        if (unread > 0)
-          Positioned(
-            right: 6,
-            top: 6,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: const BoxDecoration(
-                color: Color(0xFFE74C3C),
-                borderRadius: BorderRadius.all(Radius.circular(12)),
-              ),
-              child: Text(
-                unread > 99 ? '99+' : unread.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  void _showNotificationsSheet(AppState app) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (bottomSheetContext) {
-        return Padding(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom),
-          child: StatefulBuilder(
-            builder: (context, setModalState) {
-              final notifications = app.notifications;
-              final unreadCount = app.unreadNotifications;
-
-              return Container(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.7,
-                ),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x33000000),
-                      blurRadius: 12,
-                      offset: Offset(0, -3),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 16),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF2C3E50),
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(20),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Notifications',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              if (unreadCount > 0)
-                                TextButton(
-                                  onPressed: () async {
-                                    await app.markAllNotificationsRead();
-                                    setModalState(() {});
-                                  },
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  child: const Text(
-                                    'Mark all read',
-                                    style: TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.close,
-                                    color: Colors.white),
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (notifications.isEmpty)
-                      const Expanded(
-                        child: Center(
-                          child: Text(
-                            'No notifications yet.',
-                            style: TextStyle(
-                              color: Color(0xFF4A4A4A),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12, horizontal: 16),
-                          itemCount: notifications.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 16),
-                          itemBuilder: (context, index) {
-                            final rawItem = notifications[index];
-                            final Map<String, dynamic> notification =
-                                rawItem is Map<String, dynamic>
-                                    ? rawItem
-                                    : (rawItem is Map
-                                        ? rawItem.cast<String, dynamic>()
-                                        : <String, dynamic>{});
-
-                            final title =
-                                notification['title']?.toString().trim();
-                            final message =
-                                notification['message']?.toString().trim() ??
-                                    '';
-                            final proposalTitle = notification['proposal_title']
-                                ?.toString()
-                                .trim();
-                            final isRead = notification['is_read'] == true;
-                            final timeLabel = _formatNotificationTimestamp(
-                                notification['created_at']);
-
-                            final dynamic notificationIdRaw =
-                                notification['id'];
-                            final int? notificationId = notificationIdRaw is int
-                                ? notificationIdRaw
-                                : int.tryParse(
-                                    notificationIdRaw?.toString() ?? '',
-                                  );
-
-                            return ListTile(
-                              onTap: () async {
-                                Navigator.of(bottomSheetContext).pop();
-                                await _handleNotificationTap(
-                                  app,
-                                  notification,
-                                  notificationId: notificationId,
-                                  isAlreadyRead: isRead,
-                                );
-                              },
-                              leading: Icon(
-                                isRead
-                                    ? Icons.notifications_none_outlined
-                                    : Icons.notifications_active,
-                                color: isRead
-                                    ? const Color(0xFF95A5A6)
-                                    : const Color(0xFF3498DB),
-                              ),
-                              title: Text(
-                                title?.isNotEmpty == true
-                                    ? title!
-                                    : 'Notification',
-                                style: TextStyle(
-                                  color: const Color(0xFF2C3E50),
-                                  fontWeight: isRead
-                                      ? FontWeight.w600
-                                      : FontWeight.w700,
-                                ),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (message.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        message,
-                                        style: const TextStyle(
-                                          color: Color(0xFF4A4A4A),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  if (proposalTitle != null &&
-                                      proposalTitle.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        proposalTitle,
-                                        style: const TextStyle(
-                                          color: Color(0xFF7F8C8D),
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                                  if (timeLabel.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        timeLabel,
-                                        style: const TextStyle(
-                                          color: Color(0xFF95A5A6),
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              isThreeLine: true,
-                              trailing: !isRead && notificationId != null
-                                  ? TextButton(
-                                      onPressed: () async {
-                                        await app.markNotificationRead(
-                                            notificationId);
-                                        setModalState(() {});
-                                      },
-                                      child: const Text('Mark read'),
-                                    )
-                                  : null,
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Map<String, dynamic> _parseNotificationMetadata(dynamic raw) {
-    if (raw == null) return <String, dynamic>{};
-    if (raw is Map<String, dynamic>) return Map<String, dynamic>.from(raw);
-    if (raw is Map) {
-      try {
-        return raw.cast<String, dynamic>();
-      } catch (_) {
-        return <String, dynamic>{};
-      }
-    }
-    if (raw is String && raw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map) {
-          return decoded.cast<String, dynamic>();
-        }
-      } catch (e) {
-        debugPrint('⚠️ Failed to decode notification metadata: $e');
-      }
-    }
-    return <String, dynamic>{};
-  }
-
-  int? _asInt(dynamic value) {
-    if (value is int) return value;
-    if (value is String && value.trim().isNotEmpty) {
-      return int.tryParse(value.trim());
-    }
-    return null;
-  }
-
-  String? _asIdString(dynamic value) {
-    if (value == null) return null;
-    if (value is String) {
-      final trimmed = value.trim();
-      if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') {
-        return null;
-      }
-      return trimmed;
-    }
-    return value.toString();
-  }
-
-  Future<void> _handleNotificationTap(
-    AppState app,
-    Map<String, dynamic> notification, {
-    int? notificationId,
-    bool isAlreadyRead = false,
-  }) async {
-    final metadata = _parseNotificationMetadata(notification['metadata']);
-
-    String? proposalId = _asIdString(
-      metadata['proposal_id'] ?? notification['proposal_id'],
-    );
-
-    // Fallback for legacy resource identifiers pointing to proposals
-    proposalId ??= _asIdString(metadata['resource_id']);
-
-    final proposalTitle =
-        notification['proposal_title']?.toString().trim().isNotEmpty == true
-            ? notification['proposal_title'].toString().trim()
-            : notification['title']?.toString().trim();
-
-    if (notificationId != null && !isAlreadyRead) {
-      try {
-        await app.markNotificationRead(notificationId);
-      } catch (e) {
-        debugPrint('⚠️ Failed to mark notification as read: $e');
-      }
-    }
-
-    if (!mounted) return;
-
-    if (proposalId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This notification is missing proposal details.'),
-        ),
-      );
-      return;
-    }
-
-    final args = <String, dynamic>{
-      'proposalId': proposalId,
-      if (proposalTitle != null && proposalTitle.isNotEmpty)
-        'proposalTitle': proposalTitle,
-    };
-
-    final sectionIndex = _asInt(metadata['section_index']);
-    final commentId = _asInt(metadata['comment_id']);
-    if (sectionIndex != null) {
-      args['initialSectionIndex'] = sectionIndex;
-    }
-    if (commentId != null) {
-      args['initialCommentId'] = commentId;
-    }
-
-    Navigator.of(context).pushNamed('/blank-document', arguments: args);
-  }
-
-  String _formatNotificationTimestamp(dynamic value) {
-    DateTime? timestamp;
-    if (value is String) {
-      timestamp = DateTime.tryParse(value);
-    } else if (value is DateTime) {
-      timestamp = value;
-    }
-
-    if (timestamp == null) {
-      return '';
-    }
-
-    final local = timestamp.toLocal();
-    final difference = DateTime.now().difference(local);
-
-    if (difference.inSeconds < 60) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    }
-
-    final month = local.month.toString().padLeft(2, '0');
-    final day = local.day.toString().padLeft(2, '0');
-    return '${local.year}-$month-$day';
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -513,105 +125,118 @@ class _DashboardPageState extends State<DashboardPage>
     print('Dashboard - Proposals: ${app.proposals}');
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
-      body: Column(
-        children: [
-          // Header
-          Container(
-            height: 60,
-            decoration: const BoxDecoration(
-              color: Color(0xFF2C3E50),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _getHeaderTitle(userRole),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+      body: Container(
+        color: Colors.transparent,
+        child: Column(
+          children: [
+            // Header
+            Container(
+              height: 70,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.transparent,
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _getHeaderTitle(userRole),
+                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
                     ),
-                  ),
-                  Row(
-                    children: [
-                      // Role Switcher
-                      const CompactRoleSwitcher(),
-                      const SizedBox(width: 12),
-                      _buildNotificationButton(app),
-                      const SizedBox(width: 20),
-                      ClipOval(
-                        child: Image.asset(
-                          'assets/images/User_Profile.png',
-                          width: 105,
-                          height: 105,
-                          fit: BoxFit.cover,
+                    Row(
+                      children: [
+                        const CompactRoleSwitcher(),
+                        const SizedBox(width: 20),
+                        ClipOval(
+                          child: Image.asset(
+                            'assets/images/User_Profile.png',
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _getUserName(app.currentUser),
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            userRole,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 10),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert, color: Colors.white),
-                        onSelected: (value) {
-                          if (value == 'logout') {
-                            app.logout();
-                            AuthService.logout();
-                            Navigator.pushNamed(context, '/login');
-                          }
-                        },
-                        itemBuilder: (BuildContext context) => [
-                          const PopupMenuItem<String>(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout),
-                                SizedBox(width: 8),
-                                Text('Logout'),
-                              ],
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _getUserName(app.currentUser),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
+                            Text(
+                              userRole,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 10),
+                        PopupMenuButton<String>(
+                          icon:
+                              const Icon(Icons.more_vert, color: Colors.white),
+                          onSelected: (value) {
+                            if (value == 'logout') {
+                              app.logout();
+                              AuthService.logout();
+                              Navigator.pushNamed(context, '/login');
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => const [
+                            PopupMenuItem<String>(
+                              value: 'logout',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.logout),
+                                  SizedBox(width: 8),
+                                  Text('Logout'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
+          
 
           // Main Content with Sidebar
           Expanded(
             child: Row(
               children: [
-                // Collapsible Sidebar
-                GestureDetector(
-                  onTap: () {
-                    if (_isSidebarCollapsed) _toggleSidebar();
-                  },
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
+                // Collapsible Sidebar with Glass Effect
+                AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withOpacity(0.3),
+                          Colors.black.withOpacity(0.2),
+                        ],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      border: Border(
+                        right: BorderSide(
+                          color: PremiumTheme.glassWhiteBorder,
+                          width: 1,
+                        ),
+                      ),
+                    ),
                     child: SingleChildScrollView(
                       child: Column(
                         children: [
@@ -621,12 +246,16 @@ class _DashboardPageState extends State<DashboardPage>
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: InkWell(
                               onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
                               child: Container(
-                                height: 40,
+                                height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
+                                  color: PremiumTheme.glassWhite,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: PremiumTheme.glassWhiteBorder,
+                                    width: 1,
+                                  ),
                                 ),
                                 child: Row(
                                   mainAxisAlignment: _isSidebarCollapsed
@@ -683,9 +312,9 @@ class _DashboardPageState extends State<DashboardPage>
                               _currentPage == 'Content Library',
                               context),
                           _buildNavItem(
-                              'Collaboration',
+                              'Client Management',
                               'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
+                              _currentPage == 'Client Management',
                               context),
                           _buildNavItem(
                               'Approvals Status',
@@ -722,18 +351,22 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                     ),
                   ),
-                ),
 
                 // Content Area
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
+                    child: CustomScrollbar(
+                      controller: _scrollController,
                     child: RefreshIndicator(
                       onRefresh: _refreshData,
                       color: const Color(0xFF3498DB),
                       child: SingleChildScrollView(
+                          controller: _scrollController,
                         physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(right: 24),
                         child: _buildRoleSpecificContent(userRole, counts, app),
+                        ),
                       ),
                     ),
                   ),
@@ -742,8 +375,9 @@ class _DashboardPageState extends State<DashboardPage>
             ),
           ),
 
-          const Footer(),
-        ],
+            const Footer(),
+          ],
+        ),
       ),
     );
   }
@@ -864,22 +498,23 @@ class _DashboardPageState extends State<DashboardPage>
         // Already on dashboard
         break;
       case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        // Templates functionality - redirect to content library for now
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Content Library':
-        Navigator.pushNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/content_library');
         break;
-      case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/collaboration');
         break;
       case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+        Navigator.pushReplacementNamed(context, '/approvals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'Logout':
         _handleLogout(context);
@@ -923,30 +558,18 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildSection(String title, Widget content) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border:
-            Border.all(color: const Color(0xFFCCC), style: BorderStyle.solid),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 15),
-            content,
-          ],
-        ),
+    return GlassContainer(
+      borderRadius: 24,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: PremiumTheme.titleMedium,
+          ),
+          const SizedBox(height: 20),
+          content,
+        ],
       ),
     );
   }
@@ -957,9 +580,9 @@ class _DashboardPageState extends State<DashboardPage>
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,
-      childAspectRatio: 2.5,
-      crossAxisSpacing: 20,
-      mainAxisSpacing: 20,
+      childAspectRatio: 2.2,
+      crossAxisSpacing: 24,
+      mainAxisSpacing: 24,
       children: [
         _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
             'Active', context),
@@ -981,58 +604,33 @@ class _DashboardPageState extends State<DashboardPage>
 
   Widget _buildStatCard(
       String title, String value, String subtitle, BuildContext context) {
-    return InkWell(
+    // Assign different gradients to different cards
+    Gradient gradient;
+    switch (title) {
+      case 'Draft Proposals':
+        gradient = PremiumTheme.orangeGradient;
+        break;
+      case 'Pending CEO Approval':
+        gradient = PremiumTheme.purpleGradient;
+        break;
+      case 'Sent to Client':
+        gradient = PremiumTheme.blueGradient;
+        break;
+      case 'Signed':
+        gradient = PremiumTheme.tealGradient;
+        break;
+      default:
+        gradient = PremiumTheme.blueGradient;
+    }
+
+    return PremiumStatCard(
+      title: title,
+      value: value,
+      subtitle: subtitle,
+      gradient: gradient,
       onTap: () {
-        // Navigate to proposals page when clicking on stat cards
         Navigator.pushNamed(context, '/proposals');
       },
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8F9FA),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2C3E50),
-                ),
-              ),
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    children: [
-                      Text(
-                        value,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF3498DB),
-                        ),
-                      ),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF7F8C8D),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -1161,46 +759,95 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildAISection() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF4E6),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-            color: const Color(0xFFFFA94D), style: BorderStyle.solid),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '🤖 AI-Powered Compound Risk Gate',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFFE67E22),
+    return GlassContainer(
+      borderRadius: 24,
+      gradientStart: PremiumTheme.orange.withOpacity(0.3),
+      gradientEnd: PremiumTheme.error.withOpacity(0.2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.orange.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.security_rounded,
+                  color: PremiumTheme.orange,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AI-Powered Compound Risk Gate',
+                      style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'AI analyzes multiple small deviations and flags combined risks',
+                      style: PremiumTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: PremiumTheme.glassWhite,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: PremiumTheme.glassWhiteBorder,
+                width: 1,
               ),
             ),
-            const SizedBox(height: 10),
-            const Text(
-              'AI analyzes multiple small deviations and flags combined risks before release',
-              style: TextStyle(fontSize: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'GlobalTech Cloud Migration',
+                  style: PremiumTheme.bodyLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: PremiumTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
+                  style: PremiumTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.orange.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: PremiumTheme.orange.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    'Review Needed',
+                    style: PremiumTheme.labelMedium.copyWith(
+                      color: PremiumTheme.orange,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            Container(
-              height: 1,
-              color: const Color(0xFFEEE),
-            ),
-            const SizedBox(height: 10),
-            _buildProposalItem(
-              'GlobalTech Cloud Migration',
-              '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
-              'Review Needed',
-              const Color(0xFFB8DAFF),
-              const Color(0xFF004085),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1301,14 +948,19 @@ class _DashboardPageState extends State<DashboardPage>
           _statusFilter = value;
         });
       },
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(24),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: isActive ? const Color(0xFF3498DB) : const Color(0xFFF0F0F0),
-          borderRadius: BorderRadius.circular(20),
+          gradient: isActive
+              ? PremiumTheme.blueGradient
+              : null,
+          color: isActive ? null : PremiumTheme.glassWhite,
+          borderRadius: BorderRadius.circular(24),
           border: Border.all(
-            color: isActive ? const Color(0xFF2980B9) : const Color(0xFFE0E0E0),
+            color: isActive 
+                ? Colors.transparent 
+                : PremiumTheme.glassWhiteBorder,
             width: 1,
           ),
         ),
@@ -1318,25 +970,25 @@ class _DashboardPageState extends State<DashboardPage>
             Text(
               label,
               style: TextStyle(
-                color: isActive ? Colors.white : const Color(0xFF2C3E50),
+                color: isActive ? Colors.white : PremiumTheme.textPrimary,
                 fontSize: 13,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
             if (count > 0) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: isActive
                       ? Colors.white.withOpacity(0.3)
-                      : const Color(0xFF3498DB).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
+                      : PremiumTheme.teal.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   count.toString(),
                   style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFF3498DB),
+                    color: isActive ? Colors.white : PremiumTheme.teal,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1352,13 +1004,15 @@ class _DashboardPageState extends State<DashboardPage>
   Widget _buildProposalItem(String title, String subtitle, String status,
       Color statusColor, Color textColor) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(4),
-        border:
-            Border.all(color: const Color(0xFFDDD), style: BorderStyle.solid),
+        color: PremiumTheme.glassWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: PremiumTheme.glassWhiteBorder,
+          width: 1,
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1369,34 +1023,37 @@ class _DashboardPageState extends State<DashboardPage>
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: PremiumTheme.bodyLarge.copyWith(
                     fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    color: PremiumTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 6),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF7F8C8D),
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    fontSize: 13,
                   ),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: statusColor,
+              color: statusColor.withOpacity(0.2),
               borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: statusColor.withOpacity(0.3),
+                width: 1,
+              ),
             ),
             child: Text(
               status,
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: textColor,
+                fontWeight: FontWeight.w600,
+                color: statusColor,
               ),
             ),
           ),
@@ -1463,27 +1120,23 @@ class _DashboardPageState extends State<DashboardPage>
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'draft':
-        return const Color(0xFFFFEEBA);
+        return PremiumTheme.orange;
       case 'in review':
-        return const Color(0xFFB8DAFF);
+      case 'pending ceo approval':
+        return PremiumTheme.purple;
+      case 'sent to client':
+        return PremiumTheme.info;
       case 'signed':
-        return const Color(0xFFC3E6CB);
+        return PremiumTheme.teal;
       default:
-        return const Color(0xFFFFEEBA);
+        return PremiumTheme.orange;
     }
   }
 
   Color _getStatusTextColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'draft':
-        return const Color(0xFF856404);
-      case 'in review':
-        return const Color(0xFF004085);
-      case 'signed':
-        return const Color(0xFF155724);
-      default:
-        return const Color(0xFF856404);
-    }
+    // For the new premium design, we use the same color for text
+    // with opacity adjustments in the container
+    return _getStatusColor(status);
   }
 
   String _formatDate(dynamic date) {

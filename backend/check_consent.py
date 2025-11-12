@@ -48,9 +48,3 @@ print("   Otherwise, consent won't work.\n")
 
 
 
-
-
-
-
-
-
