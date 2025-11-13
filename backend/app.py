@@ -151,6 +151,11 @@ def init_pg_schema():
         conn = _pg_conn()
         cursor = conn.cursor()
         
+        # Ensure pgcrypto is available for UUID generation
+        cursor.execute('''CREATE EXTENSION IF NOT EXISTS pgcrypto''')
+        # Ensure session_tokens table exists for auth
+        _ensure_session_tokens_table(cursor)
+        
         # Users table
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -168,7 +173,7 @@ def init_pg_schema():
         
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
-        id SERIAL PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         title VARCHAR(500) NOT NULL,
         client VARCHAR(500) NOT NULL,
         owner_id INTEGER NOT NULL,
@@ -208,7 +213,7 @@ def init_pg_schema():
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id UUID NOT NULL,
         version_number INTEGER NOT NULL,
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -220,7 +225,7 @@ def init_pg_schema():
         # Document comments table
         cursor.execute('''CREATE TABLE IF NOT EXISTS document_comments (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id UUID NOT NULL,
         comment_text TEXT NOT NULL,
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -238,7 +243,7 @@ def init_pg_schema():
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id UUID NOT NULL,
         invited_email VARCHAR(255) NOT NULL,
         invited_by INTEGER NOT NULL,
         access_token VARCHAR(500) UNIQUE NOT NULL,
@@ -254,7 +259,7 @@ def init_pg_schema():
         # Suggested changes table for suggest mode
         cursor.execute('''CREATE TABLE IF NOT EXISTS suggested_changes (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id UUID NOT NULL,
         section_id VARCHAR(255),
         suggested_by INTEGER NOT NULL,
         suggestion_text TEXT NOT NULL,
@@ -272,7 +277,7 @@ def init_pg_schema():
         # Section locks table for soft locking
         cursor.execute('''CREATE TABLE IF NOT EXISTS section_locks (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id UUID NOT NULL,
         section_id VARCHAR(255) NOT NULL,
         locked_by INTEGER NOT NULL,
         locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -285,7 +290,7 @@ def init_pg_schema():
         # Activity log table for comprehensive timeline
         cursor.execute('''CREATE TABLE IF NOT EXISTS activity_log (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id UUID NOT NULL,
         user_id INTEGER,
         action_type VARCHAR(100) NOT NULL,
         action_description TEXT NOT NULL,
@@ -303,7 +308,7 @@ def init_pg_schema():
         cursor.execute('''CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
-        proposal_id INTEGER,
+        proposal_id UUID,
         notification_type VARCHAR(100) NOT NULL,
         title VARCHAR(255) NOT NULL,
         message TEXT NOT NULL,
@@ -314,6 +319,17 @@ def init_pg_schema():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
         )''')
+
+        # Email verification tokens table (optional)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS email_verification_tokens (
+            token UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email VARCHAR(255) NOT NULL,
+            issued_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP
+        )
+        ''')
         
         # Create index for faster notification queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user 
@@ -365,44 +381,16 @@ def init_db():
         print(f"❌ Database initialization error: {e}")
         raise
 
-# Auth token storage (in production, use Redis or session manager)
-# File-based persistence to survive restarts
-TOKEN_FILE = os.path.join(os.path.dirname(__file__), 'auth_tokens.json')
-
-def load_tokens():
-    """Load tokens from file"""
-    try:
-        if os.path.exists(TOKEN_FILE):
-            with open(TOKEN_FILE, 'r') as f:
-                data = json.load(f)
-                # Convert string timestamps back to datetime objects
-                for token, token_data in data.items():
-                    token_data['created_at'] = datetime.fromisoformat(token_data['created_at'])
-                    token_data['expires_at'] = datetime.fromisoformat(token_data['expires_at'])
-                print(f"[INFO] Loaded {len(data)} tokens from file")
-                return data
-    except Exception as e:
-        print(f"[WARN] Could not load tokens from file: {e}")
-    return {}
-
-def save_tokens():
-    """Save tokens to file"""
-    try:
-        # Convert datetime objects to strings for JSON serialization
-        data = {}
-        for token, token_data in valid_tokens.items():
-            data[token] = {
-                'username': token_data['username'],
-                'created_at': token_data['created_at'].isoformat(),
-                'expires_at': token_data['expires_at'].isoformat()
-            }
-        with open(TOKEN_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
-        print(f"[INFO] Saved {len(data)} tokens to file")
-    except Exception as e:
-        print(f"[WARN] Could not save tokens to file: {e}")
-
-valid_tokens = load_tokens()
+# Auth token storage backed by PostgreSQL (session_tokens table)
+def _ensure_session_tokens_table(cursor):
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS session_tokens (
+            token TEXT PRIMARY KEY,
+            username VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL
+        )
+    ''')
 
 # ============================================================================
 # ACTIVITY LOG HELPER
@@ -604,25 +592,43 @@ def verify_password(stored_hash, password):
 
 def generate_token(username):
     token = secrets.token_urlsafe(32)
-    valid_tokens[token] = {
-        'username': username,
-        'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(days=7)
-    }
-    save_tokens()  # Persist to file
-    print(f"🎫 Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
-    print(f"📋 Total valid tokens: {len(valid_tokens)}")
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO session_tokens (token, username, expires_at)
+                VALUES (%s, %s, NOW() + INTERVAL '7 days')
+                """,
+                (token, username)
+            )
+            conn.commit()
+        print(f"🎫 Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
+    except Exception as e:
+        print(f"❌ Failed to persist session token: {e}")
     return token
 
 def verify_token(token):
-    if token not in valid_tokens:
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT username, expires_at FROM session_tokens WHERE token = %s", (token,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            username, expires_at = row
+            # If expired, delete and return None
+            if datetime.now() > expires_at:
+                try:
+                    cursor.execute("DELETE FROM session_tokens WHERE token = %s", (token,))
+                    conn.commit()
+                except Exception:
+                    pass
+                return None
+            return username
+    except Exception as e:
+        print(f"❌ Error verifying token: {e}")
         return None
-    token_data = valid_tokens[token]
-    if datetime.now() > token_data['expires_at']:
-        del valid_tokens[token]
-        save_tokens()  # Persist after deleting expired token
-        return None
-    return token_data['username']
 
 
 def send_email(to_email, subject, html_content):
@@ -703,11 +709,10 @@ def token_required(f):
             print(f"❌ No token found in Authorization header")
             return {'detail': 'Token is missing'}, 401
         
-        print(f"🔍 Validating token... (valid_tokens has {len(valid_tokens)} tokens)")
+        print(f"🔍 Validating token...")
         username = verify_token(token)
         if not username:
             print(f"❌ Token validation failed - token not found or expired")
-            print(f"📋 Current valid tokens: {list(valid_tokens.keys())[:3]}...")
             return {'detail': 'Invalid or expired token'}, 401
         
         print(f"✅ Token validated for user: {username}")
@@ -1205,47 +1210,54 @@ def create_proposal(username):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Insert using all available columns
-            client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
-            client_email = data.get('client_email') or ''
-            
+            # Resolve owner_id from username
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            owner_id = user_row[0]
+
+            # Map request fields to existing columns
+            title = data.get('title', 'Untitled Document')
+            client = data.get('client') or data.get('client_name') or 'Unknown Client'
+            status = data.get('status', 'Draft')
+            content_val = data.get('content')
+            template_key = data.get('template_key')
+            sections = data.get('sections')
+
             cursor.execute(
-                '''INSERT INTO proposals (user_id, title, content, status, client_name, client_email, budget, timeline_days)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+                '''INSERT INTO proposals (title, client, owner_id, status, content, template_key, sections, pdf_url)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                   RETURNING id, title, client, owner_id, status, created_at, updated_at, template_key, content, sections, pdf_url''',
                 (
-                    username,
-                    data.get('title', 'Untitled Document'),
-                    data.get('content'),
-                    data.get('status', 'draft'),
-                    client_name,
-                    client_email,
-                    data.get('budget'),
-                    data.get('timeline_days')
+                    title,
+                    client,
+                    owner_id,
+                    status,
+                    content_val,
+                    template_key,
+                    json.dumps(sections) if isinstance(sections, dict) else sections,
+                    None,
                 )
             )
             result = cursor.fetchone()
             conn.commit()
-            
+
             proposal = {
-                'id': result[0],
-                'user_id': result[1],
-                'owner_id': result[1],  # For compatibility
-                'title': result[2],
-                'content': result[3],
+                'id': str(result[0]),
+                'title': result[1],
+                'client': result[2],
+                'owner_id': result[3],
                 'status': result[4],
-                'client_name': result[5],
-                'client': result[5],
-                'client_email': result[6],
-                'budget': float(result[7]) if result[7] else None,
-                'timeline_days': result[8],
-                'created_at': result[9].isoformat() if result[9] else None,
-                'updated_at': result[10].isoformat() if result[10] else None,
-                'updatedAt': result[10].isoformat() if result[10] else None,
+                'created_at': result[5].isoformat() if result[5] else None,
+                'updated_at': result[6].isoformat() if result[6] else None,
+                'template_key': result[7],
+                'content': result[8],
+                'sections': json.loads(result[9]) if result[9] else {},
+                'pdf_url': result[10],
             }
-            
-            print(f"✅ Proposal created successfully with ID: {result[0]}")
+
+            print(f"✅ Proposal created successfully with ID: {proposal['id']}")
             return proposal, 201
     except Exception as e:
         print(f"❌ Error creating proposal: {e}")
@@ -1253,7 +1265,7 @@ def create_proposal(username):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.put("/proposals/<int:proposal_id>")
+@app.put("/proposals/<proposal_id>")
 @token_required
 def update_proposal(username, proposal_id):
     try:
@@ -1301,7 +1313,7 @@ def update_proposal(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.delete("/proposals/<int:proposal_id>")
+@app.delete("/proposals/<proposal_id>")
 @token_required
 def delete_proposal(username, proposal_id):
     try:
@@ -1314,7 +1326,7 @@ def delete_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.get("/proposals/<int:proposal_id>")
+@app.get("/proposals/<proposal_id>")
 @token_required
 def get_proposal(username, proposal_id):
     try:
@@ -1346,7 +1358,7 @@ def get_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/proposals/<int:proposal_id>/submit")
+@app.post("/proposals/<proposal_id>/submit")
 @token_required
 def submit_for_review(username, proposal_id):
     try:
