@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/smtp_auth_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/error_service.dart';
+import '../../widgets/async_widget.dart';
 import '../../api.dart';
 import 'dart:math' as math;
 
@@ -23,7 +26,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   late final AnimationController _fadeInController;
 
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/nathi.png',
   ];
 
   int _currentFrameIndex = 0;
@@ -104,7 +107,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             final appState = context.read<AppState>();
             appState.authToken = result['access_token'];
             appState.currentUser = userProfile;
+
+            // IMPORTANT: Also persist to AuthService and localStorage
+            AuthService.setUserData(userProfile, result['access_token']);
+
             await appState.init();
+
+            ErrorService.showSuccess(
+              'Login successful! Welcome back.',
+              context: 'LoginPage._login',
+            );
 
             Navigator.pushNamedAndRemoveUntil(
               context,
@@ -112,34 +124,30 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               (route) => false,
             );
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to get user profile.'),
-                backgroundColor: Colors.red,
-              ),
+            ErrorService.handleError(
+              'Failed to get user profile. Please try logging in again.',
+              context: 'LoginPage._login',
+              severity: ErrorSeverity.medium,
             );
           }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Login failed. Please check your credentials.'),
-              backgroundColor: Colors.red,
-            ),
+          ErrorService.handleError(
+            'Login failed. Please check your email and password.',
+            context: 'LoginPage._login',
+            severity: ErrorSeverity.medium,
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-
-        {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString()),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        
+        ErrorService.handleError(
+          'Login failed. Please check your internet connection and try again.',
+          error: e,
+          context: 'LoginPage._login',
+          severity: ErrorSeverity.medium,
+        );
       }
     }
   }
@@ -150,7 +158,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [

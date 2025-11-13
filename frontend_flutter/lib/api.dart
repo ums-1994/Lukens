@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'services/error_service.dart';
+import 'services/network_service.dart';
 
 const String baseUrl = "http://localhost:8000";
 
@@ -59,26 +61,38 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchContent() async {
     try {
-      final r = await http.get(
-        Uri.parse("$baseUrl/content"),
+      final response = await NetworkService.get(
+        "$baseUrl/content",
         headers: _headers,
+        context: 'AppState.fetchContent',
       );
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        // Handle both array response and object with 'content' key
-        if (data is List) {
-          contentBlocks = data;
-        } else if (data is Map && data.containsKey('content')) {
-          contentBlocks = List<dynamic>.from(data['content']);
-        } else {
-          contentBlocks = [];
-        }
+      
+      final data = NetworkService.parseJsonResponse(
+        response,
+        context: 'AppState.fetchContent',
+      );
+      
+      // Handle both array response and object with 'content' key
+      if (data is List) {
+        contentBlocks = data;
+      } else if (data is Map && data.containsKey('content')) {
+        contentBlocks = List<dynamic>.from(data['content']);
       } else {
-        print('Error fetching content: ${r.statusCode} - ${r.body}');
         contentBlocks = [];
       }
+      
+      ErrorService.logError(
+        'Content fetched successfully',
+        context: 'AppState.fetchContent',
+        additionalData: {'contentCount': contentBlocks.length},
+      );
     } catch (e) {
-      print('Error fetching content: $e');
+      ErrorService.handleError(
+        'Failed to load content library',
+        error: e,
+        context: 'AppState.fetchContent',
+        showToUser: false, // Don't show to user, let UI handle it
+      );
       contentBlocks = [];
     }
   }

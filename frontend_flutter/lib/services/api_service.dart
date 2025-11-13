@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'error_service.dart';
+import 'network_service.dart';
 
 class ApiService {
   static const String baseUrl = 'http://localhost:8000';
@@ -15,17 +17,23 @@ class ApiService {
   // User Profile
   static Future<Map<String, dynamic>?> getUserProfile(String token) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/user/profile'),
+      final response = await NetworkService.get(
+        '$baseUrl/user/profile',
         headers: _getHeaders(token),
+        context: 'ApiService.getUserProfile',
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
+      return NetworkService.parseJsonResponse(
+        response,
+        context: 'getUserProfile',
+      );
     } catch (e) {
-      print('Error fetching user profile: $e');
+      ErrorService.handleError(
+        'Failed to fetch user profile',
+        error: e,
+        context: 'ApiService.getUserProfile',
+        showToUser: false,
+      );
       return null;
     }
   }

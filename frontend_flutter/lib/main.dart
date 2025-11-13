@@ -23,17 +23,26 @@ import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/creator/collaboration_page.dart';
 import 'pages/guest/guest_collaboration_page.dart';
+import 'pages/shared/collaboration_router.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
 import 'services/role_service.dart';
+import 'services/error_service.dart';
+import 'widgets/error_boundary.dart';
 import 'api.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+// Global navigator key for error handling
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize error service with navigator key
+  ErrorService.initialize(navigatorKey);
+  
   try {
     if (kIsWeb) {
       // Initialize Firebase for web using options matching web/firebase-config.js
@@ -53,10 +62,25 @@ Future<void> main() async {
       await Firebase.initializeApp();
     }
   } catch (e) {
-    // Ignore if already initialized or not required
+    ErrorService.logError(
+      'Firebase initialization failed',
+      error: e,
+      context: 'main',
+    );
+    // Continue without Firebase if initialization fails
   }
+  
   // Restore persisted auth session on startup (web)
-  AuthService.restoreSessionFromStorage();
+  try {
+    AuthService.restoreSessionFromStorage();
+  } catch (e) {
+    ErrorService.logError(
+      'Failed to restore auth session',
+      error: e,
+      context: 'main',
+    );
+  }
+  
   runApp(const MyApp());
 }
 
@@ -70,14 +94,39 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => AppState()),
         ChangeNotifierProvider(create: (context) => RoleService()),
       ],
-      child: MaterialApp(
-        title: 'Lukens',
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: Colors.blue,
-          textTheme: GoogleFonts.poppinsTextTheme(),
-        ),
-        home: const AuthWrapper(),
+      child: ErrorBoundary(
+        onError: (error, stackTrace) {
+          ErrorService.handleError(
+            'Uncaught application error',
+            error: error,
+            stackTrace: stackTrace,
+            context: 'ErrorBoundary',
+            severity: ErrorSeverity.critical,
+          );
+        },
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          title: 'Lukens',
+          theme: ThemeData(
+            useMaterial3: true,
+            colorSchemeSeed: Colors.blue,
+            fontFamily: 'Poppins',
+            scaffoldBackgroundColor: Colors.transparent,
+          ),
+          home: const AuthWrapper(),
+        builder: (context, child) {
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/nathi.png',
+                  fit: BoxFit.cover,
+                ),
+              ),
+              if (child != null) child,
+            ],
+          );
+        },
         onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
 
@@ -113,9 +162,11 @@ class MyApp extends StatelessWidget {
             }
 
             if (token != null && token.isNotEmpty) {
-              print('✅ Navigating to GuestCollaborationPage with token');
+              print('✅ Token found, determining collaboration type...');
+              // Use CollaborationRouter to determine which page to show
+              final validToken = token; // Create non-nullable variable
               return MaterialPageRoute(
-                builder: (context) => const GuestCollaborationPage(),
+                builder: (context) => CollaborationRouter(token: validToken),
               );
             } else {
               print('❌ No token found, cannot navigate');
@@ -135,7 +186,38 @@ class MyApp extends StatelessWidget {
             );
           }
 
-          // Handle client portal with token
+          // Handle client portal route (e.g., /client-portal/123)
+          if (settings.name != null &&
+              settings.name!.contains('client-portal')) {
+            print('🔍 Client portal route detected: ${settings.name}');
+
+            // Extract proposal ID from the route
+            final routeParts = settings.name!.split('/');
+            String? proposalId;
+
+            // Find the proposal ID after 'client-portal'
+            for (int i = 0; i < routeParts.length; i++) {
+              if (routeParts[i] == 'client-portal' &&
+                  i + 1 < routeParts.length) {
+                proposalId = routeParts[i + 1];
+                break;
+              }
+            }
+
+            if (proposalId != null && proposalId.isNotEmpty) {
+              print('✅ Opening client portal for proposal ID: $proposalId');
+              return MaterialPageRoute(
+                builder: (context) => BlankDocumentEditorPage(
+                  proposalId: proposalId,
+                  proposalTitle: 'Proposal #$proposalId',
+                  readOnly: true, // Clients view in read-only mode
+                ),
+              );
+            } else {
+              print('❌ No proposal ID found in client-portal route');
+            }
+          }
+
           return null; // Let other routes be handled normally
         },
         routes: {
@@ -181,6 +263,7 @@ class MyApp extends StatelessWidget {
             return BlankDocumentEditorPage(
               proposalId: args?['proposalId'],
               proposalTitle: args?['proposalTitle'] ?? 'Untitled Document',
+              readOnly: args?['readOnly'] ?? false,
             );
           },
           '/enhanced-compose': (context) {
@@ -226,6 +309,7 @@ class MyApp extends StatelessWidget {
             );
           },
         },
+        ),
       ),
     );
   }
@@ -359,11 +443,21 @@ class _HomeShellState extends State<HomeShell> {
       _current = _labelForIdx(idx);
     }
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          // Modern Navigation Sidebar
-          _buildModernSidebar(),
-          Expanded(child: pages[idx]),
+          Row(
+            children: [
+              // Modern Navigation Sidebar
+              _buildModernSidebar(),
+              Expanded(child: pages[idx]),
+            ],
+          ),
+          // Right side circular buttons
+          Positioned(
+            right: 20,
+            top: 100,
+            child: _buildRightSideButtons(),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -428,77 +522,69 @@ class _HomeShellState extends State<HomeShell> {
 
   Widget _buildModernSidebar() {
     return Container(
-      width: 80,
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1419),
-        border: Border(right: BorderSide(color: Colors.grey[900]!)),
+      width: 60,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1D23),
       ),
       child: Column(
         children: [
-          // Logo Section
+          // Logo Section - Teal square with grid pattern
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 20),
             child: Container(
-              width: 48,
-              height: 48,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF00CED1),
-                    const Color(0xFF20B2AA),
-                  ],
-                ),
+                color: const Color(0xFF00CED1),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.dashboard, color: Colors.white, size: 26),
+              child: const Icon(
+                Icons.grid_view,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
           ),
+          
+          const SizedBox(height: 16),
+          
           // Navigation Items
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildModernNavItem(
-                    icon: Icons.dashboard_outlined,
-                    label: 'Dashboard',
-                    index: 0,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.description_outlined,
-                    label: 'My Proposals',
-                    index: 1,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.library_books,
-                    label: 'Templates',
-                    index: 2,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.collections,
-                    label: 'Content Library',
-                    index: 3,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.people_outline,
-                    label: 'Collaboration',
-                    index: 4,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.done_all_outlined,
-                    label: 'Approvals',
-                    index: 5,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.bar_chart_outlined,
-                    label: 'Analytics',
-                    index: 6,
-                  ),
-                ],
-              ),
+            child: Column(
+              children: [
+                _buildModernNavItem(
+                  icon: Icons.grid_view,
+                  label: 'Dashboard',
+                  index: 0,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.description,
+                  label: 'My',
+                  index: 1,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.content_copy,
+                  label: 'Templates',
+                  index: 2,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.image,
+                  label: 'Content',
+                  index: 3,
+                ),
+                const SizedBox(height: 8),
+                _buildModernNavItem(
+                  icon: Icons.people,
+                  label: 'Collaboration',
+                  index: 4,
+                ),
+              ],
             ),
           ),
+          
           // Bottom Section
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
@@ -509,7 +595,7 @@ class _HomeShellState extends State<HomeShell> {
                   label: 'Help',
                   index: -1,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
                 Tooltip(
                   message: 'Logout',
                   child: Material(
@@ -517,15 +603,15 @@ class _HomeShellState extends State<HomeShell> {
                     child: InkWell(
                       onTap: _handleLogout,
                       child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.logout,
-                          color: Colors.grey[600],
-                          size: 24,
+                          color: Color(0xFF6B7280),
+                          size: 20,
                         ),
                       ),
                     ),
@@ -552,36 +638,75 @@ class _HomeShellState extends State<HomeShell> {
         child: InkWell(
           onTap: index != -1 ? () => setState(() => idx = index) : null,
           child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: isActive
-                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              border: isActive
-                  ? Border.all(color: const Color(0xFF00CED1), width: 2)
-                  : null,
+              color: isActive ? const Color(0xFF00CED1) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: isActive 
+                ? Border.all(color: const Color(0xFF00CED1), width: 1)
+                : null,
             ),
-            child: Column(
-              children: [
-                Icon(
-                  icon,
-                  color: isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                  size: 26,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label.split(' ')[0],
-                  style: TextStyle(
-                    fontSize: 9,
-                    color:
-                        isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+            child: Icon(
+              icon,
+              color: isActive ? Colors.white : const Color(0xFF6B7280),
+              size: 20,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRightSideButtons() {
+    return Column(
+      children: [
+        _buildCircularButton(Icons.notifications, 'Notifications'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.trending_up, 'Analytics'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.settings, 'Settings'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.refresh, 'Refresh'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.group, 'Team'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.schedule, 'Schedule'),
+        const SizedBox(height: 12),
+        _buildCircularButton(Icons.bar_chart, 'Reports'),
+      ],
+    );
+  }
+
+  Widget _buildCircularButton(IconData icon, String tooltip) {
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: () {
+              // Handle button tap
+              print('Tapped: $tooltip');
+            },
+            child: Icon(
+              icon,
+              color: const Color(0xFF374151),
+              size: 20,
             ),
           ),
         ),

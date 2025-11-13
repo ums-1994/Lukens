@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'error_service.dart';
+import 'network_service.dart';
 
 class SmtpAuthService {
   static const String baseUrl = 'http://localhost:8000';
@@ -13,8 +15,8 @@ class SmtpAuthService {
     required String role,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/register'),
+      final response = await NetworkService.post(
+        '$baseUrl/register',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -25,23 +27,23 @@ class SmtpAuthService {
           'full_name': '$firstName $lastName',
           'role': role,
         }),
+        context: 'SmtpAuthService.registerUser',
       );
 
-      print('Registration response status: ${response.statusCode}');
-      print('Registration response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        try {
-          final error = json.decode(response.body);
-          throw Exception(error['detail'] ?? 'Registration failed');
-        } catch (e) {
-          throw Exception('Registration failed: ${response.body}');
-        }
-      }
+      return NetworkService.parseJsonResponse(
+        response,
+        context: 'SmtpAuthService.registerUser',
+      );
     } catch (e) {
-      print('Error registering user: $e');
+      ErrorService.logError(
+        'User registration failed',
+        error: e,
+        context: 'SmtpAuthService.registerUser',
+        additionalData: {
+          'email': email,
+          'role': role,
+        },
+      );
       rethrow;
     }
   }
@@ -52,8 +54,8 @@ class SmtpAuthService {
     required String password,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/login-email'),
+      final response = await NetworkService.post(
+        '$baseUrl/login-email',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -61,23 +63,20 @@ class SmtpAuthService {
           'email': email,
           'password': password,
         }),
+        context: 'SmtpAuthService.loginUser',
       );
 
-      print('Login response status: ${response.statusCode}');
-      print('Login response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        try {
-          final error = json.decode(response.body);
-          throw Exception(error['detail'] ?? 'Login failed');
-        } catch (e) {
-          throw Exception('Login failed: ${response.body}');
-        }
-      }
+      return NetworkService.parseJsonResponse(
+        response,
+        context: 'SmtpAuthService.loginUser',
+      );
     } catch (e) {
-      print('Error logging in user: $e');
+      ErrorService.logError(
+        'User login failed',
+        error: e,
+        context: 'SmtpAuthService.loginUser',
+        additionalData: {'email': email},
+      );
       rethrow;
     }
   }
@@ -87,31 +86,35 @@ class SmtpAuthService {
     required String token,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+      final response = await NetworkService.post(
+        '$baseUrl/verify-email',
         headers: {
           'Content-Type': 'application/json',
         },
         body: json.encode({
           'token': token,
         }),
+        context: 'SmtpAuthService.verifyEmail',
       );
 
-      print('Verification response status: ${response.statusCode}');
-      print('Verification response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        try {
-          final error = json.decode(response.body);
-          throw Exception(error['detail'] ?? 'Email verification failed');
-        } catch (e) {
-          throw Exception('Email verification failed: ${response.body}');
-        }
-      }
+      final result = NetworkService.parseJsonResponse(
+        response,
+        context: 'SmtpAuthService.verifyEmail',
+      );
+      
+      ErrorService.showSuccess(
+        'Email verified successfully!',
+        context: 'SmtpAuthService.verifyEmail',
+      );
+      
+      return result;
     } catch (e) {
-      print('Error verifying email: $e');
+      ErrorService.logError(
+        'Email verification failed',
+        error: e,
+        context: 'SmtpAuthService.verifyEmail',
+        additionalData: {'tokenLength': token.length},
+      );
       rethrow;
     }
   }

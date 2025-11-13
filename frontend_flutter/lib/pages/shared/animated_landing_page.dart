@@ -200,7 +200,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF000000),
+      backgroundColor: Colors.transparent,
       body: AnimatedBuilder(
         animation: Listenable.merge([
           _backgroundController,
@@ -244,39 +244,46 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
   Widget _buildBackground() {
     return Opacity(
       opacity: _backgroundOpacity.value,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF000000),
-              Color(0xFF0B0B0C),
-              Color(0xFF1A1A1B),
-            ],
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/nathi.png',
+              fit: BoxFit.cover,
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            // Geometric shapes
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                width: 400,
-                height: 400,
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: [
-                      const Color(0xFF2C3E50).withOpacity(0.1),
-                      Colors.transparent,
-                    ],
-                  ),
+          // Gradient overlay for contrast
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF000000),
+                  Color(0xFF0B0B0C),
+                  Color(0xFF1A1A1B),
+                ],
+              ),
+            ),
+          ),
+          // Geometric shapes
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              width: 400,
+              height: 400,
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF2C3E50).withOpacity(0.1),
+                    Colors.transparent,
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -408,82 +415,101 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           const SizedBox(height: 56),
 
           // CTA Buttons
-          Row(
-            children: [
-              // Get Started button with glow
-              Opacity(
-                opacity: _buttonOpacity.value,
-                child: Transform.scale(
-                  scale: _buttonScale.value,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(50),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFD72638).withOpacity(
-                            _glowController.isAnimating ? _glowIntensity.value : 0.4,
+          Opacity(
+            opacity: _buttonOpacity.value,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/images/khono.png',
+                    height: 56,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 24),
+
+                  Transform.scale(
+                    scale: _buttonScale.value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(50),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFC10D00).withOpacity(
+                              _glowController.isAnimating ? _glowIntensity.value : 0.4,
+                            ),
+                            blurRadius: 30,
+                            spreadRadius: 5,
                           ),
-                          blurRadius: 30,
-                          spreadRadius: 5,
-                        ),
-                      ],
-                    ),
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/register');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFD72638),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 56,
-                          vertical: 18,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(50),
-                        ),
-                        elevation: 0,
+                        ],
                       ),
-                      child: const Text(
-                        'Get Started',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/register');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC10D00),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(240, 56),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          'GET STARTED',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
 
-              const SizedBox(width: 40),
+                  const SizedBox(height: 16),
 
-              // Learn More text button
-              Opacity(
-                opacity: _buttonOpacity.value,
-                child: TextButton(
-                  onPressed: () {
-                    // Scroll to features or show modal
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 18,
+                  Transform.scale(
+                    scale: _buttonScale.value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(50),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFC10D00).withOpacity(
+                              _glowController.isAnimating ? _glowIntensity.value : 0.4,
+                            ),
+                            blurRadius: 30,
+                            spreadRadius: 5,
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton(
+                        onPressed: () {},
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC10D00),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(240, 56),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          'LEARN MORE',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  child: const Text(
-                    'Learn More',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),
