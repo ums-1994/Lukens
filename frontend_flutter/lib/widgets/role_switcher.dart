@@ -244,7 +244,7 @@ class CompactRoleSwitcher extends StatelessWidget {
                     Navigator.of(context)
                         .pushReplacementNamed('/approver_dashboard');
                   } else if (role == UserRole.creator) {
-                    Navigator.of(context).pushReplacementNamed('/dashboard');
+                    Navigator.of(context).pushReplacementNamed('/creator_dashboard');
                   }
                 }
               }

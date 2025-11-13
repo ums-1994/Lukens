@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
-import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -424,7 +423,16 @@ class _DashboardPageState extends State<DashboardPage>
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final counts = app.dashboardCounts;
-    final userRole = app.currentUser?['role'] ?? 'Financial Manager';
+    // Map backend role to display name
+    final backendRole =
+        app.currentUser?['role']?.toString().toLowerCase() ?? 'manager';
+    final userRole = backendRole == 'manager' ||
+            backendRole == 'financial manager' ||
+            backendRole == 'creator'
+        ? 'Manager'
+        : backendRole == 'admin' || backendRole == 'ceo'
+            ? 'Admin'
+            : 'Manager'; // Default to Manager
 
     print('Dashboard - Current User: ${app.currentUser}');
     print('Dashboard - User Role: $userRole');
@@ -1552,26 +1560,31 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   String _getHeaderTitle(String role) {
-    switch (role) {
-      case 'CEO':
-        return 'CEO Dashboard - Executive Overview';
-      case 'Financial Manager':
-        return 'Financial Manager - Proposal Management';
-      case 'Client':
+    switch (role.toLowerCase()) {
+      case 'admin':
+      case 'ceo':
+        return 'Admin Dashboard - Executive Overview';
+      case 'manager':
+      case 'financial manager':
+        return 'Manager Dashboard - Proposal Management';
+      case 'client':
         return 'Client Portal - My Proposals';
       default:
-        return 'Proposal & SOW Builder';
+        return 'Manager Dashboard - Proposal Management';
     }
   }
 
   Widget _buildRoleSpecificContent(
       String role, Map<String, dynamic> counts, AppState app) {
-    switch (role) {
-      case 'CEO':
+    final roleLower = role.toLowerCase();
+    switch (roleLower) {
+      case 'admin':
+      case 'ceo':
         return _buildCEODashboard(counts, app);
-      case 'Client':
+      case 'client':
         return _buildClientDashboard(counts, app);
-      case 'Financial Manager':
+      case 'manager':
+      case 'financial manager':
       default:
         return _buildFinancialManagerDashboard(counts, app);
     }

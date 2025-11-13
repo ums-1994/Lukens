@@ -43,23 +43,39 @@ class FirebaseService {
       // Update user profile
       await result.user?.updateDisplayName('$firstName $lastName');
 
-      // Save additional user data to Firestore
-      await _firestore.collection('users').doc(result.user?.uid).set({
-        'email': email,
-        'firstName': firstName,
-        'lastName': lastName,
-        'role': role,
-        'createdAt': FieldValue.serverTimestamp(),
-        'isEmailVerified': false,
-      });
+      // Save additional user data to Firestore (optional - don't fail if this fails)
+      try {
+        await _firestore.collection('users').doc(result.user?.uid).set({
+          'email': email,
+          'firstName': firstName,
+          'lastName': lastName,
+          'role': role,
+          'createdAt': FieldValue.serverTimestamp(),
+          'isEmailVerified': false,
+        });
+        print('✅ User data saved to Firestore');
+      } catch (firestoreError) {
+        // Firestore save failure shouldn't prevent registration
+        print('⚠️ Warning: Failed to save user data to Firestore: $firestoreError');
+        print('⚠️ User was created in Firebase Auth, but Firestore save failed');
+      }
 
       return result;
     } catch (e) {
+      // Log the full error for debugging
+      print('❌ Firebase signUp error (full): $e');
+      print('❌ Error type: ${e.runtimeType}');
+      
       // Handle Firebase exceptions properly for web
       String errorMessage = 'Registration failed. Please try again.';
+      String? errorCode;
 
       // Check if it's a FirebaseAuthException
       if (e is FirebaseAuthException) {
+        errorCode = e.code;
+        print('❌ Firebase Auth error code: ${e.code}');
+        print('❌ Firebase Auth error message: ${e.message}');
+        
         switch (e.code) {
           case 'email-already-in-use':
             errorMessage = 'An account already exists with this email address.';
@@ -72,32 +88,42 @@ class FirebaseService {
             errorMessage = 'Invalid email address.';
             break;
           case 'operation-not-allowed':
-            errorMessage = 'Email/password accounts are not enabled.';
+            errorMessage = 'Email/password accounts are not enabled in Firebase.';
             break;
           default:
             errorMessage =
-                'Registration failed: ${e.message ?? 'Unknown error'}';
+                'Registration failed: ${e.message ?? e.code}';
         }
       } else {
-        // Handle JavaScript interop errors
+        // Handle JavaScript interop errors and other exceptions
         String errorString = e.toString();
+        print('❌ Non-FirebaseAuthException error: $errorString');
+        
         if (errorString.contains('email-already-in-use')) {
           errorMessage = 'An account already exists with this email address.';
+          errorCode = 'email-already-in-use';
         } else if (errorString.contains('weak-password')) {
           errorMessage =
               'Password is too weak. Please choose a stronger password.';
+          errorCode = 'weak-password';
         } else if (errorString.contains('invalid-email')) {
           errorMessage = 'Invalid email address.';
+          errorCode = 'invalid-email';
         } else if (errorString.contains('operation-not-allowed')) {
-          errorMessage = 'Email/password accounts are not enabled.';
+          errorMessage = 'Email/password accounts are not enabled in Firebase.';
+          errorCode = 'operation-not-allowed';
         } else if (errorString.contains('JavaScriptObject')) {
-          // This is the specific interop error we're seeing
           errorMessage =
               'Authentication service temporarily unavailable. Please try again.';
+          errorCode = 'JavaScriptObject';
+        } else {
+          // Re-throw with more context so the caller can see the actual error
+          print('❌ Re-throwing error for caller to handle: $e');
+          rethrow;
         }
       }
 
-      print('Error signing up: $errorMessage');
+      print('❌ Error signing up: $errorMessage (code: $errorCode)');
       return null;
     }
   }

@@ -27,9 +27,9 @@ class RoleService extends ChangeNotifier {
   String getRoleName(UserRole role) {
     switch (role) {
       case UserRole.creator:
-        return 'Creator';
+        return 'Manager';
       case UserRole.approver:
-        return 'Approver (CEO)';
+        return 'Admin';
       case UserRole.admin:
         return 'Admin';
     }
@@ -56,8 +56,48 @@ class RoleService extends ChangeNotifier {
       case UserRole.approver:
         return 'Review and approve proposals';
       case UserRole.admin:
-        return 'System administration';
+        return 'System administration and approvals';
     }
+  }
+
+  // Map backend role to frontend UserRole
+  UserRole mapBackendRoleToFrontendRole(String? backendRole) {
+    if (backendRole == null) return UserRole.creator;
+    
+    final role = backendRole.toLowerCase().trim();
+    
+    // Admin roles → Approver (Admin Dashboard)
+    if (role == 'admin' || role == 'ceo') {
+      return UserRole.approver;
+    }
+    
+    // Manager roles → Creator (Manager Dashboard)
+    if (role == 'manager' || 
+        role == 'financial manager' || 
+        role == 'creator' ||
+        role == 'user') {
+      return UserRole.creator;
+    }
+    
+    // Default to creator
+    return UserRole.creator;
+  }
+
+  // Initialize role from backend user data
+  Future<void> initializeRoleFromUser(Map<String, dynamic>? userData) async {
+    if (userData == null) return;
+    
+    final backendRole = userData['role']?.toString();
+    final frontendRole = mapBackendRoleToFrontendRole(backendRole);
+    
+    _currentRole = frontendRole;
+    
+    // Persist role selection
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_role', frontendRole.toString());
+    
+    print('✅ Initialized role from backend: "$backendRole" → ${_getRoleName(frontendRole)}');
+    notifyListeners();
   }
 
   Future<void> switchRole(UserRole newRole) async {

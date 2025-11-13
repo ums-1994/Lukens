@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../services/smtp_auth_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/firebase_service.dart';
+import '../../services/role_service.dart';
 import '../../api.dart';
 import 'dart:math' as math;
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -88,46 +91,115 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     setState(() => _isLoading = true);
 
     try {
-      final result = await SmtpAuthService.loginUser(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
+
+      // Step 1: Sign in with Firebase
+      print('🔥 Signing in with Firebase...');
+      final firebaseCredential = await FirebaseService.signInWithEmailAndPassword(
+        email: email,
+        password: password,
       );
+
+      if (firebaseCredential == null || firebaseCredential.user == null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Firebase authentication failed. Please check your credentials.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Step 2: Get Firebase ID token
+      print('🔥 Getting Firebase ID token...');
+      final firebaseIdToken = await firebaseCredential.user!.getIdToken();
+      
+      if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to get Firebase ID token.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      print('✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
+
+      // Step 3: Send Firebase ID token to backend to create/update user in database
+      print('📡 Sending Firebase token to backend...');
+      final response = await http.post(
+        Uri.parse('http://localhost:8000/auth/firebase'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'id_token': firebaseIdToken}),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final error = json.decode(response.body);
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error['detail'] ?? 'Backend authentication failed'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final result = json.decode(response.body);
+      final userProfile = result['user'] as Map<String, dynamic>?;
 
       if (mounted) {
         setState(() => _isLoading = false);
 
-        if (result != null) {
-          final userProfile = await SmtpAuthService.getUserProfile(
-            token: result['access_token'],
-          );
+        if (userProfile != null) {
+          final appState = context.read<AppState>();
+          
+          // Use Firebase ID token (not legacy token)
+          appState.authToken = firebaseIdToken;
+          appState.currentUser = userProfile;
 
-          if (userProfile != null) {
-            final appState = context.read<AppState>();
-            appState.authToken = result['access_token'];
-            appState.currentUser = userProfile;
+          // IMPORTANT: Store Firebase ID token in AuthService
+          AuthService.setUserData(userProfile, firebaseIdToken);
 
-            // IMPORTANT: Also persist to AuthService and localStorage
-            AuthService.setUserData(userProfile, result['access_token']);
+          // Initialize role service with user's role
+          final roleService = context.read<RoleService>();
+          await roleService.initializeRoleFromUser(userProfile);
 
-            await appState.init();
+          await appState.init();
 
-            Navigator.pushNamedAndRemoveUntil(
-              context,
-              '/creator_dashboard',
-              (route) => false,
-            );
+          // Redirect based on user role
+          final userRole = (userProfile['role']?.toString() ?? '').toLowerCase();
+          String dashboardRoute;
+          
+          if (userRole == 'admin' || userRole == 'ceo') {
+            dashboardRoute = '/approver_dashboard';
+          } else if (userRole == 'manager' || userRole == 'financial manager' || userRole == 'creator') {
+            dashboardRoute = '/creator_dashboard';
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to get user profile.'),
-                backgroundColor: Colors.red,
-              ),
-            );
+            dashboardRoute = '/creator_dashboard';
           }
+
+          print('🔀 Redirecting user with role "$userRole" to $dashboardRoute');
+
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            dashboardRoute,
+            (route) => false,
+          );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Login failed. Please check your credentials.'),
+              content: Text('Failed to get user profile from backend.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -136,15 +208,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-
-        {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString()),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        print('❌ Login error: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Login failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }

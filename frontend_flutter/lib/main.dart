@@ -10,7 +10,7 @@ import 'pages/creator/new_proposal_page.dart';
 import 'pages/creator/enhanced_compose_page.dart';
 import 'pages/creator/blank_document_editor_page.dart';
 import 'pages/admin/govern_page.dart';
-import 'pages/approver/approvals_page.dart';
+// import 'pages/approver/approvals_page.dart'; // Removed - using ApproverDashboardPage instead
 import 'pages/shared/preview_page.dart';
 import 'pages/creator/content_library_page.dart';
 import 'pages/creator/templates_page.dart';
@@ -26,6 +26,7 @@ import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
 import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/shared/collaboration_router.dart';
+import 'pages/client/client_onboarding_page.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
@@ -141,6 +142,24 @@ class MyApp extends StatelessWidget {
             }
           }
 
+          // Handle client onboarding route
+          if (settings.name == '/onboard' ||
+              (settings.name != null && settings.name!.contains('onboard'))) {
+            print('🔍 Client onboarding route detected: ${settings.name}');
+            // Extract token from current URL query parameters
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            print('📍 Onboarding token: ${token != null ? "${token.substring(0, 10)}..." : "null"}');
+            if (token != null && token.isNotEmpty) {
+              return MaterialPageRoute(
+                builder: (context) => ClientOnboardingPage(token: token),
+              );
+            } else {
+              print('❌ No token found in onboarding URL');
+            }
+          }
+
           // Handle verification routes
           if (settings.name == '/verify-email' ||
               (settings.name != null &&
@@ -191,6 +210,13 @@ class MyApp extends StatelessWidget {
         routes: {
           '/login': (context) => const LoginPage(),
           '/register': (context) => const RegisterPage(),
+          '/onboard': (context) {
+            // This will be handled by onGenerateRoute, but adding as fallback
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            final token = uri.queryParameters['token'];
+            return ClientOnboardingPage(token: token ?? '');
+          },
           '/verify-email': (context) {
             // This will be handled by onGenerateRoute, but adding as fallback
             final currentUrl = web.window.location.href;
@@ -255,7 +281,7 @@ class MyApp extends StatelessWidget {
             final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
             return TemplateBuilder(templateId: args?['templateId']);
           },
-          '/approvals': (context) => const ApprovalsPage(),
+          '/approvals': (context) => const ApproverDashboardPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
@@ -352,6 +378,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
     print('🔍 AuthWrapper - Hash: $hash');
     print('🔍 AuthWrapper - Search: $search');
 
+    // Check for client onboarding URL
+    final uri = Uri.parse(currentUrl);
+    final isOnboarding = currentUrl.contains('/onboard') ||
+        hash.contains('/onboard') ||
+        currentUrl.contains('onboard?token=') ||
+        search.contains('onboard?token=');
+    
+    final onboardingToken = uri.queryParameters['token'];
+    
+    if (isOnboarding && onboardingToken != null && onboardingToken.isNotEmpty) {
+      print('✅ Detected client onboarding URL - showing ClientOnboardingPage');
+      return ClientOnboardingPage(token: onboardingToken);
+    }
+
     // Check for collaboration in hash or URL
     final isCollaboration = currentUrl.contains('/collaborate') ||
         hash.contains('/collaborate') ||
@@ -369,16 +409,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return const GuestCollaborationPage();
     }
 
-    // Check if user is authenticated
-    if (AuthService.isLoggedIn) {
-      // Initialize AppState when user is logged in
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<AppState>().init();
-      });
-      return const HomeShell();
-    } else {
-      return const StartupPage();
-    }
+    // Always show landing page first when app starts
+    // The landing page will handle navigation to login/dashboard based on auth status
+    return const StartupPage();
   }
 }
 
@@ -398,7 +431,7 @@ class _HomeShellState extends State<HomeShell> {
     ProposalsPage(), // 1
     ContentLibraryPage(), // 2
     ClientManagementPage(), // 3
-    ApprovalsPage(), // 4
+    ApproverDashboardPage(), // 4
     AnalyticsPage(), // 5
     PreviewPage(), // 6 (optional)
     ComposePage(), // 7 (optional)
@@ -406,6 +439,35 @@ class _HomeShellState extends State<HomeShell> {
     ApproverDashboardPage(), // 9 (optional)
     AdminDashboardPage(), // 10 (optional)
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Redirect to appropriate dashboard based on user role
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _redirectBasedOnRole(context);
+    });
+  }
+
+  void _redirectBasedOnRole(BuildContext context) {
+    final user = AuthService.currentUser;
+    if (user == null) return;
+
+    final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
+    final roleService = context.read<RoleService>();
+    
+    // Initialize role service
+    roleService.initializeRoleFromUser(user).then((_) {
+      // Navigate based on role
+      if (backendRole == 'admin' || backendRole == 'ceo') {
+        // Admin → Approver Dashboard
+        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+      } else {
+        // Manager → Creator Dashboard
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
