@@ -3,11 +3,11 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/role_switcher.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:intl/intl.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -18,17 +18,27 @@ class ApproverDashboardPage extends StatefulWidget {
   State<ApproverDashboardPage> createState() => _ApproverDashboardPageState();
 }
 
-class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
-  List<Map<String, dynamic>> _pendingProposals = [];
-  List<Map<String, dynamic>> _recentlyApproved = [];
+class _ApproverDashboardPageState extends State<ApproverDashboardPage>
+    with TickerProviderStateMixin {
+  List<Map<String, dynamic>> _signedProposals = [];
   bool _isLoading = true;
-  int _pendingCount = 0;
-  int _approvedCount = 0;
+  double _totalSignedValue = 0;
+  DateTime? _lastSignedDate;
   final ScrollController _scrollController = ScrollController();
+  final NumberFormat _currencyFormatter =
+      NumberFormat.currency(symbol: 'R', decimalDigits: 0);
+  bool _isSidebarCollapsed = true;
+  late AnimationController _animationController;
+  String _currentPage = 'Approvals Status';
 
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
@@ -36,6 +46,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
 
   @override
   void dispose() {
+    _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -102,32 +113,53 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
           throw Exception('Request timed out');
         },
       );
-
       print('✅ API Response received!');
       print('✅ Number of proposals: ${proposals.length}');
 
-      _pendingProposals = proposals
-          .where((p) {
-            final status = p['status'] as String?;
-            return status == 'Pending CEO Approval' ||
-                status?.toLowerCase() == 'pending ceo approval';
-          })
-          .map((p) => p as Map<String, dynamic>)
-          .toList();
+      final signed = proposals.where((p) {
+        final status = (p['status'] ?? '').toString().toLowerCase();
+        return status == 'signed' ||
+            status == 'client signed' ||
+            status == 'completed';
+      }).map((p) => p as Map<String, dynamic>).toList();
 
-      _recentlyApproved = proposals
-          .where((p) {
-            final status = (p['status'] as String?)?.toLowerCase() ?? '';
-            return status == 'sent to client' || status == 'approved';
-          })
-          .take(5)
-          .map((p) => p as Map<String, dynamic>)
-          .toList();
+      signed.sort((a, b) {
+        final aDate = a['updated_at'] != null
+            ? DateTime.tryParse(a['updated_at'].toString())
+            : null;
+        final bDate = b['updated_at'] != null
+            ? DateTime.tryParse(b['updated_at'].toString())
+            : null;
+        return (bDate ?? DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(aDate ?? DateTime.fromMillisecondsSinceEpoch(0));
+      });
+
+      double totalValue = 0;
+      DateTime? latestSigned;
+      for (final proposal in signed) {
+        final budget = proposal['budget'];
+        if (budget is num) {
+          totalValue += budget.toDouble();
+        } else if (budget is String) {
+          final cleaned = budget.replaceAll(RegExp(r'[^\d.]'), '');
+          totalValue += double.tryParse(cleaned) ?? 0;
+        }
+
+        final signedDate = proposal['updated_at'] != null
+            ? DateTime.tryParse(proposal['updated_at'].toString())
+            : null;
+        if (signedDate != null) {
+          latestSigned = (latestSigned == null || signedDate.isAfter(latestSigned))
+              ? signedDate
+              : latestSigned;
+        }
+      }
 
       if (mounted) {
         setState(() {
-          _pendingCount = _pendingProposals.length;
-          _approvedCount = _recentlyApproved.length;
+          _signedProposals = signed;
+          _totalSignedValue = totalValue;
+          _lastSignedDate = latestSigned;
           _isLoading = false;
         });
       }
@@ -146,152 +178,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
     }
   }
 
-  Future<void> _approveProposal(int proposalId, String title) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Approve Proposal'),
-        content: Text(
-            'Approve "$title"?\n\nThis will automatically send the proposal to the client.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: PremiumTheme.teal,
-            ),
-            child: const Text('Approve & Send'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      final token = AuthService.token;
-      if (token == null) throw Exception('Not authenticated');
-
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/proposals/$proposalId/approve'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Proposal approved and sent to client!'),
-              backgroundColor: PremiumTheme.teal,
-            ),
-          );
-          _loadData();
-        }
-      } else {
-        throw Exception('Failed to approve proposal');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to approve: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _rejectProposal(int proposalId, String title) async {
-    final commentController = TextEditingController();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reject Proposal'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Reject "$title"?'),
-            const SizedBox(height: 12),
-            const Text(
-                'This will return the proposal to draft for the creator to make changes.'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: commentController,
-              decoration: const InputDecoration(
-                labelText: 'Feedback (optional)',
-                hintText: 'e.g., Please update the pricing section',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: PremiumTheme.error,
-            ),
-            child: const Text('Reject'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      final token = AuthService.token;
-      if (token == null) throw Exception('Not authenticated');
-
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/proposals/$proposalId/reject'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode({
-          'comments': commentController.text.trim(),
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Proposal rejected and returned to creator'),
-              backgroundColor: PremiumTheme.orange,
-            ),
-          );
-          _loadData();
-        }
-      } else {
-        throw Exception('Failed to reject proposal');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to reject: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -329,47 +215,51 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
                   _buildHeader(app),
                   const SizedBox(height: 24),
                   Expanded(
-                    child: GlassContainer(
-                      borderRadius: 32,
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildHeroSection(),
-                          const SizedBox(height: 24),
-                          Expanded(
-                            child: CustomScrollbar(
-                              controller: _scrollController,
-                              child: SingleChildScrollView(
-                                controller: _scrollController,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildSection(
-                                      '📋 My Approval Queue ($_pendingCount pending)',
-                                      _isLoading
-                                          ? const Center(
-                                              child:
-                                                  CircularProgressIndicator())
-                                          : _buildApprovalQueue(),
+                    child: Row(
+                      children: [
+                        _buildSidebar(context),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: GlassContainer(
+                            borderRadius: 32,
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildHeroSection(),
+                                const SizedBox(height: 24),
+                                Expanded(
+                                  child: CustomScrollbar(
+                                    controller: _scrollController,
+                                    child: SingleChildScrollView(
+                                      controller: _scrollController,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          _buildSection(
+                                            '📊 Signed Proposal Snapshot',
+                                            _buildSnapshotMetrics(),
+                                          ),
+                                          const SizedBox(height: 24),
+                                          _buildSection(
+                                            '🖊️ Client-Signed Proposals',
+                                            _isLoading
+                                                ? const Center(
+                                                    child:
+                                                        CircularProgressIndicator())
+                                                : _buildSignedList(),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    const SizedBox(height: 24),
-                                    _buildSection(
-                                      '📈 My Approval Metrics',
-                                      _buildApproverMetrics(),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    _buildSection(
-                                      '⏰ Recently Approved',
-                                      _buildRecentlyApproved(),
-                                    ),
-                                  ],
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -395,7 +285,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'CEO Executive Approvals',
+              'Signed Proposals',
               style: PremiumTheme.titleLarge,
             ),
             const SizedBox(height: 4),
@@ -455,8 +345,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
     return GlassContainer(
       borderRadius: 24,
       padding: const EdgeInsets.all(24),
-      gradientStart: PremiumTheme.purple,
-      gradientEnd: PremiumTheme.purpleGradient.colors.last,
+      gradientStart: PremiumTheme.teal,
+      gradientEnd: PremiumTheme.tealGradient.colors.last,
       child: Row(
         children: [
           Container(
@@ -478,7 +368,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Executive Approval Center',
+                  'Client-Signed Proposals',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -487,24 +377,22 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _pendingCount > 0
-                      ? 'You have $_pendingCount proposals waiting for approval'
-                      : 'All caught up! No proposals require your attention.',
+                  _signedProposals.isEmpty
+                      ? 'No proposals have been signed by clients yet.'
+                      : '${_signedProposals.length} proposals have been signed by clients${_lastSignedDate != null ? ' (last signed ${_formatRelativeDate(_lastSignedDate!)})' : ''}.',
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),
           ),
           ElevatedButton.icon(
-            icon: const Icon(Icons.approval),
-            label: const Text('Review Approvals'),
+            icon: const Icon(Icons.download),
+            label: const Text('Export List'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
-              foregroundColor: PremiumTheme.purple,
+              foregroundColor: PremiumTheme.teal,
             ),
-            onPressed: () {
-              Navigator.pushNamed(context, '/approvals');
-            },
+            onPressed: _signedProposals.isEmpty ? null : _exportSignedProposals,
           ),
         ],
       ),
@@ -529,18 +417,305 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
     );
   }
 
-  Widget _buildApprovalQueue() {
-    if (_pendingProposals.isEmpty) {
+  Widget _buildSidebar(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isSidebarCollapsed ? 90.0 : 250.0,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.black.withOpacity(0.3),
+            Colors.black.withOpacity(0.2),
+          ],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        border: Border(
+          right: BorderSide(
+            color: PremiumTheme.glassWhiteBorder,
+            width: 1,
+          ),
+        ),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: InkWell(
+                onTap: _toggleSidebar,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.glassWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: PremiumTheme.glassWhiteBorder,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: _isSidebarCollapsed
+                        ? MainAxisAlignment.center
+                        : MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (!_isSidebarCollapsed)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            'Navigation',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                        ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: _isSidebarCollapsed ? 0 : 8),
+                        child: Icon(
+                          _isSidebarCollapsed
+                              ? Icons.keyboard_arrow_right
+                              : Icons.keyboard_arrow_left,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildNavItem(
+                'Dashboard',
+                'assets/images/Dahboard.png',
+                _currentPage == 'Dashboard',
+                context),
+            _buildNavItem(
+                'My Proposals',
+                'assets/images/My_Proposals.png',
+                _currentPage == 'My Proposals',
+                context),
+            _buildNavItem(
+                'Templates',
+                'assets/images/content_library.png',
+                _currentPage == 'Templates',
+                context),
+            _buildNavItem(
+                'Content Library',
+                'assets/images/content_library.png',
+                _currentPage == 'Content Library',
+                context),
+            _buildNavItem(
+                'Client Management',
+                'assets/images/collaborations.png',
+                _currentPage == 'Client Management',
+                context),
+            _buildNavItem(
+                'Approvals Status',
+                'assets/images/Time Allocation_Approval_Blue.png',
+                _currentPage == 'Approvals Status',
+                context),
+            _buildNavItem(
+                'Analytics (My Pipeline)',
+                'assets/images/analytics.png',
+                _currentPage == 'Analytics (My Pipeline)',
+                context),
+            const SizedBox(height: 20),
+            if (!_isSidebarCollapsed)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                height: 1,
+                color: const Color(0xFF2C3E50),
+              ),
+            const SizedBox(height: 12),
+            _buildNavItem('Logout', 'assets/images/Logout_KhonoBuzz.png', false,
+                context),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(String label, String assetPath, bool isActive,
+      BuildContext context) {
+    if (_isSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: () {
+              setState(() => _currentPage = label);
+              _navigateToPage(context, label);
+            },
+            borderRadius: BorderRadius.circular(30),
+            child: Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isActive
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFFCBD5E1),
+                  width: isActive ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: ClipOval(
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          setState(() => _currentPage = label);
+          _navigateToPage(context, label);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: isActive
+                ? Border.all(color: const Color(0xFF2980B9))
+                : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isActive
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFFCBD5E1),
+                    width: isActive ? 2 : 1,
+                  ),
+                ),
+                padding: const EdgeInsets.all(6),
+                child: ClipOval(
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (isActive)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
+  }
+
+  Widget _buildSnapshotMetrics() {
+    final cards = [
+      _SnapshotMetric(
+        title: 'Signed Proposals',
+        value: _signedProposals.length.toString(),
+        subtitle: 'Completed deals',
+        gradient: PremiumTheme.blueGradient,
+      ),
+      _SnapshotMetric(
+        title: 'Total Signed Value',
+        value: _formatCurrency(_totalSignedValue),
+        subtitle: 'All-time',
+        gradient: PremiumTheme.purpleGradient,
+      ),
+      _SnapshotMetric(
+        title: 'Last Signed',
+        value: _lastSignedDate != null
+            ? _formatRelativeDate(_lastSignedDate!)
+            : '—',
+        subtitle: _lastSignedDate != null
+            ? DateFormat('dd MMM yyyy').format(_lastSignedDate!)
+            : 'Awaiting client signatures',
+        gradient: PremiumTheme.orangeGradient,
+      ),
+      _SnapshotMetric(
+        title: 'Average Deal Size',
+        value: _signedProposals.isEmpty
+            ? _formatCurrency(0)
+            : _formatCurrency(_totalSignedValue / _signedProposals.length),
+        subtitle: 'Based on signed deals',
+        gradient: PremiumTheme.tealGradient,
+      ),
+    ];
+
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      childAspectRatio: 2.6,
+      crossAxisSpacing: 20,
+      mainAxisSpacing: 20,
+      children: cards
+          .map((metric) => PremiumStatCard(
+                title: metric.title,
+                value: metric.value,
+                subtitle: metric.subtitle,
+                gradient: metric.gradient,
+              ))
+          .toList(),
+    );
+  }
+
+  Widget _buildSignedList() {
+    if (_signedProposals.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 36),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: const [
-            Icon(Icons.check_circle_outline,
+            Icon(Icons.assignment_turned_in,
                 size: 54, color: PremiumTheme.teal),
             SizedBox(height: 12),
             Text(
-              'No proposals pending approval',
+              'No proposals have been signed yet',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.white70,
@@ -552,213 +727,205 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
     }
 
     return Column(
-      children: _pendingProposals.map((proposal) {
-        final createdAt = proposal['created_at'] != null
-            ? DateTime.parse(proposal['created_at'])
-            : DateTime.now();
-        final daysAgo = DateTime.now().difference(createdAt).inDays;
-
-        return _buildApprovalItem(
-          proposal['id'],
-          proposal['title'] ?? 'Untitled',
-          proposal['client_name'] ?? 'No client',
-          'Submitted ${daysAgo == 0 ? "Today" : "$daysAgo days ago"}',
-        );
-      }).toList(),
+      children: _signedProposals.map(_buildSignedCard).toList(),
     );
   }
 
-  Widget _buildApprovalItem(int id, String name, String client, String meta) {
-    return GlassContainer(
-      borderRadius: 20,
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildSignedCard(Map<String, dynamic> proposal) {
+    final signedDate = proposal['updated_at'] != null
+        ? DateTime.tryParse(proposal['updated_at'].toString())
+        : null;
+    final value = proposal['budget'];
+    final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
+    final owner = proposal['owner_email'] ??
+        proposal['owner'] ??
+        proposal['user_id']?.toString() ??
+        '';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GlassContainer(
+        borderRadius: 20,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  name,
-                  style: PremiumTheme.bodyLarge.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Text(
+                    proposal['title'] ?? 'Untitled Proposal',
+                    style: PremiumTheme.bodyLarge.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 6),
                 Text(
-                  '🏢 $client',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.white70,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  meta,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.white54,
-                  ),
+                  _formatCurrency(_parseBudget(value)),
+                  style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
                 ),
               ],
             ),
-          ),
-          Row(
-            children: [
-              _buildButton(
-                'Approve',
-                PremiumTheme.teal,
-                false,
-                () => _approveProposal(id, name),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _buildInfoChip(Icons.business, client),
+                const SizedBox(width: 12),
+                _buildInfoChip(
+                    Icons.calendar_today,
+                    signedDate != null
+                        ? DateFormat('dd MMM yyyy').format(signedDate)
+                        : 'Unknown'),
+                if (owner.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  _buildInfoChip(Icons.person, owner),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _openProposal(proposal),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('View Proposal'),
               ),
-              const SizedBox(width: 12),
-              _buildButton(
-                'Reject',
-                PremiumTheme.error,
-                true,
-                () => _rejectProposal(id, name),
-              ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white70),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildButton(
-      String text, Color color, bool isOutline, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isOutline ? Colors.transparent : color,
-        foregroundColor: isOutline ? color : Colors.white,
-        side: BorderSide(color: color),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-      ),
+  void _openProposal(Map<String, dynamic> proposal) {
+    final id = proposal['id']?.toString();
+    if (id == null) return;
+    Navigator.pushNamed(
+      context,
+      '/compose',
+      arguments: {
+        'id': id,
+        'title': proposal['title'],
+      },
     );
   }
 
-  Widget _buildApproverMetrics() {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      childAspectRatio: 2.6,
-      crossAxisSpacing: 20,
-      mainAxisSpacing: 20,
-      children: [
-        _buildMetricCard(
-            'Pending My Approval', _pendingCount.toString(), 'Proposals'),
-        _buildMetricCard(
-            'Recently Approved', _approvedCount.toString(), 'This Month'),
-        _buildMetricCard('Approval Rate', '85%', 'This Month'),
-        _buildMetricCard('Avg. Response Time', '1.5', 'Days'),
-      ],
-    );
-  }
-
-  Widget _buildMetricCard(String title, String value, String subtitle) {
-    return PremiumStatCard(
-      title: title,
-      value: value,
-      subtitle: subtitle,
-      gradient: PremiumTheme.blueGradient,
-      onTap: () {},
-    );
-  }
-
-  Widget _buildRecentlyApproved() {
-    if (_recentlyApproved.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: Column(
-            children: const [
-              Icon(Icons.auto_awesome, size: 48, color: Colors.white54),
-              SizedBox(height: 12),
-              Text(
-                'No recently approved proposals',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ],
-          ),
-        ),
-      );
+  void _exportSignedProposals() {
+    final buffer = StringBuffer()
+      ..writeln('Title,Client,Value,Signed Date,Owner');
+    for (final proposal in _signedProposals) {
+      final title = proposal['title']?.toString().replaceAll(',', ' ') ?? '';
+      final client =
+          proposal['client_name']?.toString().replaceAll(',', ' ') ?? '';
+      final value = _formatCurrency(_parseBudget(proposal['budget']));
+      final signedDate = proposal['updated_at'] != null
+          ? DateFormat('yyyy-MM-dd')
+              .format(DateTime.parse(proposal['updated_at'].toString()))
+          : '';
+      final owner = proposal['owner_email'] ?? proposal['owner'] ?? '';
+      buffer.writeln(
+          '"$title","$client","$value","$signedDate","$owner"');
     }
 
-    return Column(
-      children: _recentlyApproved.map((proposal) {
-        final updatedAt = proposal['updated_at'] != null
-            ? DateTime.parse(proposal['updated_at'])
-            : DateTime.now();
-
-        return GlassContainer(
-          borderRadius: 18,
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      proposal['title'] ?? 'Untitled',
-                      style: PremiumTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: PremiumTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Approved: ${_formatDate(updatedAt)}',
-                      style: PremiumTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: PremiumTheme.teal.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  proposal['status'] == 'Sent to Client'
-                      ? 'Sent to Client'
-                      : 'Approved',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: PremiumTheme.teal,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
+    final blob = html.Blob([buffer.toString()]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.AnchorElement(href: url)
+      ..setAttribute('download',
+          'signed_proposals_${DateTime.now().millisecondsSinceEpoch}.csv')
+      ..click();
+    html.Url.revokeObjectUrl(url);
   }
 
-  String _formatDate(DateTime date) {
+  double _parseBudget(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final cleaned = value.replaceAll(RegExp(r'[^\d.]'), '');
+      return double.tryParse(cleaned) ?? 0;
+    }
+    return 0;
+  }
+
+  String _formatCurrency(double value) {
+    if (value == 0) return 'R0';
+    return _currencyFormatter.format(value);
+  }
+
+  String _formatRelativeDate(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
-
     if (diff.inDays == 0) {
-      return 'Today, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+      return 'Today';
     } else if (diff.inDays == 1) {
-      return 'Yesterday, ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
+      return 'Yesterday';
+    }
+    return '${diff.inDays} days ago';
+  }
+
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/collaboration');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'Approvals Status':
+        // Already here
+        break;
+      case 'Logout':
+        AuthService.logout();
+        Navigator.pushNamedAndRemoveUntil(
+            context, '/login', (Route<dynamic> route) => false);
+        break;
     }
   }
+}
+
+class _SnapshotMetric {
+  final String title;
+  final String value;
+  final String subtitle;
+  final Gradient gradient;
+
+  _SnapshotMetric({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.gradient,
+  });
 }

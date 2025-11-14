@@ -1,12 +1,15 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:file_picker/file_picker.dart';
-import 'dart:io';
+
 import '../../api.dart';
-import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
-import '../../widgets/ai_content_generator.dart';
+import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/ai_content_generator.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -33,7 +36,32 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   String typeFilter = "all";
   bool _showAIGenerator = false;
 
-  final List<String> categories = ["Sections", "Images", "Snippets", "Trash"];
+  static const Set<String> _textCategories = {
+    'sections',
+    'company profile',
+    'team',
+    'case studies',
+    'methodology',
+    'assumptions',
+    'risks',
+    'pricing',
+    'templates',
+  };
+
+  final List<String> categories = [
+    "Sections",
+    "Company Profile",
+    "Team",
+    "Case Studies",
+    "Methodology",
+    "Template",
+    "Assumptions",
+    "Risks",
+    "Pricing",
+    "Images",
+    "Snippets",
+    "Trash"
+  ];
 
   final List<String> sortOptions = [
     "Last Edited (Newest First)",
@@ -61,6 +89,194 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     });
   }
 
+  Widget _buildTextBlockCard({
+    required BuildContext context,
+    required AppState app,
+    required Map<String, dynamic> item,
+  }) {
+    final isFolder = item["is_folder"] == true;
+    if (isFolder) {
+      return GestureDetector(
+        onTap: () => setState(() => currentFolderId = item["id"]),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.04),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.folder, color: Colors.white70, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  item["label"] ?? item["key"] ?? "Folder",
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white54),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final rawContent = (item["content"] ?? "").toString();
+    final cleanedContent = _removeTagComment(rawContent);
+    final previewText = _stripHtmlTags(cleanedContent);
+    final tags = item["tags"] is List && (item["tags"] as List).isNotEmpty
+        ? List<String>.from(item["tags"])
+        : _extractTagsFromContent(rawContent);
+
+    final label = item["label"] ?? item["key"] ?? "Untitled";
+    final updatedAt = item["updated_at"];
+    final versionLabel =
+        item["version"] != null ? "Version ${item["version"]}" : "Version 1";
+    final usesLabel =
+        item["usage_count"] != null ? "${item["usage_count"]} uses" : "0 uses";
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withOpacity(0.05),
+            Colors.white.withOpacity(0.02),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    if (updatedAt != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        "Updated ${_formatDate(updatedAt)}",
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white54,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: "Version history",
+                icon: const Icon(Icons.history, size: 18, color: Colors.white70),
+                onPressed: () => _showVersionHistory(context),
+              ),
+              IconButton(
+                tooltip: "Edit block",
+                icon: const Icon(Icons.edit_outlined,
+                    size: 18, color: Colors.white70),
+                onPressed: () => _showEditDialog(context, app, item),
+              ),
+              IconButton(
+                tooltip: "Delete block",
+                icon: const Icon(Icons.delete_outline,
+                    size: 18, color: Colors.redAccent),
+                onPressed: () => _deleteItem(context, app, item["id"]),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            previewText.isNotEmpty
+                ? previewText
+                : "No preview available for this block.",
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.white70,
+              height: 1.4,
+            ),
+          ),
+          if (tags.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: tags.take(3).map((tag) {
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    tag,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF64B5F6),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Text(
+                versionLabel,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.white60,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Container(
+                width: 4,
+                height: 4,
+                decoration: const BoxDecoration(
+                  color: Colors.white38,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                usesLabel,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.white60,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -77,6 +293,43 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         _animationController.reverse();
       }
     });
+  }
+
+  void _showVersionHistory(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Version history coming soon'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  List<String> _extractTagsFromContent(String content) {
+    final regex =
+        RegExp(r'<!--\s*tags:\s*(\[[^\]]*\])\s*-->', caseSensitive: false);
+    final match = regex.firstMatch(content);
+    if (match != null && match.groupCount >= 1) {
+      try {
+        final List<dynamic> decoded = jsonDecode(match.group(1)!);
+        return decoded.map((e) => e.toString()).toList();
+      } catch (_) {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  String _removeTagComment(String content) {
+    return content.replaceAll(
+      RegExp(r'<!--\s*tags:.*?-->', caseSensitive: false, dotAll: true),
+      '',
+    );
+  }
+
+  String _stripHtmlTags(String html) {
+    final withoutBr = html.replaceAll('<br>', ' ').replaceAll('<br/>', ' ');
+    final withoutTags = withoutBr.replaceAll(RegExp(r'<[^>]*>'), ' ');
+    return withoutTags.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   Future<List<dynamic>> _loadDisplayItems() async {
@@ -111,9 +364,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       displayItems = []; // Placeholder - will be fetched when needed
     } else {
       displayItems = app.contentBlocks.where((item) {
-        final category = item["category"] ?? "Sections";
-        final categoryMatch =
-            category.toLowerCase() == selectedCategory.toLowerCase();
+        final category = (item["category"] ?? "Sections").toString();
+        final normalizedCategory = category.toLowerCase();
+        final bool categoryMatch = selectedCategory == "Sections"
+            ? _textCategories.contains(normalizedCategory)
+            : normalizedCategory == selectedCategory.toLowerCase();
 
         // If in a folder, only show items in that folder
         if (currentFolderId != null) {
@@ -623,8 +878,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                       style: TextStyle(color: Colors.white70),
                                     ),
                                   )
-                                : (selectedCategory == "Images" ||
-                                        selectedCategory == "Sections")
+                                : (selectedCategory == "Images")
                                     ? GridView.builder(
                                         gridDelegate:
                                             const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1017,111 +1271,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                       )
                                     : ListView.builder(
                                         itemCount: pagedItems.length,
-                                        itemBuilder: (ctx, i) {
-                                          final item = pagedItems[i];
-                                          final isFolder =
-                                              item["is_folder"] ?? false;
-
-                                          return GestureDetector(
-                                            onTap: isFolder
-                                                ? () => setState(() =>
-                                                    currentFolderId =
-                                                        item["id"])
-                                                : null,
-                                            child: Container(
-                                              margin: const EdgeInsets.only(
-                                                  bottom: 12),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 16,
-                                                      vertical: 16),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                border: Border.all(
-                                                    color: Colors.grey[300]!),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  Icon(
-                                                    isFolder
-                                                        ? Icons.folder
-                                                        : Icons
-                                                            .description_outlined,
-                                                    color: isFolder
-                                                        ? const Color(
-                                                            0xFF4A90E2)
-                                                        : const Color(
-                                                            0xFFFFA500),
-                                                    size: 28,
-                                                  ),
-                                                  const SizedBox(width: 16),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        Text(
-                                                          item["label"] ??
-                                                              item["key"],
-                                                          style:
-                                                              const TextStyle(
-                                                            fontSize: 14,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color: Colors.white,
-                                                          ),
-                                                        ),
-                                                        const SizedBox(
-                                                            height: 4),
-                                                        Text(
-                                                          isFolder
-                                                              ? "Folder"
-                                                              : (item["content"] ??
-                                                                      "")
-                                                                  .toString(),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          style:
-                                                              const TextStyle(
-                                                            fontSize: 12,
-                                                            color:
-                                                                Colors.white70,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  PopupMenuButton(
-                                                    itemBuilder: (context) => [
-                                                      PopupMenuItem(
-                                                        child:
-                                                            const Text("Edit"),
-                                                        onTap: () =>
-                                                            _showEditDialog(
-                                                                context,
-                                                                app,
-                                                                item),
-                                                      ),
-                                                      PopupMenuItem(
-                                                        child: const Text(
-                                                            "Delete"),
-                                                        onTap: () =>
-                                                            _deleteItem(
-                                                                context,
-                                                                app,
-                                                                item["id"]),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
+                                        itemBuilder: (ctx, i) => _buildTextBlockCard(
+                                              context: context,
+                                              app: app,
+                                              item: pagedItems[i],
                                             ),
-                                          );
-                                        },
                                       ),
                           ),
                         ],
