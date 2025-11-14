@@ -175,6 +175,21 @@ class ClientService {
     }
   }
 
+  /// Permanently delete an invitation
+  static Future<bool> deleteInvitation(String token, int invitationId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/clients/invitations/$invitationId/hard-delete'),
+        headers: _getHeaders(token),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error deleting invitation: $e');
+      return false;
+    }
+  }
+
   // ============================================================
   // CLIENT NOTES
   // ============================================================

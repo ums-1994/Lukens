@@ -899,7 +899,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/collaboration');
+        Navigator.pushReplacementNamed(context, '/client_management');
         break;
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');

@@ -948,7 +948,7 @@ class _ProposalsPageState extends State<ProposalsPage>
         Navigator.pushReplacementNamed(context, '/content_library');
         break;
       case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/collaboration');
+        Navigator.pushReplacementNamed(context, '/client_management');
         break;
       case 'Approvals Status':
         Navigator.pushReplacementNamed(context, '/approvals');

@@ -454,6 +454,29 @@ def cancel_invitation(username=None, invitation_id=None):
         return jsonify({"error": str(exc)}), 500
 
 
+@bp.delete("/clients/invitations/<int:invitation_id>/hard-delete")
+@token_required
+def delete_invitation(username=None, invitation_id=None):
+    """Hard delete an invitation regardless of status"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM client_onboarding_invitations WHERE id = %s",
+                (invitation_id,),
+            )
+            conn.commit()
+
+            if cursor.rowcount == 0:
+                return jsonify({"error": "Invitation not found"}), 404
+
+            return jsonify({"success": True, "message": "Invitation deleted"}), 200
+
+    except Exception as exc:
+        print(f"[ERROR] Error deleting invitation: {exc}")
+        return jsonify({"error": str(exc)}), 500
+
+
 @bp.get("/clients")
 @token_required
 def get_clients(username=None):
@@ -476,7 +499,11 @@ def get_clients(username=None):
                 WHERE table_name='clients'
                 ORDER BY ordinal_position
             """)
-            available_columns = {row[0] for row in cursor.fetchall()}
+            available_columns = {
+                row[0] if isinstance(row, tuple) else row.get('column_name')
+                for row in cursor.fetchall()
+            }
+            available_columns = {col for col in available_columns if col}
             
             # Build SELECT query based on available columns
             select_fields = []

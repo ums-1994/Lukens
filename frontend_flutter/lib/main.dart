@@ -24,6 +24,7 @@ import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
+import 'pages/creator/collaboration_page.dart';
 import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/shared/collaboration_router.dart';
 import 'pages/client/client_onboarding_page.dart';
@@ -285,7 +286,8 @@ class MyApp extends StatelessWidget {
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
-          '/collaboration': (context) => const ClientManagementPage(),
+          '/client_management': (context) => const ClientManagementPage(),
+          '/collaboration': (context) => const CollaborationPage(),
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) => const AnalyticsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),

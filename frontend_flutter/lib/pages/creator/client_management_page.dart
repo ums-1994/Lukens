@@ -28,11 +28,13 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   String _currentPage = 'Client Management';
   bool _isSidebarCollapsed = false;
   final ScrollController _scrollController = ScrollController();
+  bool _routeSynced = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRoute());
   }
 
   @override
@@ -45,6 +47,17 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     setState(() {
       _isSidebarCollapsed = !_isSidebarCollapsed;
     });
+  }
+
+  void _syncRoute() {
+    if (_routeSynced || !mounted) return;
+    final routeName = ModalRoute.of(context)?.settings.name;
+    if (routeName != '/client_management') {
+      _routeSynced = true;
+      Navigator.of(context).pushReplacementNamed('/client_management');
+    } else {
+      _routeSynced = true;
+    }
   }
 
   String _getUserName(Map<String, dynamic>? user) {
@@ -1323,6 +1336,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 const PopupMenuItem(value: 'resend', child: Text('Resend')),
                 if (!emailVerified) const PopupMenuItem(value: 'send_code', child: Text('Send Verification Code')),
                 const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
+                const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
           ),
@@ -1376,6 +1390,21 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         );
         if (success) _loadData();
         break;
+      case 'delete':
+        final confirmed = await _confirmAction(
+          title: 'Delete Invitation',
+          message:
+              'This will permanently remove the invitation for ${invite['invited_email'] ?? 'this email'}. Continue?',
+          confirmLabel: 'Delete',
+        );
+        if (!confirmed) return;
+        final success = await ClientService.deleteInvitation(token, inviteId);
+        _showSnackBar(
+          success ? 'Invitation deleted' : 'Failed to delete invitation',
+          isSuccess: success,
+        );
+        if (success) _loadData();
+        break;
     }
   }
 
@@ -1387,6 +1416,58 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   void _showClientMenu(Map<String, dynamic> client) {
     // TODO: Show menu with options (edit, view notes, link proposal, etc.)
     _showSnackBar('Client menu coming soon!');
+  }
+
+  Future<bool> _confirmAction({
+    required String title,
+    required String message,
+    String confirmLabel = 'Confirm',
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0E1726),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: PremiumTheme.error.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_forever, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PremiumTheme.error,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 }
 
