@@ -41,7 +41,7 @@ class _DashboardPageState extends State<DashboardPage>
       // Ensure AppState has the token before refreshing
       final app = context.read<AppState>();
       if (app.authToken == null && AuthService.token != null) {
-        print('≡ƒöä Syncing token to AppState...');
+        print('Syncing token to AppState...');
         app.authToken = AuthService.token;
         app.currentUser = AuthService.currentUser;
       }
@@ -63,11 +63,11 @@ class _DashboardPageState extends State<DashboardPage>
         app.currentUser = AuthService.currentUser;
         final t = AuthService.token ?? '';
         final preview = t.length > 20 ? t.substring(0, 20) : t;
-        print('Γ£à Synced token from AuthService: $preview...');
+        print('Synced token from AuthService: $preview...');
       }
 
       if (app.authToken == null) {
-        print('Γ¥î No auth token available - cannot fetch data');
+        print('No auth token available - cannot fetch data');
         return;
       }
 
@@ -77,9 +77,9 @@ class _DashboardPageState extends State<DashboardPage>
         app.fetchNotifications(),
       ]);
       print(
-          'Γ£à Dashboard data refreshed - ${app.proposals.length} proposals loaded');
+          'Dashboard data refreshed - ${app.proposals.length} proposals loaded');
     } catch (e) {
-      print('Γ¥î Error refreshing dashboard: $e');
+      print('Error refreshing dashboard: $e');
     } finally {
       if (mounted) {
         setState(() => _isRefreshing = false);
@@ -1466,12 +1466,12 @@ class _DashboardPageState extends State<DashboardPage>
 
   Widget _buildSystemComponents() {
     final components = [
-      {'icon': '≡ƒôï', 'label': 'Template Library'},
-      {'icon': '≡ƒôü', 'label': 'Content Blocks'},
-      {'icon': '≡ƒÆ¼', 'label': 'Collaboration Tools'},
-      {'icon': '≡ƒûè∩╕Å', 'label': 'E-Signature'},
-      {'icon': '≡ƒôê', 'label': 'Analytics'},
-      {'icon': '≡ƒæÑ', 'label': 'User Management'},
+      {'icon': Icons.library_books, 'label': 'Template Library'},
+      {'icon': Icons.view_module, 'label': 'Content Blocks'},
+      {'icon': Icons.groups, 'label': 'Collaboration Tools'},
+      {'icon': Icons.assignment_turned_in, 'label': 'E-Signature'},
+      {'icon': Icons.analytics, 'label': 'Analytics'},
+      {'icon': Icons.manage_accounts, 'label': 'User Management'},
     ];
 
     return GridView.builder(
@@ -1485,10 +1485,13 @@ class _DashboardPageState extends State<DashboardPage>
       ),
       itemCount: components.length,
       itemBuilder: (context, index) {
-        final component = components[index];
+        final component =
+            components[index] as Map<String, dynamic>;
+        final label = component['label'] as String;
+        final iconData = component['icon'] as IconData;
         return InkWell(
           onTap: () {
-            _navigateToSystemComponent(context, component['label']!);
+            _navigateToSystemComponent(context, label);
           },
           child: Container(
             decoration: BoxDecoration(
@@ -1500,14 +1503,14 @@ class _DashboardPageState extends State<DashboardPage>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  component['icon']!,
-                  style:
-                      const TextStyle(fontSize: 24, color: Color(0xFF3498DB)),
+                Icon(
+                  iconData,
+                  size: 28,
+                  color: const Color(0xFF3498DB),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  component['label']!,
+                  label,
                   style: const TextStyle(fontSize: 12),
                   textAlign: TextAlign.center,
                 ),
@@ -1610,14 +1613,14 @@ class _DashboardPageState extends State<DashboardPage>
 
         // CEO Dashboard Grid
         _buildSection(
-          '≡ƒôè Organization Overview',
+          'Organization Overview',
           _buildDashboardGrid(counts, context),
         ),
         const SizedBox(height: 20),
 
         // Pending Approvals Section (CEO-specific)
         _buildSection(
-          'ΓÅ│ Awaiting Your Approval',
+          'Awaiting Your Approval',
           Container(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1651,7 +1654,7 @@ class _DashboardPageState extends State<DashboardPage>
 
         // Recent Proposals
         _buildSection(
-          '≡ƒô¥ All Proposals (Organization-wide)',
+          'All Proposals (Organization-wide)',
           _buildRecentProposals(app.proposals),
         ),
       ],
@@ -1664,7 +1667,7 @@ class _DashboardPageState extends State<DashboardPage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '≡ƒÆ╝ Financial Manager Dashboard',
+          'Financial Manager Dashboard',
           style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -1679,14 +1682,14 @@ class _DashboardPageState extends State<DashboardPage>
 
         // Dashboard Grid
         _buildSection(
-          '≡ƒôè My Proposal Dashboard',
+          'My Proposal Dashboard',
           _buildDashboardGrid(counts, context),
         ),
         const SizedBox(height: 20),
 
         // End-to-End Proposal Flow
         _buildSection(
-          '≡ƒöº Proposal Workflow',
+          'Proposal Workflow',
           _buildWorkflow(context),
         ),
         const SizedBox(height: 20),
@@ -1697,14 +1700,14 @@ class _DashboardPageState extends State<DashboardPage>
 
         // Recent Proposals
         _buildSection(
-          '≡ƒô¥ My Recent Proposals',
+          'My Recent Proposals',
           _buildRecentProposals(app.proposals),
         ),
         const SizedBox(height: 20),
 
         // System Components
         _buildSection(
-          '≡ƒº⌐ Available Tools',
+          'Available Tools',
           _buildSystemComponents(),
         ),
       ],
@@ -1716,7 +1719,7 @@ class _DashboardPageState extends State<DashboardPage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          '≡ƒñ¥ Client Portal',
+          'Client Portal',
           style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -1731,7 +1734,7 @@ class _DashboardPageState extends State<DashboardPage>
 
         // Simplified Dashboard for Clients
         _buildSection(
-          '≡ƒôè My Proposals Status',
+          'My Proposals Status',
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -1754,7 +1757,7 @@ class _DashboardPageState extends State<DashboardPage>
 
         // Active Proposals
         _buildSection(
-          '≡ƒô¥ Proposals Sent to Me',
+          'Proposals Sent to Me',
           app.proposals.isEmpty
               ? Container(
                   padding: const EdgeInsets.all(32),
@@ -1777,7 +1780,7 @@ class _DashboardPageState extends State<DashboardPage>
 
         // Quick Actions
         _buildSection(
-          'ΓÜí Quick Actions',
+          'Quick Actions',
           Wrap(
             spacing: 12,
             runSpacing: 12,
