@@ -81,11 +81,11 @@ Future<void> main() async {
     );
   }
   
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -95,16 +95,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => RoleService()),
       ],
       child: ErrorBoundary(
-        onError: (error, stackTrace) {
-          ErrorService.handleError(
-            'Uncaught application error',
-            error: error,
-            stackTrace: stackTrace,
-            context: 'ErrorBoundary',
-            severity: ErrorSeverity.critical,
-          );
-        },
-        child: MaterialApp(
+        MaterialApp(
           navigatorKey: navigatorKey,
           title: 'Lukens',
           theme: ThemeData(
@@ -114,20 +105,20 @@ class MyApp extends StatelessWidget {
             scaffoldBackgroundColor: Colors.transparent,
           ),
           home: const AuthWrapper(),
-        builder: (context, child) {
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/nathi.png',
-                  fit: BoxFit.cover,
+          builder: (context, child) {
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: Image.asset(
+                    'assets/images/nathi.png',
+                    fit: BoxFit.cover,
+                  ),
                 ),
-              ),
-              if (child != null) child,
-            ],
-          );
-        },
-        onGenerateRoute: (settings) {
+                if (child != null) child,
+              ],
+            );
+          },
+          onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
 
           // Handle collaboration routes with token
@@ -309,9 +300,9 @@ class MyApp extends StatelessWidget {
             );
           },
         },
-        ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -689,7 +680,7 @@ class _HomeShellState extends State<HomeShell> {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
+              color: Colors.black.withOpacity(0.1),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
