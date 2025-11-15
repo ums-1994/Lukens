@@ -34005,7 +34005,7 @@ s=p}while(true)switch(s){case 0:p=4
 l=t.N
 k=A.Q(["Content-Type","application/json"],l,l)
 s=7
-return A.n(A.GO("http://localhost:8000/register",B.B.f3(A.Q(["username",a,"email",a,"password",d,"full_name",b+" "+c,"role",e],l,l)),"SmtpAuthService.registerUser",k),$async$awF)
+return A.n(A.GO("https://lukens-backend.onrender.com/register",B.B.f3(A.Q(["username",a,"email",a,"password",d,"full_name",b+" "+c,"role",e],l,l)),"SmtpAuthService.registerUser",k),$async$awF)
 case 7:n=g
 k=A.yY(n,"SmtpAuthService.registerUser")
 q=k
@@ -34033,7 +34033,7 @@ s=p}while(true)switch(s){case 0:p=4
 l=t.N
 k=A.Q(["Content-Type","application/json"],l,l)
 s=7
-return A.n(A.GO("http://localhost:8000/login-email",B.B.f3(A.Q(["email",a,"password",b],l,l)),"SmtpAuthService.loginUser",k),$async$awE)
+return A.n(A.GO("https://lukens-backend.onrender.com/login-email",B.B.f3(A.Q(["email",a,"password",b],l,l)),"SmtpAuthService.loginUser",k),$async$awE)
 case 7:n=d
 k=A.yY(n,"SmtpAuthService.loginUser")
 q=k
@@ -34061,7 +34061,7 @@ s=p}while(true)switch(s){case 0:p=4
 k=t.N
 j=A.Q(["Content-Type","application/json"],k,k)
 s=7
-return A.n(A.GO("http://localhost:8000/verify-email",B.B.f3(A.Q(["token",a],k,k)),"SmtpAuthService.verifyEmail",j),$async$awG)
+return A.n(A.GO("https://lukens-backend.onrender.com/verify-email",B.B.f3(A.Q(["token",a],k,k)),"SmtpAuthService.verifyEmail",j),$async$awG)
 case 7:n=c
 m=A.yY(n,"SmtpAuthService.verifyEmail")
 A.agd("Email verified successfully!","SmtpAuthService.verifyEmail")
@@ -34089,7 +34089,7 @@ var $async$awD=A.r(function(b,c){if(b===1){o.push(c)
 s=p}while(true)switch(s){case 0:p=4
 k=t.N
 s=7
-return A.n(A.ja(A.bu("http://localhost:8000/me"),A.Q(["Content-Type","application/json","Authorization","Bearer "+a],k,k)),$async$awD)
+return A.n(A.ja(A.bu("https://lukens-backend.onrender.com/me"),A.Q(["Content-Type","application/json","Authorization","Bearer "+a],k,k)),$async$awD)
 case 7:n=c
 A.a1("Get profile response status: "+n.b)
 k=n
