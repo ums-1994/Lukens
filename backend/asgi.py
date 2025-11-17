@@ -12,6 +12,23 @@ if script_dir not in sys.path:
 # Change to backend directory for proper imports
 os.chdir(script_dir)
 
+# Load environment variables early
+from dotenv import load_dotenv
+load_dotenv()
+
+# Initialize Firestore if enabled (before importing app)
+USE_FIRESTORE = os.getenv('USE_FIRESTORE', 'false').lower() == 'true'
+if USE_FIRESTORE:
+    try:
+        from api.utils.firestore_db import get_firestore_client
+        # Initialize Firestore client on startup
+        get_firestore_client()
+        print("[OK] Firestore initialized on startup")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize Firestore on startup: {e}")
+        import traceback
+        traceback.print_exc()
+
 # Import Flask app
 from app import app as flask_app
 from asgiref.wsgi import WsgiToAsgi

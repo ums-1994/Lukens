@@ -18,8 +18,22 @@ from email.mime.multipart import MIMEMultipart
 import traceback
 from io import BytesIO
 
-import psycopg2
-import psycopg2.extras
+# Load environment variables first
+from dotenv import load_dotenv
+load_dotenv()
+
+# Conditional PostgreSQL imports (only if not using Firestore)
+USE_FIRESTORE = os.getenv('USE_FIRESTORE', 'false').lower() == 'true'
+if not USE_FIRESTORE:
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except ImportError:
+        psycopg2 = None
+        print("[WARN] psycopg2 not installed. PostgreSQL features will be unavailable.")
+else:
+    psycopg2 = None
+
 import cloudinary
 import cloudinary.uploader
 
@@ -34,7 +48,7 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-    print("⚠️ ReportLab not installed. PDF generation will be limited. Run: pip install reportlab")
+    print("[WARN] ReportLab not installed. PDF generation will be limited. Run: pip install reportlab")
 
 # DocuSign SDK
 try:
@@ -44,7 +58,7 @@ try:
     DOCUSIGN_AVAILABLE = True
 except ImportError:
     DOCUSIGN_AVAILABLE = False
-    print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
+    print("[WARN] DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
 from flask import Flask, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import CORS
@@ -54,16 +68,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from asgiref.wsgi import WsgiToAsgi
 import openai
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
+
+# Log database configuration on startup
+if USE_FIRESTORE:
+    print("[INFO] Database: Firestore (USE_FIRESTORE=true)")
+else:
+    print("[INFO] Database: PostgreSQL (USE_FIRESTORE=false)")
 
 # Mark if database has been initialized
 _db_initialized = False
@@ -95,14 +111,16 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 # Initialize OpenAI with API key
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
-# Database initialization - PostgreSQL only
-BACKEND_TYPE = 'postgresql'
+# Database initialization
+BACKEND_TYPE = 'firestore' if USE_FIRESTORE else 'postgresql'
 
 # PostgreSQL connection pool
 _pg_pool = None
 
 def get_pg_pool():
     global _pg_pool
+    if USE_FIRESTORE or psycopg2 is None:
+        raise Exception("PostgreSQL is not available. Using Firestore instead.")
     if _pg_pool is None:
         import psycopg2.pool
         try:
@@ -113,15 +131,15 @@ def get_pg_pool():
                 'password': os.getenv('DB_PASSWORD', ''),
                 'port': int(os.getenv('DB_PORT', '5432'))
             }
-            print(f"🔄 Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+            print(f"[INFO] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
                 minconn=1,
                 maxconn=20,  # Increased max connections
                 **db_config
             )
-            print("✅ PostgreSQL connection pool created successfully")
+            print("[OK] PostgreSQL connection pool created successfully")
         except Exception as e:
-            print(f"❌ Error creating PostgreSQL connection pool: {e}")
+            print(f"[ERROR] Error creating PostgreSQL connection pool: {e}")
             raise
     return _pg_pool
 
@@ -129,7 +147,7 @@ def _pg_conn():
     try:
         return get_pg_pool().getconn()
     except Exception as e:
-        print(f"❌ Error getting PostgreSQL connection: {e}")
+        print(f"[ERROR] Error getting PostgreSQL connection: {e}")
         raise
 
 def release_pg_conn(conn):
@@ -137,7 +155,7 @@ def release_pg_conn(conn):
         if conn:
             get_pg_pool().putconn(conn)
     except Exception as e:
-        print(f"⚠️ Error releasing PostgreSQL connection: {e}")
+        print(f"[WARN] Error releasing PostgreSQL connection: {e}")
 
 # Context manager for automatic connection cleanup
 from contextlib import contextmanager
@@ -409,9 +427,9 @@ def init_pg_schema():
         
         conn.commit()
         release_pg_conn(conn)
-        print("✅ PostgreSQL schema initialized successfully")
+        print("[OK] PostgreSQL schema initialized successfully")
     except Exception as e:
-        print(f"❌ Error initializing PostgreSQL schema: {e}")
+        print(f"[ERROR] Error initializing PostgreSQL schema: {e}")
         if conn:
             try:
                 release_pg_conn(conn)
@@ -422,18 +440,21 @@ def init_pg_schema():
 # Initialize database schema on first request
 @app.before_request
 def init_db():
-    """Initialize PostgreSQL schema on first request"""
+    """Initialize PostgreSQL schema on first request (only if not using Firestore)"""
     global _db_initialized
+    if USE_FIRESTORE:
+        # Skip PostgreSQL initialization when using Firestore
+        return
     if _db_initialized:
         return
     
     try:
-        print("🔄 Initializing PostgreSQL schema...")
+        print("[INFO] Initializing PostgreSQL schema...")
         init_pg_schema()
         _db_initialized = True
-        print("✅ Database schema initialized successfully")
+        print("[OK] Database schema initialized successfully")
     except Exception as e:
-        print(f"❌ Database initialization error: {e}")
+        print(f"[ERROR] Database initialization error: {e}")
         raise
 
 # Auth token storage (in production, use Redis or session manager)
@@ -499,7 +520,7 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
             """, (proposal_id, user_id, action_type, description, json.dumps(metadata) if metadata else None))
             conn.commit()
     except Exception as e:
-        print(f"⚠️ Failed to log activity: {e}")
+        print(f"[WARN] Failed to log activity: {e}")
         # Don't raise - activity logging should not break main functionality
 
 # ============================================================================
@@ -610,7 +631,7 @@ def create_notification(
             conn.commit()
 
         if notification_row:
-            print(f"✅ Notification created for user {user_id}: {title}")
+            print(f"[OK] Notification created for user {user_id}: {title}")
 
         if send_email_flag and recipient_info and recipient_info.get('email'):
             recipient_email = recipient_info['email']
@@ -630,12 +651,12 @@ def create_notification(
 
             try:
                 send_email(recipient_email, subject, html_content)
-                print(f"📧 Notification email sent to {recipient_email}")
+                print(f"[OK] Notification email sent to {recipient_email}")
             except Exception as email_err:
-                print(f"⚠️ Failed to send notification email to {recipient_email}: {email_err}")
+                print(f"[WARN] Failed to send notification email to {recipient_email}: {email_err}")
 
     except Exception as e:
-        print(f"⚠️ Failed to create notification: {e}")
+        print(f"[WARN] Failed to create notification: {e}")
         # Don't raise - notification should not break main functionality
 
 def notify_proposal_collaborators(
@@ -757,7 +778,7 @@ def notify_proposal_collaborators(
                     )
                     
     except Exception as e:
-        print(f"⚠️ Failed to notify collaborators: {e}")
+        print(f"[WARN] Failed to notify collaborators: {e}")
 
 # ============================================================================
 # MENTION HELPER
@@ -813,7 +834,7 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
                 
                 mentioned_user = cursor.fetchone()
                 if not mentioned_user:
-                    print(f"⚠️ Mentioned user not found: @{mention}")
+                    print(f"[WARN] Mentioned user not found: @{mention}")
                     continue
                 
                 # Don't mention yourself
@@ -851,12 +872,12 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
                     """
                 )
                 
-                print(f"✅ Notified @{mentioned_user['email']} about mention")
+                print(f"[OK] Notified @{mentioned_user['email']} about mention")
             
             conn.commit()
             
     except Exception as e:
-        print(f"⚠️ Failed to process mentions: {e}")
+        print(f"[WARN] Failed to process mentions: {e}")
         traceback.print_exc()
 
 # ============================================================================
@@ -900,7 +921,7 @@ def get_docusign_jwt_token():
         return response.access_token
         
     except Exception as e:
-        print(f"❌ Error getting DocuSign JWT token: {e}")
+        print(f"[ERROR] Error getting DocuSign JWT token: {e}")
         raise
 
 def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
@@ -1192,7 +1213,7 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         results = envelopes_api.create_envelope(account_id, envelope_definition=envelope_definition)
         envelope_id = results.envelope_id
         
-        print(f"✅ DocuSign envelope created: {envelope_id}")
+        print(f"[OK] DocuSign envelope created: {envelope_id}")
         
         # Create recipient view (embedded signing URL)
         recipient_view_request = RecipientViewRequest(
@@ -1212,7 +1233,7 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         
         signing_url = view_results.url
         
-        print(f"✅ Embedded signing URL created")
+        print(f"[OK] Embedded signing URL created")
         
         return {
             'envelope_id': envelope_id,
@@ -1220,10 +1241,10 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         }
         
     except ApiException as e:
-        print(f"❌ DocuSign API error: {e}")
+        print(f"[ERROR] DocuSign API error: {e}")
         raise
     except Exception as e:
-        print(f"❌ Error creating DocuSign envelope: {e}")
+        print(f"[ERROR] Error creating DocuSign envelope: {e}")
         traceback.print_exc()
         raise
 
@@ -1246,8 +1267,8 @@ def generate_token(username):
         'expires_at': datetime.now() + timedelta(days=7)
     }
     save_tokens()  # Persist to file
-    print(f"🎫 Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
-    print(f"📋 Total valid tokens: {len(valid_tokens)}")
+    print(f"[OK] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
+    print(f"[INFO] Total valid tokens: {len(valid_tokens)}")
     return token
 
 def verify_token(token):
@@ -1270,7 +1291,7 @@ def send_email(to_email, subject, html_content):
         smtp_pass = os.getenv('SMTP_PASS')
         
         if not all([smtp_host, smtp_user, smtp_pass]):
-            print(f"❌ SMTP configuration incomplete")
+            print(f"[ERROR] SMTP configuration incomplete")
             return False
         
         # Create message
@@ -1289,10 +1310,10 @@ def send_email(to_email, subject, html_content):
             server.login(smtp_user, smtp_pass)
             server.send_message(msg)
         
-        print(f"✅ Email sent to {to_email}")
+        print(f"[OK] Email sent to {to_email}")
         return True
     except Exception as e:
-        print(f"❌ Error sending email: {e}")
+        print(f"[ERROR] Error sending email: {e}")
         traceback.print_exc()
         return False
 
@@ -1330,23 +1351,23 @@ def token_required(f):
             if auth_header:
                 try:
                     token = auth_header.split(" ")[1]
-                    print(f"🔑 Token received: {token[:20]}...{token[-10:]}")
+                    print(f"[INFO] Token received: {token[:20]}...{token[-10:]}")
                 except (IndexError, AttributeError):
-                    print(f"❌ Invalid token format in header: {auth_header}")
+                    print(f"[ERROR] Invalid token format in header: {auth_header}")
                     return {'detail': 'Invalid token format'}, 401
         
         if not token:
-            print(f"❌ No token found in Authorization header")
+            print(f"[ERROR] No token found in Authorization header")
             return {'detail': 'Token is missing'}, 401
         
-        print(f"🔍 Validating token... (valid_tokens has {len(valid_tokens)} tokens)")
+        print(f"[INFO] Validating token... (valid_tokens has {len(valid_tokens)} tokens)")
         username = verify_token(token)
         if not username:
-            print(f"❌ Token validation failed - token not found or expired")
-            print(f"📋 Current valid tokens: {list(valid_tokens.keys())[:3]}...")
+            print(f"[ERROR] Token validation failed - token not found or expired")
+            print(f"[INFO] Current valid tokens: {list(valid_tokens.keys())[:3]}...")
             return {'detail': 'Invalid or expired token'}, 401
         
-        print(f"✅ Token validated for user: {username}")
+        print(f"[OK] Token validated for user: {username}")
         return f(username=username, *args, **kwargs)
     return decorated
 
