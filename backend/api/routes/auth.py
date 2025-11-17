@@ -547,7 +547,7 @@ def verify_email():
             return {'detail': 'Verification token required'}, 400
         
         conn = _pg_conn()
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
             # Find token
             cursor.execute(
@@ -559,10 +559,79 @@ def verify_email():
             token_data = cursor.fetchone()
             
             if not token_data:
-                print(f"[VERIFY] ERROR: Token not found in database: {token[:20]}...")
+                print(f"[VERIFY] Token not found in user tokens table, checking client invites...")
+                cursor.execute(
+                    '''SELECT id, invited_email, expires_at, status, email_verified_at
+                       FROM client_onboarding_invitations
+                       WHERE access_token = %s''',
+                    (token,)
+                )
+                invite = cursor.fetchone()
+                if invite:
+                    invite_id = invite['id']
+                    invited_email = invite['invited_email']
+                    expires_at = invite['expires_at']
+                    status = invite['status']
+                    email_verified_at = invite['email_verified_at']
+                    print(f"[VERIFY] Invitation token matched - id: {invite_id}, email: {invited_email}, status: {status}")
+
+                    if status != 'pending':
+                        return {'detail': 'This invitation has already been completed or cancelled.'}, 400
+
+                    now = datetime.now(timezone.utc)
+                    if isinstance(expires_at, str):
+                        expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                    elif expires_at and expires_at.tzinfo is None:
+                        expires_at = expires_at.replace(tzinfo=timezone.utc)
+                    elif expires_at:
+                        expires_at = expires_at.astimezone(timezone.utc)
+
+                    if expires_at and now > expires_at:
+                        return {'detail': 'This invitation link has expired.'}, 400
+
+                    if not email_verified_at:
+                        cursor.execute(
+                            '''UPDATE client_onboarding_invitations
+                               SET email_verified_at = CURRENT_TIMESTAMP
+                               WHERE id = %s''',
+                            (invite_id,)
+                        )
+                        conn.commit()
+                        print(f"[VERIFY] ✅ Invitation email verified for invite_id: {invite_id}")
+
+                    detail = {
+                        'detail': 'Client invitation email verified',
+                        'email': invited_email,
+                        'invitation_id': invite_id
+                    }
+
+                    if request.method == 'GET':
+                        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+                        html = f"""
+                        <!DOCTYPE html>
+                        <html>
+                        <head><meta charset="UTF-8"><title>Email Verified</title></head>
+                        <body style="font-family: Arial, sans-serif; background:#000; color:#fff; display:flex; align-items:center; justify-content:center; min-height:100vh;">
+                          <div style="background:#1A1A1A; border:1px solid rgba(233,41,58,0.3); border-radius:16px; padding:32px; max-width:520px; text-align:center;">
+                            <h1>Email Verified</h1>
+                            <p>The onboarding invitation for <strong>{invited_email}</strong> is verified. You may continue the onboarding process.</p>
+                            <a href="{frontend_url}/#/onboard?token={token}" style="display:inline-block; margin-top:24px; background:#E9293A; color:#fff; padding:12px 24px; text-decoration:none; border-radius:8px;">Continue Onboarding</a>
+                          </div>
+                        </body>
+                        </html>
+                        """
+                        from flask import Response
+                        return Response(html, mimetype='text/html'), 200
+
+                    return detail, 200
+
+                print(f"[VERIFY] ERROR: Token not found in any table: {token[:20]}...")
                 return {'detail': 'Invalid verification token'}, 400
             
-            user_id, email, expires_at, used_at = token_data
+            user_id = token_data['user_id']
+            email = token_data['email']
+            expires_at = token_data['expires_at']
+            used_at = token_data['used_at']
             print(f"[VERIFY] Token found - user_id: {user_id}, email: {email}, expires_at: {expires_at}, used_at: {used_at}")
             
             # Check if already used

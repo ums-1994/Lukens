@@ -226,6 +226,25 @@ def create_proposal(username=None):
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email') or ''
             
+            # Normalize status to proper capitalization
+            raw_status = data.get('status', 'Draft')
+            normalized_status = 'Draft'  # Default
+            if raw_status:
+                status_lower = str(raw_status).lower().strip()
+                if status_lower == 'draft':
+                    normalized_status = 'Draft'
+                elif 'pending' in status_lower and 'ceo' in status_lower:
+                    normalized_status = 'Pending CEO Approval'
+                elif 'sent' in status_lower and 'client' in status_lower:
+                    normalized_status = 'Sent to Client'
+                elif status_lower in ['signed', 'approved']:
+                    normalized_status = 'Signed'
+                elif 'review' in status_lower:
+                    normalized_status = 'In Review'
+                else:
+                    # Capitalize first letter of each word
+                    normalized_status = ' '.join(word.capitalize() for word in status_lower.split())
+            
             cursor.execute(
                 '''INSERT INTO proposals (user_id, title, content, status, client_name, client_email, budget, timeline_days)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
@@ -234,7 +253,7 @@ def create_proposal(username=None):
                     username,
                     data.get('title', 'Untitled Document'),
                     data.get('content'),
-                    data.get('status', 'draft'),
+                    normalized_status,
                     client_name,
                     client_email,
                     data.get('budget'),
@@ -443,15 +462,17 @@ def submit_for_review(username=None, proposal_id=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Verify ownership
-            cursor.execute('SELECT user_id FROM proposals WHERE id = %s', (proposal_id,))
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+
+            cursor.execute('SELECT id FROM proposals WHERE id = %s AND user_id = %s', (proposal_id, user_id))
             proposal = cursor.fetchone()
             if not proposal:
-                return {'detail': 'Proposal not found'}, 404
-            
-            if proposal[0] != username:
-                return {'detail': 'Access denied'}, 403
+                return {'detail': 'Proposal not found or access denied'}, 404
             
             cursor.execute(
                 '''UPDATE proposals SET status = 'Submitted', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
@@ -463,28 +484,31 @@ def submit_for_review(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 @bp.post("/proposals/<int:proposal_id>/send-for-approval")
+@bp.post("/api/proposals/<int:proposal_id>/send-for-approval")
 @token_required
 def send_for_approval(username=None, proposal_id=None):
     """Send proposal for approval"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Verify ownership
-            cursor.execute('SELECT user_id FROM proposals WHERE id = %s', (proposal_id,))
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+
+            cursor.execute('SELECT id FROM proposals WHERE id = %s AND user_id = %s', (proposal_id, user_id))
             proposal = cursor.fetchone()
             if not proposal:
-                return {'detail': 'Proposal not found'}, 404
-            
-            if proposal[0] != username:
-                return {'detail': 'Access denied'}, 403
+                return {'detail': 'Proposal not found or access denied'}, 404
             
             cursor.execute(
                 '''UPDATE proposals SET status = 'In Review', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
                 (proposal_id,)
             )
             conn.commit()
-            return {'detail': 'Proposal sent for approval'}, 200
+            return {'detail': 'Proposal sent for approval', 'status': 'In Review'}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 

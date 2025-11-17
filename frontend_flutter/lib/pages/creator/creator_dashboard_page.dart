@@ -1495,10 +1495,12 @@ class _DashboardPageState extends State<DashboardPage>
           },
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FA),
-              borderRadius: BorderRadius.circular(4),
+              color: PremiumTheme.glassWhite,
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                  color: const Color(0xFFDDD), style: BorderStyle.solid),
+                color: PremiumTheme.glassWhiteBorder,
+                width: 1,
+              ),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1511,7 +1513,10 @@ class _DashboardPageState extends State<DashboardPage>
                 const SizedBox(height: 8),
                 Text(
                   label,
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: PremiumTheme.textPrimary,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ],
