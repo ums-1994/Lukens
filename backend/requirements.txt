@@ -18,6 +18,9 @@ email-validator==2.1.0
 psycopg2-binary==2.9.9
 cloudinary==1.36.0
 
+# OpenAI SDK (legacy v0 API used by app.py)
+openai==0.28.1
+
 # Document extraction
 PyPDF2==3.0.1
 python-docx==0.8.11
