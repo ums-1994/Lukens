@@ -277,6 +277,674 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     );
   }
 
+  bool _isFullTemplate(Map<String, dynamic> item) {
+    // Check if item has template structure (sections, templateType, etc.)
+    final content = (item["content"] ?? "").toString();
+    final key = (item["key"] ?? "").toString().toLowerCase();
+    final label = (item["label"] ?? "").toString().toLowerCase();
+    
+    // Check for template markers in key/label
+    if (key.contains("_template") || key.contains("sow_") || key.contains("proposal_")) {
+      return true;
+    }
+    if (label.contains("template") || label.contains("sow") || label.contains("statement of work")) {
+      return true;
+    }
+    
+    // Check if content contains template structure markers
+    if (content.contains('"templateType"') || 
+        content.contains('"sections"') || 
+        content.contains('template_type') ||
+        content.contains('Statement of Work') ||
+        content.contains('SOW Template')) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  Widget _buildTemplateCard({
+    required BuildContext context,
+    required AppState app,
+    required Map<String, dynamic> item,
+  }) {
+    final label = item["label"] ?? item["key"] ?? "Untitled Template";
+    final content = (item["content"] ?? "").toString();
+    final updatedAt = item["updated_at"];
+    final isSOW = label.toLowerCase().contains("sow") || 
+                  label.toLowerCase().contains("statement of work");
+    final isProposal = label.toLowerCase().contains("proposal");
+    
+    // Parse template sections if available in content
+    List<String> sections = [];
+    try {
+      // Try to parse JSON structure
+      if (content.trim().startsWith('{')) {
+        final decoded = jsonDecode(content);
+        if (decoded is Map && decoded.containsKey('sections')) {
+          final sectionsList = decoded['sections'];
+          if (sectionsList is List) {
+            for (var section in sectionsList) {
+              if (section is Map && section.containsKey('title')) {
+                sections.add(section['title'].toString());
+              } else if (section is String) {
+                sections.add(section);
+              }
+            }
+          }
+        }
+      } else if (content.contains('"sections"') || content.contains('sections:')) {
+        // Try regex parsing
+        final sectionsMatch = RegExp(r'"sections":\s*\[(.*?)\]', dotAll: true).firstMatch(content);
+        if (sectionsMatch != null) {
+          final sectionsStr = sectionsMatch.group(1)!;
+          // Try to extract section titles from objects
+          final titleMatches = RegExp(r'"title":\s*"([^"]+)"').allMatches(sectionsStr);
+          if (titleMatches.isNotEmpty) {
+            sections = titleMatches.map((m) => m.group(1)!).toList();
+          } else {
+            // Fallback: extract simple string values
+            final sectionMatches = RegExp(r'"([^"]+)"').allMatches(sectionsStr);
+            sections = sectionMatches.map((m) => m.group(1)!).toList();
+          }
+        }
+      }
+    } catch (e) {
+      // Fallback: parse from content structure
+    }
+    
+    // If no sections found, use defaults based on template type
+    if (sections.isEmpty) {
+      if (isSOW) {
+        sections = [
+          'Project Overview',
+          'Scope of Work',
+          'Deliverables',
+          'Timeline & Milestones',
+          'Resources & Team',
+          'Terms & Conditions'
+        ];
+      } else if (isProposal) {
+        sections = [
+          'Executive Summary',
+          'Company Profile',
+          'Scope & Deliverables',
+          'Timeline',
+          'Investment',
+          'Terms & Conditions'
+        ];
+      }
+    }
+
+    // Get template type color
+    Color templateColor;
+    IconData templateIcon;
+    if (isSOW) {
+      templateColor = PremiumTheme.success; // Green for SOW
+      templateIcon = Icons.work_outline;
+    } else if (isProposal) {
+      templateColor = PremiumTheme.info; // Blue for Proposal
+      templateIcon = Icons.description_outlined;
+    } else {
+      templateColor = PremiumTheme.purple; // Purple default
+      templateIcon = Icons.style;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: PremiumTheme.glassCard(
+        borderRadius: 20,
+        gradientStart: templateColor,
+        gradientEnd: templateColor.withOpacity(0.6),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            // Navigate to template editor or preview
+            _showTemplatePreview(context, item);
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: templateColor.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(templateIcon, color: templateColor, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          if (updatedAt != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              "Updated ${_formatDate(updatedAt)}",
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: "Edit template",
+                      icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.white70),
+                      onPressed: () => _showEditDialog(context, app, item),
+                    ),
+                    IconButton(
+                      tooltip: "Delete template",
+                      icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                      onPressed: () => _deleteItem(context, app, item["id"]),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Template Type Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: templateColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: templateColor.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    isSOW ? "STATEMENT OF WORK" : isProposal ? "PROPOSAL" : "TEMPLATE",
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: templateColor,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                
+                if (sections.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    "Sections:",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: sections.take(6).map((section) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.12),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle_outline, size: 12, color: PremiumTheme.teal),
+                            const SizedBox(width: 4),
+                            Text(
+                              section,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  if (sections.length > 6)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        "+ ${sections.length - 6} more sections",
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white54,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                ] else ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _stripHtmlTags(content).length > 150
+                        ? "${_stripHtmlTags(content).substring(0, 150)}..."
+                        : _stripHtmlTags(content),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.white70,
+                      height: 1.4,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                
+                const SizedBox(height: 16),
+                
+                // Actions
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          // Use template to create new document
+                          _useTemplate(context, item);
+                        },
+                        icon: const Icon(Icons.add_circle_outline, size: 16),
+                        label: const Text("Use Template"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: templateColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _showTemplatePreview(context, item),
+                      icon: const Icon(Icons.visibility_outlined, size: 16),
+                      label: const Text("Preview"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTemplatePreview(BuildContext context, Map<String, dynamic> item) {
+    final content = (item["content"] ?? "").toString();
+    final cleanedContent = _removeTagComment(content);
+    
+    // Check if content is JSON (full template structure)
+    Widget contentWidget;
+    try {
+      if (content.trim().startsWith('{')) {
+        final decoded = jsonDecode(content);
+        if (decoded is Map && decoded.containsKey('sections')) {
+          // Render as structured template
+          contentWidget = _buildStructuredTemplatePreview(Map<String, dynamic>.from(decoded));
+        } else {
+          // Render as formatted text
+          contentWidget = _buildHtmlPreview(cleanedContent);
+        }
+      } else {
+        // Render HTML content properly
+        contentWidget = _buildHtmlPreview(cleanedContent);
+      }
+    } catch (e) {
+      // Fallback: render as formatted text
+      contentWidget = _buildHtmlPreview(cleanedContent);
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: PremiumTheme.darkBg2,
+        insetPadding: const EdgeInsets.all(20),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9,
+          height: MediaQuery.of(context).size.height * 0.85,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: PremiumTheme.darkBg2,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: PremiumTheme.teal.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.preview, color: PremiumTheme.teal, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      item["label"] ?? "Template Preview",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                  ),
+                ],
+              ),
+              const Divider(height: 32, color: Colors.white24),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: contentWidget,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                    child: const Text("Close"),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStructuredTemplatePreview(Map<String, dynamic> decoded) {
+    final sections = decoded['sections'] as List?;
+    if (sections == null) {
+      return const Text("No content available", style: TextStyle(color: Colors.white70));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (decoded.containsKey('description'))
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Text(
+              decoded['description'].toString(),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                height: 1.6,
+              ),
+            ),
+          ),
+        ...sections.map<Widget>((section) {
+          if (section is Map) {
+            final title = section['title']?.toString() ?? '';
+            final content = section['content']?.toString() ?? '';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildHtmlPreview(content),
+                ],
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildHtmlPreview(String htmlContent) {
+    // Parse and render HTML content as styled Flutter widgets
+    final lines = htmlContent.split('\n');
+    final widgets = <Widget>[];
+
+    for (var line in lines) {
+      if (line.trim().isEmpty) {
+        widgets.add(const SizedBox(height: 8));
+        continue;
+      }
+
+      // Parse HTML tags
+      if (line.contains('<h1>')) {
+        final text = _extractTextFromTag(line, 'h1');
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ));
+      } else if (line.contains('<h2>')) {
+        final text = _extractTextFromTag(line, 'h2');
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8, top: 16),
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ));
+      } else if (line.contains('<h3>')) {
+        final text = _extractTextFromTag(line, 'h3');
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8, top: 12),
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ));
+      } else if (line.contains('<p>')) {
+        final text = _extractTextFromTag(line, 'p');
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+              height: 1.6,
+            ),
+          ),
+        ));
+      } else if (line.contains('<ul>')) {
+        // Skip opening ul tag
+      } else if (line.contains('</ul>')) {
+        // Skip closing ul tag
+      } else if (line.contains('<li>')) {
+        final text = _extractTextFromTag(line, 'li');
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 6, left: 20),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '• ',
+                style: TextStyle(
+                  color: PremiumTheme.teal,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    height: 1.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ));
+      } else if (line.contains('<ol>')) {
+        // Skip opening ol tag
+      } else if (line.contains('</ol>')) {
+        // Skip closing ol tag
+      } else if (line.trim().startsWith('|') && line.contains('|')) {
+        // Markdown table row
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(
+            line,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 13,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ));
+      } else if (line.trim().startsWith('#')) {
+        // Markdown heading
+        final level = line.split(' ').first.length;
+        final text = line.substring(level).trim();
+        widgets.add(Padding(
+          padding: EdgeInsets.only(bottom: 8, top: level > 1 ? 12 : 16),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: level == 1 ? 24 : level == 2 ? 20 : 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ));
+      } else if (line.trim().startsWith('-') || line.trim().startsWith('*')) {
+        // Markdown list item
+        final text = line.replaceFirst(RegExp(r'^[\s\-\*]+'), '').trim();
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 6, left: 20),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '• ',
+                style: TextStyle(
+                  color: PremiumTheme.teal,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    height: 1.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ));
+      } else if (line.trim().isNotEmpty) {
+        // Plain text
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            _stripHtmlTags(line),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+              height: 1.6,
+            ),
+          ),
+        ));
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: widgets.isEmpty
+          ? [
+              const Text(
+                "No content available",
+                style: TextStyle(color: Colors.white70),
+              ),
+            ]
+          : widgets,
+    );
+  }
+
+  String _extractTextFromTag(String html, String tag) {
+    final openTag = '<$tag>';
+    final closeTag = '</$tag>';
+    final openIndex = html.indexOf(openTag);
+    if (openIndex == -1) return html;
+    final closeIndex = html.indexOf(closeTag, openIndex);
+    if (closeIndex == -1) return html.substring(openIndex + openTag.length);
+    return html
+        .substring(openIndex + openTag.length, closeIndex)
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .trim();
+  }
+
+  void _useTemplate(BuildContext context, Map<String, dynamic> item) {
+    // Navigate to proposal wizard or document editor with template
+    Navigator.pushNamed(context, '/new-proposal', arguments: {'template': item});
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -366,9 +1034,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       displayItems = app.contentBlocks.where((item) {
         final category = (item["category"] ?? "Sections").toString();
         final normalizedCategory = category.toLowerCase();
+        final selectedCategoryLower = selectedCategory.toLowerCase();
         final bool categoryMatch = selectedCategory == "Sections"
             ? _textCategories.contains(normalizedCategory)
-            : normalizedCategory == selectedCategory.toLowerCase();
+            : normalizedCategory == selectedCategoryLower || 
+              (selectedCategoryLower == "template" && normalizedCategory == "templates") ||
+              (selectedCategoryLower == "templates" && normalizedCategory == "template");
 
         // If in a folder, only show items in that folder
         if (currentFolderId != null) {
@@ -537,14 +1208,14 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                               _currentPage == 'Content Library',
                               context),
                           _buildNavItem(
-                              'Collaboration',
+                              'Client Management',
                               'assets/images/collaborations.png',
-                              _currentPage == 'Collaboration',
+                              _currentPage == 'Client Management',
                               context),
                           _buildNavItem(
-                              'Approvals Status',
+                              'Approved Proposals',
                               'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approvals Status',
+                              _currentPage == 'Approved Proposals',
                               context),
                           _buildNavItem(
                               'Analytics (My Pipeline)',
@@ -703,7 +1374,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                 ),
                                 _buildTabButton(
                                   label: "Templates",
-                                  isActive: selectedCategory == "Templates",
+                                  isActive: selectedCategory == "Templates" || selectedCategory == "Template",
                                   onTap: () {
                                     setState(() {
                                       selectedCategory = "Templates";
@@ -1269,14 +1940,66 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                           );
                                         },
                                       )
-                                    : ListView.builder(
-                                        itemCount: pagedItems.length,
-                                        itemBuilder: (ctx, i) => _buildTextBlockCard(
-                                              context: context,
-                                              app: app,
-                                              item: pagedItems[i],
-                                            ),
-                                      ),
+                                    : (selectedCategory == "Template" || selectedCategory == "Templates")
+                                        ? ListView.builder(
+                                            itemCount: pagedItems.length,
+                                            itemBuilder: (ctx, i) {
+                                              final item = pagedItems[i];
+                                              // Check if item is a full template (has JSON structure with templateType and sections)
+                                              final content = (item["content"] ?? "").toString();
+                                              final key = (item["key"] ?? "").toString().toLowerCase();
+                                              final label = (item["label"] ?? "").toString().toLowerCase();
+                                              
+                                              // Full template detection: must have JSON structure OR key/label indicating full template
+                                              bool isFullTemplate = false;
+                                              
+                                              // Check for JSON structure in content
+                                              try {
+                                                if (content.trim().startsWith('{')) {
+                                                  final decoded = jsonDecode(content);
+                                                  if (decoded is Map && decoded.containsKey('templateType') && decoded.containsKey('sections')) {
+                                                    isFullTemplate = true;
+                                                  }
+                                                }
+                                              } catch (e) {
+                                                // Not JSON, continue checking
+                                              }
+                                              
+                                              // Also check key/label patterns
+                                              if (!isFullTemplate) {
+                                                if (key.contains("_template") && (key.contains("proposal") || key.contains("sow") || key.contains("consulting"))) {
+                                                  isFullTemplate = true;
+                                                } else if (label.contains("template") && (label.contains("proposal") || label.contains("sow") || label.contains("consulting") || label.contains("delivery"))) {
+                                                  isFullTemplate = true;
+                                                } else if (content.contains('"templateType"') && content.contains('"sections"')) {
+                                                  isFullTemplate = true;
+                                                }
+                                              }
+                                              
+                                              if (isFullTemplate) {
+                                                return _buildTemplateCard(
+                                                  context: context,
+                                                  app: app,
+                                                  item: item,
+                                                );
+                                              } else {
+                                                // Show as template module/block (individual section)
+                                                return _buildTextBlockCard(
+                                                  context: context,
+                                                  app: app,
+                                                  item: item,
+                                                );
+                                              }
+                                            },
+                                          )
+                                        : ListView.builder(
+                                            itemCount: pagedItems.length,
+                                            itemBuilder: (ctx, i) => _buildTextBlockCard(
+                                                  context: context,
+                                                  app: app,
+                                                  item: pagedItems[i],
+                                                ),
+                                          ),
                           ),
                         ],
                       ),
@@ -1998,26 +2721,168 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   void _showTemplateGalleryDialog(BuildContext context, AppState app) {
     final galleryTemplates = [
       {
-        "name": "Executive Summary",
-        "description": "Professional executive summary template",
-        "content":
-            "[Client Name]\n\nExecutive Summary\n\n[Your summary content here]"
+        "name": "Consulting & Technology Delivery Proposal Template",
+        "description": "Complete proposal template with all 11 sections - Cover Page, Executive Summary, Problem Statement, Scope of Work, Timeline, Team, Delivery Approach, Pricing, Risks, Governance, and Company Profile",
+        "templateType": "proposal",
+        "sections": [
+          "Cover Page",
+          "Executive Summary",
+          "Problem Statement",
+          "Scope of Work",
+          "Project Timeline",
+          "Team & Bios",
+          "Delivery Approach",
+          "Pricing Table",
+          "Risks & Mitigation",
+          "Governance Model",
+          "Appendix – Company Profile"
+        ],
+        "content": jsonEncode({
+          "templateType": "proposal",
+          "name": "Consulting & Technology Delivery Proposal Template",
+          "description": "Complete proposal template with all sections",
+          "sections": [
+            {
+              "title": "Cover Page",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"cover\", \"page\", \"module\"] -->\n<h1>Consulting & Technology Delivery Proposal</h1>\n\n<p><strong>Client:</strong> {{Client Name}}</p>\n<p><strong>Prepared For:</strong> {{Client Stakeholder}}</p>\n<p><strong>Prepared By:</strong> Khonology Team</p>\n<p><strong>Date:</strong> {{Date}}</p>\n\n<h2>Cover Summary</h2>\n<p>Khonology proposes a customised consulting and technology delivery engagement to support {{Client Name}} in achieving operational excellence, digital transformation, and data-driven decision-making.</p>"
+            },
+            {
+              "title": "Executive Summary",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"executive\", \"summary\", \"module\"] -->\n<h1>Executive Summary</h1>\n\n<h2>Purpose of This Proposal</h2>\n<p>This proposal outlines Khonology's recommended approach, delivery methodology, timelines, governance, and expected outcomes for the {{Project Name}} initiative.</p>\n\n<h2>What We Bring</h2>\n<ul>\n<li>Strong expertise in digital transformation and enterprise delivery</li>\n<li>Deep experience in banking, insurance, ESG reporting, and financial services</li>\n<li>Proven capability across data engineering, cloud, automation, and governance</li>\n<li>A people-first consulting culture focused on delivery excellence</li>\n</ul>\n\n<h2>Expected Outcomes</h2>\n<ul>\n<li>Streamlined processes</li>\n<li>Robust governance</li>\n<li>Improved operational visibility</li>\n<li>Higher efficiency and reduced risk</li>\n<li>A scalable delivery architecture to support strategic goals</li>\n</ul>"
+            },
+            {
+              "title": "Problem Statement",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"problem\", \"statement\", \"module\"] -->\n<h1>Problem Statement</h1>\n\n<h2>Current State Challenges</h2>\n<p>{{Client Name}} is experiencing the following challenges:</p>\n<ul>\n<li>Limited visibility into operational performance</li>\n<li>Manual processes creating inefficiencies</li>\n<li>High reporting complexity</li>\n<li>Lack of integrated workflows or automated governance</li>\n<li>Upcoming deadlines causing pressure on compliance and reporting</li>\n</ul>\n\n<h2>Opportunity</h2>\n<p>With a modern delivery framework, workflows, and reporting structures, {{Client Name}} can unlock operational excellence and achieve strategic growth objectives.</p>"
+            },
+            {
+              "title": "Scope of Work",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"scope\", \"work\", \"module\"] -->\n<h1>Scope of Work</h1>\n\n<p>Khonology proposes the following Scope of Work:</p>\n\n<h2>1. Discovery & Assessment</h2>\n<ul>\n<li>Requirements gathering</li>\n<li>Stakeholder workshops</li>\n<li>Current-state assessment</li>\n</ul>\n\n<h2>2. Solution Design</h2>\n<ul>\n<li>Technical architecture</li>\n<li>Workflow design</li>\n<li>Data models and integration approach</li>\n</ul>\n\n<h2>3. Build & Configuration</h2>\n<ul>\n<li>Product configuration</li>\n<li>UI/UX setup</li>\n<li>Data pipeline setup</li>\n<li>Reporting components</li>\n</ul>\n\n<h2>4. Implementation & Testing</h2>\n<ul>\n<li>UAT support</li>\n<li>QA testing</li>\n<li>Release preparation</li>\n</ul>\n\n<h2>5. Training & Knowledge Transfer</h2>\n<ul>\n<li>System training</li>\n<li>Documentation handover</li>\n</ul>"
+            },
+            {
+              "title": "Project Timeline",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"timeline\", \"project\", \"module\"] -->\n<h1>Project Timeline</h1>\n\n<table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Duration</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Discovery</td>\n<td>1–2 Weeks</td>\n<td>Requirements & assessment</td>\n</tr>\n<tr>\n<td>Design</td>\n<td>1 Week</td>\n<td>Architecture & workflow design</td>\n</tr>\n<tr>\n<td>Build</td>\n<td>2–4 Weeks</td>\n<td>Development & configuration</td>\n</tr>\n<tr>\n<td>UAT</td>\n<td>1–2 Weeks</td>\n<td>Testing & validation</td>\n</tr>\n<tr>\n<td>Go-Live</td>\n<td>1 Week</td>\n<td>Deployment & full handover</td>\n</tr>\n</tbody>\n</table>"
+            },
+            {
+              "title": "Team & Bios",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"team\", \"bios\", \"module\"] -->\n<h1>Team & Bios</h1>\n\n<h2>Engagement Lead – {{Name}}</h2>\n<p>Responsible for oversight, governance, and stakeholder engagement.</p>\n\n<h2>Technical Lead – {{Name}}</h2>\n<p>Owns architecture, technical design, integration, and delivery.</p>\n\n<h2>Business Analyst – {{Name}}</h2>\n<p>Facilitates workshops, documents requirements, and translations.</p>\n\n<h2>QA/Test Analyst – {{Name}}</h2>\n<p>Ensures solution quality and manages UAT cycles.</p>"
+            },
+            {
+              "title": "Delivery Approach",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"delivery\", \"approach\", \"module\"] -->\n<h1>Delivery Approach</h1>\n\n<p>Khonology follows a structured delivery methodology combining Agile, Lean, and governance best practices.</p>\n\n<h2>Key Features</h2>\n<ul>\n<li>Iterative sprint cycles</li>\n<li>Frequent stakeholder engagement</li>\n<li>Automated governance checkpoints</li>\n<li>Traceability from requirements → delivery → reporting</li>\n</ul>"
+            },
+            {
+              "title": "Pricing Table",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"pricing\", \"table\", \"module\"] -->\n<h1>Pricing Table</h1>\n\n<table>\n<thead>\n<tr>\n<th>Service Component</th>\n<th>Quantity</th>\n<th>Rate</th>\n<th>Total</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Assessment & Discovery</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Build & Configuration</td>\n<td>4 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>UAT & Release</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Training & Handover</td>\n<td>1 Week</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n</tbody>\n</table>\n\n<p><strong>Total Estimated Cost:</strong> R {{Total}}</p>\n\n<p>Final costs will be confirmed after detailed scoping.</p>"
+            },
+            {
+              "title": "Risks & Mitigation",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"risks\", \"mitigation\", \"module\"] -->\n<h1>Risks & Mitigation</h1>\n\n<table>\n<thead>\n<tr>\n<th>Risk</th>\n<th>Impact</th>\n<th>Likelihood</th>\n<th>Mitigation</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Limited stakeholder availability</td>\n<td>High</td>\n<td>Medium</td>\n<td>Align early calendars</td>\n</tr>\n<tr>\n<td>Data quality issues</td>\n<td>High</td>\n<td>High</td>\n<td>Early validation</td>\n</tr>\n<tr>\n<td>Changing scope</td>\n<td>Medium</td>\n<td>Medium</td>\n<td>Governance checkpoints</td>\n</tr>\n<tr>\n<td>Lack of documentation</td>\n<td>Medium</td>\n<td>High</td>\n<td>Early analysis and mapping</td>\n</tr>\n</tbody>\n</table>"
+            },
+            {
+              "title": "Governance Model",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"governance\", \"model\", \"module\"] -->\n<h1>Governance Model</h1>\n\n<h2>Governance Structure</h2>\n<ul>\n<li>Engagement Lead</li>\n<li>Product Owner (Client)</li>\n<li>Delivery Team</li>\n<li>QA & Compliance Group</li>\n</ul>\n\n<h2>Tools</h2>\n<ul>\n<li>Jira</li>\n<li>Teams/Email</li>\n<li>Automated reporting dashboard</li>\n</ul>\n\n<h2>Cadence</h2>\n<ul>\n<li>Daily standups</li>\n<li>Weekly status updates</li>\n<li>Monthly executive review</li>\n</ul>"
+            },
+            {
+              "title": "Appendix – Company Profile",
+              "required": true,
+              "content": "<!-- tags: [\"template\", \"proposal\", \"company\", \"profile\", \"module\"] -->\n<h1>Appendix – Company Profile</h1>\n\n<h2>About Khonology</h2>\n<p>Khonology is a South African-based digital consulting and technology delivery company specialising in:</p>\n<ul>\n<li>Enterprise automation</li>\n<li>Digital transformation</li>\n<li>ESG reporting</li>\n<li>Data engineering & cloud</li>\n<li>Business analysis and enterprise delivery</li>\n</ul>\n\n<p>We partner with organisations to deliver impactful solutions that transform operations and unlock measurable value.</p>"
+            }
+          ]
+        })
       },
       {
-        "name": "Project Proposal",
+        "name": "Statement of Work (SOW) Template",
+        "description": "Complete SOW template with all sections - Project Overview, Scope, Deliverables, Timeline, Resources, and Terms",
+        "templateType": "sow",
+        "sections": [
+          "Project Overview",
+          "Scope of Work",
+          "Deliverables",
+          "Timeline & Milestones",
+          "Resources & Team",
+          "Terms & Conditions"
+        ],
+        "content": jsonEncode({
+          "templateType": "sow",
+          "name": "Statement of Work (SOW) Template",
+          "description": "Complete SOW template with all sections",
+          "sections": [
+            {
+              "title": "Project Overview",
+              "required": true,
+              "content": "# Project Overview\n\n## Background\n[Project background and context]\n\n## Objectives\n[Key project objectives]\n\n## Success Criteria\n[How success will be measured]"
+            },
+            {
+              "title": "Scope of Work",
+              "required": true,
+              "content": "# Scope of Work\n\n## In Scope\n[Detailed description of work included]\n\n## Out of Scope\n[Items explicitly excluded]"
+            },
+            {
+              "title": "Deliverables",
+              "required": true,
+              "content": "# Deliverables\n\n| Deliverable | Description | Due Date | Acceptance Criteria |\n|------------|-------------|----------|---------------------|\n| [Deliverable 1] | [Description] | [Date] | [Criteria] |"
+            },
+            {
+              "title": "Timeline & Milestones",
+              "required": true,
+              "content": "# Timeline & Milestones\n\n## Project Timeline\n[High-level project timeline]\n\n## Key Milestones\n1. [Milestone 1] - [Date]\n2. [Milestone 2] - [Date]\n3. [Milestone 3] - [Date]"
+            },
+            {
+              "title": "Resources & Team",
+              "required": true,
+              "content": "# Resources & Team\n\n## Team Structure\n[Team members and roles]\n\n## Responsibilities\n[Responsibilities of each party]"
+            },
+            {
+              "title": "Terms & Conditions",
+              "required": true,
+              "content": "# Terms & Conditions\n\n## Payment Terms\n[Payment schedule and terms]\n\n## Intellectual Property\n[IP ownership terms]\n\n## Confidentiality\n[Confidentiality requirements]"
+            }
+          ]
+        })
+      },
+      {
+        "name": "Project Proposal Template",
         "description": "Complete project proposal template",
+        "templateType": "proposal",
+        "sections": [
+          "Executive Summary",
+          "Company Profile",
+          "Scope & Deliverables",
+          "Timeline",
+          "Investment",
+          "Terms & Conditions"
+        ],
         "content":
             "PROJECT PROPOSAL\n\nScope:\n[Scope details]\n\nTimeline:\n[Timeline details]\n\nBudget:\n[Budget details]"
       },
       {
+        "name": "Executive Summary",
+        "description": "Professional executive summary template",
+        "templateType": "block",
+        "content":
+            "[Client Name]\n\nExecutive Summary\n\n[Your summary content here]"
+      },
+      {
         "name": "Risk Assessment",
         "description": "Risk assessment and mitigation template",
+        "templateType": "block",
         "content":
             "RISK ASSESSMENT\n\nIdentified Risks:\n\n1. [Risk 1]\n   Mitigation: [Plan]\n\n2. [Risk 2]\n   Mitigation: [Plan]"
       },
       {
         "name": "Terms & Conditions",
         "description": "Standard terms and conditions template",
+        "templateType": "block",
         "content":
             "TERMS AND CONDITIONS\n\n1. Definitions\n2. Scope of Services\n3. Payment Terms\n4. Confidentiality\n5. Termination"
       },
@@ -2039,13 +2904,59 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 ),
                 child: Material(
                   child: InkWell(
-                    onTap: () {
-                      labelCtrl.text = template["name"]!;
-                      contentCtrl.text = template["content"]!;
-                      keyCtrl.text =
-                          template["name"]!.toLowerCase().replaceAll(" ", "_");
-                      Navigator.pop(ctx);
-                      _showScratchTemplateDialog(context, app);
+                    onTap: () async {
+                      final templateName = (template["name"] ?? "").toString();
+                      final templateContent = (template["content"] ?? "").toString();
+                      final templateType = (template["templateType"] ?? "").toString();
+                      // Generate key that ensures template detection (_template suffix)
+                      String templateKey = templateName.toLowerCase()
+                          .replaceAll(" ", "_")
+                          .replaceAll("(", "")
+                          .replaceAll(")", "")
+                          .replaceAll("&", "and")
+                          .replaceAll("-", "_");
+                      // Ensure key has _template suffix for detection
+                      if (!templateKey.endsWith("_template")) {
+                        templateKey = "${templateKey}_template";
+                      }
+                      
+                      // If it's a full template (SOW or Proposal), create it directly
+                      if (templateType == "sow" || templateType == "proposal") {
+                        Navigator.pop(ctx);
+                        try {
+                          // Use "Template" category (singular) to match the UI
+                          await app.createContent(
+                            key: templateKey,
+                            label: templateName,
+                            content: templateContent,
+                            category: "Template", // Use consistent category name
+                            parentId: currentFolderId,
+                          );
+                          // Refresh content to see the new template
+                          await app.fetchContent();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("$templateName created successfully"),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                          setState(() {});
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("Failed to create template: $e"),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } else {
+                        // For blocks, show the dialog for editing
+                        labelCtrl.text = templateName;
+                        contentCtrl.text = templateContent;
+                        keyCtrl.text = templateKey;
+                        Navigator.pop(ctx);
+                        _showScratchTemplateDialog(context, app);
+                      }
                     },
                     borderRadius: BorderRadius.circular(8),
                     child: Padding(
@@ -2054,7 +2965,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            template["name"]!,
+                            (template["name"] ?? "").toString(),
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -2062,7 +2973,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            template["description"]!,
+                            (template["description"] ?? "").toString(),
                             style: const TextStyle(
                               fontSize: 11,
                               color: Colors.white70,
@@ -2373,25 +3284,24 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     label: 'Dashboard',
                     isActive: _currentNavIdx == 0,
                     onTap: () {
-                      // In a real app, navigate to Dashboard
-                      setState(() => _currentNavIdx = 0);
-                      // You can navigate here using Navigator
+                      _navigateToPage(context, 'Dashboard');
                     },
                   ),
-                  _buildNavItem(
-                    icon: Icons.description_outlined,
-                    label: 'My Proposals',
-                    isActive: _currentNavIdx == 1,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 1);
-                    },
-                  ),
+                  if (!_isAdminUser()) // Only show for non-admin users
+                    _buildNavItem(
+                      icon: Icons.description_outlined,
+                      label: 'My Proposals',
+                      isActive: _currentNavIdx == 1,
+                      onTap: () {
+                        _navigateToPage(context, 'My Proposals');
+                      },
+                    ),
                   _buildNavItem(
                     icon: Icons.note_outlined,
                     label: 'Templates',
                     isActive: _currentNavIdx == 2,
                     onTap: () {
-                      setState(() => _currentNavIdx = 2);
+                      _navigateToPage(context, 'Templates');
                     },
                   ),
                   _buildNavItem(
@@ -2399,23 +3309,24 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     label: 'Content Library',
                     isActive: _currentNavIdx == 3,
                     onTap: () {
-                      setState(() => _currentNavIdx = 3);
+                      // Already on content library
                     },
                   ),
-                  _buildNavItem(
-                    icon: Icons.people_outline,
-                    label: 'Collaboration',
-                    isActive: _currentNavIdx == 4,
-                    onTap: () {
-                      setState(() => _currentNavIdx = 4);
-                    },
-                  ),
+                  if (!_isAdminUser()) // Only show for non-admin users
+                    _buildNavItem(
+                      icon: Icons.people_outline,
+                      label: 'Client Management',
+                      isActive: _currentNavIdx == 4,
+                      onTap: () {
+                        _navigateToPage(context, 'Client Management');
+                      },
+                    ),
                   _buildNavItem(
                     icon: Icons.check_circle_outline,
-                    label: 'Approvals',
+                    label: _isAdminUser() ? 'Approved Proposals' : 'Approvals',
                     isActive: _currentNavIdx == 5,
                     onTap: () {
-                      setState(() => _currentNavIdx = 5);
+                      _navigateToPage(context, _isAdminUser() ? 'Approved Proposals' : 'Approvals');
                     },
                   ),
                   _buildNavItem(
@@ -2792,10 +3703,27 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     );
   }
 
+  bool _isAdminUser() {
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return false;
+      final role = (user['role']?.toString() ?? '').toLowerCase().trim();
+      return role == 'admin' || role == 'ceo';
+    } catch (e) {
+      return false;
+    }
+  }
+
   void _navigateToPage(BuildContext context, String label) {
+    final isAdmin = _isAdminUser();
+    
     switch (label) {
       case 'Dashboard':
-        Navigator.pushNamed(context, '/dashboard');
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
         break;
       case 'My Proposals':
         Navigator.pushNamed(context, '/proposals');
@@ -2806,11 +3734,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       case 'Content Library':
         // Already on content library
         break;
-      case 'Collaboration':
-        Navigator.pushNamed(context, '/collaboration');
+      case 'Client Management':
+        Navigator.pushNamed(context, '/client_management');
         break;
-      case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+      case 'Approved Proposals':
+        Navigator.pushNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
         Navigator.pushNamed(context, '/analytics');

@@ -18,28 +18,43 @@ bp = Blueprint('approver', __name__)
 # APPROVER ROUTES
 # ============================================================================
 
+@bp.route("/api/proposals/pending_approval", methods=['OPTIONS'])
+@bp.route("/proposals/pending_approval", methods=['OPTIONS'])
+def options_pending_approvals():
+    """Handle CORS preflight for pending approvals endpoint"""
+    return {}, 200
+
+@bp.get("/api/proposals/pending_approval")
 @bp.get("/proposals/pending_approval")
 @token_required
 def get_pending_approvals(username=None):
     """Get all proposals pending approval"""
     try:
         with get_db_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(
-                '''SELECT id, title, client, owner_id, status, created_at
-                   FROM proposals WHERE status = 'Submitted' OR status = 'In Review'
-                   ORDER BY created_at DESC'''
+                '''SELECT id, title, content, client_name, client_email, user_id, status, created_at, updated_at, budget
+                   FROM proposals 
+                   WHERE status = 'Pending CEO Approval' 
+                      OR status = 'In Review' 
+                      OR status = 'Submitted'
+                   ORDER BY updated_at DESC, created_at DESC'''
             )
             rows = cursor.fetchall()
             proposals = []
             for row in rows:
                 proposals.append({
-                    'id': row[0],
-                    'title': row[1],
-                    'client': row[2],
-                    'owner_id': row[3],
-                    'status': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None
+                    'id': row['id'],
+                    'title': row['title'],
+                    'content': row.get('content'),  # Include content field
+                    'client': row['client_name'] or row.get('client') or 'Unknown',
+                    'client_name': row['client_name'],
+                    'client_email': row['client_email'],
+                    'owner_id': row['user_id'],
+                    'status': row['status'],
+                    'budget': float(row['budget']) if row['budget'] else None,
+                    'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                    'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
                 })
             return {'proposals': proposals}, 200
     except Exception as e:
@@ -185,6 +200,7 @@ def update_proposal_status(username=None, proposal_id=None):
             return {'detail': 'Status updated'}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
+
 
 
 

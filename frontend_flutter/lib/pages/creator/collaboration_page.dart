@@ -227,7 +227,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
                         _buildNavItem('📂', 'Templates', false, context),
                         _buildNavItem('🧩', 'Content Library', false, context),
                         _buildNavItem('👥', 'Collaboration', true, context),
-                        _buildNavItem('📋', 'Approvals Status', false, context),
+                        _buildNavItem('📋', 'Approved Proposals', false, context),
                         _buildNavItem(
                             '🔍', 'Analytics (My Pipeline)', false, context),
                         const SizedBox(height: 20),
@@ -539,8 +539,8 @@ class _CollaborationPageState extends State<CollaborationPage> {
       case 'Collaboration':
         // Already on collaboration page
         break;
-      case 'Approvals Status':
-        Navigator.pushNamed(context, '/approvals');
+      case 'Approved Proposals':
+        Navigator.pushNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
         Navigator.pushNamed(context, '/analytics');

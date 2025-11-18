@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../client/client_dashboard_home.dart';
-import '../guest/guest_collaboration_page.dart';
 import '../creator/blank_document_editor_page.dart';
 import '../../services/auth_service.dart';
 
@@ -50,13 +49,13 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
         print('   Can comment: ${data['can_comment']}');
         print('   Can edit: ${data['can_edit']}');
 
-        // Route based on permission level
-        if (permissionLevel == 'edit' && authToken != null) {
-          // Full editing rights - set auth token and open in document editor
-          print('→ Routing to Document Editor (can edit)');
+        // Route all collaborators to full editor with edit access (no restrictions)
+        if (authToken != null && proposalData != null) {
+          // All collaborators get full editing rights regardless of permission level
+          print('→ Routing to Document Editor (full edit access for all collaborators)');
           print('   Auth token received: ${authToken.substring(0, 20)}...');
 
-          if (mounted && proposalData != null) {
+          if (mounted) {
             // Store auth token and user data for the editor to use
             final collaboratorEmail = data['invited_email'] as String;
             AuthService.setUserData({
@@ -73,41 +72,13 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
                 builder: (context) => BlankDocumentEditorPage(
                   proposalId: proposalData['id']?.toString(),
                   proposalTitle: proposalData['title'] ?? 'Untitled',
-                  readOnly: false, // Full edit access
-                ),
-              ),
-            );
-          }
-        } else if (permissionLevel == 'suggest' && authToken != null) {
-          // Suggest mode - can propose changes for approval
-          print('→ Routing to Document Editor (suggest mode)');
-          print('   Auth token received: ${authToken.substring(0, 20)}...');
-
-          if (mounted && proposalData != null) {
-            // Store auth token and user data for the editor to use
-            final collaboratorEmail = data['invited_email'] as String;
-            AuthService.setUserData({
-              'email': collaboratorEmail,
-              'username': collaboratorEmail,
-              'full_name': 'Reviewer ($collaboratorEmail)',
-              'role': 'reviewer',
-            }, authToken);
-            print('   Token and user data stored in AuthService');
-
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => BlankDocumentEditorPage(
-                  proposalId: proposalData['id']?.toString(),
-                  proposalTitle: proposalData['title'] ?? 'Untitled',
-                  readOnly: true, // Read-only in suggest mode
-                  // TODO: Add suggest mode UI to show suggestions panel
+                  readOnly: false, // Full edit access for all collaborators
                 ),
               ),
             );
           }
         } else if (permissionLevel == 'view') {
-          // View-only client access
+          // View-only client access (only for actual client portal, not collaborators)
           print('→ Routing to Client Dashboard (view-only)');
           if (mounted) {
             Navigator.pushReplacement(
@@ -118,13 +89,17 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
             );
           }
         } else {
-          // Comment permission - view and comment only
-          print('→ Routing to Guest Collaboration Page (can comment)');
-          if (mounted) {
+          // Fallback: route to editor if no auth token but has proposal data
+          print('→ Routing to Document Editor (fallback)');
+          if (mounted && proposalData != null) {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => const GuestCollaborationPage(),
+                builder: (context) => BlankDocumentEditorPage(
+                  proposalId: proposalData['id']?.toString(),
+                  proposalTitle: proposalData['title'] ?? 'Untitled',
+                  readOnly: false, // Full edit access
+                ),
               ),
             );
           }

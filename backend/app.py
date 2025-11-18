@@ -60,7 +60,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+# Configure CORS to allow requests from frontend
+CORS(app, 
+     supports_credentials=True,
+     origins=['http://localhost:8081', 'http://localhost:8080', 'http://127.0.0.1:8081', '*'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+     allow_headers=['Content-Type', 'Authorization', 'Collab-Token'],
+     expose_headers=['Content-Type', 'Authorization'],
+     automatic_options=True)  # Automatically handle OPTIONS requests
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -419,10 +426,30 @@ def init_pg_schema():
                 pass
         raise
 
+# Handle CORS preflight requests globally (must be first before_request)
+@app.before_request
+def handle_preflight():
+    """Handle CORS preflight OPTIONS requests"""
+    if request.method == 'OPTIONS':
+        print(f'[CORS] Handling OPTIONS request for: {request.path}')
+        response = Response()
+        origin = request.headers.get('Origin', '*')
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Max-Age', '3600')
+        print(f'[CORS] OPTIONS response sent with origin: {origin}')
+        return response
+
 # Initialize database schema on first request
 @app.before_request
 def init_db():
     """Initialize PostgreSQL schema on first request"""
+    # Skip OPTIONS requests (handled by handle_preflight)
+    if request.method == 'OPTIONS':
+        return
+    
     global _db_initialized
     if _db_initialized:
         return

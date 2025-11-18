@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../api.dart';
+import '../../theme/premium_theme.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -2348,7 +2349,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         width: _isSidebarCollapsed ? 90.0 : 250.0,
-        color: const Color(0xFF34495E),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.black.withOpacity(0.3),
+              Colors.black.withOpacity(0.2),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          border: Border(
+            right: BorderSide(
+              color: PremiumTheme.glassWhiteBorder,
+              width: 1,
+            ),
+          ),
+        ),
         child: SingleChildScrollView(
           child: Column(
             children: [
@@ -2358,12 +2374,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: InkWell(
                   onTap: _toggleSidebar,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    height: 40,
+                    height: 44,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2C3E50),
-                      borderRadius: BorderRadius.circular(8),
+                      color: PremiumTheme.glassWhite,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: PremiumTheme.glassWhiteBorder,
+                        width: 1,
+                      ),
                     ),
                     child: Row(
                       mainAxisAlignment: _isSidebarCollapsed
@@ -2398,27 +2418,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               ),
               const SizedBox(height: 12),
-              // Navigation items
-              _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                  _currentPage == 'Dashboard'),
-              _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-                  _currentPage == 'My Proposals'),
-              _buildNavItem('Templates', 'assets/images/content_library.png',
-                  _currentPage == 'Templates'),
-              _buildNavItem(
-                  'Content Library',
-                  'assets/images/content_library.png',
-                  _currentPage == 'Content Library'),
-              _buildNavItem('Client Management', 'assets/images/collaborations.png',
-                  _currentPage == 'Client Management'),
-              _buildNavItem(
-                  'Approvals Status',
-                  'assets/images/Time Allocation_Approval_Blue.png',
-                  _currentPage == 'Approvals Status'),
-              _buildNavItem(
-                  'Analytics (My Pipeline)',
-                  'assets/images/analytics.png',
-                  _currentPage == 'Analytics (My Pipeline)'),
+              // Navigation items - show admin sidebar if user is admin
+              _buildAdminSidebarItems(),
               const SizedBox(height: 20),
               // Divider
               if (!_isSidebarCollapsed)
@@ -2441,6 +2442,83 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   void _toggleSidebar() {
     setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+  }
+
+  bool _isAdminUser() {
+    if (!mounted) return false;
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return false;
+      final role = (user['role']?.toString() ?? '').toLowerCase().trim();
+      return role == 'admin' || role == 'ceo';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Widget _buildAdminSidebarItems() {
+    final isAdmin = _isAdminUser();
+    
+    if (isAdmin) {
+      // Admin sidebar items
+      return Column(
+        children: [
+          _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+              _currentPage == 'Dashboard'),
+          _buildNavItem('Proposals for Review',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Proposals for Review'),
+          _buildNavItem('Governance & Risk',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Governance & Risk'),
+          _buildNavItem('Template Management',
+              'assets/images/content_library.png',
+              _currentPage == 'Template Management'),
+          _buildNavItem('Content Library',
+              'assets/images/content_library.png',
+              _currentPage == 'Content Library'),
+          _buildNavItem('Client Management',
+              'assets/images/collaborations.png',
+              _currentPage == 'Client Management'),
+          _buildNavItem('User Management',
+              'assets/images/collaborations.png',
+              _currentPage == 'User Management'),
+          _buildNavItem('Approved Proposals',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Approved Proposals'),
+          _buildNavItem('Audit Logs',
+              'assets/images/analytics.png',
+              _currentPage == 'Audit Logs'),
+          _buildNavItem('Settings',
+              'assets/images/analytics.png',
+              _currentPage == 'Settings'),
+        ],
+      );
+    } else {
+      // Creator sidebar items
+      return Column(
+        children: [
+          _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+              _currentPage == 'Dashboard'),
+          _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
+              _currentPage == 'My Proposals'),
+          _buildNavItem('Templates', 'assets/images/content_library.png',
+              _currentPage == 'Templates'),
+          _buildNavItem('Content Library',
+              'assets/images/content_library.png',
+              _currentPage == 'Content Library'),
+          _buildNavItem('Client Management',
+              'assets/images/collaborations.png',
+              _currentPage == 'Client Management'),
+          _buildNavItem('Approved Proposals',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Approved Proposals'),
+          _buildNavItem('Analytics (My Pipeline)',
+              'assets/images/analytics.png',
+              _currentPage == 'Analytics (My Pipeline)'),
+        ],
+      );
+    }
   }
 
   Widget _buildNavItem(String label, String assetPath, bool isActive) {
@@ -2553,9 +2631,50 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   void _navigateToPage(String pageName) {
+    final isAdmin = _isAdminUser();
+    
     switch (pageName) {
       case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
+        break;
+      case 'Proposals for Review':
+        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        break;
+      case 'Governance & Risk':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Governance & Risk Panel - Coming soon'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        break;
+      case 'Template Management':
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/client_management');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Client Management - Coming soon'),
+              backgroundColor: Color(0xFF00BCD4),
+            ),
+          );
+        }
+        break;
+      case 'User Management':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('User Management - Coming soon'),
+            backgroundColor: Colors.orange,
+          ),
+        );
         break;
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
@@ -2568,22 +2687,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         );
         break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content-library');
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
-      case 'Client Management':
+      case 'Audit Logs':
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Client Management - Coming soon'),
-            backgroundColor: Color(0xFF00BCD4),
+            content: Text('Audit Logs - Coming soon'),
+            backgroundColor: Colors.orange,
           ),
         );
         break;
-      case 'Approvals Status':
+      case 'Settings':
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Approvals Status - Coming soon'),
-            backgroundColor: Color(0xFF00BCD4),
+            content: Text('Admin Settings - Coming soon'),
+            backgroundColor: Colors.orange,
           ),
         );
         break;

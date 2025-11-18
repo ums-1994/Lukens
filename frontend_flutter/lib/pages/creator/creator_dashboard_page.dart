@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
-import '../../widgets/role_switcher.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
@@ -468,8 +467,6 @@ class _DashboardPageState extends State<DashboardPage>
                     ),
                     Row(
                       children: [
-                        const CompactRoleSwitcher(),
-                        const SizedBox(width: 20),
                         _buildNotificationButton(app),
                         const SizedBox(width: 20),
                         ClipOval(
@@ -633,9 +630,9 @@ class _DashboardPageState extends State<DashboardPage>
                               _currentPage == 'Client Management',
                               context),
                           _buildNavItem(
-                              'Approvals Status',
+                              'Approved Proposals',
                               'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approvals Status',
+                              _currentPage == 'Approved Proposals',
                               context),
                           _buildNavItem(
                               'Analytics (My Pipeline)',
@@ -827,8 +824,8 @@ class _DashboardPageState extends State<DashboardPage>
       case 'Client Management':
         Navigator.pushReplacementNamed(context, '/client_management');
         break;
-      case 'Approvals Status':
-        Navigator.pushReplacementNamed(context, '/approvals');
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
@@ -1057,8 +1054,8 @@ class _DashboardPageState extends State<DashboardPage>
         case 'Content Blocks':
           Navigator.pushNamed(context, '/content_library');
           break;
-        case 'Collaboration Tools':
-          Navigator.pushNamed(context, '/approvals');
+        case 'Client Management':
+          Navigator.pushNamed(context, '/client_management');
           break;
         case 'E-Signature':
           Navigator.pushNamed(context, '/approvals');
@@ -1468,7 +1465,7 @@ class _DashboardPageState extends State<DashboardPage>
     final components = [
       {'icon': Icons.library_books, 'label': 'Template Library'},
       {'icon': Icons.view_module, 'label': 'Content Blocks'},
-      {'icon': Icons.groups, 'label': 'Collaboration Tools'},
+      {'icon': Icons.people, 'label': 'Client Management'},
       {'icon': Icons.assignment_turned_in, 'label': 'E-Signature'},
       {'icon': Icons.analytics, 'label': 'Analytics'},
       {'icon': Icons.manage_accounts, 'label': 'User Management'},

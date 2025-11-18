@@ -492,24 +492,24 @@ def send_for_approval(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
-                return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
-
-            cursor.execute('SELECT id FROM proposals WHERE id = %s AND user_id = %s', (proposal_id, user_id))
+            # Check if proposal exists and belongs to user
+            # Note: user_id in proposals table stores username (string), not user ID (integer)
+            cursor.execute('SELECT id FROM proposals WHERE id = %s AND user_id = %s', (proposal_id, username))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
             
+            # Update status to "Pending CEO Approval" (more descriptive than "In Review")
             cursor.execute(
-                '''UPDATE proposals SET status = 'In Review', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
+                '''UPDATE proposals SET status = 'Pending CEO Approval', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
                 (proposal_id,)
             )
             conn.commit()
-            return {'detail': 'Proposal sent for approval', 'status': 'In Review'}, 200
+            return {'detail': 'Proposal sent for approval', 'status': 'Pending CEO Approval'}, 200
     except Exception as e:
+        print(f"❌ Error sending proposal for approval: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.post("/proposals/<int:proposal_id>/send_to_client")

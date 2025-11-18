@@ -294,6 +294,352 @@ Khonology aspires to continue to rise into Africa’s leading data and digital e
 </ul>
         """,
     },
+    # ============================================================
+    # FULL PROPOSAL TEMPLATE MODULES
+    # ============================================================
+    {
+        'key': 'template_proposal_module_1_cover',
+        'label': 'Proposal Template - Module 1: Cover Page',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'cover', 'module'],
+        'content': """
+<h1>Consulting & Technology Delivery Proposal</h1>
+<div style="margin: 30px 0;">
+    <p><strong>Client:</strong> {{Client Name}}</p>
+    <p><strong>Prepared For:</strong> {{Client Stakeholder}}</p>
+    <p><strong>Prepared By:</strong> Khonology Team</p>
+    <p><strong>Date:</strong> {{Date}}</p>
+</div>
+<div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+    <h2>Cover Summary</h2>
+    <p>Khonology proposes a customised consulting and technology delivery engagement to support {{Client Name}} in achieving operational excellence, digital transformation, and data-driven decision-making.</p>
+</div>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_2_executive_summary',
+        'label': 'Proposal Template - Module 2: Executive Summary',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'executive', 'summary', 'module'],
+        'content': """
+<h1>Executive Summary</h1>
+<h2>Purpose of This Proposal</h2>
+<p>This proposal outlines Khonology's recommended approach, delivery methodology, timelines, governance, and expected outcomes for the {{Project Name}} initiative.</p>
+
+<h2>What We Bring</h2>
+<ul>
+    <li>Strong expertise in digital transformation and enterprise delivery</li>
+    <li>Deep experience in banking, insurance, ESG reporting, and financial services</li>
+    <li>Proven capability across data engineering, cloud, automation, and governance</li>
+    <li>A people-first consulting culture focused on delivery excellence</li>
+</ul>
+
+<h2>Expected Outcomes</h2>
+<ul>
+    <li>Streamlined processes</li>
+    <li>Robust governance</li>
+    <li>Improved operational visibility</li>
+    <li>Higher efficiency and reduced risk</li>
+    <li>A scalable delivery architecture to support strategic goals</li>
+</ul>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_3_problem_statement',
+        'label': 'Proposal Template - Module 3: Problem Statement',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'problem', 'statement', 'module'],
+        'content': """
+<h1>Problem Statement</h1>
+<h2>Current State Challenges</h2>
+<p>{{Client Name}} is experiencing the following challenges:</p>
+<ul>
+    <li>Limited visibility into operational performance</li>
+    <li>Manual processes creating inefficiencies</li>
+    <li>High reporting complexity</li>
+    <li>Lack of integrated workflows or automated governance</li>
+    <li>Upcoming deadlines causing pressure on compliance and reporting</li>
+</ul>
+
+<h2>Opportunity</h2>
+<p>With a modern delivery framework, workflows, and reporting structures, {{Client Name}} can unlock operational excellence and achieve strategic growth objectives.</p>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_4_scope_of_work',
+        'label': 'Proposal Template - Module 4: Scope of Work',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'scope', 'work', 'module'],
+        'content': """
+<h1>Scope of Work</h1>
+<p>Khonology proposes the following Scope of Work:</p>
+
+<h2>1. Discovery & Assessment</h2>
+<ul>
+    <li>Requirements gathering</li>
+    <li>Stakeholder workshops</li>
+    <li>Current-state assessment</li>
+</ul>
+
+<h2>2. Solution Design</h2>
+<ul>
+    <li>Technical architecture</li>
+    <li>Workflow design</li>
+    <li>Data models and integration approach</li>
+</ul>
+
+<h2>3. Build & Configuration</h2>
+<ul>
+    <li>Product configuration</li>
+    <li>UI/UX setup</li>
+    <li>Data pipeline setup</li>
+    <li>Reporting components</li>
+</ul>
+
+<h2>4. Implementation & Testing</h2>
+<ul>
+    <li>UAT support</li>
+    <li>QA testing</li>
+    <li>Release preparation</li>
+</ul>
+
+<h2>5. Training & Knowledge Transfer</h2>
+<ul>
+    <li>System training</li>
+    <li>Documentation handover</li>
+</ul>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_5_project_timeline',
+        'label': 'Proposal Template - Module 5: Project Timeline',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'timeline', 'project', 'module'],
+        'content': """
+<h1>Project Timeline</h1>
+<table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+    <thead>
+        <tr style="background: #f5f5f5;">
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Phase</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Duration</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;"><strong>Discovery</strong></td>
+            <td style="padding: 12px; border: 1px solid #ddd;">1–2 Weeks</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Requirements & assessment</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;"><strong>Design</strong></td>
+            <td style="padding: 12px; border: 1px solid #ddd;">1 Week</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Architecture & workflow design</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;"><strong>Build</strong></td>
+            <td style="padding: 12px; border: 1px solid #ddd;">2–4 Weeks</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Development & configuration</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;"><strong>UAT</strong></td>
+            <td style="padding: 12px; border: 1px solid #ddd;">1–2 Weeks</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Testing & validation</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;"><strong>Go-Live</strong></td>
+            <td style="padding: 12px; border: 1px solid #ddd;">1 Week</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Deployment & full handover</td>
+        </tr>
+    </tbody>
+</table>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_6_team_bios',
+        'label': 'Proposal Template - Module 6: Team & Bios',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'team', 'bios', 'module'],
+        'content': """
+<h1>Team & Bios</h1>
+
+<h2>Engagement Lead – {{Name}}</h2>
+<p>Responsible for oversight, governance, and stakeholder engagement.</p>
+
+<h2>Technical Lead – {{Name}}</h2>
+<p>Owns architecture, technical design, integration, and delivery.</p>
+
+<h2>Business Analyst – {{Name}}</h2>
+<p>Facilitates workshops, documents requirements, and translations.</p>
+
+<h2>QA/Test Analyst – {{Name}}</h2>
+<p>Ensures solution quality and manages UAT cycles.</p>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_7_delivery_approach',
+        'label': 'Proposal Template - Module 7: Delivery Approach',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'delivery', 'approach', 'module'],
+        'content': """
+<h1>Delivery Approach</h1>
+<p>Khonology follows a structured delivery methodology combining Agile, Lean, and governance best practices.</p>
+
+<h2>Key Features</h2>
+<ul>
+    <li>Iterative sprint cycles</li>
+    <li>Frequent stakeholder engagement</li>
+    <li>Automated governance checkpoints</li>
+    <li>Traceability from requirements → delivery → reporting</li>
+</ul>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_8_pricing_table',
+        'label': 'Proposal Template - Module 8: Pricing Table',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'pricing', 'table', 'module'],
+        'content': """
+<h1>Pricing Table</h1>
+<table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+    <thead>
+        <tr style="background: #f5f5f5;">
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Service Component</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Quantity</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Rate</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">Assessment & Discovery</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">2 Weeks</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Rate}}</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Total}}</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">Build & Configuration</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">4 Weeks</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Rate}}</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Total}}</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">UAT & Release</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">2 Weeks</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Rate}}</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Total}}</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">Training & Handover</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">1 Week</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Rate}}</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">R {{Total}}</td>
+        </tr>
+    </tbody>
+</table>
+<blockquote style="background: #f9f9f9; border-left: 4px solid #E9293A; padding: 15px; margin: 20px 0;">
+    <p><strong>Total Estimated Cost:</strong> R {{Total}}</p>
+    <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;"><em>Final costs will be confirmed after detailed scoping.</em></p>
+</blockquote>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_9_risks_mitigation',
+        'label': 'Proposal Template - Module 9: Risks & Mitigation',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'risks', 'mitigation', 'module'],
+        'content': """
+<h1>Risks & Mitigation</h1>
+<table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+    <thead>
+        <tr style="background: #f5f5f5;">
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Risk</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Impact</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Likelihood</th>
+            <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Mitigation</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">Limited stakeholder availability</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">High</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Medium</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Align early calendars</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">Data quality issues</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">High</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">High</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Early validation</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">Changing scope</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Medium</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Medium</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Governance checkpoints</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px; border: 1px solid #ddd;">Lack of documentation</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Medium</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">High</td>
+            <td style="padding: 12px; border: 1px solid #ddd;">Early analysis and mapping</td>
+        </tr>
+    </tbody>
+</table>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_10_governance_model',
+        'label': 'Proposal Template - Module 10: Governance Model',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'governance', 'model', 'module'],
+        'content': """
+<h1>Governance Model</h1>
+
+<h2>Governance Structure</h2>
+<ul>
+    <li>Engagement Lead</li>
+    <li>Product Owner (Client)</li>
+    <li>Delivery Team</li>
+    <li>QA & Compliance Group</li>
+</ul>
+
+<h2>Tools</h2>
+<ul>
+    <li>Jira</li>
+    <li>Teams/Email</li>
+    <li>Automated reporting dashboard</li>
+</ul>
+
+<h2>Cadence</h2>
+<ul>
+    <li>Daily standups</li>
+    <li>Weekly status updates</li>
+    <li>Monthly executive review</li>
+</ul>
+        """,
+    },
+    {
+        'key': 'template_proposal_module_11_company_profile',
+        'label': 'Proposal Template - Module 11: Company Profile',
+        'category': 'Templates',
+        'tags': ['template', 'proposal', 'company', 'profile', 'module'],
+        'content': """
+<h1>Appendix – Company Profile</h1>
+
+<h2>About Khonology</h2>
+<p>Khonology is a South African-based digital consulting and technology delivery company specialising in:</p>
+<ul>
+    <li>Enterprise automation</li>
+    <li>Digital transformation</li>
+    <li>ESG reporting</li>
+    <li>Data engineering & cloud</li>
+    <li>Business analysis and enterprise delivery</li>
+</ul>
+
+<p>We partner with organisations to deliver impactful solutions that transform operations and unlock measurable value.</p>
+        """,
+    },
 ]
 
 

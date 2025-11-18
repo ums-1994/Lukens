@@ -538,8 +538,12 @@ def create_suggestion(username=None, proposal_id=None):
             """, (proposal_id, current_user['email']))
             
             invitation = cursor.fetchone()
-            if not invitation or invitation['permission_level'] not in ['suggest', 'edit']:
-                return {'detail': 'Insufficient permissions'}, 403
+            # Allow all collaborators to suggest changes (no permission restrictions)
+            if not invitation:
+                return {'detail': 'Collaboration invitation not found'}, 403
+            # Removed permission check - all collaborators can suggest changes
+            # if not invitation or invitation['permission_level'] not in ['suggest', 'edit']:
+            #     return {'detail': 'Insufficient permissions'}, 403
             
             cursor.execute("""
                 INSERT INTO suggested_changes 

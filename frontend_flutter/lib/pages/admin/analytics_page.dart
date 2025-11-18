@@ -788,7 +788,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             context,
                           ),
                           _buildNavItem(
-                            'Approvals Status',
+                            'Approved Proposals',
                             'assets/images/Time Allocation_Approval_Blue.png',
                             false,
                             context,
@@ -1717,8 +1717,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       case 'Client Management':
         Navigator.pushReplacementNamed(context, '/client_management');
         break;
-      case 'Approvals Status':
-        Navigator.pushReplacementNamed(context, '/approvals');
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
         break;

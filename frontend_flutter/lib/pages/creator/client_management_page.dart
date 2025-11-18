@@ -479,12 +479,14 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           const SizedBox(height: 12),
                           // Navigation items
                           _buildNavItem('Dashboard', 'assets/images/Dahboard.png', _currentPage == 'Dashboard', context),
-                          _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', _currentPage == 'My Proposals', context),
+                          if (!_isAdminUser()) // Only show for non-admin users
+                            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', _currentPage == 'My Proposals', context),
                           _buildNavItem('Templates', 'assets/images/content_library.png', _currentPage == 'Templates', context),
                           _buildNavItem('Content Library', 'assets/images/content_library.png', _currentPage == 'Content Library', context),
                           _buildNavItem('Client Management', 'assets/images/collaborations.png', _currentPage == 'Client Management', context),
-                          _buildNavItem('Approvals Status', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approvals Status', context),
-                          _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
+                          _buildNavItem('Approved Proposals', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approved Proposals', context),
+                          if (!_isAdminUser()) // Only show for non-admin users
+                            _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
 
                           const SizedBox(height: 20),
 
@@ -648,10 +650,27 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     );
   }
 
+  bool _isAdminUser() {
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return false;
+      final role = (user['role']?.toString() ?? '').toLowerCase().trim();
+      return role == 'admin' || role == 'ceo';
+    } catch (e) {
+      return false;
+    }
+  }
+
   void _navigateToPage(BuildContext context, String label) {
+    final isAdmin = _isAdminUser();
+    
     switch (label) {
       case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/home');
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
         break;
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
@@ -665,8 +684,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       case 'Client Management':
         // Already on client management page
         break;
-      case 'Approvals Status':
-        Navigator.pushReplacementNamed(context, '/approvals');
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
@@ -678,7 +697,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         Navigator.pushNamed(context, '/login');
         break;
       default:
-        Navigator.pushReplacementNamed(context, '/home');
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
     }
   }
 

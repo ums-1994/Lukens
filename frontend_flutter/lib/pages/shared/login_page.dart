@@ -178,15 +178,29 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           await appState.init();
 
           // Redirect based on user role
-          final userRole = (userProfile['role']?.toString() ?? '').toLowerCase();
+          // Only two roles: admin and manager
+          final rawRole = userProfile['role']?.toString() ?? '';
+          final userRole = rawRole.toLowerCase().trim();
           String dashboardRoute;
           
-          if (userRole == 'admin' || userRole == 'ceo') {
+          print('🔍 Login: Raw role from backend: "$rawRole"');
+          print('🔍 Login: Normalized role: "$userRole"');
+          print('🔍 Login: Full userProfile: $userProfile');
+          
+          // Map all role variations to admin or manager
+          final isAdmin = userRole == 'admin' || userRole == 'ceo';
+          final isManager = userRole == 'manager' || userRole == 'financial manager' || userRole == 'creator' || userRole == 'user';
+          
+          if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
-          } else if (userRole == 'manager' || userRole == 'financial manager' || userRole == 'creator') {
+            print('✅ Routing to Admin Dashboard');
+          } else if (isManager) {
             dashboardRoute = '/creator_dashboard';
+            print('✅ Routing to Creator Dashboard (Manager)');
           } else {
+            // Default to manager dashboard for unknown roles
             dashboardRoute = '/creator_dashboard';
+            print('⚠️ Unknown role "$userRole", defaulting to Creator Dashboard (Manager)');
           }
 
           print('🔀 Redirecting user with role "$userRole" to $dashboardRoute');
