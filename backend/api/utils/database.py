@@ -337,25 +337,53 @@ def init_pg_schema():
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
                          ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
 
-        # DocuSign signatures table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (
-        id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
-        envelope_id VARCHAR(255) UNIQUE,
-        signer_name VARCHAR(255) NOT NULL,
-        signer_email VARCHAR(255) NOT NULL,
-        signer_title VARCHAR(255),
-        status VARCHAR(50) DEFAULT 'sent',
-        signing_url TEXT,
-        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        signed_at TIMESTAMP,
-        declined_at TIMESTAMP,
-        decline_reason TEXT,
-        signed_document_url TEXT,
-        created_by INTEGER,
-        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
-        FOREIGN KEY (created_by) REFERENCES users(id)
-        )''')
+        # DocuSign signatures table (align FK type with proposals.id which may be UUID on existing DBs)
+        cursor.execute("""
+            SELECT data_type 
+            FROM information_schema.columns 
+            WHERE table_name='proposals' AND column_name='id'
+        """)
+        proposals_id_type_row = cursor.fetchone()
+        proposals_id_type = proposals_id_type_row[0] if proposals_id_type_row else 'integer'
+
+        if proposals_id_type == 'uuid':
+            cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (
+            id SERIAL PRIMARY KEY,
+            proposal_id UUID NOT NULL,
+            envelope_id VARCHAR(255) UNIQUE,
+            signer_name VARCHAR(255) NOT NULL,
+            signer_email VARCHAR(255) NOT NULL,
+            signer_title VARCHAR(255),
+            status VARCHAR(50) DEFAULT 'sent',
+            signing_url TEXT,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            signed_at TIMESTAMP,
+            declined_at TIMESTAMP,
+            decline_reason TEXT,
+            signed_document_url TEXT,
+            created_by INTEGER,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+            )''')
+        else:
+            cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            envelope_id VARCHAR(255) UNIQUE,
+            signer_name VARCHAR(255) NOT NULL,
+            signer_email VARCHAR(255) NOT NULL,
+            signer_title VARCHAR(255),
+            status VARCHAR(50) DEFAULT 'sent',
+            signing_url TEXT,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            signed_at TIMESTAMP,
+            declined_at TIMESTAMP,
+            decline_reason TEXT,
+            signed_document_url TEXT,
+            created_by INTEGER,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+            )''')
 
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
                          ON proposal_signatures(proposal_id, status, sent_at DESC)''')
