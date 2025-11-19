@@ -79,7 +79,7 @@ def init_pg_schema():
         id SERIAL PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255),
         full_name VARCHAR(255),
         role VARCHAR(50) DEFAULT 'user',
         department VARCHAR(255),
@@ -88,6 +88,34 @@ def init_pg_schema():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+
+        # Migration: allow NULL password_hash for Firebase-authenticated users
+        try:
+            cursor.execute("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='users' AND column_name='password_hash'
+                    ) THEN
+                        BEGIN
+                            ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+                        EXCEPTION WHEN others THEN
+                            -- ignore if constraint already dropped or lacks permission in this context
+                            NULL;
+                        END;
+                    END IF;
+                END$$;
+            """)
+        except Exception as e:
+            print(f"[WARN] Could not relax users.password_hash nullability: {e}")
+
+        # Best-effort direct ALTER to ensure the constraint is dropped even if DO block is skipped
+        try:
+            cursor.execute("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;")
+        except Exception as e:
+            # Ignore if already nullable or lacking permission in this context
+            print(f"[INFO] users.password_hash already nullable or alter not needed: {e}")
         
         # Add is_email_verified column if it doesn't exist (migration for existing databases)
         try:
@@ -114,6 +142,24 @@ def init_pg_schema():
         client_can_edit BOOLEAN DEFAULT false,
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
+
+        # Add extended proposal columns used by newer routes
+        try:
+            cursor.execute("""ALTER TABLE proposals ADD COLUMN IF NOT EXISTS client_name VARCHAR(500)""")
+        except Exception as e:
+            print(f"[WARN] Could not add proposals.client_name column (may already exist): {e}")
+        try:
+            cursor.execute("""ALTER TABLE proposals ADD COLUMN IF NOT EXISTS client_email VARCHAR(255)""")
+        except Exception as e:
+            print(f"[WARN] Could not add proposals.client_email column (may already exist): {e}")
+        try:
+            cursor.execute("""ALTER TABLE proposals ADD COLUMN IF NOT EXISTS budget NUMERIC""")
+        except Exception as e:
+            print(f"[WARN] Could not add proposals.budget column (may already exist): {e}")
+        try:
+            cursor.execute("""ALTER TABLE proposals ADD COLUMN IF NOT EXISTS timeline_days INTEGER""")
+        except Exception as e:
+            print(f"[WARN] Could not add proposals.timeline_days column (may already exist): {e}")
 
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
@@ -421,19 +467,44 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
 
-        # Client proposals linkage table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS client_proposals (
-        id SERIAL PRIMARY KEY,
-        client_id INTEGER NOT NULL,
-        proposal_id INTEGER NOT NULL,
-        relationship_type VARCHAR(50) DEFAULT 'primary',
-        linked_by INTEGER,
-        linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (client_id, proposal_id),
-        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
-        FOREIGN KEY (linked_by) REFERENCES users(id)
-        )''')
+        # Client proposals linkage table (align FK type with proposals.id)
+        try:
+            cursor.execute("""
+                SELECT data_type 
+                FROM information_schema.columns 
+                WHERE table_name='proposals' AND column_name='id'
+            """)
+            _cp_proposals_id_type_row = cursor.fetchone()
+            _cp_proposals_id_type = _cp_proposals_id_type_row[0] if _cp_proposals_id_type_row else 'integer'
+        except Exception:
+            _cp_proposals_id_type = 'integer'
+
+        if _cp_proposals_id_type == 'uuid':
+            cursor.execute('''CREATE TABLE IF NOT EXISTS client_proposals (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER NOT NULL,
+            proposal_id UUID NOT NULL,
+            relationship_type VARCHAR(50) DEFAULT 'primary',
+            linked_by INTEGER,
+            linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (client_id, proposal_id),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (linked_by) REFERENCES users(id)
+            )''')
+        else:
+            cursor.execute('''CREATE TABLE IF NOT EXISTS client_proposals (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER NOT NULL,
+            proposal_id INTEGER NOT NULL,
+            relationship_type VARCHAR(50) DEFAULT 'primary',
+            linked_by INTEGER,
+            linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (client_id, proposal_id),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (linked_by) REFERENCES users(id)
+            )''')
 
         # Email verification events table
         cursor.execute('''CREATE TABLE IF NOT EXISTS email_verification_events (
