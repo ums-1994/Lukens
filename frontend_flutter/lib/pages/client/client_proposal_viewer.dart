@@ -50,7 +50,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     try {
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}?token=${widget.accessToken}'),
+            'https://lukens-backend.onrender.com/api/client/proposals/${widget.proposalId}?token=${widget.accessToken}'),
       );
 
       if (response.statusCode == 200) {
@@ -105,7 +105,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}/comment'),
+            'https://lukens-backend.onrender.com/api/client/proposals/${widget.proposalId}/comment'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1041,7 +1041,7 @@ class _RejectDialogState extends State<RejectDialog> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}/reject'),
+            'https://lukens-backend.onrender.com/api/client/proposals/${widget.proposalId}/reject'),
         headers: {
           'Content-Type': 'application/json',
         },

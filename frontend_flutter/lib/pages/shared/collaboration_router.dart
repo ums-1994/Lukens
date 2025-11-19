@@ -35,7 +35,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
       final collaborateResponse = await http
           .get(
             Uri.parse(
-                'http://localhost:8000/api/collaborate?token=${widget.token}'),
+                'https://lukens-backend.onrender.com/api/collaborate?token=${widget.token}'),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -140,7 +140,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
       final clientResponse = await http
           .get(
             Uri.parse(
-                'http://localhost:8000/api/client/proposals?token=${widget.token}'),
+                'https://lukens-backend.onrender.com/api/client/proposals?token=${widget.token}'),
           )
           .timeout(const Duration(seconds: 5));
 

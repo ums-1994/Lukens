@@ -109,7 +109,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         if (_accessToken != null) 'collab_token': _accessToken!,
       }..removeWhere((k, v) => v == null);
 
-      final uri = Uri.http('localhost:8000', '/users/search', params);
+      final uri = Uri.https(
+          'lukens-backend.onrender.com', '/users/search', params);
       final resp = await http.get(uri);
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as List<dynamic>;
@@ -302,7 +303,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:8000/api/collaborate?token=$_accessToken'),
+        Uri.parse(
+            'https://lukens-backend.onrender.com/api/collaborate?token=$_accessToken'),
       );
 
       if (response.statusCode == 200) {
@@ -357,7 +359,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
           .toList();
 
       final response = await http.post(
-        Uri.parse('http://localhost:8000/api/collaborate/comment'),
+        Uri.parse(
+            'https://lukens-backend.onrender.com/api/collaborate/comment'),
         headers: {
           'Content-Type': 'application/json',
         },

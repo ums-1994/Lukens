@@ -64,7 +64,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
   Future<void> _validateToken() async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:8000/onboard/${widget.token}'),
+        Uri.parse('https://lukens-backend.onrender.com/onboard/${widget.token}'),
       );
 
       if (response.statusCode == 200) {
@@ -101,7 +101,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:8000/onboard/${widget.token}'),
+        Uri.parse('https://lukens-backend.onrender.com/onboard/${widget.token}'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'company_name': _companyNameController.text.trim(),

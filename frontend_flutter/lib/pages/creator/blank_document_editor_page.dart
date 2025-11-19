@@ -213,7 +213,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
 
       final response = await http.get(
-        Uri.parse('http://localhost:8000/content?category=Images'),
+        Uri.parse('https://lukens-backend.onrender.com/content?category=Images'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -459,7 +459,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       print('🔄 Loading collaborators for proposal $_savedProposalId...');
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8000/api/proposals/$_savedProposalId/collaborators'),
+            'https://lukens-backend.onrender.com/api/proposals/$_savedProposalId/collaborators'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -502,7 +502,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (token == null) return;
 
       final response = await http.delete(
-        Uri.parse('http://localhost:8000/api/collaborations/$invitationId'),
+        Uri.parse('https://lukens-backend.onrender.com/api/collaborations/$invitationId'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -7779,7 +7779,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
                                       final response = await http.post(
                                         Uri.parse(
-                                            'http://localhost:8000/api/proposals/$_savedProposalId/invite'),
+                                            'https://lukens-backend.onrender.com/api/proposals/$_savedProposalId/invite'),
                                         headers: {
                                           'Authorization': 'Bearer $token',
                                           'Content-Type': 'application/json',

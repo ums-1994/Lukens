@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class SmtpAuthService {
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'https://lukens-backend.onrender.com';
 
   // Register user with SMTP email verification
   static Future<Map<String, dynamic>?> registerUser({

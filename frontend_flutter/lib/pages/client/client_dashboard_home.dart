@@ -93,7 +93,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals?token=$_accessToken'),
+            'https://lukens-backend.onrender.com/api/client/proposals?token=$_accessToken'),
       );
 
       if (response.statusCode == 200) {
