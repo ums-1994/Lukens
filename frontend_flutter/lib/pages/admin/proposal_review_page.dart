@@ -360,6 +360,31 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           );
           Navigator.pop(context);
         }
+      } else {
+        // Handle non-JSON error responses (like 404 HTML pages)
+        String errorMessage = 'Failed to approve proposal';
+        try {
+          final contentType = response.headers['content-type'] ?? '';
+          if (contentType.contains('application/json')) {
+            final error = json.decode(response.body);
+            errorMessage = error['detail'] ?? errorMessage;
+          } else {
+            // HTML or other non-JSON response (likely 404 page)
+            if (response.statusCode == 404) {
+              errorMessage = 'Proposal approval endpoint not found (404). Please check server configuration.';
+            } else {
+              errorMessage = 'Server error (${response.statusCode})';
+            }
+          }
+        } catch (parseError) {
+          // If JSON parsing fails, use status code info
+          if (response.statusCode == 404) {
+            errorMessage = 'Endpoint not found (404). The approval route may not be registered correctly.';
+          } else {
+            errorMessage = 'Server returned error ${response.statusCode}';
+          }
+        }
+        throw Exception(errorMessage);
       }
     } catch (e) {
       if (mounted) {

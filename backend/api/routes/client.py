@@ -370,6 +370,164 @@ def client_reject_proposal(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.post("/api/client/proposals/<int:proposal_id>/get_signing_url")
+def get_client_signing_url(proposal_id):
+    """Get or create DocuSign signing URL for client"""
+    try:
+        data = request.get_json() or {}
+        token = data.get('token') or request.args.get('token')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify token and get client email
+            cursor.execute("""
+                SELECT invited_email, expires_at
+                FROM collaboration_invitations
+                WHERE access_token = %s
+            """, (token,))
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            client_email = invitation['invited_email']
+            
+            # Get proposal details
+            cursor.execute("""
+                SELECT p.id, p.title, p.content, p.client_name, p.client_email
+                FROM proposals p
+                WHERE p.id = %s AND p.client_email = %s
+            """, (proposal_id, client_email))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Check if signing URL already exists and is still valid
+            cursor.execute("""
+                SELECT envelope_id, signing_url, status
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+            """, (proposal_id,))
+            
+            existing_signature = cursor.fetchone()
+            
+            # If we have a valid signing URL, return it
+            if existing_signature and existing_signature.get('signing_url'):
+                # Check if envelope is still active (not completed/declined)
+                status = existing_signature.get('status', '').lower()
+                if status not in ['completed', 'declined', 'voided']:
+                    return {
+                        'signing_url': existing_signature['signing_url'],
+                        'envelope_id': existing_signature['envelope_id'],
+                        'status': existing_signature.get('status', 'sent')
+                    }, 200
+            
+            # No valid signing URL exists, create a new DocuSign envelope
+            try:
+                from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope
+                import os
+                
+                # Generate PDF
+                pdf_content = generate_proposal_pdf(
+                    proposal_id=proposal_id,
+                    title=proposal['title'],
+                    content=proposal.get('content', ''),
+                    client_name=proposal.get('client_name'),
+                    client_email=client_email
+                )
+                
+                # Create DocuSign envelope
+                frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                return_url = f"{frontend_url}/client/proposals?token={token}"
+                
+                envelope_result = create_docusign_envelope(
+                    proposal_id=proposal_id,
+                    pdf_bytes=pdf_content,
+                    signer_name=proposal.get('client_name') or client_email,
+                    signer_email=client_email,
+                    signer_title='',
+                    return_url=return_url
+                )
+                
+                # Store signature record - check if one exists first
+                cursor.execute("""
+                    SELECT id FROM proposal_signatures WHERE proposal_id = %s
+                """, (proposal_id,))
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # Update existing record
+                    cursor.execute("""
+                        UPDATE proposal_signatures 
+                        SET envelope_id = %s,
+                            signer_name = %s,
+                            signer_email = %s,
+                            signer_title = %s,
+                            signing_url = %s,
+                            status = %s,
+                            sent_at = NOW()
+                        WHERE proposal_id = %s
+                        RETURNING id, signing_url, envelope_id
+                    """, (
+                        envelope_result['envelope_id'],
+                        proposal.get('client_name') or client_email,
+                        client_email,
+                        '',
+                        envelope_result['signing_url'],
+                        'sent',
+                        proposal_id
+                    ))
+                else:
+                    # Insert new record
+                    cursor.execute("""
+                        INSERT INTO proposal_signatures 
+                        (proposal_id, envelope_id, signer_name, signer_email, signer_title, 
+                         signing_url, status, created_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
+                        RETURNING id, signing_url, envelope_id
+                    """, (
+                        proposal_id,
+                        envelope_result['envelope_id'],
+                        proposal.get('client_name') or client_email,
+                        client_email,
+                        '',
+                        envelope_result['signing_url'],
+                        'sent'
+                    ))
+                
+                signature_record = cursor.fetchone()
+                conn.commit()
+                
+                print(f"✅ Created DocuSign envelope for proposal {proposal_id} (client: {client_email})")
+                
+                return {
+                    'signing_url': signature_record['signing_url'],
+                    'envelope_id': signature_record['envelope_id'],
+                    'status': 'sent',
+                    'message': 'Signing URL created successfully'
+                }, 200
+                
+            except ImportError:
+                return {'detail': 'DocuSign integration not available'}, 503
+            except Exception as docusign_error:
+                print(f"❌ DocuSign error: {docusign_error}")
+                traceback.print_exc()
+                return {'detail': f'Failed to create signing URL: {str(docusign_error)}'}, 500
+            
+    except Exception as e:
+        print(f"❌ Error getting signing URL: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 # ============================================================================
 # LEGACY CLIENT ROUTES (for backward compatibility)
 # ============================================================================
@@ -466,6 +624,214 @@ def get_client_dashboard_stats(username=None):
             return stats, 200
     except Exception as e:
         return {'detail': str(e)}, 500
+
+# ============================================================================
+# CLIENT ACTIVITY TRACKING ROUTES
+# ============================================================================
+
+@bp.post("/api/client/activity")
+def log_client_activity():
+    """Log client activity event (open, close, view_section, download, sign, comment)"""
+    try:
+        data = request.get_json()
+        if not data:
+            return {'detail': 'Request body required'}, 400
+        
+        token = data.get('token')
+        proposal_id = data.get('proposal_id')
+        event_type = data.get('event_type')
+        metadata = data.get('metadata', {})
+        
+        if not token or not proposal_id or not event_type:
+            return {'detail': 'Token, proposal_id, and event_type required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get client info from token
+            cursor.execute("""
+                SELECT ci.invited_email, c.id as client_id
+                FROM collaboration_invitations ci
+                LEFT JOIN clients c ON c.email = ci.invited_email
+                WHERE ci.access_token = %s
+            """, (token,))
+            
+            result = cursor.fetchone()
+            if not result:
+                return {'detail': 'Invalid access token'}, 404
+            
+            client_email = result['invited_email']
+            client_id = result.get('client_id')
+            
+            # If client doesn't exist in clients table, try to find by email
+            if not client_id:
+                cursor.execute("""
+                    SELECT id FROM clients WHERE email = %s
+                """, (client_email,))
+                client_row = cursor.fetchone()
+                client_id = client_row['id'] if client_row else None
+            
+            # Convert proposal_id to appropriate type (handle both int and UUID)
+            # First try to get proposal to verify it exists
+            cursor.execute("""
+                SELECT id FROM proposals WHERE id = %s OR id::text = %s
+            """, (proposal_id, str(proposal_id)))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            actual_proposal_id = proposal['id']
+            
+            # Insert activity log
+            import json as json_module
+            metadata_json = json_module.dumps(metadata) if metadata else '{}'
+            
+            cursor.execute("""
+                INSERT INTO proposal_client_activity 
+                (proposal_id, client_id, event_type, metadata, created_at)
+                VALUES (%s, %s, %s, %s::jsonb, NOW())
+                RETURNING id, created_at
+            """, (actual_proposal_id, client_id, event_type, metadata_json))
+            
+            activity = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'success': True,
+                'activity_id': str(activity['id']),
+                'created_at': activity['created_at'].isoformat() if activity['created_at'] else None
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error logging client activity: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.post("/api/client/session/start")
+def start_client_session():
+    """Start a new client session for time tracking"""
+    try:
+        data = request.get_json()
+        if not data:
+            return {'detail': 'Request body required'}, 400
+        
+        token = data.get('token')
+        proposal_id = data.get('proposal_id')
+        
+        if not token or not proposal_id:
+            return {'detail': 'Token and proposal_id required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get client info from token
+            cursor.execute("""
+                SELECT ci.invited_email, c.id as client_id
+                FROM collaboration_invitations ci
+                LEFT JOIN clients c ON c.email = ci.invited_email
+                WHERE ci.access_token = %s
+            """, (token,))
+            
+            result = cursor.fetchone()
+            if not result:
+                return {'detail': 'Invalid access token'}, 404
+            
+            client_id = result.get('client_id')
+            if not client_id:
+                cursor.execute("SELECT id FROM clients WHERE email = %s", (result['invited_email'],))
+                client_row = cursor.fetchone()
+                client_id = client_row['id'] if client_row else None
+            
+            # Verify proposal exists
+            cursor.execute("""
+                SELECT id FROM proposals WHERE id = %s OR id::text = %s
+            """, (proposal_id, str(proposal_id)))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            actual_proposal_id = proposal['id']
+            
+            # Create session
+            cursor.execute("""
+                INSERT INTO proposal_client_session 
+                (proposal_id, client_id, session_start)
+                VALUES (%s, %s, NOW())
+                RETURNING id, session_start
+            """, (actual_proposal_id, client_id))
+            
+            session = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'success': True,
+                'session_id': str(session['id']),
+                'session_start': session['session_start'].isoformat() if session['session_start'] else None
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error starting client session: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.post("/api/client/session/end")
+def end_client_session():
+    """End a client session and calculate time spent"""
+    try:
+        data = request.get_json()
+        if not data:
+            return {'detail': 'Request body required'}, 400
+        
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return {'detail': 'session_id required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get session
+            cursor.execute("""
+                SELECT id, session_start, proposal_id, client_id
+                FROM proposal_client_session
+                WHERE id = %s OR id::text = %s
+            """, (session_id, str(session_id)))
+            
+            session = cursor.fetchone()
+            if not session:
+                return {'detail': 'Session not found'}, 404
+            
+            # Calculate time spent
+            session_end = datetime.now()
+            session_start = session['session_start']
+            if session_start:
+                total_seconds = int((session_end - session_start).total_seconds())
+            else:
+                total_seconds = 0
+            
+            # Update session
+            cursor.execute("""
+                UPDATE proposal_client_session
+                SET session_end = %s, total_seconds = %s
+                WHERE id = %s
+                RETURNING id, total_seconds
+            """, (session_end, total_seconds, session['id']))
+            
+            updated = cursor.fetchone()
+            conn.commit()
+            
+            return {
+                'success': True,
+                'session_id': str(updated['id']),
+                'total_seconds': updated['total_seconds']
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error ending client session: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 
 
 

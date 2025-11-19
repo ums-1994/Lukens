@@ -379,8 +379,8 @@ class _ProposalWizardState extends State<ProposalWizard>
             ),
           ),
           // Dark gradient overlay
-                Container(
-                  decoration: BoxDecoration(
+          Container(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
                   Colors.black.withOpacity(0.65),
@@ -409,7 +409,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                      Text(
+                        Text(
                           'Proposal Workflow',
                           style: PremiumTheme.bodyLarge.copyWith(
                             fontWeight: FontWeight.w600,
@@ -426,92 +426,102 @@ class _ProposalWizardState extends State<ProposalWizard>
                               stepIndex,
                             );
                           }).toList(),
-                ),
-              ],
-            ),
-          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   // Content area
-          Expanded(
+                  Expanded(
                     child: GlassContainer(
                       borderRadius: 32,
                       padding: const EdgeInsets.all(24),
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                          _buildComposeStep(), // Step 1: Compose (combines template, client, project, content)
-                          _buildGovernStep(), // Step 2: Govern
-                          _buildRiskGateStep(), // Step 3: AI Risk Gate
-                          _buildInternalSignoffStep(), // Step 4: Internal Sign-off
-                          _buildClientSignoffStep(), // Step 5: Client Sign-off
-              ],
-            ),
-          ),
+                      child: PageView(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          SizedBox.expand(
+                            child: _buildComposeStep(),
+                          ), // Step 1: Compose (combines template, client, project, content)
+                          SizedBox.expand(
+                            child: _buildGovernStep(),
+                          ), // Step 2: Govern
+                          SizedBox.expand(
+                            child: _buildRiskGateStep(),
+                          ), // Step 3: AI Risk Gate
+                          SizedBox.expand(
+                            child: _buildInternalSignoffStep(),
+                          ), // Step 4: Internal Sign-off
+                          SizedBox.expand(
+                            child: _buildClientSignoffStep(),
+                          ), // Step 5: Client Sign-off
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 24),
                   // Navigation buttons
                   GlassContainer(
                     borderRadius: 24,
                     padding: const EdgeInsets.all(20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (_currentStep > 0)
-                  TextButton(
-                    onPressed: _previousStep,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (_currentStep > 0)
+                          TextButton(
+                            onPressed: _previousStep,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 12),
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                              ),
+                            ),
                             child: Text(
-                      'Previous',
+                              'Previous',
                               style: PremiumTheme.bodyMedium.copyWith(
                                 color: PremiumTheme.textSecondary,
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _canProceed()
-                      ? (_currentStep == _totalSteps - 1
-                          ? _createProposal
-                          : _nextStep)
-                      : null,
-                  style: ElevatedButton.styleFrom(
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: _canProceed()
+                              ? (_currentStep == _totalSteps - 1
+                                  ? _createProposal
+                                  : _nextStep)
+                              : null,
+                          style: ElevatedButton.styleFrom(
                             backgroundColor: PremiumTheme.teal,
                             foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                            ),
+                            elevation: 0,
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
                                     valueColor: AlwaysStoppedAnimation<Color>(
                                         Colors.white),
-                          ),
-                        )
-                      : Text(
-                          _currentStep == _totalSteps - 1
-                              ? 'Create Proposal'
-                              : 'Next',
+                                  ),
+                                )
+                              : Text(
+                                  _currentStep == _totalSteps - 1
+                                      ? 'Create Proposal'
+                                      : 'Next',
                                   style: PremiumTheme.bodyMedium.copyWith(
-                            color: Colors.white,
+                                    color: Colors.white,
                                     fontWeight: FontWeight.w600,
-                          ),
+                                  ),
+                                ),
                         ),
-                ),
-              ],
+                      ],
                     ),
                   ),
                 ],
@@ -585,64 +595,64 @@ class _ProposalWizardState extends State<ProposalWizard>
         .toList();
 
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Text(
           'Review & Create',
           style: PremiumTheme.titleMedium,
         ),
-          const SizedBox(height: 8),
+        const SizedBox(height: 8),
         Text(
           'Review your proposal details and create',
           style: PremiumTheme.bodyMedium,
         ),
-          const SizedBox(height: 24),
+        const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: GlassContainer(
                 borderRadius: 24,
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
                       'Proposal Summary',
                       style: PremiumTheme.bodyLarge.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                const SizedBox(height: 24),
+                    const SizedBox(height: 24),
                     _buildReviewRow('Template:', template.name),
-                _buildReviewRow('Client:', _formData['clientName'] ?? ''),
+                    _buildReviewRow('Client:', _formData['clientName'] ?? ''),
                     _buildReviewRow(
                         'Project:', _formData['opportunityName'] ?? ''),
-                _buildReviewRow(
-                    'Modules:', '${selectedModules.length} selected'),
-                const SizedBox(height: 24),
+                    _buildReviewRow(
+                        'Modules:', '${selectedModules.length} selected'),
+                    const SizedBox(height: 24),
                     Text(
                       'Next Steps',
                       style: PremiumTheme.bodyLarge.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                const SizedBox(height: 16),
-                _buildNextStepItem(
-                    '• Your proposal will be created in draft status',
+                    const SizedBox(height: 16),
+                    _buildNextStepItem(
+                        '• Your proposal will be created in draft status',
                         PremiumTheme.info),
-                _buildNextStepItem(
-                    '• You can continue editing and adding content',
+                    _buildNextStepItem(
+                        '• You can continue editing and adding content',
                         PremiumTheme.info),
-                _buildNextStepItem(
+                    _buildNextStepItem(
                         '• Submit for approval when ready', PremiumTheme.info),
-                _buildNextStepItem(
-                    '• Track progress through the approval workflow',
+                    _buildNextStepItem(
+                        '• Track progress through the approval workflow',
                         PremiumTheme.info),
-              ],
+                  ],
+                ),
+              ),
             ),
-          ),
-      ),
           ),
         ),
       ],
@@ -720,19 +730,19 @@ class _ProposalWizardState extends State<ProposalWizard>
         Map<String, String>.from(_formData['moduleContents'] ?? {});
 
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Text(
           'Add Content',
           style: PremiumTheme.titleMedium,
         ),
-          const SizedBox(height: 8),
+        const SizedBox(height: 8),
         Text(
-              'Fill in the selected sections (you can complete this later)',
+          'Fill in the selected sections (you can complete this later)',
           style: PremiumTheme.bodyMedium,
         ),
-          const SizedBox(height: 24),
-          Expanded(
+        const SizedBox(height: 24),
+        Expanded(
           child: CustomScrollbar(
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -751,7 +761,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                         Text(
                           module['name'] ?? '',
                           style: PremiumTheme.bodyLarge.copyWith(
-                                fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -774,8 +784,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 },
                                 maxLines: 6,
                                 decoration: InputDecoration(
-                                    hintText:
-                                        'Provide a high-level overview of the project...',
+                                  hintText:
+                                      'Provide a high-level overview of the project...',
                                   hintStyle: PremiumTheme.bodyMedium.copyWith(
                                     color: PremiumTheme.textTertiary,
                                   ),
@@ -830,42 +840,42 @@ class _ProposalWizardState extends State<ProposalWizard>
           }
         },
         child: Column(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: isCompleted
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: isCompleted
                     ? PremiumTheme.success
-                : isActive
+                    : isActive
                         ? const Color(0xFFEAF2F8) // Light blue background
                         : const Color(0xFFEAF2F8).withOpacity(0.5),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isCompleted
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isCompleted
                       ? PremiumTheme.success
                       : PremiumTheme.info, // Blue border
                   width: 1.5,
-            ),
-          ),
-          child: Center(
-            child: isCompleted
+                ),
+              ),
+              child: Center(
+                child: isCompleted
                     ? const Icon(Icons.check, color: Colors.white, size: 16)
-                : Text(
+                    : Text(
                         number,
-                    style: TextStyle(
-                      fontSize: 14,
+                        style: TextStyle(
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: isActive
                               ? PremiumTheme.info // Blue text
                               : PremiumTheme.info.withOpacity(0.6),
-                    ),
-                  ),
-          ),
-        ),
+                        ),
+                      ),
+              ),
+            ),
             const SizedBox(height: 6),
-        Text(
-          label,
+            Text(
+              label,
               style: PremiumTheme.bodyMedium.copyWith(
                 color: isActive
                     ? PremiumTheme.textPrimary
@@ -927,8 +937,8 @@ class _ProposalWizardState extends State<ProposalWizard>
   // Step 3: AI Risk Gate
   Widget _buildRiskGateStep() {
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Text(
           'AI Risk Assessment',
           style: PremiumTheme.titleMedium,
@@ -959,8 +969,8 @@ class _ProposalWizardState extends State<ProposalWizard>
         Text(
           'Internal Sign-off',
           style: PremiumTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
+        ),
+        const SizedBox(height: 8),
         Text(
           'Submit for internal review and approval',
           style: PremiumTheme.bodyMedium,
@@ -991,9 +1001,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         Text(
           'Send proposal to client for review and signature',
           style: PremiumTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-          Expanded(
+        ),
+        const SizedBox(height: 24),
+        Expanded(
           child: CustomScrollbar(
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -1060,30 +1070,30 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ],
                   ),
                 )
-                : CustomScrollbar(
-                    child: LayoutBuilder(builder: (context, constraints) {
-              // responsive columns: 3 on wide, 2 on medium, 1 on small
-              int crossAxisCount = 1;
-              if (constraints.maxWidth > 1200) {
-                crossAxisCount = 3;
-              } else if (constraints.maxWidth > 800) {
-                crossAxisCount = 2;
-              } else {
-                crossAxisCount = 1;
-              }
+              : CustomScrollbar(
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    // responsive columns: 3 on wide, 2 on medium, 1 on small
+                    int crossAxisCount = 1;
+                    if (constraints.maxWidth > 1200) {
+                      crossAxisCount = 3;
+                    } else if (constraints.maxWidth > 800) {
+                      crossAxisCount = 2;
+                    } else {
+                      crossAxisCount = 1;
+                    }
 
-              return GridView.builder(
+                    return GridView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  childAspectRatio: crossAxisCount == 1 ? 3 : 1.2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                ),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        childAspectRatio: crossAxisCount == 1 ? 3 : 1.2,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                      ),
                       itemCount: _availableTemplates.length,
-                itemBuilder: (context, index) {
+                      itemBuilder: (context, index) {
                         final template = _availableTemplates[index];
-                  final isSelected =
+                        final isSelected =
                             _formData['templateId'] == template.id;
                         final color = template.templateType == 'sow'
                             ? const Color(0xFF2ECC71)
@@ -1091,76 +1101,76 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 ? const Color(0xFFE74C3C)
                                 : const Color(0xFF3498DB);
 
-                  return GestureDetector(
+                        return GestureDetector(
                           onTap: () => _selectTemplate(template.id),
                           child: GlassContainer(
                             borderRadius: 20,
-                      padding: const EdgeInsets.all(20),
+                            padding: const EdgeInsets.all(20),
                             gradientStart: isSelected ? color : null,
                             gradientEnd: isSelected ? color : null,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: BoxDecoration(
                                     color: color.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
                                     template.templateType == 'sow'
                                         ? Icons.work_outline
                                         : template.templateType == 'rfi'
                                             ? Icons.quiz_outlined
                                             : Icons.description_outlined,
                                     color: color,
-                              size: 30,
-                            ),
-                          ),
-                          const SizedBox(width: 20),
-                          Expanded(
-                            child: Column(
+                                    size: 30,
+                                  ),
+                                ),
+                                const SizedBox(width: 20),
+                                Expanded(
+                                  child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
                                         template.name,
                                         style: PremiumTheme.bodyLarge.copyWith(
                                           fontWeight: FontWeight.w600,
                                           color: PremiumTheme.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
                                         template.description ?? '',
                                         style: PremiumTheme.bodyMedium,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 10),
-                                Text(
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
                                         '${template.sections.length} sections',
                                         style: PremiumTheme.labelMedium,
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                if (isSelected)
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: PremiumTheme.success,
+                                    size: 24,
+                                  ),
                               ],
                             ),
                           ),
-                          if (isSelected)
-                                  Icon(
-                              Icons.check_circle,
-                                    color: PremiumTheme.success,
-                              size: 24,
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            }),
-          ),
-      ),
+                        );
+                      },
+                    );
+                  }),
+                ),
+        ),
       ],
     );
   }
@@ -1201,60 +1211,60 @@ class _ProposalWizardState extends State<ProposalWizard>
                   child: Column(
                     children: [
                       _buildTextField(
-                      'Proposal Title',
-                      'Enter proposal title',
-                      (value) =>
-                          setState(() => _formData['proposalTitle'] = value),
-                      Icons.description_outlined,
-                      controller: proposalTitleController,
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildTextField(
-                            'Client Name',
-                            'Company or contact name',
+                        'Proposal Title',
+                        'Enter proposal title',
+                        (value) =>
+                            setState(() => _formData['proposalTitle'] = value),
+                        Icons.description_outlined,
+                        controller: proposalTitleController,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Name',
+                              'Company or contact name',
                               (value) => setState(
                                   () => _formData['clientName'] = value),
-                            Icons.business_outlined,
-                            controller: clientNameController,
+                              Icons.business_outlined,
+                              controller: clientNameController,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildTextField(
-                            'Client Email',
-                            'client@company.com',
-                            (value) => setState(
-                                () => _formData['clientEmail'] = value),
-                            Icons.email_outlined,
-                            keyboardType: TextInputType.emailAddress,
-                            controller: clientEmailController,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Email',
+                              'client@company.com',
+                              (value) => setState(
+                                  () => _formData['clientEmail'] = value),
+                              Icons.email_outlined,
+                              keyboardType: TextInputType.emailAddress,
+                              controller: clientEmailController,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                      'Project/Opportunity Name',
-                      'Brief project description',
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Project/Opportunity Name',
+                        'Brief project description',
                         (value) => setState(
                             () => _formData['opportunityName'] = value),
-                      Icons.lightbulb_outline,
-                      controller: opportunityNameController,
-                    ),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                      'Estimated Value (Optional)',
-                      '0',
-                      (value) =>
-                          setState(() => _formData['estimatedValue'] = value),
-                      Icons.attach_money,
-                      keyboardType: TextInputType.number,
-                      controller: estimatedValueController,
-                    ),
-                  ],
+                        Icons.lightbulb_outline,
+                        controller: opportunityNameController,
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Estimated Value (Optional)',
+                        '0',
+                        (value) =>
+                            setState(() => _formData['estimatedValue'] = value),
+                        Icons.attach_money,
+                        keyboardType: TextInputType.number,
+                        controller: estimatedValueController,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1274,20 +1284,20 @@ class _ProposalWizardState extends State<ProposalWizard>
 
     return Directionality(
       textDirection: TextDirection.ltr,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Text(
-              'Project Details',
+            'Project Details',
             style: PremiumTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
+          ),
+          const SizedBox(height: 8),
           Text(
-              'Specify project type, value, and timeline',
+            'Specify project type, value, and timeline',
             style: PremiumTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            Expanded(
+          ),
+          const SizedBox(height: 24),
+          Expanded(
             child: CustomScrollbar(
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -1323,10 +1333,10 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ),
                   ],
                 ),
-                ),
               ),
             ),
-          ],
+          ),
+        ],
       ),
     );
   }
@@ -1338,18 +1348,18 @@ class _ProposalWizardState extends State<ProposalWizard>
         _contentModules.where((m) => !m['required']).toList();
 
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Text(
-            'Content Modules',
+          'Content Modules',
           style: PremiumTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
+        ),
+        const SizedBox(height: 8),
         Text(
-            'Select content modules to include in your proposal',
+          'Select content modules to include in your proposal',
           style: PremiumTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
+        ),
+        const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
             child: SingleChildScrollView(
@@ -1357,7 +1367,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                // Required modules
+                  // Required modules
                   Text(
                     'Required Modules',
                     style: PremiumTheme.bodyLarge.copyWith(
@@ -1383,7 +1393,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               ),
             ),
           ),
-      ),
+        ),
       ],
     );
   }
@@ -1398,43 +1408,43 @@ class _ProposalWizardState extends State<ProposalWizard>
         padding: EdgeInsets.zero,
         gradientStart: isSelected ? PremiumTheme.teal : null,
         gradientEnd: isSelected ? PremiumTheme.teal : null,
-      child: CheckboxListTile(
-        title: Text(
-          module['name'],
+        child: CheckboxListTile(
+          title: Text(
+            module['name'],
             style: PremiumTheme.bodyLarge.copyWith(
-            fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w600,
               color: PremiumTheme.textPrimary,
+            ),
           ),
-        ),
-        subtitle: Text(
-          module['description'],
+          subtitle: Text(
+            module['description'],
             style: PremiumTheme.bodyMedium,
-        ),
-        value: isRequired || isSelected,
-        onChanged: isRequired ? null : (value) => _toggleModule(module['id']),
+          ),
+          value: isRequired || isSelected,
+          onChanged: isRequired ? null : (value) => _toggleModule(module['id']),
           activeColor: PremiumTheme.teal,
           checkColor: Colors.white,
-        controlAffinity: ListTileControlAffinity.leading,
-        secondary: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: module['category'] == 'Company'
+          controlAffinity: ListTileControlAffinity.leading,
+          secondary: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: module['category'] == 'Company'
                   ? PremiumTheme.info.withOpacity(0.2)
-                : module['category'] == 'Project'
+                  : module['category'] == 'Project'
                       ? PremiumTheme.success.withOpacity(0.2)
-                    : module['category'] == 'Legal'
+                      : module['category'] == 'Legal'
                           ? PremiumTheme.error.withOpacity(0.2)
                           : PremiumTheme.purple.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            module['category'],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              module['category'],
               style: PremiumTheme.labelMedium.copyWith(
-              color: module['category'] == 'Company'
+                color: module['category'] == 'Company'
                     ? PremiumTheme.info
-                  : module['category'] == 'Project'
+                    : module['category'] == 'Project'
                         ? PremiumTheme.success
-                      : module['category'] == 'Legal'
+                        : module['category'] == 'Legal'
                             ? PremiumTheme.error
                             : PremiumTheme.purple,
               ),
@@ -1516,13 +1526,13 @@ class _ProposalWizardState extends State<ProposalWizard>
     return Directionality(
       textDirection: TextDirection.ltr,
       child: DropdownButtonFormField<String>(
-        value: value?.isEmpty == true ? null : value,
+        initialValue: value?.isEmpty == true ? null : value,
         style: PremiumTheme.bodyMedium.copyWith(
           color: PremiumTheme.textPrimary,
         ),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
           labelStyle: PremiumTheme.bodyMedium.copyWith(
             color: PremiumTheme.textSecondary,
           ),
@@ -1532,33 +1542,33 @@ class _ProposalWizardState extends State<ProposalWizard>
           prefixIcon: Icon(icon, color: PremiumTheme.teal),
           filled: true,
           fillColor: PremiumTheme.glassWhite,
-        border: OutlineInputBorder(
+          border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
-        ),
-        enabledBorder: OutlineInputBorder(
+          ),
+          enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
-        ),
-        focusedBorder: OutlineInputBorder(
+          ),
+          focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
+          ),
         ),
-      ),
         dropdownColor: PremiumTheme.darkBg2,
-      items: options.map((option) {
-        return DropdownMenuItem<String>(
-          value: option,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
+        items: options.map((option) {
+          return DropdownMenuItem<String>(
+            value: option,
+            child: Directionality(
+              textDirection: TextDirection.ltr,
               child: Text(
                 option,
                 style: PremiumTheme.bodyMedium,
               ),
-          ),
-        );
-      }).toList(),
-      onChanged: (value) => onChanged(value ?? ''),
+            ),
+          );
+        }).toList(),
+        onChanged: (value) => onChanged(value ?? ''),
       ),
     );
   }

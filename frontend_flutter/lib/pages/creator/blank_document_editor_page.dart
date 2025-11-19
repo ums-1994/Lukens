@@ -476,13 +476,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               'id': collab['id'],
               'email': collab['invited_email'],
               'name': collab['invited_email'].split('@')[0],
-              'role': collab['permission_level'] == 'edit'
-                  ? 'Can Edit'
-                  : collab['permission_level'] == 'suggest'
-                      ? 'Can Suggest'
-                      : collab['permission_level'] == 'comment'
-                          ? 'Can Comment'
-                          : 'View Only',
+              'role': 'Full Access', // All collaborators have full access
               'status': collab['status'],
               'invited_at': collab['invited_at'],
               'accessed_at': collab['accessed_at'],
@@ -2198,6 +2192,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         );
 
+        // Refresh proposals in AppState before navigating
+        if (mounted) {
+          final app = Provider.of<AppState>(context, listen: false);
+          await app.fetchProposals();
+          await app.fetchDashboard();
+        }
+
         // Navigate back to proposals page after a brief delay
         await Future.delayed(const Duration(milliseconds: 500));
 
@@ -3119,23 +3120,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Sections toggle button
-          OutlinedButton.icon(
-            onPressed: () {
-              setState(() => _showSectionsSidebar = !_showSectionsSidebar);
-            },
-            icon: const Icon(Icons.list, size: 16),
-            label: const Text('Sections'),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: _showSectionsSidebar
-                    ? const Color(0xFF00BCD4)
-                    : Colors.grey,
-              ),
-              foregroundColor: _showSectionsSidebar
-                  ? const Color(0xFF00BCD4)
-                  : Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          // Save and Close button
+          ElevatedButton.icon(
+            onPressed: _saveAndClose,
+            icon: const Icon(Icons.save, size: 16),
+            label: const Text('Save and Close'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00BCD4),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -7747,7 +7741,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _showCollaborationDialog() {
     final emailController = TextEditingController();
     bool isInviting = false;
-    String selectedPermission = 'edit'; // Default to edit for collaborators
+    // All collaborators get full access (edit, comment, suggest)
+    String selectedPermission = 'edit';
 
     // Load existing collaborators
     _loadCollaborators();
@@ -7812,33 +7807,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               ),
                               enabled: !isInviting,
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          DropdownButton<String>(
-                            value: selectedPermission,
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'edit',
-                                child: Text('Can Edit'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'suggest',
-                                child: Text('Can Suggest Changes'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'comment',
-                                child: Text('Can Comment'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'view',
-                                child: Text('View Only'),
-                              ),
-                            ],
-                            onChanged: (value) {
-                              setDialogState(() {
-                                selectedPermission = value ?? 'edit';
-                              });
-                            },
                           ),
                           const SizedBox(width: 12),
                           ElevatedButton.icon(

@@ -8,6 +8,7 @@ import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../shared/proposal_insights_modal.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -88,11 +89,27 @@ class _DashboardPageState extends State<DashboardPage>
 
   List<dynamic> _getFilteredProposals(List<dynamic> proposals) {
     if (_statusFilter == 'all') {
+      // Return all proposals when filter is 'all'
       return proposals;
     }
     return proposals.where((proposal) {
-      final status = proposal['status']?.toString().toLowerCase() ?? 'draft';
-      return status == _statusFilter.toLowerCase();
+      // Handle null/empty status - default to 'draft'
+      final rawStatus = proposal['status'];
+      if (rawStatus == null || rawStatus.toString().trim().isEmpty) {
+        // If status is null/empty and filter is 'draft', include it
+        return _statusFilter.toLowerCase() == 'draft';
+      }
+      // Normalize status for comparison (handle case variations)
+      final status = rawStatus.toString().toLowerCase().trim();
+      final filter = _statusFilter.toLowerCase().trim();
+      
+      // Special handling for draft status variations
+      if (filter == 'draft') {
+        return status == 'draft' || status.isEmpty;
+      }
+      
+      // For other statuses, do exact match after normalization
+      return status == filter;
     }).toList();
   }
 
@@ -1271,9 +1288,10 @@ class _DashboardPageState extends State<DashboardPage>
                   'Draft',
                   'draft',
                   proposals
-                      .where((p) =>
-                          (p['status'] ?? 'draft').toString().toLowerCase() ==
-                          'draft')
+                      .where((p) {
+                        final status = (p['status'] ?? 'Draft').toString().toLowerCase().trim();
+                        return status == 'draft' || status.isEmpty;
+                      })
                       .length),
               const SizedBox(width: 8),
               _buildFilterTab(
@@ -1331,8 +1349,7 @@ class _DashboardPageState extends State<DashboardPage>
             Color textColor = _getStatusTextColor(status);
 
             return _buildProposalItem(
-              proposal['title'] ?? 'Untitled',
-              'Last modified: ${_formatDate(proposal['updated_at'])}',
+              proposal,
               status,
               statusColor,
               textColor,
@@ -1400,8 +1417,13 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildProposalItem(String title, String subtitle, String status,
+  Widget _buildProposalItem(Map<String, dynamic> proposal, String status,
       Color statusColor, Color textColor) {
+    final title = proposal['title'] ?? 'Untitled';
+    final subtitle = 'Last modified: ${_formatDate(proposal['updated_at'])}';
+    final isSentToClient = status.toLowerCase() == 'sent to client';
+    final clientName = proposal['client_name'] ?? proposal['client'] ?? '';
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1417,46 +1439,183 @@ class _DashboardPageState extends State<DashboardPage>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  title,
-                  style: PremiumTheme.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: PremiumTheme.textPrimary,
+                // Client Initials Badge (for Sent to Client)
+                if (isSentToClient && clientName.isNotEmpty) ...[
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: PremiumTheme.info.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: PremiumTheme.info.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _getClientInitials(clientName),
+                        style: TextStyle(
+                          color: PremiumTheme.info,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: PremiumTheme.bodyMedium.copyWith(
-                    fontSize: 13,
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: PremiumTheme.bodyLarge.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: PremiumTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Text(
+                            subtitle,
+                            style: PremiumTheme.bodyMedium.copyWith(
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (isSentToClient) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '•',
+                              style: PremiumTheme.bodyMedium.copyWith(
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FutureBuilder<Map<String, dynamic>?>(
+                              future: _getLastActivity(proposal['id']?.toString()),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  );
+                                }
+                                final lastActivity = _formatLastActivity(snapshot.data);
+                                return Text(
+                                  lastActivity,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    fontSize: 13,
+                                    color: PremiumTheme.info,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: statusColor.withOpacity(0.3),
-                width: 1,
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: statusColor.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: statusColor,
+                  ),
+                ),
               ),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: statusColor,
-              ),
-            ),
+              if (isSentToClient) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.insights, size: 20),
+                  color: PremiumTheme.info,
+                  tooltip: 'View Insights',
+                  onPressed: () => _showInsightsModal(proposal),
+                ),
+              ],
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  String _getClientInitials(String clientName) {
+    if (clientName.isEmpty) return '?';
+    final parts = clientName.trim().split(' ');
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return clientName[0].toUpperCase();
+  }
+
+  Future<Map<String, dynamic>?> _getLastActivity(String? proposalId) async {
+    if (proposalId == null) return null;
+    try {
+      final app = context.read<AppState>();
+      return await app.getProposalAnalytics(proposalId);
+    } catch (e) {
+      print('Error fetching analytics: $e');
+      return null;
+    }
+  }
+
+  String _formatLastActivity(Map<String, dynamic>? analytics) {
+    if (analytics == null) return 'Not viewed';
+    
+    final events = analytics['events'] as List?;
+    if (events == null || events.isEmpty) return 'Not viewed';
+    
+    // Find the most recent 'open' event
+    final openEvents = events.where((e) => e['event_type'] == 'open').toList();
+    if (openEvents.isEmpty) return 'Not viewed';
+    
+    final lastOpen = openEvents.first;
+    final createdAt = lastOpen['created_at'] as String?;
+    if (createdAt == null) return 'Not viewed';
+    
+    try {
+      final date = DateTime.parse(createdAt);
+      final now = DateTime.now();
+      final diff = now.difference(date);
+      
+      if (diff.inDays > 0) return 'Viewed ${diff.inDays}d ago';
+      if (diff.inHours > 0) return 'Viewed ${diff.inHours}h ago';
+      if (diff.inMinutes > 0) return 'Viewed ${diff.inMinutes}m ago';
+      return 'Viewed just now';
+    } catch (e) {
+      return 'Viewed';
+    }
+  }
+
+  void _showInsightsModal(Map<String, dynamic> proposal) {
+    showDialog(
+      context: context,
+      builder: (context) => ProposalInsightsModal(
+        proposalId: proposal['id']?.toString() ?? '',
+        proposalTitle: proposal['title'] ?? 'Untitled',
       ),
     );
   }

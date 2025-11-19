@@ -836,8 +836,30 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           _loadData();
         }
       } else {
-        final error = json.decode(response.body);
-        throw Exception(error['detail'] ?? 'Failed to approve proposal');
+        // Handle non-JSON error responses (like 404 HTML pages)
+        String errorMessage = 'Failed to approve proposal';
+        try {
+          final contentType = response.headers['content-type'] ?? '';
+          if (contentType.contains('application/json')) {
+            final error = json.decode(response.body);
+            errorMessage = error['detail'] ?? errorMessage;
+          } else {
+            // HTML or other non-JSON response (likely 404 page)
+            if (response.statusCode == 404) {
+              errorMessage = 'Proposal approval endpoint not found (404). Please check server configuration.';
+            } else {
+              errorMessage = 'Server error (${response.statusCode}): ${response.body.substring(0, response.body.length > 100 ? 100 : response.body.length)}';
+            }
+          }
+        } catch (parseError) {
+          // If JSON parsing fails, use status code info
+          if (response.statusCode == 404) {
+            errorMessage = 'Endpoint not found (404). The approval route may not be registered correctly.';
+          } else {
+            errorMessage = 'Server returned error ${response.statusCode}';
+          }
+        }
+        throw Exception(errorMessage);
       }
     } catch (e) {
       print('❌ Error approving proposal: $e');

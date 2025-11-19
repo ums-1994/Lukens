@@ -28,6 +28,7 @@ import 'pages/shared/approved_proposals_page.dart';
 import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/shared/collaboration_router.dart';
 import 'pages/client/client_onboarding_page.dart';
+import 'pages/client/client_dashboard_home.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
@@ -147,14 +148,34 @@ class MyApp extends StatelessWidget {
           if (settings.name == '/onboard' ||
               (settings.name != null && settings.name!.contains('onboard'))) {
             print('🔍 Client onboarding route detected: ${settings.name}');
-            // Extract token from current URL query parameters
+            // Extract token from current URL - try multiple methods
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
-            final token = uri.queryParameters['token'];
+            String? token = uri.queryParameters['token'];
+            
+            // If not found in query params, try extracting from hash fragment or full URL
+            if (token == null || token.isEmpty) {
+              final hash = web.window.location.hash;
+              if (hash.contains('token=')) {
+                final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+                if (hashMatch != null) {
+                  token = hashMatch.group(1);
+                }
+              }
+              // Try full URL as fallback
+              if (token == null || token.isEmpty) {
+                final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                if (urlMatch != null) {
+                  token = urlMatch.group(1);
+                }
+              }
+            }
+            
             print('📍 Onboarding token: ${token != null ? "${token.substring(0, 10)}..." : "null"}');
             if (token != null && token.isNotEmpty) {
+              final validToken = token; // Create non-nullable variable
               return MaterialPageRoute(
-                builder: (context) => ClientOnboardingPage(token: token),
+                builder: (context) => ClientOnboardingPage(token: validToken),
               );
             } else {
               print('❌ No token found in onboarding URL');
@@ -172,6 +193,26 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(
               builder: (context) => EmailVerificationPage(token: token),
             );
+          }
+
+          // Handle client proposals route
+          if (settings.name == '/client/proposals' ||
+              (settings.name != null && settings.name!.startsWith('/client/proposals'))) {
+            print('🔍 Client proposals route detected: ${settings.name}');
+            
+            // Extract token from URL
+            final currentUrl = web.window.location.href;
+            final uri = Uri.parse(currentUrl);
+            String? token = uri.queryParameters['token'];
+            
+            if (token != null && token.isNotEmpty) {
+              print('✅ Token found for client proposals');
+              return MaterialPageRoute(
+                builder: (context) => const ClientDashboardHome(),
+              );
+            } else {
+              print('❌ No token found in client proposals URL');
+            }
           }
 
           // Handle client portal route (e.g., /client-portal/123)
@@ -215,7 +256,26 @@ class MyApp extends StatelessWidget {
             // This will be handled by onGenerateRoute, but adding as fallback
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
-            final token = uri.queryParameters['token'];
+            String? token = uri.queryParameters['token'];
+            
+            // If not found in query params, try extracting from hash fragment or full URL
+            if (token == null || token.isEmpty) {
+              final hash = web.window.location.hash;
+              if (hash.contains('token=')) {
+                final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+                if (hashMatch != null) {
+                  token = hashMatch.group(1);
+                }
+              }
+              // Try full URL as fallback
+              if (token == null || token.isEmpty) {
+                final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                if (urlMatch != null) {
+                  token = urlMatch.group(1);
+                }
+              }
+            }
+            
             return ClientOnboardingPage(token: token ?? '');
           },
           '/verify-email': (context) {
@@ -343,6 +403,36 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
 
+    // Check if this is a client onboarding URL (priority check)
+    final isOnboarding = currentUrl.contains('/onboard') || 
+        uri.path.contains('/onboard') ||
+        currentUrl.contains('onboard?token=');
+    
+    String? onboardingToken;
+    // Try to get token from query parameters first
+    onboardingToken = uri.queryParameters['token'];
+    
+    // If not found, try to extract from hash fragment or full URL
+    if (onboardingToken == null || onboardingToken.isEmpty) {
+      final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+      if (hashMatch != null) {
+        onboardingToken = hashMatch.group(1);
+      }
+    }
+    
+    if (isOnboarding && onboardingToken != null && onboardingToken.isNotEmpty) {
+      print('✅ Detected client onboarding URL in _checkVerificationUrl - token: ${onboardingToken.substring(0, 10)}...');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ClientOnboardingPage(token: onboardingToken!),
+          ),
+        );
+      });
+      return;
+    }
+
     // Check if this is a collaboration URL (has token and contains 'collaborate')
     if (uri.fragment.contains('/collaborate') &&
         uri.queryParameters.containsKey('token')) {
@@ -361,8 +451,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     }
 
-    // Check if this is a verification URL
-    if (uri.queryParameters.containsKey('token')) {
+    // Check if this is a client proposals URL (don't redirect to verification)
+    final isClientProposals = currentUrl.contains('/client/proposals') ||
+        uri.path.contains('/client/proposals');
+    
+    // Check if this is a collaboration URL (don't redirect to verification)
+    final isCollaborationUrl = currentUrl.contains('/collaborate') ||
+        uri.path.contains('/collaborate');
+    
+    // Check if this is a verification URL (but not onboarding, client proposals, or collaboration)
+    if (!isOnboarding && !isClientProposals && !isCollaborationUrl && uri.queryParameters.containsKey('token')) {
       final token = uri.queryParameters['token'];
       if (token != null && token.isNotEmpty) {
         // Navigate to verification page
@@ -389,18 +487,52 @@ class _AuthWrapperState extends State<AuthWrapper> {
     print('🔍 AuthWrapper - Hash: $hash');
     print('🔍 AuthWrapper - Search: $search');
 
-    // Check for client onboarding URL
+    // Check for client onboarding URL (priority check - must happen first)
     final uri = Uri.parse(currentUrl);
     final isOnboarding = currentUrl.contains('/onboard') ||
-        hash.contains('/onboard') ||
+        uri.path.contains('/onboard') ||
         currentUrl.contains('onboard?token=') ||
         search.contains('onboard?token=');
     
-    final onboardingToken = uri.queryParameters['token'];
+    String? onboardingToken;
+    // Try to get token from query parameters first
+    onboardingToken = uri.queryParameters['token'];
+    
+    // If not found in query params, try to extract from hash fragment or full URL
+    if (onboardingToken == null || onboardingToken.isEmpty) {
+      // Try extracting from hash fragment
+      if (hash.contains('token=')) {
+        final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+        if (hashMatch != null) {
+          onboardingToken = hashMatch.group(1);
+        }
+      }
+      // Try extracting from full URL as fallback
+      if (onboardingToken == null || onboardingToken.isEmpty) {
+        final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+        if (urlMatch != null) {
+          onboardingToken = urlMatch.group(1);
+        }
+      }
+    }
     
     if (isOnboarding && onboardingToken != null && onboardingToken.isNotEmpty) {
       print('✅ Detected client onboarding URL - showing ClientOnboardingPage');
+      print('📍 Onboarding token: ${onboardingToken.substring(0, 10)}...');
       return ClientOnboardingPage(token: onboardingToken);
+    }
+
+    // Check for client proposals URL (priority - must be before collaboration check)
+    final isClientProposals = currentUrl.contains('/client/proposals') ||
+        uri.path.contains('/client/proposals');
+    
+    if (isClientProposals) {
+      final token = uri.queryParameters['token'];
+      if (token != null && token.isNotEmpty) {
+        print('✅ Detected client proposals URL - showing ClientDashboardHome');
+        print('📍 Client token: ${token.substring(0, 10)}...');
+        return const ClientDashboardHome();
+      }
     }
 
     // Check for collaboration in hash or URL

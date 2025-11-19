@@ -1520,7 +1520,15 @@ except Exception as blueprint_error:
 if __name__ == '__main__':
     # When running with 'python app.py'
     try:
-        init_db()  # Initialize database before running
+        # Initialize database before running (outside Flask context)
+        # Call init_pg_schema directly - it doesn't require Flask request context
+        print("🔄 Initializing database schema...")
+        init_pg_schema()
+        print("✅ Database schema initialized successfully")
     except Exception as e:
-        print(f"Warning: Database initialization failed: {e}")
+        print(f"⚠️ Warning: Database initialization failed: {e}")
+        # Don't raise - allow app to start even if schema init fails
+        # Schema will be initialized on first request via init_db() if needed
+        import traceback
+        traceback.print_exc()
     app.run(debug=True, host='0.0.0.0', port=8000)

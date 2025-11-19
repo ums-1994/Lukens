@@ -187,6 +187,15 @@ def init_pg_schema():
         except Exception as e:
             print(f"[WARN] Could not add company_name column (may already exist): {e}")
 
+        # Add contact_person column if it doesn't exist (migration for existing databases)
+        try:
+            cursor.execute('''
+                ALTER TABLE clients 
+                ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add contact_person column (may already exist): {e}")
+
         # Proposal versions table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
         id SERIAL PRIMARY KEY,
