@@ -239,6 +239,8 @@ def create_proposal(username=None):
 
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email') or ''
+            # Legacy "client" column is still NOT NULL in many databases, so keep it in sync
+            client_value = client_name
             
             # Normalize status to proper capitalization
             raw_status = data.get('status', 'Draft')
@@ -260,12 +262,13 @@ def create_proposal(username=None):
                     normalized_status = ' '.join(word.capitalize() for word in status_lower.split())
             
             cursor.execute(
-                '''INSERT INTO proposals (owner_id, title, content, status, client_name, client_email, budget, timeline_days)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
+                '''INSERT INTO proposals (owner_id, title, client, content, status, client_name, client_email, budget, timeline_days)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
                    RETURNING id, owner_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
                 (
                     owner_id,
                     data.get('title', 'Untitled Document'),
+                    client_value,
                     data.get('content'),
                     normalized_status,
                     client_name,
@@ -342,6 +345,9 @@ def update_proposal(username=None, proposal_id=None):
             if 'client_name' in data or 'client' in data:
                 client_name = data.get('client_name') or data.get('client')
                 updates.append('client_name = %s')
+                params.append(client_name)
+                # Keep legacy client column in sync
+                updates.append('client = %s')
                 params.append(client_name)
             if 'client_email' in data:
                 updates.append('client_email = %s')
