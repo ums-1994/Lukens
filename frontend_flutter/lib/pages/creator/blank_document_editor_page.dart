@@ -89,7 +89,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _mentionQuery = '';
 
   // Backend integration
-  int? _savedProposalId; // Store the actual backend proposal ID
+  String? _savedProposalId; // Store the actual backend proposal ID
   String? _authToken;
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
 
@@ -184,13 +184,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       // Load existing data if editing an existing proposal
       if (widget.proposalId != null) {
-        final proposalId = int.tryParse(widget.proposalId!);
-        if (proposalId != null) {
-          _savedProposalId = proposalId;
-          await _loadProposalFromDatabase(proposalId);
-          await _loadVersionsFromDatabase(proposalId);
-          await _loadCommentsFromDatabase(proposalId);
-        }
+        final proposalId = widget.proposalId!;
+        _savedProposalId = proposalId;
+        await _loadProposalFromDatabase(proposalId);
+        await _loadVersionsFromDatabase(proposalId);
+        await _loadCommentsFromDatabase(proposalId);
       }
 
       // Load images from content library
@@ -249,7 +247,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
-  Future<void> _loadProposalFromDatabase(int proposalId) async {
+  Future<void> _loadProposalFromDatabase(String proposalId) async {
     try {
       final token = await _getAuthToken();
       if (token == null) return;
@@ -259,7 +257,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Get all proposals and find the one we need
       final proposals = await ApiService.getProposals(token);
       final proposal = proposals.firstWhere(
-        (p) => p['id'] == proposalId,
+        (p) => p['id'] != null && p['id'].toString() == proposalId,
         orElse: () => <String, dynamic>{},
       );
 
@@ -357,7 +355,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
-  Future<void> _loadVersionsFromDatabase(int proposalId) async {
+  Future<void> _loadVersionsFromDatabase(String proposalId) async {
     try {
       final token = await _getAuthToken();
       if (token == null) return;
@@ -1612,9 +1610,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
         if (result != null && result['id'] != null) {
           setState(() {
-            _savedProposalId = result['id'] is int
-                ? result['id']
-                : int.tryParse(result['id'].toString());
+            _savedProposalId = result['id'].toString();
           });
           print('✅ Proposal created with ID: $_savedProposalId');
           print(

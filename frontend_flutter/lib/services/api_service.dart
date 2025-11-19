@@ -147,7 +147,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> updateProposal({
     required String token,
-    required int id,
+    required String id,
     required String title,
     required String content,
     String? clientName,
@@ -179,7 +179,7 @@ class ApiService {
 
   static Future<bool> deleteProposal({
     required String token,
-    required int id,
+    required String id,
   }) async {
     try {
       final response = await http.delete(
@@ -365,7 +365,7 @@ class ApiService {
   // Proposal Versions
   static Future<Map<String, dynamic>?> createVersion({
     required String token,
-    required int proposalId,
+    required String proposalId,
     required int versionNumber,
     required String content,
     String? changeDescription,
@@ -395,7 +395,7 @@ class ApiService {
 
   static Future<List<dynamic>> getVersions({
     required String token,
-    required int proposalId,
+    required String proposalId,
   }) async {
     try {
       final response = await http.get(
@@ -415,7 +415,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> getVersion({
     required String token,
-    required int proposalId,
+    required String proposalId,
     required int versionNumber,
   }) async {
     try {
@@ -437,7 +437,7 @@ class ApiService {
   // Document Comments
   static Future<Map<String, dynamic>?> createComment({
     required String token,
-    required int proposalId,
+    required String proposalId,
     required String commentText,
     required String createdBy,
     int? sectionIndex,
@@ -472,7 +472,7 @@ class ApiService {
 
   static Future<List<dynamic>> getComments({
     required String token,
-    required int proposalId,
+    required String proposalId,
   }) async {
     try {
       final response = await http.get(
