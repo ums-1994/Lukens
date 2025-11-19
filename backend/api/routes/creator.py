@@ -178,13 +178,20 @@ def get_proposals(username=None):
             cursor = conn.cursor()
             
             print(f"🔍 Looking for proposals for user {username}")
+
+            # Resolve numeric owner_id from username
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            owner_id = user_row[0]
             
             cursor.execute(
-                '''SELECT id, user_id, title, content, status, client_name, client_email, 
+                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
                           budget, timeline_days, created_at, updated_at
-                   FROM proposals WHERE user_id = %s
+                   FROM proposals WHERE owner_id = %s
                    ORDER BY created_at DESC''',
-                (username,)
+                (owner_id,)
             )
             rows = cursor.fetchall()
             proposals = []
@@ -222,7 +229,14 @@ def create_proposal(username=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
+
+            # Resolve numeric owner_id from username
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            owner_id = user_row[0]
+
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email') or ''
             
@@ -246,11 +260,11 @@ def create_proposal(username=None):
                     normalized_status = ' '.join(word.capitalize() for word in status_lower.split())
             
             cursor.execute(
-                '''INSERT INTO proposals (user_id, title, content, status, client_name, client_email, budget, timeline_days)
+                '''INSERT INTO proposals (owner_id, title, content, status, client_name, client_email, budget, timeline_days)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+                   RETURNING id, owner_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
                 (
-                    username,
+                    owner_id,
                     data.get('title', 'Untitled Document'),
                     data.get('content'),
                     normalized_status,
@@ -298,12 +312,18 @@ def update_proposal(username=None, proposal_id=None):
             cursor = conn.cursor()
             
             # Verify ownership
-            cursor.execute('SELECT user_id FROM proposals WHERE id = %s', (proposal_id,))
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            owner_id = user_row[0]
+
+            cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
-            
-            if proposal[0] != username:
+
+            if proposal[0] != owner_id:
                 return {'detail': 'Access denied'}, 403
             
             # Build update query
@@ -341,7 +361,7 @@ def update_proposal(username=None, proposal_id=None):
             
             cursor.execute(
                 f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s
-                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+                   RETURNING id, owner_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
                 params
             )
             result = cursor.fetchone()
@@ -379,12 +399,18 @@ def delete_proposal(username=None, proposal_id=None):
             cursor = conn.cursor()
             
             # Verify ownership
-            cursor.execute('SELECT user_id FROM proposals WHERE id = %s', (proposal_id,))
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            owner_id = user_row[0]
+
+            cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
-            
-            if proposal[0] != username:
+
+            if proposal[0] != owner_id:
                 return {'detail': 'Access denied'}, 403
             
             cursor.execute('DELETE FROM proposals WHERE id = %s', (proposal_id,))
@@ -401,7 +427,7 @@ def get_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, user_id, title, content, status, client_name, client_email, 
+                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
                           budget, timeline_days, created_at, updated_at
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
@@ -469,7 +495,7 @@ def submit_for_review(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
 
-            cursor.execute('SELECT id FROM proposals WHERE id = %s AND user_id = %s', (proposal_id, user_id))
+            cursor.execute('SELECT id FROM proposals WHERE id = %s AND owner_id = %s', (proposal_id, user_id))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
@@ -498,7 +524,7 @@ def send_for_approval(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
 
-            cursor.execute('SELECT id FROM proposals WHERE id = %s AND user_id = %s', (proposal_id, user_id))
+            cursor.execute('SELECT id FROM proposals WHERE id = %s AND owner_id = %s', (proposal_id, user_id))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
@@ -522,7 +548,7 @@ def send_to_client(username=None, proposal_id=None):
             
             cursor.execute(
                 """
-                SELECT id, title, client_name, client_email, user_id
+                SELECT id, title, client_name, client_email, owner_id
                 FROM proposals
                 WHERE id = %s
                 """,
