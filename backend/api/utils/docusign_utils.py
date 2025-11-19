@@ -23,14 +23,19 @@ def get_docusign_jwt_token():
         integration_key = os.getenv('DOCUSIGN_INTEGRATION_KEY')
         user_id = os.getenv('DOCUSIGN_USER_ID')
         auth_server = os.getenv('DOCUSIGN_AUTH_SERVER', 'account-d.docusign.com')
+        private_key_env = os.getenv('DOCUSIGN_PRIVATE_KEY')
         private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
         
         if not all([integration_key, user_id]):
             raise Exception("DocuSign credentials not configured")
         
-        # Read private key
-        with open(private_key_path, 'r') as key_file:
-            private_key = key_file.read()
+        # Read private key: prefer env var, fall back to file path
+        if private_key_env:
+            # Support both raw PEM and single-line values with escaped newlines
+            private_key = private_key_env.replace('\\n', '\n')
+        else:
+            with open(private_key_path, 'r') as key_file:
+                private_key = key_file.read()
         
         # Create API client
         api_client = ApiClient()
