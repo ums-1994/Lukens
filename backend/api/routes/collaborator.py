@@ -200,7 +200,7 @@ def get_collaboration_access():
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Verify token
+            # Verify token and load proposal basic data
             cursor.execute("""
                 SELECT 
                     ci.id,
@@ -211,7 +211,8 @@ def get_collaboration_access():
                     ci.status,
                     p.title,
                     p.content,
-                    p.status as proposal_status
+                    p.status as proposal_status,
+                    p.owner_id
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
                 WHERE ci.access_token = %s
@@ -225,23 +226,68 @@ def get_collaboration_access():
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Update accessed_at
+            # Mark invitation as accessed/accepted
             cursor.execute("""
                 UPDATE collaboration_invitations 
                 SET accessed_at = NOW(), status = 'accepted'
                 WHERE id = %s
             """, (invitation['id'],))
-            conn.commit()
             
+            # Load owner details (for "Shared by" text)
+            owner_name = None
+            owner_email = None
+            if invitation.get('owner_id'):
+                cursor.execute(
+                    'SELECT full_name, email FROM users WHERE id = %s',
+                    (invitation['owner_id'],),
+                )
+                owner = cursor.fetchone()
+                if owner:
+                    owner_name = owner.get('full_name')
+                    owner_email = owner.get('email')
+
+            # Load existing comments for this proposal
+            cursor.execute("""
+                SELECT dc.id,
+                       dc.proposal_id,
+                       dc.comment_text,
+                       dc.created_at,
+                       dc.section_index,
+                       dc.highlighted_text,
+                       dc.status,
+                       u.full_name AS created_by_name,
+                       u.email AS created_by_email
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at ASC
+            """, (invitation['proposal_id'],))
+            comments = [dict(row) for row in cursor.fetchall()]
+
+            # Compute simple permission flag used by frontend
+            can_comment = invitation['permission_level'] in ['comment', 'edit', 'suggest']
+
+            # Shape response for guest_collaboration_page.dart while keeping
+            # existing top-level fields for backward compatibility.
             response = {
                 'proposal_id': invitation['proposal_id'],
                 'title': invitation['title'],
                 'content': invitation['content'],
                 'proposal_status': invitation['proposal_status'],
                 'permission_level': invitation['permission_level'],
-                'invited_email': invitation['invited_email']
+                'invited_email': invitation['invited_email'],
+                'can_comment': can_comment,
+                'proposal': {
+                    'id': invitation['proposal_id'],
+                    'title': invitation['title'],
+                    'content': invitation['content'],
+                    'owner_name': owner_name,
+                    'owner_email': owner_email,
+                },
+                'comments': comments,
             }
-            
+
+            conn.commit()
             return response, 200
             
     except Exception as e:
@@ -279,7 +325,7 @@ def add_guest_comment():
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            if invitation['permission_level'] not in ['comment', 'edit']:
+            if invitation['permission_level'] not in ['comment', 'edit', 'suggest']:
                 return {'detail': 'Permission denied'}, 403
             
             # Create or get guest user
