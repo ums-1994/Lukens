@@ -17,8 +17,6 @@ import 'pages/creator/content_library_page.dart';
 import 'pages/approver/approver_dashboard_page.dart';
 import 'pages/admin/admin_dashboard_page.dart';
 import 'pages/test_signature_page.dart';
-import 'pages/shared/login_page.dart';
-import 'pages/shared/register_page.dart';
 import 'pages/shared/email_verification_page.dart';
 import 'pages/shared/startup_page.dart';
 import 'pages/shared/proposals_page.dart';
@@ -83,6 +81,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Lukens',
+        locale: const Locale('en', 'US'),
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
@@ -90,21 +89,34 @@ class MyApp extends StatelessWidget {
           scaffoldBackgroundColor: Colors.transparent,
         ),
         builder: (context, child) {
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/Global BG.jpg',
-                  fit: BoxFit.cover,
-                ),
+          return Directionality(
+            textDirection: TextDirection.ltr,
+            child: Localizations.override(
+              context: context,
+              locale: const Locale('en', 'US'),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/Global BG.jpg',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  if (child != null) child,
+                ],
               ),
-              if (child != null) child,
-            ],
+            ),
           );
         },
-        home: const AuthWrapper(),
+        home: const AppBootstrapper(),
+        initialRoute: '/',
         onGenerateRoute: (settings) {
           print('🔍 onGenerateRoute - Route name: ${settings.name}');
+          
+          // Catch-all: redirect any undefined routes to home
+          if (settings.name == '/' || settings.name == null || settings.name!.isEmpty) {
+            return MaterialPageRoute(builder: (context) => const AppBootstrapper());
+          }
 
           // Handle client onboarding routes (PUBLIC - no auth required)
           if (settings.name != null && settings.name!.startsWith('/onboard/')) {
@@ -208,8 +220,6 @@ class MyApp extends StatelessWidget {
           return null; // Let other routes be handled normally
         },
         routes: {
-          '/login': (context) => const LoginPage(),
-          '/register': (context) => const RegisterPage(),
           '/verify-email': (context) {
             // This will be handled by onGenerateRoute, but adding as fallback
             final currentUrl = web.window.location.href;
@@ -224,8 +234,8 @@ class MyApp extends StatelessWidget {
             final token = uri.queryParameters['token'];
             return EmailVerificationPage(token: token);
           },
-          '/home': (context) => const DashboardPage(),
-          '/creator_dashboard': (context) => const DashboardPage(),
+          '/home': (context) => const HomeShell(),
+          '/creator_dashboard': (context) => const HomeShell(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
@@ -272,7 +282,10 @@ class MyApp extends StatelessWidget {
           '/approvals': (context) => const ApprovalsPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/admin_dashboard': (context) => const AdminDashboardPage(),
-          '/cinematic': (context) => const CinematicSequencePage(),
+          '/cinematic': (context) => const HomeShell(), // Redirect cinematic to home
+          '/login': (context) => const HomeShell(), // Redirect login to home
+          '/register': (context) => const HomeShell(), // Redirect register to home
+          '/startup': (context) => const HomeShell(), // Redirect startup to home
           '/collaboration': (context) => const ClientManagementPage(),
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) => const AnalyticsPage(),
@@ -301,73 +314,65 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatefulWidget {
-  const AuthWrapper({super.key});
+class AppBootstrapper extends StatefulWidget {
+  const AppBootstrapper({super.key});
 
   @override
-  State<AuthWrapper> createState() => _AuthWrapperState();
+  State<AppBootstrapper> createState() => _AppBootstrapperState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> {
-  bool _bypassApplied = false;
+class _AppBootstrapperState extends State<AppBootstrapper> {
+  bool _ready = false;
+
   @override
   void initState() {
     super.initState();
-    // Check if we're on a verification URL
-    _checkVerificationUrl();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
-  void _checkVerificationUrl() {
+  Future<void> _bootstrap() async {
+    // Clear any old route hashes that might cause navigation to landing pages
+    final currentUrl = web.window.location.href;
+    final hash = web.window.location.hash;
+    
+    // If URL has old landing page routes, clear them
+    if (hash.contains('/cinematic') || hash.contains('/startup') || 
+        hash.contains('/login') || hash.contains('/register')) {
+      web.window.location.hash = '';
+    }
+    
+    // Handle direct-access collaboration/verification URLs first
+    if (_handleGuestOrVerificationRoutes()) {
+      return;
+    }
+
+    if (!AuthService.isLoggedIn) {
+      const fakeToken = 'dev-bypass-token';
+      final defaultUser = {
+        'email': 'admin@khonology.com',
+        'full_name': 'Admin User',
+        'role': 'Financial Manager',
+      };
+      AuthService.setUserData(defaultUser, fakeToken);
+    }
+
+    try {
+      await context.read<AppState>().init();
+    } catch (e) {
+      print('⚠️ App bootstrap init failed: $e');
+    }
+
+    if (mounted) {
+      setState(() => _ready = true);
+    }
+  }
+
+  bool _handleGuestOrVerificationRoutes() {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
-
-    // Check if this is a collaboration URL (has token and contains 'collaborate')
-    if (uri.fragment.contains('/collaborate') &&
-        uri.queryParameters.containsKey('token')) {
-      final token = uri.queryParameters['token'];
-      if (token != null && token.isNotEmpty) {
-        // Navigate to guest collaboration page
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const GuestCollaborationPage(),
-            ),
-          );
-        });
-        return;
-      }
-    }
-
-    // Check if this is a verification URL
-    if (uri.queryParameters.containsKey('token')) {
-      final token = uri.queryParameters['token'];
-      if (token != null && token.isNotEmpty) {
-        // Navigate to verification page
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => EmailVerificationPage(token: token),
-            ),
-          );
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Check if this is a collaboration URL (guest access - no auth required)
-    final currentUrl = web.window.location.href;
     final hash = web.window.location.hash;
     final search = web.window.location.search;
 
-    print('🔍 AuthWrapper - Full URL: $currentUrl');
-    print('🔍 AuthWrapper - Hash: $hash');
-    print('🔍 AuthWrapper - Search: $search');
-
-    // Check for collaboration in hash or URL
     final isCollaboration = currentUrl.contains('/collaborate') ||
         hash.contains('/collaborate') ||
         currentUrl.contains('collaborate?token=') ||
@@ -377,38 +382,52 @@ class _AuthWrapperState extends State<AuthWrapper> {
         hash.contains('token=') ||
         search.contains('token=');
 
-    print('🔍 Is Collaboration: $isCollaboration, Has Token: $hasToken');
-
     if (isCollaboration && hasToken) {
-      print('✅ Detected collaboration URL - showing GuestCollaborationPage');
-      return const GuestCollaborationPage();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const GuestCollaborationPage()),
+        );
+      });
+      return true;
     }
 
-    // Check if user is authenticated
-    if (AuthService.isLoggedIn) {
-      // Initialize AppState when user is logged in
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<AppState>().init();
-      });
-      return const HomeShell();
-    } else {
-      // BYPASS AUTH: Auto-login with a default user for SSO integration phase
-      if (!_bypassApplied) {
-        _bypassApplied = true;
-        final defaultUser = {
-          'email': 'admin@khonology.com',
-          'full_name': 'Admin User',
-          'role': 'Financial Manager',
-        };
-        const fakeToken = 'dev-bypass-token';
-        // Persist in AuthService and sync AppState on next frame
-        AuthService.setUserData(defaultUser, fakeToken);
+    if (uri.queryParameters.containsKey('token')) {
+      final token = uri.queryParameters['token'];
+      if (token != null && token.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          context.read<AppState>().init();
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => EmailVerificationPage(token: token),
+            ),
+          );
         });
+        return true;
       }
-      return const HomeShell();
     }
+
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Launching workspace…'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return const HomeShell();
   }
 }
 
@@ -735,7 +754,7 @@ class _HomeShellState extends State<HomeShell> {
                 app.logout();
                 AuthService.logout();
                 Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
+                    context, '/home', (route) => false);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE74C3C),

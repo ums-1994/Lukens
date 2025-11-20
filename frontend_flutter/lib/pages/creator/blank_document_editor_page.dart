@@ -954,27 +954,49 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             children: [
               const Text(
                 'Please provide client information before sending for approval:',
-                style: TextStyle(fontSize: 14, color: Colors.black87),
+                style: TextStyle(fontSize: 14, color: Colors.white),
               ),
               const SizedBox(height: 20),
               TextField(
                 controller: _clientNameController,
+                textDirection: TextDirection.ltr,
+                textAlign: TextAlign.left,
+                style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
                   labelText: 'Client Name *',
+                  labelStyle: TextStyle(color: Colors.white70),
                   hintText: 'e.g., Acme Corporation',
+                  hintStyle: TextStyle(color: Colors.white60),
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.business),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white54),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white),
+                  ),
+                  prefixIcon: Icon(Icons.business, color: Colors.white70),
                 ),
                 textCapitalization: TextCapitalization.words,
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _clientEmailController,
+                textDirection: TextDirection.ltr,
+                textAlign: TextAlign.left,
+                style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
                   labelText: 'Client Email *',
+                  labelStyle: TextStyle(color: Colors.white70),
                   hintText: 'e.g., contact@acme.com',
+                  hintStyle: TextStyle(color: Colors.white60),
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white54),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white),
+                  ),
+                  prefixIcon: Icon(Icons.email, color: Colors.white70),
                 ),
                 keyboardType: TextInputType.emailAddress,
               ),
@@ -983,7 +1005,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 '* When approved, the proposal will be sent to this email',
                 style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey,
+                    color: Colors.white70,
                     fontStyle: FontStyle.italic),
               ),
             ],
@@ -3314,6 +3336,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 maxLines: null,
                 minLines: 15,
                 enabled: !widget.readOnly, // Disable editing in read-only mode
+                textDirection: TextDirection.ltr,
                 style: _getContentTextStyle(),
                 textAlign: _getTextAlignment(),
                 textAlignVertical: TextAlignVertical.top,

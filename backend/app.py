@@ -9,6 +9,7 @@ import secrets
 import smtplib
 import difflib
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse, parse_qs
@@ -54,6 +55,7 @@ from werkzeug.utils import secure_filename
 from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
+from api.utils.risk_checks import run_prechecks, combine_assessments
 
 # Load environment variables
 load_dotenv()
@@ -385,6 +387,27 @@ def init_pg_schema():
         # Create index for faster signature queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
                          ON proposal_signatures(proposal_id, status, sent_at DESC)''')
+
+        # Proposal risk audits table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_risk_audits (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        triggered_by VARCHAR(255),
+        model_used VARCHAR(255),
+        precheck_summary JSONB NOT NULL,
+        ai_summary JSONB,
+        combined_summary JSONB,
+        overall_risk_level VARCHAR(32),
+        risk_score INTEGER,
+        can_release BOOLEAN,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_risk_audits_proposal 
+                         ON proposal_risk_audits(proposal_id, created_at DESC)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_risk_audits_level 
+                         ON proposal_risk_audits(overall_risk_level)''')
         
         conn.commit()
         release_pg_conn(conn)
@@ -471,7 +494,7 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
     """
     try:
         with get_db_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute("""
                 INSERT INTO activity_log (proposal_id, user_id, action_type, action_description, metadata)
                 VALUES (%s, %s, %s, %s, %s)
@@ -480,6 +503,31 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
     except Exception as e:
         print(f"⚠️ Failed to log activity: {e}")
         # Don't raise - activity logging should not break main functionality
+
+# ============================================================================
+# JSON SANITIZATION HELPERS
+# ============================================================================
+
+def _json_default(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8")
+        except Exception:
+            return value.decode("latin-1", errors="ignore")
+    return str(value)
+
+
+def sanitize_for_json(payload):
+    """Return a plain-Python structure that can be safely json.dumps'ed."""
+    try:
+        return json.loads(json.dumps(payload, default=_json_default))
+    except TypeError:
+        # Final fallback: convert anything still problematic into strings
+        return json.loads(json.dumps(payload, default=str))
 
 # ============================================================================
 # NOTIFICATION HELPER
@@ -1330,6 +1378,33 @@ def get_trash(username):
 
 # Proposal endpoints
 
+def _resolve_user_id(cursor, username: str):
+    """
+    Normalize any username/email/string identifier into the numeric user ID.
+    Supports:
+      - username stored in users table
+      - email stored in users table
+      - numeric username strings (legacy)
+    """
+    try:
+        cursor.execute(
+            "SELECT id FROM users WHERE username = %s OR email = %s",
+            (username, username),
+        )
+        result = cursor.fetchone()
+        if result:
+            return result[0]
+    except Exception as lookup_err:
+        print(f"⚠️ Error resolving user id for {username}: {lookup_err}")
+        traceback.print_exc()
+
+    if isinstance(username, str) and username.isdigit():
+        print(f"⚠️ Falling back to numeric conversion for username '{username}'")
+        return int(username)
+
+    return None
+
+
 @app.get("/proposals")
 @token_required
 def get_proposals(username):
@@ -1339,33 +1414,169 @@ def get_proposals(username):
             
             print(f"🔍 Looking for proposals for user {username}")
             
-            # Query all columns that exist in the database
-            cursor.execute(
-                '''SELECT id, user_id, title, content, status, client_name, client_email, 
-                          budget, timeline_days, created_at, updated_at
+            user_id = _resolve_user_id(cursor, username)
+            if not user_id:
+                print(f"⚠️ Could not resolve numeric ID for {username}, returning empty list")
+                return [], 200
+            
+            # Query using owner_id (the actual column name in the schema)
+            # First check what columns actually exist in the proposals table
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'proposals'
+            """)
+            existing_columns = [row[0] for row in cursor.fetchall()]
+            print(f"📋 Available columns in proposals table: {existing_columns}")
+            
+            # Build query dynamically based on available columns
+            if 'owner_id' in existing_columns:
+                # Use owner_id (new schema)
+                try:
+                    # Build SELECT list based on what columns exist
+                    select_cols = ['id', 'owner_id', 'title', 'content', 'status']
+                    if 'client' in existing_columns:
+                        select_cols.append('client')
+                    elif 'client_name' in existing_columns:
+                        select_cols.append('client_name')
+                    if 'created_at' in existing_columns:
+                        select_cols.append('created_at')
+                    if 'updated_at' in existing_columns:
+                        select_cols.append('updated_at')
+                    if 'template_key' in existing_columns:
+                        select_cols.append('template_key')
+                    if 'sections' in existing_columns:
+                        select_cols.append('sections')
+                    if 'pdf_url' in existing_columns:
+                        select_cols.append('pdf_url')
+                    
+                    query = f'''SELECT {', '.join(select_cols)}
+                         FROM proposals WHERE owner_id = %s
+                         ORDER BY created_at DESC'''
+                    print(f"📋 Query: {query}")
+                    cursor.execute(query, (user_id,))
+                except Exception as query_error:
+                    print(f"⚠️ Query with owner_id failed: {query_error}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
+            elif 'user_id' in existing_columns:
+                # Use user_id (old schema) - build query based on what columns exist
+                print(f"⚠️ Using user_id column (old schema)")
+                select_cols = ['id', 'user_id', 'title', 'content', 'status']
+                if 'client' in existing_columns:
+                    select_cols.append('client')
+                elif 'client_name' in existing_columns:
+                    select_cols.append('client_name')
+                if 'client_email' in existing_columns:
+                    select_cols.append('client_email')
+                if 'budget' in existing_columns:
+                    select_cols.append('budget')
+                if 'timeline_days' in existing_columns:
+                    select_cols.append('timeline_days')
+                if 'created_at' in existing_columns:
+                    select_cols.append('created_at')
+                if 'updated_at' in existing_columns:
+                    select_cols.append('updated_at')
+                
+                query = f'''SELECT {', '.join(select_cols)}
                    FROM proposals WHERE user_id = %s
-                   ORDER BY created_at DESC''',
-                (username,)
-            )
+                     ORDER BY created_at DESC'''
+                print(f"📋 Query: {query}")
+                cursor.execute(query, (user_id,))
+            else:
+                # No user identifier column found - return empty
+                print(f"⚠️ No owner_id or user_id column found in proposals table")
+                return [], 200
+            
             rows = cursor.fetchall()
+            # Get column names from cursor description
+            column_names = [desc[0] for desc in cursor.description] if cursor.description else []
+            print(f"📋 Column names in result: {column_names}")
+            
             proposals = []
             for row in rows:
-                proposals.append({
-                    'id': row[0],
-                    'user_id': row[1],
-                    'owner_id': row[1],  # For compatibility
-                    'title': row[2],
-                    'content': row[3],
-                    'status': row[4],
-                    'client_name': row[5],
-                    'client': row[5],  # For compatibility
-                    'client_email': row[6],
-                    'budget': float(row[7]) if row[7] else None,
-                    'timeline_days': row[8],
-                    'created_at': row[9].isoformat() if row[9] else None,
-                    'updated_at': row[10].isoformat() if row[10] else None,
-                    'updatedAt': row[10].isoformat() if row[10] else None,
-                })
+                try:
+                    # Convert row to dictionary using column names
+                    row_dict = dict(zip(column_names, row))
+                    
+                    # Safely parse sections JSON
+                    sections_data = {}
+                    if 'sections' in row_dict and row_dict['sections']:
+                        try:
+                            if isinstance(row_dict['sections'], str):
+                                sections_data = json.loads(row_dict['sections'])
+                            elif isinstance(row_dict['sections'], dict):
+                                sections_data = row_dict['sections']
+                        except (json.JSONDecodeError, TypeError) as json_err:
+                            print(f"⚠️ Failed to parse sections JSON for proposal {row_dict.get('id')}: {json_err}")
+                            sections_data = {}
+                    
+                    # Build proposal object with all available fields
+                    proposal = {
+                        'id': row_dict.get('id'),
+                        'title': row_dict.get('title') or '',
+                        'content': row_dict.get('content') or '',
+                        'status': row_dict.get('status') or 'Draft',
+                        'sections': sections_data,
+                    }
+                    
+                    # Handle user/owner ID (both for compatibility)
+                    if 'owner_id' in row_dict:
+                        proposal['owner_id'] = str(row_dict['owner_id'])
+                        proposal['user_id'] = str(row_dict['owner_id'])  # For compatibility
+                    elif 'user_id' in row_dict:
+                        proposal['user_id'] = str(row_dict['user_id'])
+                        proposal['owner_id'] = str(row_dict['user_id'])  # For compatibility
+                    
+                    # Handle client/client_name
+                    if 'client' in row_dict:
+                        proposal['client'] = row_dict['client'] or ''
+                        proposal['client_name'] = row_dict['client'] or ''
+                    elif 'client_name' in row_dict:
+                        proposal['client_name'] = row_dict['client_name'] or ''
+                        proposal['client'] = row_dict['client_name'] or ''
+                    else:
+                        proposal['client'] = ''
+                        proposal['client_name'] = ''
+                    
+                    # Handle client_email (may not exist)
+                    proposal['client_email'] = row_dict.get('client_email') or ''
+                    
+                    # Handle budget and timeline_days (may not exist)
+                    if 'budget' in row_dict:
+                        try:
+                            proposal['budget'] = float(row_dict['budget']) if row_dict['budget'] else None
+                        except (ValueError, TypeError):
+                            proposal['budget'] = None
+                    else:
+                        proposal['budget'] = None
+                    
+                    proposal['timeline_days'] = row_dict.get('timeline_days')
+                    
+                    # Handle timestamps
+                    if 'created_at' in row_dict and row_dict['created_at']:
+                        proposal['created_at'] = row_dict['created_at'].isoformat() if hasattr(row_dict['created_at'], 'isoformat') else str(row_dict['created_at'])
+                    else:
+                        proposal['created_at'] = None
+                    
+                    if 'updated_at' in row_dict and row_dict['updated_at']:
+                        proposal['updated_at'] = row_dict['updated_at'].isoformat() if hasattr(row_dict['updated_at'], 'isoformat') else str(row_dict['updated_at'])
+                        proposal['updatedAt'] = proposal['updated_at']  # For compatibility
+                    else:
+                        proposal['updated_at'] = None
+                        proposal['updatedAt'] = None
+                    
+                    # Handle optional fields
+                    proposal['template_key'] = row_dict.get('template_key')
+                    proposal['pdf_url'] = row_dict.get('pdf_url')
+                    
+                    proposals.append(proposal)
+                except Exception as row_error:
+                    print(f"⚠️ Error processing proposal row: {row_error}")
+                    import traceback
+                    traceback.print_exc()
+                    continue  # Skip this row and continue with others
             print(f"✅ Found {len(proposals)} proposals for user {username}")
             return proposals, 200
     except Exception as e:
@@ -1384,43 +1595,155 @@ def create_proposal(username):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Insert using all available columns
+            user_id = _resolve_user_id(cursor, username)
+            if not user_id:
+                return {'detail': f"User '{username}' not found"}, 400
+
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'proposals'
+            """)
+            proposal_columns = {row[0] for row in cursor.fetchall()}
+
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
-            client_email = data.get('client_email') or ''
-            
-            cursor.execute(
-                '''INSERT INTO proposals (user_id, title, content, status, client_name, client_email, budget, timeline_days)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
-                (
-                    username,
-                    data.get('title', 'Untitled Document'),
-                    data.get('content'),
-                    data.get('status', 'draft'),
-                    client_name,
-                    client_email,
-                    data.get('budget'),
-                    data.get('timeline_days')
-                )
-            )
+            insert_columns = []
+            values = []
+
+            owner_column = None
+            if 'owner_id' in proposal_columns:
+                owner_column = 'owner_id'
+            elif 'user_id' in proposal_columns:
+                owner_column = 'user_id'
+            else:
+                return {'detail': "proposals table missing owner_id/user_id column"}, 500
+
+            insert_columns.append(owner_column)
+            values.append(user_id)
+
+            field_map = {
+                'title': data.get('title', 'Untitled Document'),
+                'content': data.get('content'),
+                'status': data.get('status', 'draft'),
+                'client_name': client_name,
+                'client': data.get('client'),
+                'client_email': data.get('client_email'),
+                'budget': data.get('budget'),
+                'timeline_days': data.get('timeline_days'),
+                'sections': json.dumps(data.get('sections') or {}) if 'sections' in proposal_columns else None,
+                'template_key': data.get('template_key'),
+                'pdf_url': data.get('pdf_url'),
+                'client_can_edit': data.get('client_can_edit'),
+                'client_id': data.get('client_id'),
+                'content_html': data.get('content_html'),
+            }
+
+            for column, value in field_map.items():
+                if column in proposal_columns and value is not None:
+                    insert_columns.append(column)
+                    values.append(value)
+
+            placeholders = ', '.join(['%s'] * len(values))
+
+            return_fields = [
+                "id",
+                owner_column,
+                "title",
+                "content",
+                "status",
+            ]
+
+            if 'client_name' in proposal_columns:
+                return_fields.append("client_name")
+            else:
+                return_fields.append("NULL::text AS client_name")
+
+            if 'client' in proposal_columns:
+                return_fields.append("client")
+            elif 'client_name' in proposal_columns:
+                return_fields.append("client_name AS client")
+            else:
+                return_fields.append("NULL::text AS client")
+
+            if 'client_email' in proposal_columns:
+                return_fields.append("client_email")
+            else:
+                return_fields.append("NULL::text AS client_email")
+
+            if 'budget' in proposal_columns:
+                return_fields.append("budget")
+            else:
+                return_fields.append("NULL::numeric AS budget")
+
+            if 'timeline_days' in proposal_columns:
+                return_fields.append("timeline_days")
+            else:
+                return_fields.append("NULL::integer AS timeline_days")
+
+            if 'created_at' in proposal_columns:
+                return_fields.append("created_at")
+            else:
+                return_fields.append("NOW() AS created_at")
+
+            if 'updated_at' in proposal_columns:
+                return_fields.append("updated_at")
+            else:
+                return_fields.append("NOW() AS updated_at")
+
+            if 'sections' in proposal_columns:
+                return_fields.append("sections")
+            else:
+                return_fields.append("NULL::text AS sections")
+
+            if 'template_key' in proposal_columns:
+                return_fields.append("template_key")
+            else:
+                return_fields.append("NULL::text AS template_key")
+
+            if 'pdf_url' in proposal_columns:
+                return_fields.append("pdf_url")
+            else:
+                return_fields.append("NULL::text AS pdf_url")
+
+            insert_sql = f"""
+                INSERT INTO proposals ({', '.join(insert_columns)})
+                VALUES ({placeholders})
+                RETURNING {', '.join(return_fields)}
+            """
+
+            cursor.execute(insert_sql, tuple(values))
             result = cursor.fetchone()
             conn.commit()
             
+            section_data = {}
+            if result.get('sections'):
+                try:
+                    if isinstance(result['sections'], str):
+                        section_data = json.loads(result['sections'])
+                    else:
+                        section_data = result['sections']
+                except json.JSONDecodeError:
+                    section_data = {}
+
+            owner_value = result.get(owner_column)
             proposal = {
-                'id': result[0],
-                'user_id': result[1],
-                'owner_id': result[1],  # For compatibility
-                'title': result[2],
-                'content': result[3],
-                'status': result[4],
-                'client_name': result[5],
-                'client': result[5],
-                'client_email': result[6],
-                'budget': float(result[7]) if result[7] else None,
-                'timeline_days': result[8],
-                'created_at': result[9].isoformat() if result[9] else None,
-                'updated_at': result[10].isoformat() if result[10] else None,
-                'updatedAt': result[10].isoformat() if result[10] else None,
+                'id': result.get('id'),
+                'owner_id': str(owner_value) if owner_value is not None else None,
+                'user_id': str(owner_value) if owner_value is not None else None,
+                'title': result.get('title'),
+                'content': result.get('content'),
+                'status': result.get('status'),
+                'client_name': result.get('client_name') or '',
+                'client': result.get('client') or '',
+                'client_email': result.get('client_email') or '',
+                'budget': float(result['budget']) if result.get('budget') is not None else None,
+                'timeline_days': result.get('timeline_days'),
+                'created_at': result['created_at'].isoformat() if result.get('created_at') else None,
+                'updated_at': result['updated_at'].isoformat() if result.get('updated_at') else None,
+                'updatedAt': result['updated_at'].isoformat() if result.get('updated_at') else None,
+                'sections': section_data,
+                'template_key': result.get('template_key'),
+                'pdf_url': result.get('pdf_url'),
             }
             
             print(f"✅ Proposal created successfully with ID: {result[0]}")
@@ -2490,6 +2813,47 @@ def ai_generate_full_proposal(username):
         print(f"❌ Error generating full proposal: {e}")
         return {'detail': str(e)}, 500
 
+def record_proposal_risk_audit(
+    proposal_id: int,
+    triggered_by: str,
+    model_used: str,
+    precheck_summary: dict,
+    ai_summary: dict,
+    combined_summary: dict,
+) -> None:
+    """Persist deterministic + AI assessments for auditing."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO proposal_risk_audits (
+                    proposal_id,
+                    triggered_by,
+                    model_used,
+                    precheck_summary,
+                    ai_summary,
+                    combined_summary,
+                    overall_risk_level,
+                    risk_score,
+                    can_release
+                ) VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s)
+            """, (
+                proposal_id,
+                triggered_by,
+                model_used,
+                json.dumps(precheck_summary),
+                json.dumps(ai_summary),
+                json.dumps(combined_summary),
+                combined_summary.get("overall_risk_level"),
+                combined_summary.get("risk_score"),
+                combined_summary.get("can_release"),
+            ))
+            conn.commit()
+            print(f"[OK] Stored risk audit for proposal {proposal_id}")
+    except Exception as e:
+        print(f"[WARN] Failed to record risk audit: {e}")
+
+
 @app.post("/ai/analyze-risks")
 @token_required
 def ai_analyze_risks(username):
@@ -2516,10 +2880,47 @@ def ai_analyze_risks(username):
             # Import AI service
             from ai_service import ai_service
             
-            # Analyze risks
-            risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
-            
-            return risk_analysis, 200
+            proposal_dict_raw = dict(proposal)
+            proposal_dict = sanitize_for_json(proposal_dict_raw)
+            precheck_summary = run_prechecks(proposal_dict)
+
+            analysis_payload = {
+                "proposal": proposal_dict,
+                "precheck": precheck_summary,
+            }
+
+            try:
+                ai_result = ai_service.analyze_proposal_risks(analysis_payload)
+            except Exception as ai_error:
+                print(f"[WARN] AI analysis failed, falling back to precheck only: {ai_error}")
+                ai_result = {
+                    "overall_risk_level": "unknown",
+                    "can_release": not precheck_summary.get("block_release", True),
+                    "risk_score": precheck_summary.get("risk_score", 0),
+                    "issues": [{
+                        "category": "analysis_error",
+                        "severity": "medium",
+                        "section": "AI Risk Gate",
+                        "description": "OpenRouter analysis was unavailable; relying on deterministic checks.",
+                        "recommendation": "Retry AI analysis once service is restored."
+                    }],
+                    "summary": "AI response unavailable",
+                    "required_actions": ["Retry AI analysis or proceed after manual review"],
+                }
+
+            combined = combine_assessments(precheck_summary, ai_result)
+
+            model_used = getattr(ai_service, "model", "unknown")
+            record_proposal_risk_audit(
+                proposal_id=proposal_id,
+                triggered_by=username,
+                model_used=model_used,
+                precheck_summary=precheck_summary,
+                ai_summary=ai_result,
+                combined_summary=combined,
+            )
+
+            return combined, 200
         
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")

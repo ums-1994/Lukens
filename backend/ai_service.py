@@ -38,11 +38,11 @@ class AIService:
         
         # Debug: Print key info (first/last few chars only for security)
         if self.api_key:
-            print(f"✅ OpenRouter API Key loaded: {self.api_key[:10]}...{self.api_key[-4:]}")
-            print(f"✅ Using model: {self.model}")
-            print(f"💰 Currency set to: {self.currency} ({self.currency_symbol})")
+            print(f"[OK] OpenRouter API Key loaded: {self.api_key[:10]}...{self.api_key[-4:]}")
+            print(f"[OK] Using model: {self.model}")
+            print(f"[OK] Currency set to: {self.currency} ({self.currency_symbol})")
         else:
-            print("❌ OpenRouter API Key is empty!")
+            print("[WARN] OpenRouter API Key is empty!")
     
     def _make_request(self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 2000) -> str:
         """Make a request to OpenRouter API"""
@@ -80,10 +80,18 @@ class AIService:
         Analyze proposal for compound risks (Wildcard Challenge)
         Detects missing sections, incomplete content, and compliance issues
         """
+        proposal_payload = proposal_data.get("proposal") if isinstance(proposal_data, dict) and "proposal" in proposal_data else proposal_data
+        precheck_summary = None
+        if isinstance(proposal_data, dict):
+            precheck_summary = proposal_data.get("precheck") or proposal_data.get("precheck_summary")
+
         prompt = f"""You are an expert proposal reviewer for Khonology. Analyze this proposal for risks and compliance issues.
 
 Proposal Data:
-{json.dumps(proposal_data, indent=2)}
+{json.dumps(proposal_payload, indent=2)}
+
+Deterministic Precheck Summary:
+{json.dumps(precheck_summary, indent=2) if precheck_summary else "None provided"}
 
 Analyze for:
 1. Missing or incomplete mandatory sections (Executive Summary, Scope & Deliverables, Delivery Approach, Assumptions, Risks, References, Team Bios)

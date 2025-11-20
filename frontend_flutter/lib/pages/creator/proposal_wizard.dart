@@ -1,7 +1,51 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import 'content_library_dialog.dart';
+
+// Custom formatter to force LTR text input and fix reversed text
+class LTRTextInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    
+    // If a single character was added
+    if (newText.length == oldText.length + 1) {
+      // Check if character was prepended (RTL) instead of appended (LTR)
+      // If old text appears at the end of new text, the char was prepended
+      if (newText.endsWith(oldText)) {
+        // Character was prepended - fix by appending it instead
+        final addedChar = newText[0];
+        final correctedText = oldText + addedChar;
+        return TextEditingValue(
+          text: correctedText,
+          selection: TextSelection.collapsed(offset: correctedText.length),
+        );
+      }
+      // If old text appears at the start, character was appended correctly (LTR) - allow it
+      if (newText.startsWith(oldText)) {
+        // This is correct LTR behavior
+        return newValue;
+      }
+    }
+    
+    // Remove any RTL/LTR marks
+    final cleanedText = newText.replaceAll(RegExp(r'[\u200E\u200F\u202A-\u202E\u2066-\u2069]'), '');
+    if (cleanedText != newText) {
+      return TextEditingValue(
+        text: cleanedText,
+        selection: newValue.selection,
+      );
+    }
+    
+    return newValue;
+  }
+}
 
 class ProposalWizard extends StatefulWidget {
   const ProposalWizard({super.key});
@@ -294,22 +338,27 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Text(
-          'New Proposal',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Localizations.override(
+        context: context,
+        locale: const Locale('en', 'US'),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF1E293B),
+            title: const Text(
+              'New Proposal',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            elevation: 0,
+            automaticallyImplyLeading: false,
           ),
-        ),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
-      body: Column(
+          body: Column(
         children: [
           // Top navigation bar
           Container(
@@ -507,6 +556,8 @@ class _ProposalWizardState extends State<ProposalWizard>
             ),
           ),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -965,7 +1016,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 8),
@@ -973,7 +1024,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               'Enter client information and opportunity details',
               style: TextStyle(
                 fontSize: 16,
-                color: Colors.grey,
+                color: Colors.white70,
               ),
             ),
             const SizedBox(height: 24),
@@ -1263,28 +1314,72 @@ class _ProposalWizardState extends State<ProposalWizard>
   }) {
     return Directionality(
       textDirection: TextDirection.ltr,
-      child: TextFormField(
-        controller: controller,
-        textDirection: TextDirection.ltr,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          prefixIcon: Icon(icon, color: const Color(0xFF3498DB)),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF3498DB), width: 2),
-          ),
-        ),
-        keyboardType: keyboardType,
-        onChanged: onChanged,
+      child: Builder(
+        builder: (context) {
+          return Localizations.override(
+            context: context,
+            locale: const Locale('en', 'US'),
+            child: TextFormField(
+              controller: controller,
+              textDirection: TextDirection.ltr,
+              textAlign: TextAlign.left,
+              textAlignVertical: TextAlignVertical.center,
+              textInputAction: TextInputAction.next,
+              style: const TextStyle(color: Colors.white),
+              inputFormatters: [
+                LTRTextInputFormatter(), // Custom formatter to fix reversed text
+                FilteringTextInputFormatter.deny(RegExp(r'[\u200E\u200F\u202A-\u202E\u2066-\u2069]')), // Remove RTL/LTR marks
+              ],
+              decoration: InputDecoration(
+                labelText: label,
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintText: hint,
+                hintStyle: const TextStyle(color: Colors.white60),
+                prefixIcon: Icon(icon, color: const Color(0xFF3498DB)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF3498DB), width: 2),
+                ),
+              ),
+              keyboardType: keyboardType,
+              onChanged: (value) {
+                // Aggressive fix: if text appears reversed, correct it immediately
+                if (controller != null && value.length >= 2) {
+                  // Check if text is stored in reverse by comparing with what we expect
+                  final currentText = controller!.text;
+                  if (currentText != value) {
+                    // Text might be reversed - check if reversing it makes sense
+                    final reversed = value.split('').reversed.join('');
+                    // If the reversed version matches a common pattern, fix it
+                    if (value.length == 2) {
+                      // For 2 characters, if they're in reverse alphabetical order for ASCII, likely reversed
+                      final code1 = value.codeUnitAt(0);
+                      final code2 = value.codeUnitAt(1);
+                      if (code1 > code2 && code1 < 128 && code2 < 128 && 
+                          value[0].toLowerCase() != value[1].toLowerCase()) {
+                        // Likely reversed, fix it
+                        final fixed = reversed;
+                        controller!.text = fixed;
+                        controller!.selection = TextSelection.collapsed(offset: fixed.length);
+                        onChanged(fixed);
+                        return;
+                      }
+                    }
+                  }
+                }
+                onChanged(value);
+              },
+            ),
+          );
+        },
       ),
     );
   }

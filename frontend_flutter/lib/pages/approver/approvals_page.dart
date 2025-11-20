@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../api.dart';
+import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
+import '../../widgets/proposal_selector.dart';
 
 class ApprovalsPage extends StatefulWidget {
   const ApprovalsPage({super.key});
@@ -12,6 +16,7 @@ class ApprovalsPage extends StatefulWidget {
 class _ApprovalsPageState extends State<ApprovalsPage> {
   List<dynamic> pendingProposals = [];
   bool isLoading = true;
+  bool _showingAnalysis = false;
 
   @override
   void initState() {
@@ -230,8 +235,18 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
     final app = context.watch<AppState>();
     final p = app.currentProposal;
     if (p == null) {
-      return const Center(
-          child: Text("Select a proposal to manage approvals."));
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: ProposalSelector(
+            title: 'Select a proposal to manage approvals',
+            description:
+                'Choose a draft or sent proposal to unlock governance and risk checks.',
+            onSelect: _handleProposalSelected,
+            onRunRiskGate: _runRiskGate,
+          ),
+        ),
+      );
     }
     final status = p["status"];
     final approvals =
@@ -254,6 +269,229 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
         ],
       ),
     );
+  }
+
+  void _handleProposalSelected(Map<String, dynamic> proposal) {
+    final app = context.read<AppState>();
+    app.selectProposal(Map<String, dynamic>.from(proposal));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Loaded ${proposal['title'] ?? 'proposal'}'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _runRiskGate(Map<String, dynamic> proposal) async {
+    if (_showingAnalysis) return;
+    final appState = context.read<AppState>();
+    String? token = AuthService.token ?? appState.authToken;
+    token ??= 'dev-bypass-token';
+    final proposalId = _parseProposalId(proposal['id']);
+
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No auth token available. Log in again.'),
+        ),
+      );
+      return;
+    }
+    if (proposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Proposal ID missing')),
+      );
+      return;
+    }
+
+    setState(() => _showingAnalysis = true);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: SizedBox(
+          height: 80,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+    );
+
+    Map<String, dynamic>? result;
+    try {
+      result = await ApiService.analyzeRisks(
+        token: token,
+        proposalId: proposalId,
+      );
+    } finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        setState(() => _showingAnalysis = false);
+      }
+    }
+
+    if (!mounted) return;
+
+    if (result == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Risk analysis failed')),
+      );
+      return;
+    }
+
+    _showRiskResult(result, proposal);
+  }
+
+  int? _parseProposalId(dynamic value) {
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  void _showRiskResult(
+      Map<String, dynamic> payload, Map<String, dynamic> proposal) {
+    final score = payload['risk_score'] ?? 0;
+    final level = (payload['overall_risk_level'] ?? 'unknown').toString();
+    final canRelease = payload['can_release'] == true;
+    final issues = List<Map<String, dynamic>>.from(
+        payload['issues'] is List ? payload['issues'] : []);
+    final summary = payload['summary'] ??
+        payload['ai_summary']?['summary'] ??
+        payload['precheck_summary']?['summary'] ??
+        'Review completed.';
+    final requiredActions = List<String>.from(
+        payload['required_actions'] is List ? payload['required_actions'] : []);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black87,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'AI Risk Gate • ${proposal['title'] ?? 'Proposal'}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Chip(
+                      backgroundColor: Colors.white12,
+                      label: Text(
+                        'Risk score: $score/100',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Chip(
+                      backgroundColor: canRelease
+                          ? Colors.green.withOpacity(0.2)
+                          : Colors.red.withOpacity(0.2),
+                      label: Text(
+                        canRelease ? 'Can release' : 'Blocked',
+                        style: TextStyle(
+                          color: canRelease ? Colors.greenAccent : Colors.red,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Chip(
+                      backgroundColor: Colors.white12,
+                      label: Text(
+                        'Level: ${level.toUpperCase()}',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  summary,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+                if (issues.isNotEmpty) ...[
+                  const Text(
+                    'Detected signals',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...issues.map((issue) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.bolt,
+                          color: _severityColor(
+                              (issue['severity'] ?? 'low').toString()),
+                        ),
+                        title: Text(
+                          issue['description'] ?? 'Issue detected',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        subtitle: issue['recommendation'] != null
+                            ? Text(
+                                issue['recommendation'],
+                                style: const TextStyle(color: Colors.white70),
+                              )
+                            : null,
+                      )),
+                ],
+                if (requiredActions.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Required actions',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...requiredActions.map(
+                    (action) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.check_circle_outline,
+                          color: Colors.white70),
+                      title: Text(
+                        action,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Color _severityColor(String severity) {
+    switch (severity.toLowerCase()) {
+      case 'critical':
+        return Colors.redAccent;
+      case 'high':
+        return Colors.deepOrangeAccent;
+      case 'medium':
+        return Colors.amberAccent;
+      default:
+        return Colors.lightBlueAccent;
+    }
   }
 
   Widget _stageChip(BuildContext context, String stage, bool approved) {

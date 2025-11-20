@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../api.dart';
+import '../../widgets/proposal_selector.dart';
 
 class GovernPage extends StatelessWidget {
   const GovernPage({super.key});
@@ -10,8 +12,27 @@ class GovernPage extends StatelessWidget {
     final app = context.watch<AppState>();
     final p = app.currentProposal;
     if (p == null) {
-      return const Center(
-          child: Text("Select a proposal to see readiness checks."));
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: ProposalSelector(
+            title: 'Select a proposal to run readiness checks',
+            description:
+                'Pick any draft or in-flight proposal to view governance status.',
+            onSelect: (proposal) {
+              context
+                  .read<AppState>()
+                  .selectProposal(Map<String, dynamic>.from(proposal));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${proposal['title'] ?? 'Proposal'} loaded'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+        ),
+      );
     }
     final issues = List<String>.from(p["readiness_issues"] ?? []);
     final score = p["readiness_score"]?.toString() ?? "0";
