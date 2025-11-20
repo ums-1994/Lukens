@@ -303,7 +303,7 @@ def create_proposal(username=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.put("/proposals/<int:proposal_id>")
+@bp.put("/proposals/<proposal_id>")
 @token_required
 def update_proposal(username=None, proposal_id=None):
     """Update a proposal"""
@@ -396,7 +396,7 @@ def update_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.delete("/proposals/<int:proposal_id>")
+@bp.delete("/proposals/<proposal_id>")
 @token_required
 def delete_proposal(username=None, proposal_id=None):
     """Delete a proposal"""
@@ -425,7 +425,7 @@ def delete_proposal(username=None, proposal_id=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@bp.get("/proposals/<int:proposal_id>")
+@bp.get("/proposals/<proposal_id>")
 @token_required
 def get_proposal(username=None, proposal_id=None):
     """Get a single proposal"""
@@ -487,7 +487,7 @@ def get_my_proposals(username=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@bp.post("/proposals/<int:proposal_id>/submit")
+@bp.post("/proposals/<proposal_id>/submit")
 @token_required
 def submit_for_review(username=None, proposal_id=None):
     """Submit proposal for review"""
@@ -515,8 +515,8 @@ def submit_for_review(username=None, proposal_id=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@bp.post("/proposals/<int:proposal_id>/send-for-approval")
-@bp.post("/api/proposals/<int:proposal_id>/send-for-approval")
+@bp.post("/proposals/<proposal_id>/send-for-approval")
+@bp.post("/api/proposals/<proposal_id>/send-for-approval")
 @token_required
 def send_for_approval(username=None, proposal_id=None):
     """Send proposal for approval"""
@@ -544,7 +544,7 @@ def send_for_approval(username=None, proposal_id=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@bp.post("/proposals/<int:proposal_id>/send_to_client")
+@bp.post("/proposals/<proposal_id>/send_to_client")
 @token_required
 def send_to_client(username=None, proposal_id=None):
     """Send proposal to client"""
@@ -650,7 +650,7 @@ def get_upload_signature(username=None):
 # VERSION MANAGEMENT ROUTES
 # ============================================================================
 
-@bp.post("/api/proposals/<int:proposal_id>/versions")
+@bp.post("/api/proposals/<proposal_id>/versions")
 @token_required
 def create_version(username=None, proposal_id=None):
     """Create a new version of a proposal"""
@@ -699,7 +699,7 @@ def create_version(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/api/proposals/<int:proposal_id>/versions")
+@bp.get("/api/proposals/<proposal_id>/versions")
 @token_required
 def get_versions(username=None, proposal_id=None):
     """Get all versions of a proposal"""
@@ -734,7 +734,7 @@ def get_versions(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/api/proposals/<int:proposal_id>/versions/<int:version_number>")
+@bp.get("/api/proposals/<proposal_id>/versions/<int:version_number>")
 @token_required
 def get_version(username=None, proposal_id=None, version_number=None):
     """Get a specific version of a proposal"""

@@ -4,7 +4,7 @@ Supports both Firebase tokens and legacy JWT tokens
 """
 import os
 from functools import wraps
-from flask import request
+from flask import request, make_response
 from api.utils.auth import verify_token, get_valid_tokens
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token
 from api.utils.database import get_db_connection
@@ -22,6 +22,14 @@ def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = None
+
+        # Allow CORS preflight requests to pass without authentication.
+        # Browsers send OPTIONS requests before actual calls when using
+        # custom headers like Authorization. These requests do not include
+        # the auth token, so forcing validation here causes CORS failures.
+        if request.method == 'OPTIONS':
+            response = make_response('', 200)
+            return response
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             if auth_header:
