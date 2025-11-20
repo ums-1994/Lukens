@@ -241,9 +241,19 @@ def init_pg_schema():
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         created_by INTEGER,
+        change_description TEXT,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
+
+        # Backward compatibility: ensure change_description column exists
+        try:
+            cursor.execute('''
+                ALTER TABLE proposal_versions
+                ADD COLUMN IF NOT EXISTS change_description TEXT
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add change_description to proposal_versions: {e}")
 
         # Document comments table
         cursor.execute('''CREATE TABLE IF NOT EXISTS document_comments (

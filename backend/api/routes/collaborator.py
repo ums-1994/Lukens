@@ -411,5 +411,52 @@ def create_comment(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
+@bp.get("/api/comments/proposal/<proposal_id>")
+@token_required
+def get_comments(username=None, proposal_id=None):
+    """Get all comments for a proposal (creator/editor view)."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Verify proposal exists and is owned by the current user
+            cursor.execute(
+                'SELECT id, owner_id FROM proposals WHERE id = %s',
+                (proposal_id,),
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            # Fetch comments with author details
+            cursor.execute(
+                """
+                SELECT dc.id,
+                       dc.proposal_id,
+                       dc.comment_text,
+                       dc.created_by,
+                       dc.created_at,
+                       dc.section_index,
+                       dc.highlighted_text,
+                       dc.status,
+                       u.full_name AS created_by_name,
+                       u.email AS created_by_email
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at DESC
+                """,
+                (proposal_id,),
+            )
+
+            comments = cursor.fetchall()
+            return [dict(row) for row in comments], 200
+
+    except Exception as e:
+        print(f"❌ Error getting comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 
 
