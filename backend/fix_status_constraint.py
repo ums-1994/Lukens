@@ -37,10 +37,12 @@ def fix_status_constraint():
                     'Archived',
                     'Pending CEO Approval',
                     'Sent to Client',
+                    'Sent for Signature',
                     'In Review',
                     'Signed',
                     'signed',
                     'Client Signed',
+                    'Client Approved',
                     'Client Declined'
                 ) OR status IS NULL);
             """)

@@ -56,13 +56,39 @@ def send_email(to_email, subject, html_content):
                 print('[EMAIL] Starting TLS...')
                 server.starttls()
                 print('[EMAIL] Logging in...')
-                server.login(smtp_user, smtp_pass)
+                try:
+                    server.login(smtp_user, smtp_pass)
+                except smtplib.SMTPAuthenticationError as auth_error:
+                    error_code = getattr(auth_error, 'smtp_code', None)
+                    error_msg = str(auth_error)
+                    
+                    print(f"[ERROR] SMTP Authentication failed (Code: {error_code})")
+                    print(f"[ERROR] Error: {error_msg}")
+                    
+                    # Provide helpful guidance based on the error
+                    if 'gmail.com' in smtp_host.lower() or 'google' in smtp_host.lower():
+                        print("[HELP] Gmail authentication troubleshooting:")
+                        print("  1. Enable 2-Step Verification: https://myaccount.google.com/security")
+                        print("  2. Generate an App Password: https://myaccount.google.com/apppasswords")
+                        print("  3. Use the App Password (16 characters) instead of your regular password")
+                        print("  4. Make sure 'Less secure app access' is NOT needed (deprecated)")
+                        print("  5. If using a workspace account, check with your admin for SMTP settings")
+                    else:
+                        print("[HELP] SMTP authentication troubleshooting:")
+                        print("  1. Verify your SMTP_USER and SMTP_PASS are correct")
+                        print("  2. Check if your email provider requires app-specific passwords")
+                        print("  3. Verify SMTP_HOST and SMTP_PORT are correct")
+                        print("  4. Some providers require enabling 'Less secure app access' (not recommended)")
+                        print("  5. Consider using OAuth2 authentication for better security")
+                    
+                    raise
+                except (smtplib.SMTPException, OSError, ConnectionError) as smtp_error:
+                    print(f"[ERROR] SMTP connection error: {smtp_error}")
+                    print(f"[ERROR] This might be a network/DNS issue. Check your internet connection and SMTP settings.")
+                    raise
+                
                 print('[EMAIL] Sending message...')
                 server.send_message(msg)
-        except (smtplib.SMTPException, OSError, ConnectionError) as smtp_error:
-            print(f"[ERROR] SMTP connection error: {smtp_error}")
-            print(f"[ERROR] This might be a network/DNS issue. Check your internet connection and SMTP settings.")
-            raise
 
         print(f"[SUCCESS] Email sent to {to_email}")
         return True

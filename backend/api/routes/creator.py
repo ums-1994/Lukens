@@ -1284,18 +1284,36 @@ def get_proposal_collaborators(username=None, proposal_id=None):
             if proposal['user_id'] != username:
                 return {'detail': 'Access denied'}, 403
             
-            # Get all collaboration invitations for this proposal
+            # Get active collaborators from collaborators table
             cursor.execute("""
-                SELECT id, proposal_id, invited_email, permission_level, 
-                       status, invited_at, accessed_at, access_token
+                SELECT c.id, c.proposal_id, c.email, c.permission_level, 
+                       c.status, c.joined_at, c.last_accessed_at, c.invited_by,
+                       u.username as invited_by_username
+                FROM collaborators c
+                LEFT JOIN users u ON c.invited_by = u.id
+                WHERE c.proposal_id = %s
+                ORDER BY c.joined_at DESC
+            """, (proposal_id,))
+            
+            collaborators = cursor.fetchall()
+            
+            # Also get pending invitations
+            cursor.execute("""
+                SELECT id, proposal_id, invited_email as email, permission_level, 
+                       status, invited_at as joined_at, accessed_at as last_accessed_at,
+                       invited_by, access_token
                 FROM collaboration_invitations
-                WHERE proposal_id = %s
+                WHERE proposal_id = %s AND status = 'pending'
                 ORDER BY invited_at DESC
             """, (proposal_id,))
             
-            invitations = cursor.fetchall()
+            pending_invitations = cursor.fetchall()
             
-            return [dict(inv) for inv in invitations], 200
+            # Combine active collaborators and pending invitations
+            result = [dict(collab) for collab in collaborators]
+            result.extend([dict(inv) for inv in pending_invitations])
+            
+            return result, 200
             
     except Exception as e:
         print(f"❌ Error getting collaborators: {e}")
@@ -1339,17 +1357,24 @@ def invite_collaborator(username=None, proposal_id=None):
             import secrets
             access_token = secrets.token_urlsafe(32)
             
+            # Get the user ID from the users table (invited_by is required)
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            invited_by_user_id = user_row['id']
+            
             # All collaborators get 'edit' permission (full access: edit, comment, suggest)
             permission_level = 'edit'
             
             # Create invitation
             cursor.execute("""
                 INSERT INTO collaboration_invitations 
-                (proposal_id, invited_email, permission_level, access_token, status)
-                VALUES (%s, %s, %s, %s, 'pending')
+                (proposal_id, invited_email, invited_by, permission_level, access_token, status)
+                VALUES (%s, %s, %s, %s, %s, 'pending')
                 RETURNING id, proposal_id, invited_email, permission_level, 
                           status, invited_at, access_token
-            """, (proposal_id, email, permission_level, access_token))
+            """, (proposal_id, email, invited_by_user_id, permission_level, access_token))
             
             invitation = cursor.fetchone()
             conn.commit()
@@ -1375,7 +1400,7 @@ def invite_collaborator(username=None, proposal_id=None):
                 send_email(
                     to_email=email,
                     subject=f"Collaboration Invitation: {proposal['title']}",
-                    html_body=email_body
+                    html_content=email_body
                 )
                 email_sent = True
             except Exception as e:

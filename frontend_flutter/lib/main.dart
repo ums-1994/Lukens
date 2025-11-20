@@ -552,6 +552,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return const GuestCollaborationPage();
     }
 
+    // Check if this is an external URL (not our app) - if so, let browser handle it
+    // External URLs like DocuSign should not be processed by Flutter routing
+    final currentOrigin = web.window.location.origin;
+    if (uri.scheme == 'https' || uri.scheme == 'http') {
+      final urlOrigin = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+      if (urlOrigin != currentOrigin && !currentUrl.contains(currentOrigin)) {
+        // This is an external URL - let browser handle it, don't show Flutter UI
+        print('🔍 External URL detected: $urlOrigin (current origin: $currentOrigin)');
+        // Return a minimal widget that won't interfere
+        return const SizedBox.shrink();
+      }
+    }
+    
     // Always show landing page first when app starts
     // The landing page will handle navigation to login/dashboard based on auth status
     return const StartupPage();

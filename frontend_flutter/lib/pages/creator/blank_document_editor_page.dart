@@ -315,6 +315,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ?.map((img) =>
                           InlineImage.fromJson(img as Map<String, dynamic>))
                       .toList(),
+                  tables: (sectionData['tables'] as List<dynamic>?)
+                      ?.map((tableData) {
+                        try {
+                          return tableData is Map<String, dynamic>
+                              ? DocumentTable.fromJson(tableData)
+                              : DocumentTable.fromJson(
+                                  Map<String, dynamic>.from(tableData as Map));
+                        } catch (e) {
+                          print('⚠️ Error loading table: $e');
+                          return DocumentTable();
+                        }
+                      })
+                      .toList() ?? [],
                 );
                 _sections.add(newSection);
 
@@ -662,6 +675,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   void _addFromLibrary() {
+    if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a section first'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => const ContentLibrarySelectionDialog(),
@@ -674,6 +698,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             content.startsWith('http://') || content.startsWith('https://');
 
         final currentSection = _sections[_selectedSectionIndex];
+        final controller = currentSection.controller;
+        
         setState(() {
           // Add library content to the current section's content
           String textToInsert = content;
@@ -682,17 +708,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             textToInsert = '[📎 Document: $title]($content)';
           }
 
-          if (currentSection.controller.text.isEmpty) {
-            currentSection.controller.text = textToInsert;
+          // Insert at cursor position if available, otherwise append
+          final text = controller.text;
+          final selection = controller.selection;
+          
+          if (selection.isValid && selection.start >= 0 && selection.start <= text.length) {
+            // Insert at cursor position
+            final before = text.substring(0, selection.start);
+            final after = text.substring(selection.end);
+            final separator = before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
+            controller.text = '$before$separator$textToInsert$after';
+            // Set cursor after inserted content
+            final newPosition = selection.start + separator.length + textToInsert.length;
+            controller.selection = TextSelection.collapsed(offset: newPosition);
           } else {
-            currentSection.controller.text += '\n\n$textToInsert';
+            // Append to end
+            if (text.isEmpty) {
+              controller.text = textToInsert;
+            } else {
+              controller.text = '$text\n\n$textToInsert';
+            }
           }
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content:
-                Text('Added "${isUrl ? 'Document: ' : ''}$title" to section'),
+                Text('Inserted "${isUrl ? 'Document: ' : ''}$title" into section'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -1463,6 +1505,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'isCoverPage': section.isCoverPage,
                 'inlineImages':
                     section.inlineImages.map((img) => img.toJson()).toList(),
+                'tables': section.tables.map((table) => table.toJson()).toList(),
               })
           .toList(),
       'metadata': {
@@ -1652,6 +1695,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           .map((section) => {
                 'title': section.titleController.text,
                 'content': section.controller.text,
+                'backgroundColor': section.backgroundColor.value,
+                'backgroundImageUrl': section.backgroundImageUrl,
+                'sectionType': section.sectionType,
+                'isCoverPage': section.isCoverPage,
+                'inlineImages':
+                    section.inlineImages.map((img) => img.toJson()).toList(),
+                'tables': section.tables.map((table) => table.toJson()).toList(),
               })
           .toList(),
       'change_description': changeDescription,
@@ -1720,6 +1770,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
             ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
             .toList(),
+        tables: (sectionData['tables'] as List<dynamic>?)
+            ?.map((tableData) {
+              try {
+                return tableData is Map<String, dynamic>
+                    ? DocumentTable.fromJson(tableData)
+                    : DocumentTable.fromJson(
+                        Map<String, dynamic>.from(tableData as Map));
+              } catch (e) {
+                print('⚠️ Error loading table: $e');
+                return DocumentTable();
+              }
+            })
+            .toList() ?? [],
       );
       _sections.add(newSection);
     }
@@ -3504,6 +3567,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             tooltip: 'Insert Table',
           ),
           IconButton(
+            icon: const Icon(Icons.library_add),
+            onPressed: _addFromLibrary,
+            iconSize: 18,
+            splashRadius: 20,
+            tooltip: 'Insert from Content Library',
+          ),
+          IconButton(
             icon: const Icon(Icons.auto_awesome),
             onPressed: _showAIAssistantDialog,
             iconSize: 18,
@@ -3733,12 +3803,28 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   contentPadding: const EdgeInsets.all(8),
                 ),
               ),
-              // Display tables below text
-              ...section.tables.asMap().entries.map((entry) {
-                final tableIndex = entry.key;
-                final table = entry.value;
-                return _buildInteractiveTable(index, tableIndex, table);
-              }).toList(),
+              // Display tables below text (with drag and drop)
+              if (section.tables.isNotEmpty)
+                ReorderableListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  onReorder: (oldIndex, newIndex) {
+                    setState(() {
+                      if (newIndex > oldIndex) {
+                        newIndex -= 1;
+                      }
+                      final table = section.tables.removeAt(oldIndex);
+                      section.tables.insert(newIndex, table);
+                    });
+                  },
+                  children: section.tables.asMap().entries.map((entry) {
+                    final tableIndex = entry.key;
+                    final table = entry.value;
+                    return _buildInteractiveTable(index, tableIndex, table, key: ValueKey('table_${index}_$tableIndex'));
+                  }).toList(),
+                )
+              else
+                const SizedBox.shrink(),
               // Display images below tables
               ...section.inlineImages.asMap().entries.map((entry) {
                 final imageIndex = entry.key;
@@ -3949,26 +4035,100 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  // Build drag target for tables
+  Widget _buildTableDragTarget(int sectionIndex, int targetIndex) {
+    return DragTarget<int>(
+      onWillAccept: (data) {
+        // Accept if dragging a different table
+        return data != null && data != targetIndex && data != targetIndex - 1;
+      },
+      onAccept: (draggedIndex) {
+        setState(() {
+          final tables = _sections[sectionIndex].tables;
+          if (draggedIndex < 0 || draggedIndex >= tables.length) return;
+          
+          // Remove the table being dragged
+          final draggedTable = tables.removeAt(draggedIndex);
+          
+          // Calculate the correct insertion position
+          // targetIndex represents where we want to insert (before the table at that index)
+          int insertIndex = targetIndex;
+          
+          // If we removed a table before the target, adjust the index
+          if (draggedIndex < targetIndex) {
+            insertIndex = targetIndex - 1;
+          }
+          
+          // Ensure valid index
+          insertIndex = insertIndex.clamp(0, tables.length);
+          
+          // Only move if position actually changed
+          if (insertIndex != draggedIndex) {
+            tables.insert(insertIndex, draggedTable);
+          } else {
+            // Put it back if no change
+            tables.insert(draggedIndex, draggedTable);
+          }
+        });
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isActive = candidateData.isNotEmpty;
+        return Container(
+          height: isActive ? 50 : 8,
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          decoration: BoxDecoration(
+            color: isActive
+                ? const Color(0xFF00BCD4).withOpacity(0.3)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+            border: isActive
+                ? Border.all(color: const Color(0xFF00BCD4), width: 2)
+                : null,
+          ),
+          child: isActive
+              ? const Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.drag_handle, color: Color(0xFF00BCD4), size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Drop table here',
+                        style: TextStyle(
+                          color: Color(0xFF00BCD4),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink(),
+        );
+      },
+    );
+  }
+
   // Build interactive editable table
   Widget _buildInteractiveTable(
-      int sectionIndex, int tableIndex, DocumentTable table) {
-    // Get currency symbol
-    String currencySymbol = '\$';
-    switch (_selectedCurrency) {
-      case 'ZAR':
-        currencySymbol = 'R';
-        break;
-      case 'EUR':
-        currencySymbol = '€';
-        break;
-      case 'GBP':
-        currencySymbol = '£';
-        break;
-      default:
-        currencySymbol = '\$';
-    }
+      int sectionIndex, int tableIndex, DocumentTable table, {Key? key}) {
+    // Get currency symbol using the proper method
+    final currencySymbol = _getCurrencySymbol();
 
+    return _buildTableContent(sectionIndex, tableIndex, table, currencySymbol, key: key);
+  }
+
+  // Build the actual table content
+  Widget _buildTableContent(
+      int sectionIndex, int tableIndex, DocumentTable table, String currencySymbol, {Key? key}) {
+    return _buildTableContainer(sectionIndex, tableIndex, table, currencySymbol, key: key);
+  }
+
+  // Build the table container
+  Widget _buildTableContainer(
+      int sectionIndex, int tableIndex, DocumentTable table, String currencySymbol, {Key? key}) {
     return Container(
+      key: key,
       margin: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey[300]!),
@@ -3990,10 +4150,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '${table.type == 'price' ? 'Price' : 'Text'} Table',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 14),
+                Row(
+                  children: [
+                    // Drag handle icon (for ReorderableListView)
+                    Icon(
+                      Icons.drag_handle,
+                      size: 18,
+                      color: Colors.grey[600],
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${table.type == 'price' ? 'Price' : 'Text'} Table',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ],
                 ),
                 Row(
                   children: [
@@ -4036,54 +4207,66 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           // Table content
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
-              border: TableBorder.all(color: Colors.grey[300]!),
-              columns: List.generate(
-                table.cells[0].length,
-                (colIndex) => DataColumn(
-                  label: Expanded(
-                    child: Text(
-                      table.cells[0][colIndex],
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
+                border: TableBorder.all(color: Colors.grey[300]!),
+                columns: List.generate(
+                  table.cells[0].length,
+                  (colIndex) => DataColumn(
+                    label: Expanded(
+                      child: Text(
+                        table.cells[0][colIndex],
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        textDirection: TextDirection.ltr,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              rows: List.generate(
-                table.cells.length - 1,
-                (rowIndex) => DataRow(
-                  cells: List.generate(
-                    table.cells[rowIndex + 1].length,
-                    (colIndex) => DataCell(
-                      TextField(
-                        controller: TextEditingController(
-                          text: table.cells[rowIndex + 1][colIndex],
+                rows: List.generate(
+                  table.cells.length - 1,
+                  (rowIndex) => DataRow(
+                    cells: List.generate(
+                      table.cells[rowIndex + 1].length,
+                      (colIndex) => DataCell(
+                        Directionality(
+                          textDirection: TextDirection.ltr,
+                          child: TextField(
+                            textDirection: TextDirection.ltr,
+                            textAlign: TextAlign.left,
+                            controller: TextEditingController(
+                              text: table.cells[rowIndex + 1][colIndex],
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                table.cells[rowIndex + 1][colIndex] = value;
+                                // Auto-calculate total for price tables
+                                if (table.type == 'price' && colIndex == 2 ||
+                                    colIndex == 3) {
+                                  final qty = double.tryParse(
+                                          table.cells[rowIndex + 1][2]) ??
+                                      0;
+                                  final price = double.tryParse(
+                                          table.cells[rowIndex + 1][3]) ??
+                                      0;
+                                  table.cells[rowIndex + 1][4] =
+                                      (qty * price).toStringAsFixed(2);
+                                }
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.all(8),
+                            ),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              textBaseline: TextBaseline.alphabetic,
+                            ),
+                          ),
                         ),
-                        onChanged: (value) {
-                          setState(() {
-                            table.cells[rowIndex + 1][colIndex] = value;
-                            // Auto-calculate total for price tables
-                            if (table.type == 'price' && colIndex == 2 ||
-                                colIndex == 3) {
-                              final qty = double.tryParse(
-                                      table.cells[rowIndex + 1][2]) ??
-                                  0;
-                              final price = double.tryParse(
-                                      table.cells[rowIndex + 1][3]) ??
-                                  0;
-                              table.cells[rowIndex + 1][4] =
-                                  (qty * price).toStringAsFixed(2);
-                            }
-                          });
-                        },
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.all(8),
-                        ),
-                        style: const TextStyle(fontSize: 13),
                       ),
                     ),
                   ),
@@ -4130,6 +4313,112 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           '$currencySymbol${table.getTotal().toStringAsFixed(2)}',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyTable(DocumentTable table) {
+    final currencySymbol = _getCurrencySymbol();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4).withOpacity(0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
+            ),
+            child: Text(
+              '${table.type == 'price' ? 'Price' : 'Text'} Table',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
+              border: TableBorder.all(color: Colors.grey[300]!),
+              columns: List.generate(
+                table.cells[0].length,
+                (colIndex) => DataColumn(
+                  label: Text(
+                    table.cells[0][colIndex],
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              rows: List.generate(
+                table.cells.length - 1,
+                (rowIndex) => DataRow(
+                  cells: List.generate(
+                    table.cells[rowIndex + 1].length,
+                    (colIndex) => DataCell(
+                      Text(
+                        table.cells[rowIndex + 1][colIndex],
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (table.type == 'price') ...[
+            const Divider(height: 1),
+            Container(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text('Subtotal: ',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                          '$currencySymbol${table.getSubtotal().toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                          'VAT (${(table.vatRate * 100).toStringAsFixed(0)}%): ',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                          '$currencySymbol${table.getVAT().toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text('Total: ',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                        '$currencySymbol${table.getTotal().toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
                     ],
                   ),
                 ],
@@ -6766,6 +7055,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                       ),
                                     ),
                                     const SizedBox(height: 20),
+                                    if (section.tables.isNotEmpty) ...[
+                                      ...section.tables
+                                          .map((table) =>
+                                              _buildReadOnlyTable(table))
+                                          .toList(),
+                                      const SizedBox(height: 12),
+                                    ],
                                     // Page indicator
                                     Align(
                                       alignment: Alignment.centerRight,

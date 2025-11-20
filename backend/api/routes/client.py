@@ -217,14 +217,13 @@ def add_client_comment(proposal_id):
 
 @bp.post("/api/client/proposals/<int:proposal_id>/approve")
 def client_approve_proposal(proposal_id):
-    """Client approves and signs proposal"""
+    """Client approves proposal - creates DocuSign envelope for signing"""
     try:
         data = request.get_json()
         token = data.get('token')
         signer_name = data.get('signer_name')
         signer_title = data.get('signer_title', '')
         comments = data.get('comments', '')
-        signature_date = data.get('signature_date')
         
         if not token or not signer_name:
             return {'detail': 'Token and signer name required'}, 400
@@ -246,52 +245,142 @@ def client_approve_proposal(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Update proposal status
+            client_email = invitation['invited_email']
+            
+            # Get proposal details
             cursor.execute("""
-                UPDATE proposals 
-                SET status = 'Client Approved', updated_at = NOW()
-                WHERE id = %s AND client_email = %s
-                RETURNING id, title, client_name, user_id
-            """, (proposal_id, invitation['invited_email']))
+                SELECT p.id, p.title, p.content, p.client_name, p.client_email
+                FROM proposals p
+                WHERE p.id = %s AND p.client_email = %s
+            """, (proposal_id, client_email))
             
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
             
-            # Store signature information
-            signature_info = f"""
-✓ APPROVED AND SIGNED
-Signer: {signer_name}
-{f"Title: {signer_title}" if signer_title else ""}
-Date: {signature_date or datetime.now().isoformat()}
-{f"Comments: {comments}" if comments else ""}
-            """
-            
-            # Get or create client user
+            # Check if DocuSign envelope already exists
             cursor.execute("""
-                INSERT INTO users (username, email, password_hash, full_name, role)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-                RETURNING id
-            """, (invitation['invited_email'], invitation['invited_email'], '', signer_name, 'client'))
+                SELECT envelope_id, signing_url, status
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+            """, (proposal_id,))
             
-            client_user_id = cursor.fetchone()['id']
+            existing_signature = cursor.fetchone()
             
-            # Add signature as comment
-            cursor.execute("""
-                INSERT INTO document_comments 
-                (proposal_id, comment_text, created_by, status)
-                VALUES (%s, %s, %s, %s)
-            """, (proposal_id, signature_info, client_user_id, 'resolved'))
+            # If we have a valid signing URL, return it
+            signing_url = None
+            envelope_id = None
             
-            conn.commit()
+            if existing_signature and existing_signature.get('signing_url'):
+                status = existing_signature.get('status', '').lower()
+                if status not in ['completed', 'declined', 'voided']:
+                    signing_url = existing_signature['signing_url']
+                    envelope_id = existing_signature['envelope_id']
             
-            print(f"✅ Proposal {proposal_id} approved by client: {signer_name}")
+            # If no valid signing URL, create a new DocuSign envelope
+            if not signing_url:
+                try:
+                    from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope
+                    import os
+                    
+                    # Generate PDF
+                    pdf_content = generate_proposal_pdf(
+                        proposal_id=proposal_id,
+                        title=proposal['title'],
+                        content=proposal.get('content', ''),
+                        client_name=proposal.get('client_name') or signer_name,
+                        client_email=client_email
+                    )
+                    
+                    # Create DocuSign envelope
+                    # Since we're on HTTP, DocuSign will open in a new tab (not embedded)
+                    # Use a return URL that points back to the client proposals page
+                    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                    # Use hash-based routing to prevent full page reload
+                    return_url = f"{frontend_url}/#/client/proposals?token={token}&signed=true"
+                    
+                    envelope_result = create_docusign_envelope(
+                        proposal_id=proposal_id,
+                        pdf_bytes=pdf_content,
+                        signer_name=signer_name,
+                        signer_email=client_email,
+                        signer_title=signer_title,
+                        return_url=return_url
+                    )
+                    
+                    signing_url = envelope_result['signing_url']
+                    envelope_id = envelope_result['envelope_id']
+                    
+                    # Store signature record
+                    cursor.execute("""
+                        SELECT id FROM proposal_signatures WHERE proposal_id = %s
+                    """, (proposal_id,))
+                    existing = cursor.fetchone()
+                    
+                    if existing:
+                        # Update existing record
+                        cursor.execute("""
+                            UPDATE proposal_signatures 
+                            SET envelope_id = %s,
+                                signer_name = %s,
+                                signer_email = %s,
+                                signer_title = %s,
+                                signing_url = %s,
+                                status = %s,
+                                sent_at = NOW()
+                            WHERE proposal_id = %s
+                        """, (
+                            envelope_id,
+                            signer_name,
+                            client_email,
+                            signer_title,
+                            signing_url,
+                            'sent',
+                            proposal_id
+                        ))
+                    else:
+                        # Insert new record
+                        cursor.execute("""
+                            INSERT INTO proposal_signatures 
+                            (proposal_id, envelope_id, signer_name, signer_email, signer_title, 
+                             signing_url, status, created_by)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
+                        """, (
+                            proposal_id,
+                            envelope_id,
+                            signer_name,
+                            client_email,
+                            signer_title,
+                            signing_url,
+                            'sent'
+                        ))
+                    
+                    # Update proposal status
+                    cursor.execute("""
+                        UPDATE proposals 
+                        SET status = 'Sent for Signature', updated_at = NOW()
+                        WHERE id = %s
+                    """, (proposal_id,))
+                    
+                    conn.commit()
+                    
+                    print(f"✅ Created DocuSign envelope for proposal {proposal_id} (client: {client_email})")
+                    
+                except ImportError:
+                    return {'detail': 'DocuSign integration not available'}, 503
+                except Exception as docusign_error:
+                    print(f"❌ DocuSign error: {docusign_error}")
+                    traceback.print_exc()
+                    return {'detail': f'Failed to create signing URL: {str(docusign_error)}'}, 500
             
             return {
-                'message': 'Proposal approved successfully',
+                'message': 'Proposal ready for signing',
                 'proposal_id': proposal['id'],
-                'status': 'Client Approved'
+                'signing_url': signing_url,
+                'envelope_id': envelope_id,
+                'status': 'Sent for Signature'
             }, 200
             
     except Exception as e:
@@ -446,8 +535,11 @@ def get_client_signing_url(proposal_id):
                 )
                 
                 # Create DocuSign envelope
+                # Since we're on HTTP, DocuSign will open in a new tab (not embedded)
+                # Use a return URL that points back to the client proposals page
                 frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
-                return_url = f"{frontend_url}/client/proposals?token={token}"
+                # Use hash-based routing to prevent full page reload
+                return_url = f"{frontend_url}/#/client/proposals?token={token}&signed=true"
                 
                 envelope_result = create_docusign_envelope(
                     proposal_id=proposal_id,

@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web/web.dart' as web;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:ui_web' as ui;
 
 class ClientProposalViewer extends StatefulWidget {
   final int proposalId;
@@ -39,9 +37,33 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   @override
   void initState() {
     super.initState();
+    _checkIfReturnedFromSigning();
     _loadProposal();
     _startSession();
     _logEvent('open');
+  }
+
+  void _checkIfReturnedFromSigning() {
+    // Check if we're returning from DocuSign signing
+    if (kIsWeb) {
+      final currentUrl = web.window.location.href;
+      final uri = Uri.parse(currentUrl);
+      
+      // Check for signed=true in query params or hash
+      final signedParam = uri.queryParameters['signed'];
+      final hash = uri.fragment;
+      final hasSignedInHash = hash.contains('signed=true');
+      
+      if (signedParam == 'true' || hasSignedInHash) {
+        print('✅ Detected return from DocuSign signing');
+        // Reload proposal after a short delay to ensure backend has updated
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            _loadProposal();
+          }
+        });
+      }
+    }
   }
 
   @override
@@ -479,7 +501,45 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           if (!isSigned && hasSigningUrl) ...[
             const SizedBox(width: 12),
             ElevatedButton.icon(
-              onPressed: _openSigningModal,
+              onPressed: () {
+                print('🔐 ========== SIGN PROPOSAL BUTTON CLICKED ==========');
+                print('🔐 Current URL before click: ${web.window.location.href}');
+                print('🔐 Signing URL: ${_signingUrl?.substring(0, _signingUrl!.length > 80 ? 80 : _signingUrl!.length)}...');
+                
+                if (_signingUrl == null || _signingUrl!.isEmpty) {
+                  print('⚠️ No signing URL available');
+                  _openSigningModal();
+                  return;
+                }
+                
+                // Open DocuSign in the same tab (redirect mode - works on HTTP)
+                print('🔐 Opening DocuSign in same tab (redirect mode)...');
+                final url = _signingUrl!;
+                
+                try {
+                  print('🔐 Navigating to DocuSign URL: ${url.substring(0, url.length > 100 ? 100 : url.length)}...');
+                  
+                  // Use replace() to navigate to external URL (bypasses Flutter routing)
+                  // This prevents Flutter from intercepting the external DocuSign URL
+                  web.window.location.replace(url);
+                  print('✅ Navigation initiated to DocuSign using location.replace()');
+                  
+                  // Note: We don't show a SnackBar here because the page will navigate immediately
+                  // The navigation happens synchronously, so any mounted check would be unreliable
+                } catch (e, stackTrace) {
+                  print('❌ Error opening DocuSign: $e');
+                  print('❌ Stack trace: $stackTrace');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error opening DocuSign: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 10),
+                      ),
+                    );
+                  }
+                }
+              },
               icon: const Icon(Icons.draw, size: 18),
               label: const Text('Sign Proposal'),
               style: ElevatedButton.styleFrom(
@@ -514,10 +574,13 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Future<void> _openSigningModal() async {
+    print('🔐 Opening signing modal...');
+    print('🔐 Current signing URL: $_signingUrl');
     _logEvent('sign', metadata: {'action': 'signing_modal_opened'});
     
     // If no signing URL, try to get/create one
     if (_signingUrl == null || _signingUrl!.isEmpty) {
+      print('⚠️ No signing URL, creating one...');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -588,84 +651,36 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       return;
     }
     
-    final protocol = web.window.location.protocol;
-    if (protocol != 'https:' && !protocol.contains('chrome-extension')) {
+    // Use redirect mode - navigate to DocuSign in the same tab (works on HTTP)
+    final urlToOpen = _signingUrl!;
+    print('🔐 Opening DocuSign URL (redirect mode): ${urlToOpen.substring(0, urlToOpen.length > 100 ? 100 : urlToOpen.length)}...');
+    
+    try {
+      if (kIsWeb) {
+        // Navigate to DocuSign in the same tab (redirect mode)
+        // Use replace() to navigate to external URL (bypasses Flutter routing)
+        print('🔐 Navigating to DocuSign in same tab...');
+        web.window.location.replace(urlToOpen);
+        print('✅ Navigation initiated to DocuSign using location.replace()');
+      } else {
+        // For mobile, use external launcher
+        await launchUrlString(
+          urlToOpen,
+          mode: LaunchMode.externalApplication,
+        );
+        print('✅ Opened DocuSign via launcher');
+      }
+    } catch (e) {
+      print('❌ Error opening DocuSign: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Embedded signing requires HTTPS. Opening DocuSign in a new tab instead.',
-            ),
-            backgroundColor: Colors.blue,
+          SnackBar(
+            content: Text('Error opening DocuSign: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
-      await launchUrlString(_signingUrl!, mode: LaunchMode.externalApplication);
-      return;
     }
-    
-    final viewId =
-        'docusign-signing-${DateTime.now().millisecondsSinceEpoch.toString()}';
-    // ignore: undefined_prefixed_name
-    ui.platformViewRegistry.registerViewFactory(viewId, (int viewId) {
-      final iframe = web.HTMLIFrameElement()
-        ..src = _signingUrl!
-        ..style.border = 'none'
-        ..allow = 'fullscreen'
-        ..width = '100%'
-        ..height = '100%';
-      return iframe;
-    });
-    
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(24),
-        child: SizedBox(
-          width: 900,
-          height: 700,
-          child: Column(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Sign Proposal',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.open_in_new, color: Colors.white),
-                      tooltip: 'Open in new tab',
-                      onPressed: () => launchUrlString(
-                          _signingUrl!,
-                          mode: LaunchMode.externalApplication),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    )
-                  ],
-                ),
-              ),
-              Expanded(
-                child: HtmlElementView(viewType: viewId),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    
-    await _loadProposal();
   }
 
   Widget _buildTabBar() {
@@ -1476,19 +1491,28 @@ class _ApproveDialogState extends State<ApproveDialog> {
           'signer_name': _signerNameController.text.trim(),
           'signer_title': _signerTitleController.text.trim(),
           'comments': _commentsController.text.trim(),
-          'signature_date': DateTime.now().toIso8601String(),
         }),
       );
 
       if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final signingUrl = data['signing_url']?.toString();
+        
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Proposal approved successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          widget.onSuccess();
+          Navigator.pop(context); // Close approve dialog
+          
+          if (signingUrl != null && signingUrl.isNotEmpty) {
+            // Open DocuSign signing modal
+            _openDocuSignSigning(signingUrl);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Proposal approved, but signing URL not available'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            widget.onSuccess();
+          }
         }
       } else {
         final error = jsonDecode(response.body);
@@ -1508,6 +1532,37 @@ class _ApproveDialogState extends State<ApproveDialog> {
         setState(() {
           _isSubmitting = false;
         });
+      }
+    }
+  }
+
+  Future<void> _openDocuSignSigning(String signingUrl) async {
+    // Open DocuSign in the same tab
+    print('🔐 ApproveDialog: Opening DocuSign URL in same tab: ${signingUrl.substring(0, signingUrl.length > 100 ? 100 : signingUrl.length)}...');
+    
+    try {
+      // Navigate to DocuSign in the same tab (redirect mode - works on HTTP)
+      print('🔐 ApproveDialog: Navigating to DocuSign (redirect mode)...');
+      // Use replace() to navigate to external URL (bypasses Flutter routing)
+      web.window.location.replace(signingUrl);
+      print('✅ Navigation initiated to DocuSign from ApproveDialog using location.replace()');
+      
+      // Reload proposal after a delay to check for signature completion
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          print('🔄 ApproveDialog: Reloading proposal to check signature status...');
+          widget.onSuccess(); // Reload to check if signed
+        }
+      });
+    } catch (e) {
+      print('❌ ApproveDialog: Error opening DocuSign: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening DocuSign: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }

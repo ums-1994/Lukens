@@ -37,6 +37,30 @@ def get_collaboration_access():
             if not invitation:
                 return {'detail': 'Invalid or expired token'}, 404
             
+            # Update accessed_at timestamp in collaboration_invitations
+            cursor.execute("""
+                UPDATE collaboration_invitations 
+                SET accessed_at = CURRENT_TIMESTAMP, status = 'active'
+                WHERE id = %s
+            """, (invitation['id'],))
+            
+            # Create or update collaborator record
+            cursor.execute("""
+                INSERT INTO collaborators 
+                (proposal_id, email, invited_by, permission_level, status, last_accessed_at)
+                VALUES (%s, %s, %s, %s, 'active', CURRENT_TIMESTAMP)
+                ON CONFLICT (proposal_id, email) 
+                DO UPDATE SET 
+                    last_accessed_at = CURRENT_TIMESTAMP,
+                    status = 'active'
+            """, (
+                invitation['proposal_id'],
+                invitation['invited_email'],
+                invitation['invited_by'],
+                invitation['permission_level']
+            ))
+            conn.commit()
+            
             # Generate auth token for collaborator (all collaborators get full access)
             guest_email = invitation['invited_email']
             jwt_secret = os.getenv('JWT_SECRET', 'your-secret-key')
