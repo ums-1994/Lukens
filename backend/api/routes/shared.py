@@ -262,7 +262,7 @@ def mark_mention_read(username=None, mention_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/activity")
+@bp.get("/api/proposals/<proposal_id>/activity")
 @token_required
 def get_activity_timeline(username=None, proposal_id=None):
     """Get activity timeline for a proposal"""
@@ -292,7 +292,7 @@ def get_activity_timeline(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/versions/compare")
+@bp.get("/api/proposals/<proposal_id>/versions/compare")
 @token_required
 def compare_proposal_versions(username=None, proposal_id=None):
     """Compare two versions of a proposal"""
@@ -380,7 +380,7 @@ def compare_proposal_versions(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/proposals/<int:proposal_id>/docusign/send")
+@bp.post("/api/proposals/<proposal_id>/docusign/send")
 @token_required
 def send_for_signature(username=None, proposal_id=None):
     """Send proposal for DocuSign signature"""
@@ -405,10 +405,12 @@ def send_for_signature(username=None, proposal_id=None):
             if not current_user:
                 return {'detail': 'User not found'}, 404
             
+            # Ensure the current user owns the proposal via owner_id
             cursor.execute("""
-                SELECT id, title, content FROM proposals 
-                WHERE id = %s AND user_id = %s
-            """, (proposal_id, username))
+                SELECT id, title, content, client_name, client_email 
+                FROM proposals 
+                WHERE id = %s AND owner_id = %s
+            """, (proposal_id, current_user['id']))
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -475,7 +477,7 @@ def send_for_signature(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/signatures")
+@bp.get("/api/proposals/<proposal_id>/signatures")
 @token_required
 def get_proposal_signatures(username=None, proposal_id=None):
     """Get all signatures for a proposal"""
@@ -508,7 +510,7 @@ def get_proposal_signatures(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/proposals/<int:proposal_id>/suggestions")
+@bp.post("/api/proposals/<proposal_id>/suggestions")
 @token_required
 def create_suggestion(username=None, proposal_id=None):
     """Create a suggested change (for reviewers with suggest permission)"""
@@ -580,7 +582,7 @@ def create_suggestion(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/suggestions")
+@bp.get("/api/proposals/<proposal_id>/suggestions")
 @token_required
 def get_suggestions(username=None, proposal_id=None):
     """Get all suggestions for a proposal"""
@@ -612,7 +614,7 @@ def get_suggestions(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/proposals/<int:proposal_id>/suggestions/<int:suggestion_id>/resolve")
+@bp.post("/api/proposals/<proposal_id>/suggestions/<int:suggestion_id>/resolve")
 @token_required
 def resolve_suggestion(username=None, proposal_id=None, suggestion_id=None):
     """Accept or reject a suggestion (proposal owner only)"""
@@ -632,11 +634,11 @@ def resolve_suggestion(username=None, proposal_id=None, suggestion_id=None):
                 return {'detail': 'User not found'}, 404
             
             cursor.execute("""
-                SELECT user_id FROM proposals WHERE id = %s
+                SELECT owner_id FROM proposals WHERE id = %s
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
+            if not proposal or proposal['owner_id'] != current_user['id']:
                 return {'detail': 'Only proposal owner can resolve suggestions'}, 403
             
             cursor.execute("""
@@ -672,7 +674,7 @@ def resolve_suggestion(username=None, proposal_id=None, suggestion_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/proposals/<int:proposal_id>/sections/<section_id>/lock")
+@bp.post("/api/proposals/<proposal_id>/sections/<section_id>/lock")
 @token_required
 def lock_section(username=None, proposal_id=None, section_id=None):
     """Lock a section for editing"""
@@ -728,7 +730,7 @@ def lock_section(username=None, proposal_id=None, section_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/proposals/<int:proposal_id>/sections/<section_id>/unlock")
+@bp.post("/api/proposals/<proposal_id>/sections/<section_id>/unlock")
 @token_required
 def unlock_section(username=None, proposal_id=None, section_id=None):
     """Unlock a section"""
@@ -748,9 +750,9 @@ def unlock_section(username=None, proposal_id=None, section_id=None):
                 DELETE FROM section_locks
                 WHERE proposal_id = %s AND section_id = %s
                 AND (locked_by = %s OR EXISTS (
-                    SELECT 1 FROM proposals WHERE id = %s AND user_id = %s
+                    SELECT 1 FROM proposals WHERE id = %s AND owner_id = %s
                 ))
-            """, (proposal_id, section_id, user_id, proposal_id, username))
+            """, (proposal_id, section_id, user_id, proposal_id, user_id))
             
             conn.commit()
             
@@ -765,7 +767,7 @@ def unlock_section(username=None, proposal_id=None, section_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/sections/locks")
+@bp.get("/api/proposals/<proposal_id>/sections/locks")
 @token_required
 def get_section_locks(username=None, proposal_id=None):
     """Get all section locks for a proposal"""

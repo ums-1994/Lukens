@@ -1385,6 +1385,11 @@ def admin_required(f):
 # See api/routes/ directory for all endpoints.
 # ============================================================================
 
+# Root endpoint for basic health/uptime checks (no auth required)
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Lukens backend running"}, 200
+
 # Health check endpoint (no auth required)
 @app.get("/health")
 def health_check():

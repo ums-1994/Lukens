@@ -443,10 +443,10 @@ def firebase_auth():
                 role_to_use = requested_role if requested_role in ['admin', 'manager', 'user'] else 'user'
                 
                 cursor.execute(
-                    '''INSERT INTO users (username, email, full_name, role, is_active, is_email_verified)
-                       VALUES (%s, %s, %s, %s, %s, %s)
+                    '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id, username, email, full_name, role, department, is_active''',
-                    (username, email, name, role_to_use, True, firebase_user.get('email_verified', False))
+                    (username, email, '', name, role_to_use, True, firebase_user.get('email_verified', False))
                 )
                 user = cursor.fetchone()
                 user_id = user[0]

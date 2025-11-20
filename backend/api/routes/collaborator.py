@@ -17,7 +17,12 @@ bp = Blueprint('collaborator', __name__)
 # COLLABORATION ROUTES
 # ============================================================================
 
-@bp.post("/api/proposals/<int:proposal_id>/invite")
+# Explicit CORS preflight handler for invite endpoint (no auth required)
+@bp.route("/api/proposals/<proposal_id>/invite", methods=["OPTIONS"])
+def invite_collaborator_options(proposal_id=None):
+    return "", 200
+
+@bp.post("/api/proposals/<proposal_id>/invite")
 @token_required
 def invite_collaborator(username=None, proposal_id=None):
     """Invite a collaborator to view and comment on a proposal"""
@@ -41,10 +46,10 @@ def invite_collaborator(username=None, proposal_id=None):
             user_id = user[0]
             inviter_email = user[1]
             
-            # Check if proposal exists and belongs to user
+            # Check if proposal exists and belongs to user (owner_id matches current user id)
             cursor.execute(
-                'SELECT title FROM proposals WHERE id = %s AND user_id = %s',
-                (proposal_id, username)
+                'SELECT title FROM proposals WHERE id = %s AND owner_id = %s',
+                (proposal_id, user_id)
             )
             proposal = cursor.fetchone()
             if not proposal:
@@ -88,7 +93,11 @@ def invite_collaborator(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/api/proposals/<int:proposal_id>/collaborators")
+@bp.route("/api/proposals/<proposal_id>/collaborators", methods=["OPTIONS"])
+def get_collaborators_options(proposal_id=None):
+    return "", 200
+
+@bp.get("/api/proposals/<proposal_id>/collaborators")
 @token_required
 def get_collaborators(username=None, proposal_id=None):
     """Get all collaborators for a proposal"""
@@ -96,8 +105,8 @@ def get_collaborators(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Verify ownership
-            cursor.execute('SELECT user_id FROM proposals WHERE id = %s', (proposal_id,))
+            # Verify proposal exists (ownership is already enforced on invite)
+            cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
@@ -148,8 +157,8 @@ def remove_collaborator(username=None, invitation_id=None):
                 SELECT ci.id 
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
-                WHERE ci.id = %s AND (ci.invited_by = %s OR p.user_id = %s)
-            """, (invitation_id, user_id, username))
+                WHERE ci.id = %s AND (ci.invited_by = %s OR p.owner_id = %s)
+            """, (invitation_id, user_id, user_id))
             
             if not cursor.fetchone():
                 return {'detail': 'Invitation not found or access denied'}, 404
@@ -291,7 +300,7 @@ def add_guest_comment():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/comments/document/<int:proposal_id>")
+@bp.post("/api/comments/document/<proposal_id>")
 @token_required
 def create_comment(username=None, proposal_id=None):
     """Create a new comment on a document"""
