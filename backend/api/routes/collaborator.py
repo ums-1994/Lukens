@@ -9,6 +9,7 @@ import psycopg2.extras
 from datetime import datetime, timedelta
 
 from api.utils.database import get_db_connection
+from api.utils.email import send_email
 from api.utils.decorators import token_required
 
 bp = Blueprint('collaborator', __name__)
@@ -81,11 +82,26 @@ def invite_collaborator(username=None, proposal_id=None):
             # Note: send_email would need to be imported from app.py or utils
             # For now, we'll just return the URL
             
+            email_sent = False
+            try:
+                subject = f"You've been invited to collaborate on '{proposal_title}'"
+                html_content = (
+                    f"<p>You have been invited to collaborate on the proposal "
+                    f"'<strong>{proposal_title}</strong>'.</p>"
+                    f"<p>Open it here: <a href=\"{collaboration_url}\">{collaboration_url}</a></p>"
+                )
+                email_sent = send_email(invited_email, subject, html_content)
+                print(f"[INVITE] Collaborator email sent: {email_sent}")
+            except Exception as email_error:
+                print(f"[WARN] Failed to send collaborator invitation email: {email_error}")
+                email_sent = False
+            
             return {
                 'id': invitation_id,
                 'message': 'Invitation sent successfully',
                 'collaboration_url': collaboration_url,
-                'expires_at': expires_at.isoformat()
+                'expires_at': expires_at.isoformat(),
+                'email_sent': email_sent
             }, 201
             
     except Exception as e:
