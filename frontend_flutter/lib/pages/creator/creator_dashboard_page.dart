@@ -5,6 +5,7 @@ import '../../widgets/custom_scrollbar.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
@@ -759,6 +760,20 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildAISection() {
+    final app = context.watch<AppState>();
+    final proposals = app.proposals;
+    
+    // Find proposals that can be analyzed (draft or sent status)
+    final analyzableProposals = proposals.where((p) {
+      final status = (p['status'] ?? '').toString().toLowerCase();
+      return status == 'draft' || status == 'sent' || status == 'sent to client';
+    }).toList();
+    
+    // Get the most recent one or first one
+    final targetProposal = analyzableProposals.isNotEmpty 
+        ? analyzableProposals.first 
+        : null;
+    
     return GlassContainer(
       borderRadius: 24,
       gradientStart: PremiumTheme.orange.withOpacity(0.3),
@@ -787,12 +802,17 @@ class _DashboardPageState extends State<DashboardPage>
                   children: [
                     Text(
                       'AI-Powered Compound Risk Gate',
-                      style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                      style: PremiumTheme.titleMedium.copyWith(
+                        fontSize: 18,
+                        decoration: TextDecoration.none,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'AI analyzes multiple small deviations and flags combined risks',
-                      style: PremiumTheme.bodyMedium,
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        decoration: TextDecoration.none,
+                      ),
                     ),
                   ],
                 ),
@@ -800,53 +820,397 @@ class _DashboardPageState extends State<DashboardPage>
             ],
           ),
           const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: PremiumTheme.glassWhite,
+          if (targetProposal != null)
+            InkWell(
+              onTap: () => _runRiskAnalysisForProposal(targetProposal),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: PremiumTheme.glassWhiteBorder,
-                width: 1,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.glassWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: PremiumTheme.glassWhiteBorder,
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            targetProposal['title'] ?? 'Untitled Proposal',
+                            style: PremiumTheme.bodyLarge.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: PremiumTheme.textPrimary,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          size: 16,
+                          color: PremiumTheme.orange,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Click to run AI risk analysis and detect potential issues',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: PremiumTheme.orange.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: PremiumTheme.orange.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.play_circle_outline,
+                            size: 16,
+                            color: PremiumTheme.orange,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Run Analysis',
+                            style: PremiumTheme.labelMedium.copyWith(
+                              color: PremiumTheme.orange,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: PremiumTheme.glassWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: PremiumTheme.glassWhiteBorder,
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No proposals available for risk analysis',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pushNamed(context, '/proposals'),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text(
+                      'Create Proposal',
+                      style: TextStyle(decoration: TextDecoration.none),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: PremiumTheme.purple,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runRiskAnalysisForProposal(Map<String, dynamic> proposal) async {
+    final app = context.read<AppState>();
+    final token = AuthService.token ?? app.authToken;
+    
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Authentication required. Please log in again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final proposalId = proposal['id'];
+    if (proposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Proposal ID missing'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final intId = proposalId is int
+        ? proposalId
+        : int.tryParse(proposalId.toString());
+
+    if (intId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid proposal ID'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: SizedBox(
+          height: 80,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+    );
+
+    try {
+      final result = await ApiService.analyzeRisks(
+        token: token,
+        proposalId: intId,
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context, rootNavigator: true).pop();
+
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Risk analysis failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Show risk analysis results
+      _showRiskAnalysisResults(result, proposal);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showRiskAnalysisResults(
+    Map<String, dynamic> result,
+    Map<String, dynamic> proposal,
+  ) {
+    final riskScore = result['risk_score'] ?? 0;
+    final canRelease = result['can_release'] ?? false;
+    final issues = result['issues'] as List<dynamic>? ?? [];
+    final summary = result['summary'] ?? 'No summary available';
+
+    final riskLevel = riskScore <= 30
+        ? 'Ready'
+        : riskScore <= 60
+            ? 'At Risk'
+            : 'Blocked';
+
+    final riskColor = riskScore <= 30
+        ? PremiumTheme.success
+        : riskScore <= 60
+            ? PremiumTheme.orange
+            : PremiumTheme.error;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: PremiumTheme.darkBg2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.security, color: riskColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Risk Analysis Results',
+                style: TextStyle(
+                  color: Colors.white,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                proposal['title'] ?? 'Untitled Proposal',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: riskColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: riskColor.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Risk Score',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$riskScore/100',
+                          style: TextStyle(
+                            color: riskColor,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: riskColor.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        riskLevel,
+                        style: TextStyle(
+                          color: riskColor,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                summary,
+                style: TextStyle(
+                  color: Colors.white70,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+              if (issues.isNotEmpty) ...[
+                const SizedBox(height: 16),
                 Text(
-                  'GlobalTech Cloud Migration',
-                  style: PremiumTheme.bodyLarge.copyWith(
+                  'Issues Detected:',
+                  style: TextStyle(
+                    color: Colors.white,
                     fontWeight: FontWeight.w600,
-                    color: PremiumTheme.textPrimary,
+                    decoration: TextDecoration.none,
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
-                  style: PremiumTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.orange.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.orange.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    'Review Needed',
-                    style: PremiumTheme.labelMedium.copyWith(
-                      color: PremiumTheme.orange,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                ...issues.take(5).map((issue) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 16,
+                            color: PremiumTheme.orange,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              issue['description'] ?? 'Unknown issue',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )),
               ],
-            ),
+            ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          if (!canRelease)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                context.read<AppState>().selectProposal(Map<String, dynamic>.from(proposal));
+                Navigator.pushNamed(context, '/compose');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: PremiumTheme.purple,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Review Proposal'),
+            ),
         ],
       ),
     );
