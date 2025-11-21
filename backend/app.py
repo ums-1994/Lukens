@@ -255,6 +255,28 @@ def init_pg_schema():
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
         
+        # Add new columns for enhanced comment features (PostgreSQL)
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES document_comments(id) ON DELETE CASCADE''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS block_id VARCHAR(255)''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS section_name VARCHAR(255)''')
+        
+        # Create indexes for performance (PostgreSQL-specific optimizations)
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_proposal 
+                         ON document_comments(proposal_id)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_parent 
+                         ON document_comments(parent_id) WHERE parent_id IS NOT NULL''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_status 
+                         ON document_comments(status) WHERE status = 'open' ''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_section 
+                         ON document_comments(proposal_id, section_index) WHERE section_index IS NOT NULL''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_block 
+                         ON document_comments(proposal_id, block_type, block_id) WHERE block_id IS NOT NULL''')
+        
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,

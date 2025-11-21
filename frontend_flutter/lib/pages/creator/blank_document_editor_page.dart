@@ -51,6 +51,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _signatureSearchQuery = '';
   String _uploadTabSelected = 'this_document'; // 'this_document' or 'library'
   bool _showSectionsSidebar = false; // Toggle sections sidebar visibility
+  bool _showCommentsPanel = false; // Toggle right-side comment panel visibility
 
   // Formatting state
   String _selectedTextStyle = 'Normal Text';
@@ -424,33 +425,67 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
 
       print('🔄 Loading comments for proposal $proposalId...');
-      final comments = await ApiService.getComments(
+      final response = await ApiService.getComments(
         token: token,
         proposalId: proposalId,
+        status: _commentFilterStatus == 'all' ? null : _commentFilterStatus,
       );
 
-      print('📦 Received ${comments.length} comments from API');
+      if (response == null) {
+        print('⚠️ No response from comments API');
+        return;
+      }
+
+      final comments = response['comments'] ?? [];
+      final total = response['total'] ?? 0;
+      // Note: openCount and resolvedCount are available but not used in this method
+
+      print('📦 Received $total comments (${comments.length} root) from API');
+
+      // Flatten threaded structure for display (convert to flat list with replies nested)
+      List<Map<String, dynamic>> flatComments = [];
+      
+      void addCommentWithReplies(Map<String, dynamic> comment) {
+        flatComments.add(comment);
+        
+        // Add replies if they exist
+        final replies = comment['replies'] as List<dynamic>? ?? [];
+        for (var reply in replies) {
+          addCommentWithReplies(reply as Map<String, dynamic>);
+        }
+      }
+
+      for (var comment in comments) {
+        addCommentWithReplies(comment as Map<String, dynamic>);
+      }
 
       // Always update state, even if empty (to clear old comments)
       setState(() {
         _comments.clear();
-        for (var comment in comments) {
-          print(
-              '📝 Comment: ${comment['created_by_name'] ?? comment['created_by_email']} - ${comment['comment_text']}');
+        for (var comment in flatComments) {
           _comments.add({
             'id': comment['id'],
-            'commenter_name': comment['created_by_name'] ??
-                comment['created_by_email'] ??
+            'parent_id': comment['parent_id'],
+            'commenter_name': comment['author_name'] ??
+                comment['author_username'] ??
+                comment['author_email'] ??
                 'User #${comment['created_by']}',
             'comment_text': comment['comment_text'],
             'section_index': comment['section_index'],
+            'section_name': comment['section_name'],
+            'block_type': comment['block_type'],
+            'block_id': comment['block_id'],
             'highlighted_text': comment['highlighted_text'],
             'timestamp': comment['created_at'],
             'status': comment['status'] ?? 'open',
+            'resolved_by': comment['resolved_by'],
+            'resolved_at': comment['resolved_at'],
+            'resolver_name': comment['resolver_name'],
+            'replies': comment['replies'] ?? [],
           });
         }
       });
-      print('✅ Loaded ${comments.length} comments');
+      print('✅ Loaded ${flatComments.length} comments (including replies)');
 
       if (mounted) {
         try {
@@ -1089,12 +1124,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  Future<void> _addComment() async {
-    if (_commentController.text.isEmpty) {
+  Future<void> _addComment({int? parentId}) async {
+    if (_commentController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a comment'),
           backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the proposal before adding comments'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
         ),
       );
       return;
@@ -1102,99 +1149,417 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     final commentText = _commentController.text;
     final commenterName = _getCommenterName();
+    final sectionName = _selectedSectionForComment != null &&
+            _selectedSectionForComment! < _sections.length
+        ? (_sections[_selectedSectionForComment!]
+                .titleController
+                .text
+                .isNotEmpty
+            ? _sections[_selectedSectionForComment!].titleController.text
+            : 'Untitled Section')
+        : null;
+
+    // Clear form
     _commentController.clear();
     _clearMentionState();
 
-    final newComment = {
-      'id': DateTime.now().millisecondsSinceEpoch,
-      'commenter_name': commenterName,
-      'comment_text': commentText,
-      'section_index': _selectedSectionForComment,
-      'section_title': _selectedSectionForComment != null &&
-              _selectedSectionForComment! < _sections.length
-          ? (_sections[_selectedSectionForComment!]
-                  .titleController
-                  .text
-                  .isNotEmpty
-              ? _sections[_selectedSectionForComment!].titleController.text
-              : 'Untitled Section')
-          : null,
-      'highlighted_text': _highlightedText.isNotEmpty ? _highlightedText : null,
-      'timestamp': DateTime.now().toIso8601String(),
-      'status': 'open',
-    };
+    // Save comment to database
+    try {
+      final token = await _getAuthToken();
+      if (token == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Not authenticated. Please log in.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
 
-    setState(() {
-      _comments.insert(0, newComment);
-      _highlightedText = '';
-      _selectedSectionForComment = null;
-    });
+      final savedComment = await ApiService.createComment(
+        token: token,
+        proposalId: _savedProposalId!,
+        commentText: commentText,
+        sectionIndex: _selectedSectionForComment,
+        sectionName: sectionName,
+        highlightedText: _highlightedText.isNotEmpty ? _highlightedText : null,
+        parentId: parentId,
+        blockType: null, // TODO: Add block type support
+        blockId: null, // TODO: Add block ID support
+      );
 
-    // Save comment to database if proposal has been saved
-    if (_savedProposalId != null) {
-      try {
-        final token = await _getAuthToken();
-        if (token != null) {
-          final savedComment = await ApiService.createComment(
-            token: token,
-            proposalId: _savedProposalId!,
-            commentText: commentText,
-            createdBy: commenterName,
-            sectionIndex: _selectedSectionForComment,
-            highlightedText:
-                _highlightedText.isNotEmpty ? _highlightedText : null,
+      if (savedComment != null) {
+        // Reload comments from database to get updated structure
+        await _loadCommentsFromDatabase(_savedProposalId!);
+        
+        // Clear form fields
+        setState(() {
+          _highlightedText = '';
+          _selectedSectionForComment = null;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(parentId != null 
+                ? 'Reply added'
+                : 'Comment added by $commenterName'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
           );
 
-          if (savedComment != null) {
-            // Update the local comment with database ID
-            setState(() {
-              final index =
-                  _comments.indexWhere((c) => c['id'] == newComment['id']);
-              if (index >= 0) {
-                _comments[index]['id'] = savedComment['id'];
-              }
-            });
-            print('✅ Comment saved to database');
-
-            if (mounted) {
-              try {
-                await context.read<AppState>().fetchNotifications();
-              } catch (e) {
-                print('⚠️ Error refreshing notifications after comment: $e');
-              }
-            }
+          try {
+            await context.read<AppState>().fetchNotifications();
+          } catch (e) {
+            print('⚠️ Error refreshing notifications after comment: $e');
           }
         }
-      } catch (e) {
-        print('⚠️ Error saving comment to database: $e');
-        // Continue silently - comment is still in memory
+      } else {
+        throw Exception('Failed to save comment');
       }
+    } catch (e) {
+      print('⚠️ Error saving comment to database: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving comment: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Comment added by $commenterName'),
-        backgroundColor: const Color(0xFF1A3A52),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
-  void _updateCommentStatus(int commentId, String newStatus) {
-    setState(() {
-      final comment =
-          _comments.firstWhere((c) => c['id'] == commentId, orElse: () => {});
-      if (comment.isNotEmpty) {
-        comment['status'] = newStatus;
-      }
-    });
+  Future<void> _resolveComment(int commentId) async {
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Proposal must be saved to resolve comments'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Comment marked as $newStatus'),
-        backgroundColor: const Color(0xFF27AE60),
-        duration: const Duration(seconds: 2),
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final success = await ApiService.resolveComment(
+        token: token,
+        commentId: commentId,
+      );
+
+      if (success) {
+        // Reload comments to get updated status
+        await _loadCommentsFromDatabase(_savedProposalId!);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Comment resolved'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to resolve comment');
+      }
+    } catch (e) {
+      print('⚠️ Error resolving comment: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error resolving comment: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _reopenComment(int commentId) async {
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Proposal must be saved to reopen comments'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final success = await ApiService.reopenComment(
+        token: token,
+        commentId: commentId,
+      );
+
+      if (success) {
+        // Reload comments to get updated status
+        await _loadCommentsFromDatabase(_savedProposalId!);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Comment reopened'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        throw Exception('Failed to reopen comment');
+      }
+    } catch (e) {
+      print('⚠️ Error reopening comment: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error reopening comment: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _archiveProposal() async {
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the proposal before archiving'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Confirm archive action
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Archive Proposal'),
+        content: const Text(
+          'Are you sure you want to archive this proposal? '
+          'It will become read-only and will be moved to the archived proposals view. '
+          'You can restore it later if needed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Archive'),
+          ),
+        ],
       ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Not authenticated. Please log in.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      final result = await ApiService.archiveProposal(
+        token: token,
+        proposalId: _savedProposalId!,
+      );
+
+      if (result != null) {
+        setState(() {
+          _proposalStatus = 'archived';
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal archived successfully'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          // Refresh proposals in AppState
+          try {
+            await context.read<AppState>().fetchProposals();
+          } catch (e) {
+            print('⚠️ Error refreshing proposals: $e');
+          }
+
+          // Navigate back to proposals page after a delay
+          await Future.delayed(const Duration(seconds: 1));
+          if (mounted) {
+            Navigator.pushReplacementNamed(context, '/proposals');
+          }
+        }
+      } else {
+        throw Exception('Failed to archive proposal');
+      }
+    } catch (e) {
+      print('⚠️ Error archiving proposal: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error archiving proposal: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _restoreProposal() async {
+    if (_savedProposalId == null) return;
+
+    // Confirm restore action
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore Proposal'),
+        content: const Text(
+          'Are you sure you want to restore this proposal? '
+          'It will become editable again and will be moved back to the active proposals.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Not authenticated. Please log in.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      final result = await ApiService.restoreProposal(
+        token: token,
+        proposalId: _savedProposalId!,
+      );
+
+      if (result != null) {
+        setState(() {
+          _proposalStatus = result['status'] ?? 'draft';
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal restored successfully'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          // Refresh proposals in AppState
+          try {
+            await context.read<AppState>().fetchProposals();
+          } catch (e) {
+            print('⚠️ Error refreshing proposals: $e');
+          }
+        }
+      } else {
+        throw Exception('Failed to restore proposal');
+      }
+    } catch (e) {
+      print('⚠️ Error restoring proposal: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error restoring proposal: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showReplyDialog(Map<String, dynamic> parentComment) {
+    final replyController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Reply to Comment'),
+          content: TextField(
+            controller: replyController,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: 'Type your reply...',
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (replyController.text.trim().isNotEmpty) {
+                  _commentController.text = replyController.text;
+                  Navigator.pop(context);
+                  await _addComment(parentId: parentComment['id']);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00BCD4),
+              ),
+              child: const Text('Reply'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2359,14 +2724,42 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if proposal is archived - if so, make it read-only
+    final isArchived = _proposalStatus?.toLowerCase() == 'archived';
+    final isReadOnly = widget.readOnly || isArchived;
+    
+    // Show archive banner if archived
+    if (isArchived && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.archive, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'This proposal is archived and is read-only. Use "More Actions" to restore it.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      });
+    }
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
           // Left Sidebar (hide in read-only mode)
-          if (!widget.readOnly) _buildLeftSidebar(),
+          if (!isReadOnly) _buildLeftSidebar(),
           // Sections Sidebar (conditional, hide in read-only mode)
-          if (!widget.readOnly && _showSectionsSidebar) _buildSectionsSidebar(),
+          if (!isReadOnly && _showSectionsSidebar) _buildSectionsSidebar(),
           // Main content
           Expanded(
             child: Column(
@@ -2374,7 +2767,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 // Top header
                 _buildTopHeader(),
                 // Formatting toolbar (hide in read-only mode)
-                if (!widget.readOnly) _buildToolbar(),
+                if (!isReadOnly) _buildToolbar(),
                 // Main document area
                 Expanded(
                   child: Row(
@@ -2403,19 +2796,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 ),
                               ),
                             ),
-                            // Floating toolbar on right (hide in read-only mode)
-                            if (!widget.readOnly)
-                              Positioned(
-                                right: 20,
-                                top: 0,
-                                bottom: 0,
-                                child: _buildFloatingToolbar(),
-                              ),
                           ],
                         ),
                       ),
                       // Right sidebar (hide in read-only mode)
-                      if (!widget.readOnly) _buildRightSidebar(),
+                      if (!isReadOnly) _buildRightSidebar(),
+                      // Comments panel (right-side, toggleable)
+                      if (_showCommentsPanel) _buildCommentsPanel(),
                     ],
                   ),
                 ),
@@ -3248,9 +3635,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           const SizedBox(width: 12),
           // Comments button
           OutlinedButton.icon(
-            onPressed: () => _showCommentsPanel(),
+            onPressed: () {
+              setState(() {
+                _showCommentsPanel = !_showCommentsPanel;
+              });
+              
+              // Load comments when panel is opened
+              if (_showCommentsPanel && _savedProposalId != null) {
+                _loadCommentsFromDatabase(_savedProposalId!);
+              }
+            },
             icon: const Icon(Icons.comment, size: 16),
-            label: Text('Comments (${_comments.length})'),
+            label: Text('Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Color(0xFF00BCD4)),
               foregroundColor: const Color(0xFF00BCD4),
@@ -3260,6 +3656,49 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ),
           ),
+          const SizedBox(width: 12),
+          // More Actions menu (Archive, etc.)
+          if (_savedProposalId != null)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 20),
+              onSelected: (value) async {
+                switch (value) {
+                  case 'archive':
+                    await _archiveProposal();
+                    break;
+                  case 'restore':
+                    await _restoreProposal();
+                    break;
+                }
+              },
+              itemBuilder: (context) {
+                final isArchived = _proposalStatus?.toLowerCase() == 'archived';
+                return [
+                  if (!isArchived)
+                    const PopupMenuItem(
+                      value: 'archive',
+                      child: Row(
+                        children: [
+                          Icon(Icons.archive_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Archive Proposal'),
+                        ],
+                      ),
+                    )
+                  else
+                    const PopupMenuItem(
+                      value: 'restore',
+                      child: Row(
+                        children: [
+                          Icon(Icons.unarchive_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Restore Proposal'),
+                        ],
+                      ),
+                    ),
+                ];
+              },
+            ),
           const SizedBox(width: 12),
           // Status Badge
           if (_proposalStatus != null && _proposalStatus != 'draft')
@@ -4686,144 +5125,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildFloatingToolbar() {
-    return Align(
-      alignment: Alignment.center,
-      child: Container(
-        width: 60,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Library icon
-            _buildFloatingToolbarButton(
-              Icons.bookmark_outline,
-              'Snippets',
-              () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Snippets Library'),
-                    backgroundColor: Color(0xFF00BCD4),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            // Add section button with menu
-            _buildFloatingToolbarButton(
-              Icons.add,
-              'Add Section',
-              () {
-                _insertSectionFromFloatingMenu();
-              },
-            ),
-            const SizedBox(height: 8),
-            // Image icon
-            _buildFloatingToolbarButton(
-              Icons.image_outlined,
-              'Insert Image',
-              () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Insert Image feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            // Comment/Annotation icon
-            _buildFloatingToolbarButton(
-              Icons.edit_note,
-              'Add Comment',
-              () {
-                _showCommentDialog();
-              },
-            ),
-            const SizedBox(height: 8),
-            // Code snippet icon
-            _buildFloatingToolbarButton(
-              Icons.code,
-              'Code Snippet',
-              () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Code Snippet feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFloatingToolbarButton(
-    IconData icon,
-    String tooltip,
-    VoidCallback onPressed,
-  ) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          customBorder: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Icon(
-              icon,
-              size: 20,
-              color: const Color(0xFF1A3A52),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _insertSectionFromFloatingMenu() {
-    final newSection = _DocumentSection(
-      title: 'Untitled Section',
-      content: '',
-    );
-    setState(() {
-      _sections.add(newSection);
-      _selectedSectionIndex = _sections.length - 1;
-
-      // Add listeners to new section
-      newSection.controller.addListener(_onContentChanged);
-      newSection.titleController.addListener(_onContentChanged);
-
-      // Add focus listeners for UI updates
-      newSection.contentFocus.addListener(() => setState(() {}));
-      newSection.titleFocus.addListener(() => setState(() {}));
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('New section added'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
       ),
     );
   }
@@ -6692,104 +6993,319 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  void _showCommentsPanel() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: SizedBox(
-            width: 600,
-            height: 500,
-            child: Column(
+  Widget _buildCommentsPanel() {
+    // Get root comments (comments without parent_id)
+    final rootComments = _comments.where((c) => c['parent_id'] == null).toList();
+    final filteredRootComments = _commentFilterStatus == 'all'
+        ? rootComments
+        : rootComments.where((c) => c['status'] == _commentFilterStatus).toList();
+    
+    // Sort by newest first
+    filteredRootComments.sort((a, b) {
+      final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      return bTime.compareTo(aTime);
+    });
+
+    final openCount = _comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length;
+    final resolvedCount = _comments.where((c) => c['status'] == 'resolved' && c['parent_id'] == null).length;
+
+    return Container(
+      width: 400,
+      color: Colors.white,
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A3A52),
+              border: Border(bottom: BorderSide(color: Colors.grey[300]!)),
+            ),
+            child: Row(
               children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    border:
-                        Border(bottom: BorderSide(color: Colors.grey[200]!)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.comment,
-                          color: Color(0xFF00BCD4), size: 24),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Comments',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                      ),
-                      const Spacer(),
-                      // Filter dropdown
-                      DropdownButton<String>(
-                        value: _commentFilterStatus,
-                        items: ['all', 'open', 'resolved'].map((status) {
-                          return DropdownMenuItem<String>(
-                            value: status,
-                            child: Text(status.toUpperCase()),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _commentFilterStatus = value!;
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 12),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
+                const Icon(Icons.comment, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Comments',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
                 ),
-
-                // Comments list
-                Expanded(
-                  child: _comments.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.comment_outlined,
-                                  size: 48, color: Colors.grey[400]),
-                              const SizedBox(height: 16),
-                              Text(
-                                'No comments yet',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Add comments to collaborate with your team',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _getFilteredComments().length,
-                          itemBuilder: (context, index) {
-                            final comment = _getFilteredComments()[index];
-                            return _buildCommentCard(comment);
-                          },
-                        ),
+                const Spacer(),
+                // Comment count badges
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: openCount > 0 ? Colors.orange : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$openCount',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: openCount > 0 ? Colors.white : Colors.grey,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _showCommentsPanel = false;
+                    });
+                  },
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
           ),
-        );
-      },
+          
+          // Filter and controls
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: DropdownButton<String>(
+                    value: _commentFilterStatus,
+                    isExpanded: true,
+                    underline: const SizedBox(),
+                    items: [
+                      DropdownMenuItem(value: 'all', child: Text('All ($openCount open)')),
+                      DropdownMenuItem(value: 'open', child: Text('Open ($openCount)')),
+                      DropdownMenuItem(value: 'resolved', child: Text('Resolved ($resolvedCount)')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _commentFilterStatus = value;
+                        });
+                        // Reload comments with new filter
+                        if (_savedProposalId != null) {
+                          _loadCommentsFromDatabase(_savedProposalId!);
+                        }
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    if (_savedProposalId != null) {
+                      _loadCommentsFromDatabase(_savedProposalId!);
+                    }
+                  },
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: 'Refresh comments',
+                ),
+              ],
+            ),
+          ),
+
+          // Comments list
+          Expanded(
+            child: filteredRootComments.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.comment_outlined, size: 48, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        Text(
+                          _comments.isEmpty ? 'No comments yet' : 'No ${_commentFilterStatus == 'all' ? '' : _commentFilterStatus} comments',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _comments.isEmpty 
+                            ? 'Add comments to collaborate with your team'
+                            : 'Change filter to see other comments',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: filteredRootComments.length,
+                    itemBuilder: (context, index) {
+                      final comment = filteredRootComments[index];
+                      return _buildCommentCard(comment);
+                    },
+                  ),
+          ),
+          
+          // Add comment form
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: Colors.grey[200]!)),
+              color: Colors.grey[50],
+            ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _commentController,
+                    focusNode: _commentFocusNode,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Add a comment... (use @ to mention)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFF00BCD4), width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                    onChanged: (text) {
+                      // Handle @mentions detection
+                      _handleCommentTextChanged();
+                    },
+                  ),
+                  // @mentions autocomplete dropdown
+                  if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Searching teammates...',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ] else if (_mentionSuggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 150),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _mentionSuggestions.length,
+                        separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey[200]),
+                        itemBuilder: (context, index) {
+                          final user = _mentionSuggestions[index];
+                          final name = user['full_name']?.toString() ??
+                              user['first_name']?.toString() ??
+                              user['email']?.toString() ??
+                              'User';
+                          final email = user['email']?.toString();
+                          final username = user['username']?.toString();
+                          return InkWell(
+                            onTap: () => _insertMention(user),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: const Color(0xFF00BCD4),
+                                    child: Text(
+                                      name.isNotEmpty ? name[0].toUpperCase() : '@',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          name,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        if (username != null || email != null)
+                                          Text(
+                                            [
+                                              if (username != null && username.isNotEmpty) '@$username',
+                                              if (email != null && email.isNotEmpty) email,
+                                            ].join(' • '),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey[600],
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.alternate_email, size: 16, color: Color(0xFF00BCD4)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          _commentController.clear();
+                          _clearMentionState();
+                        },
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await _addComment();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Post'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -6797,10 +7313,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isResolved = comment['status'] == 'resolved';
     final hasHighlightedText = comment['highlighted_text'] != null &&
         comment['highlighted_text'].toString().isNotEmpty;
+    final isReply = comment['parent_id'] != null;
+    
+    // Get replies for this comment
+    final replies = _comments.where((c) => c['parent_id'] == comment['id']).toList();
+    replies.sort((a, b) {
+      final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      return aTime.compareTo(bTime); // Oldest first for replies
+    });
+    
+    // Determine comment type
+    String commentType = 'General';
+    if (comment['block_type'] != null) {
+      commentType = 'Block';
+    } else if (comment['section_name'] != null || comment['section_index'] != null) {
+      commentType = 'Section';
+    }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.only(bottom: 12, left: isReply ? 24 : 0),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: isResolved ? Colors.grey[50] : Colors.white,
         borderRadius: BorderRadius.circular(8),
@@ -6808,6 +7341,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           color: isResolved
               ? Colors.grey[300]!
               : const Color(0xFF00BCD4).withOpacity(0.3),
+          width: isReply ? 1 : 1.5,
         ),
       ),
       child: Column(
@@ -6817,7 +7351,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           Row(
             children: [
               CircleAvatar(
-                radius: 16,
+                radius: isReply ? 12 : 16,
                 backgroundColor: const Color(0xFF00BCD4),
                 child: Text(
                   comment['commenter_name']
@@ -6825,76 +7359,124 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           .substring(0, 1)
                           .toUpperCase() ??
                       'U',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 12,
+                    fontSize: isReply ? 10 : 12,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      comment['commenter_name'] ?? 'Unknown User',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A1A),
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          comment['commenter_name'] ?? 'Unknown User',
+                          style: TextStyle(
+                            fontSize: isReply ? 12 : 13,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        if (isReply) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Reply',
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: Colors.grey[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     Text(
                       _formatTimestamp(comment['timestamp']),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         color: Colors.grey[600],
                       ),
                     ),
                   ],
                 ),
               ),
-              // Status badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isResolved ? Colors.green[100] : Colors.orange[100],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  isResolved ? 'RESOLVED' : 'OPEN',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: isResolved ? Colors.green[700] : Colors.orange[700],
+              // Status badge (only for root comments or if resolved)
+              if (!isReply || isResolved)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isResolved ? Colors.green[100] : Colors.orange[100],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    isResolved ? '✓' : 'OPEN',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: isResolved ? Colors.green[700] : Colors.orange[700],
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
-          // Section info
-          if (comment['section_title'] != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE3F2FD),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Section: ${comment['section_title']}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFF00BCD4),
-                  fontWeight: FontWeight.w500,
+          // Comment type and location badges
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              if (commentType != 'General')
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3F2FD),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    commentType,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF00BCD4),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              if (comment['section_name'] != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    comment['section_name'],
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: Colors.blue[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
+
+          if (comment['section_name'] != null || commentType != 'General')
             const SizedBox(height: 8),
-          ],
 
           // Highlighted text
           if (hasHighlightedText) ...[
@@ -6908,10 +7490,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               child: Text(
                 comment['highlighted_text'],
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontStyle: FontStyle.italic,
                   color: Color(0xFF1A1A1A),
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(height: 8),
@@ -6920,48 +7504,64 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Comment text
           _buildMentionRichText(
             comment['comment_text'] ?? '',
-            style: const TextStyle(
-              fontSize: 13,
-              color: Color(0xFF1A1A1A),
+            style: TextStyle(
+              fontSize: isReply ? 12 : 13,
+              color: const Color(0xFF1A1A1A),
               height: 1.4,
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
-          // Action buttons
-          Row(
-            children: [
-              if (!isResolved)
+          // Action buttons (only for root comments or if user is author)
+          if (!isReply)
+            Row(
+              children: [
                 TextButton.icon(
-                  onPressed: () =>
-                      _updateCommentStatus(comment['id'], 'resolved'),
-                  icon: const Icon(Icons.check, size: 16),
-                  label: const Text('Resolve'),
+                  onPressed: () => _showReplyDialog(comment),
+                  icon: const Icon(Icons.reply, size: 14),
+                  label: Text('Reply${replies.isNotEmpty ? ' (${replies.length})' : ''}'),
                   style: TextButton.styleFrom(
-                    foregroundColor: Colors.green[700],
-                  ),
-                )
-              else
-                TextButton.icon(
-                  onPressed: () => _updateCommentStatus(comment['id'], 'open'),
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Reopen'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.orange[700],
+                    foregroundColor: const Color(0xFF00BCD4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: () => _deleteComment(comment['id']),
-                icon: const Icon(Icons.delete, size: 16),
-                label: const Text('Delete'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.red[700],
-                ),
-              ),
-            ],
-          ),
+                if (!isResolved)
+                  TextButton.icon(
+                    onPressed: () => _resolveComment(comment['id']),
+                    icon: const Icon(Icons.check, size: 14),
+                    label: const Text('Resolve'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.green[700],
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: () => _reopenComment(comment['id']),
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Reopen'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.orange[700],
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+              ],
+            ),
+
+          // Replies section
+          if (replies.isNotEmpty && !isReply) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            ...replies.map((reply) => _buildCommentCard(reply)),
+          ],
         ],
       ),
     );

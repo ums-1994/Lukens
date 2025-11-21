@@ -1461,3 +1461,203 @@ def remove_collaborator(username=None, invitation_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+# ============================================================================
+# PROPOSAL ARCHIVAL ROUTES
+# ============================================================================
+
+@bp.patch("/api/proposals/<int:proposal_id>/archive")
+@bp.patch("/proposals/<int:proposal_id>/archive")
+@token_required
+def archive_proposal(username=None, proposal_id=None):
+    """Archive a proposal (set status to 'Archived')"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get proposal and verify ownership
+            cursor.execute("""
+                SELECT id, user_id, title, status
+                FROM proposals
+                WHERE id = %s
+            """, (proposal_id,))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            if proposal['user_id'] != username:
+                return {'detail': 'Access denied'}, 403
+            
+            if proposal['status'] == 'Archived':
+                return {'detail': 'Proposal is already archived'}, 400
+            
+            # Get user ID for activity log
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            user_id = user['id'] if user else None
+            
+            # Archive proposal
+            cursor.execute("""
+                UPDATE proposals
+                SET status = 'Archived', updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id, title, status, updated_at
+            """, (proposal_id,))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            try:
+                from app import log_activity
+                log_activity(
+                    proposal_id,
+                    user_id,
+                    'proposal_archived',
+                    f'Archived proposal "{proposal["title"]}"',
+                    {'old_status': proposal['status'], 'new_status': 'Archived'}
+                )
+            except Exception as e:
+                print(f"⚠️ Error logging activity: {e}")
+            
+            return {
+                'message': 'Proposal archived successfully',
+                'proposal': dict(result)
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error archiving proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.patch("/api/proposals/<int:proposal_id>/restore")
+@bp.patch("/proposals/<int:proposal_id>/restore")
+@token_required
+def restore_proposal(username=None, proposal_id=None):
+    """Restore a proposal from archive (admin only)"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user role to check if admin
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            is_admin = user['role'] == 'admin'
+            
+            # Get proposal
+            cursor.execute("""
+                SELECT id, user_id, title, status
+                FROM proposals
+                WHERE id = %s
+            """, (proposal_id,))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            # Check permissions (owner or admin)
+            if proposal['user_id'] != username and not is_admin:
+                return {'detail': 'Access denied. Only owner or admin can restore proposals.'}, 403
+            
+            if proposal['status'] != 'Archived':
+                return {'detail': 'Proposal is not archived'}, 400
+            
+            # Restore proposal (set to Draft)
+            cursor.execute("""
+                UPDATE proposals
+                SET status = 'Draft', updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id, title, status, updated_at
+            """, (proposal_id,))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            try:
+                from app import log_activity
+                log_activity(
+                    proposal_id,
+                    user['id'],
+                    'proposal_restored',
+                    f'Restored proposal "{proposal["title"]}" from archive',
+                    {'old_status': 'Archived', 'new_status': 'Draft'}
+                )
+            except Exception as e:
+                print(f"⚠️ Error logging activity: {e}")
+            
+            return {
+                'message': 'Proposal restored successfully',
+                'proposal': dict(result)
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error restoring proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.get("/api/proposals/archived")
+@bp.get("/proposals/archived")
+@token_required
+def get_archived_proposals(username=None):
+    """Get all archived proposals for the user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Check if user is admin (admins can see all archived proposals)
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            is_admin = user and user['role'] == 'admin'
+            
+            if is_admin:
+                # Admin can see all archived proposals
+                cursor.execute("""
+                    SELECT id, user_id, title, content, status, client_name, client_email, 
+                           budget, timeline_days, created_at, updated_at
+                    FROM proposals
+                    WHERE status = 'Archived'
+                    ORDER BY updated_at DESC
+                """)
+            else:
+                # Regular users see only their archived proposals
+                cursor.execute("""
+                    SELECT id, user_id, title, content, status, client_name, client_email, 
+                           budget, timeline_days, created_at, updated_at
+                    FROM proposals
+                    WHERE user_id = %s AND status = 'Archived'
+                    ORDER BY updated_at DESC
+                """, (username,))
+            
+            rows = cursor.fetchall()
+            proposals = []
+            
+            for row in rows:
+                proposals.append({
+                    'id': row['id'],
+                    'user_id': row['user_id'],
+                    'owner_id': row['user_id'],
+                    'title': row['title'],
+                    'content': row['content'],
+                    'status': row['status'] or 'Archived',
+                    'client_name': row['client_name'],
+                    'client': row['client_name'],
+                    'client_email': row['client_email'],
+                    'budget': float(row['budget']) if row['budget'] else None,
+                    'timeline_days': row['timeline_days'],
+                    'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                    'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
+                    'updatedAt': row['updated_at'].isoformat() if row['updated_at'] else None,
+                })
+            
+            return proposals, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting archived proposals: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
