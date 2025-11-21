@@ -10,6 +10,7 @@ import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
+import '../../utils/html_content_parser.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -700,14 +701,32 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         final currentSection = _sections[_selectedSectionIndex];
         final controller = currentSection.controller;
         
-        setState(() {
-          // Add library content to the current section's content
-          String textToInsert = content;
-          if (isUrl) {
-            // If it's a URL (like a document), add it as a reference link
-            textToInsert = '[📎 Document: $title]($content)';
+        // Parse content before setState to determine what we're inserting
+        String textToInsert = content;
+        List<DocumentTable> tablesToInsert = [];
+        
+        if (!isUrl) {
+          // Check if content contains HTML (has HTML tags)
+          final hasHtmlTags = RegExp(r'<[^>]+>').hasMatch(content);
+          
+          if (hasHtmlTags) {
+            // Parse HTML content - strip comments, extract tables, strip tags
+            final parsedContent = HtmlContentParser.parseContent(content);
+            textToInsert = parsedContent.plainText;
+            tablesToInsert = parsedContent.tables;
+            
+            // Remove table placeholders from text if any
+            textToInsert = textToInsert.replaceAll(
+              RegExp(r'\[TABLE_PLACEHOLDER_\d+\]'),
+              '',
+            );
           }
-
+        } else {
+          // If it's a URL (like a document), add it as a reference link
+          textToInsert = '[📎 Document: $title]($content)';
+        }
+        
+        setState(() {
           // Insert at cursor position if available, otherwise append
           final text = controller.text;
           final selection = controller.selection;
@@ -729,12 +748,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               controller.text = '$text\n\n$textToInsert';
             }
           }
+          
+          // Add tables to the section's tables list
+          if (tablesToInsert.isNotEmpty) {
+            currentSection.tables.addAll(tablesToInsert);
+          }
         });
 
+        final tablesCount = tablesToInsert.isNotEmpty ? ' (${tablesToInsert.length} table${tablesToInsert.length > 1 ? 's' : ''})' : '';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content:
-                Text('Inserted "${isUrl ? 'Document: ' : ''}$title" into section'),
+                Text('Inserted "${isUrl ? 'Document: ' : ''}$title" into section$tablesCount'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
