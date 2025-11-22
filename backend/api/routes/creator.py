@@ -1286,9 +1286,10 @@ def get_proposal_collaborators(username=None, proposal_id=None):
             
             # Get active collaborators from collaborators table
             cursor.execute("""
-                SELECT c.id, c.proposal_id, c.email, c.permission_level, 
-                       c.status, c.joined_at, c.last_accessed_at, c.invited_by,
-                       u.username as invited_by_username
+                SELECT c.id, c.proposal_id, c.email, c.email as invited_email, 
+                       c.permission_level, c.status, c.joined_at, c.joined_at as invited_at,
+                       c.last_accessed_at, c.last_accessed_at as accessed_at,
+                       c.invited_by, u.username as invited_by_username
                 FROM collaborators c
                 LEFT JOIN users u ON c.invited_by = u.id
                 WHERE c.proposal_id = %s
@@ -1299,8 +1300,9 @@ def get_proposal_collaborators(username=None, proposal_id=None):
             
             # Also get pending invitations
             cursor.execute("""
-                SELECT id, proposal_id, invited_email as email, permission_level, 
-                       status, invited_at as joined_at, accessed_at as last_accessed_at,
+                SELECT id, proposal_id, invited_email, invited_email as email, 
+                       permission_level, status, invited_at, invited_at as joined_at, 
+                       accessed_at, accessed_at as last_accessed_at,
                        invited_by, access_token
                 FROM collaboration_invitations
                 WHERE proposal_id = %s AND status = 'pending'
@@ -1310,6 +1312,7 @@ def get_proposal_collaborators(username=None, proposal_id=None):
             pending_invitations = cursor.fetchall()
             
             # Combine active collaborators and pending invitations
+            # Return both 'email' and 'invited_email' for backward compatibility
             result = [dict(collab) for collab in collaborators]
             result.extend([dict(inv) for inv in pending_invitations])
             
@@ -1381,6 +1384,7 @@ def invite_collaborator(username=None, proposal_id=None):
             
             # Send invitation email
             email_sent = False
+            email_error = None
             try:
                 from api.utils.email import send_email, get_logo_html
                 base_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
@@ -1403,11 +1407,14 @@ def invite_collaborator(username=None, proposal_id=None):
                     html_content=email_body
                 )
                 email_sent = True
+                print(f"✅ Invitation email sent successfully to {email}")
             except Exception as e:
-                print(f"⚠️ Error sending invitation email: {e}")
+                email_error = str(e)
+                print(f"❌ Error sending invitation email to {email}: {email_error}")
+                print(f"⚠️ Email service may not be configured. Check SMTP settings.")
                 traceback.print_exc()
             
-            return {
+            result = {
                 'id': invitation['id'],
                 'proposal_id': invitation['proposal_id'],
                 'invited_email': invitation['invited_email'],
@@ -1416,7 +1423,13 @@ def invite_collaborator(username=None, proposal_id=None):
                 'invited_at': invitation['invited_at'].isoformat() if invitation['invited_at'] else None,
                 'access_token': invitation['access_token'],
                 'email_sent': email_sent
-            }, 201
+            }
+            
+            # Include email error message if email failed to send
+            if not email_sent and email_error:
+                result['email_error'] = email_error
+            
+            return result, 201
             
     except Exception as e:
         print(f"❌ Error inviting collaborator: {e}")

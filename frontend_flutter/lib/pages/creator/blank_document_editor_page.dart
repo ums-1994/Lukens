@@ -521,22 +521,53 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         setState(() {
           _collaborators.clear();
           for (var collab in collaborators) {
+            // Handle both 'email' and 'invited_email' fields (backend returns 'email' for both)
+            final email = collab['invited_email'] ?? collab['email'] ?? '';
+            if (email.isEmpty) {
+              print('⚠️ Skipping collaborator without email: ${collab['id']}');
+              continue;
+            }
+            
+            // Handle timestamp fields: 'invited_at' for pending invitations, 'joined_at' for active collaborators
+            final invitedAt = collab['invited_at'] ?? collab['joined_at'];
+            final accessedAt = collab['accessed_at'] ?? collab['last_accessed_at'];
+            
             _collaborators.add({
               'id': collab['id'],
-              'email': collab['invited_email'],
-              'name': collab['invited_email'].split('@')[0],
+              'email': email,
+              'name': email.split('@')[0],
               'role': 'Full Access', // All collaborators have full access
-              'status': collab['status'],
-              'invited_at': collab['invited_at'],
-              'accessed_at': collab['accessed_at'],
+              'status': collab['status'] ?? 'pending',
+              'invited_at': invitedAt,
+              'accessed_at': accessedAt,
             });
           }
           _isCollaborating = _collaborators.isNotEmpty;
         });
-        print('✅ Loaded ${collaborators.length} collaborators');
+        print('✅ Loaded ${_collaborators.length} collaborators');
+      } else {
+        print('⚠️ Failed to load collaborators: ${response.statusCode} - ${response.body}');
+        String errorMsg = 'Failed to load collaborators';
+        if (response.statusCode == 401) {
+          errorMsg = 'Authentication required to view collaborators';
+        } else if (response.statusCode == 403) {
+          errorMsg = 'Access denied to view collaborators';
+        } else if (response.statusCode == 404) {
+          errorMsg = 'Proposal not found';
+        }
+        print('❌ $errorMsg');
+        
+        // Clear collaborators on error to avoid stale data
+        setState(() {
+          _collaborators.clear();
+          _isCollaborating = false;
+        });
       }
     } catch (e) {
       print('⚠️ Error loading collaborators: $e');
+      print('⚠️ Error details: ${e.toString()}');
+      // Don't show error to user as this is called automatically
+      // Errors will be visible in console logs
     }
   }
 
@@ -8813,33 +8844,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         emailController.clear();
 
                                         if (context.mounted) {
+                                          final emailSent = result['email_sent'] == true;
+                                          final emailError = result['email_error'];
+                                          
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
                                             SnackBar(
-                                              content: Text(result[
-                                                          'email_sent'] ==
-                                                      true
+                                              content: Text(emailSent
                                                   ? '✅ Invitation sent to $email'
-                                                  : '⚠️ Invitation created but email failed to send'),
-                                              backgroundColor:
-                                                  result['email_sent'] == true
-                                                      ? Colors.green
-                                                      : Colors.orange,
+                                                  : emailError != null
+                                                      ? '⚠️ Invitation created but email failed: ${emailError.toString().substring(0, 50)}...'
+                                                      : '⚠️ Invitation created but email failed to send. Check SMTP configuration.'),
+                                              backgroundColor: emailSent
+                                                  ? Colors.green
+                                                  : Colors.orange,
+                                              duration: Duration(seconds: emailSent ? 3 : 5),
                                             ),
                                           );
                                         }
                                       } else {
-                                        final error = jsonDecode(response.body);
-                                        throw Exception(error['detail'] ??
-                                            'Failed to send invitation');
+                                        String errorMessage = 'Failed to send invitation';
+                                        try {
+                                          final error = jsonDecode(response.body);
+                                          errorMessage = error['detail'] ?? errorMessage;
+                                        } catch (e) {
+                                          errorMessage = 'Server error: ${response.statusCode}';
+                                        }
+                                        throw Exception(errorMessage);
                                       }
                                     } catch (e) {
+                                      print('❌ Error inviting collaborator: $e');
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(
-                                            content: Text('Error: $e'),
+                                            content: Text('Error inviting collaborator: ${e.toString()}'),
                                             backgroundColor: Colors.red,
+                                            duration: const Duration(seconds: 5),
                                           ),
                                         );
                                       }
