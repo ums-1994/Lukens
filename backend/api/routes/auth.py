@@ -352,6 +352,11 @@ def get_user_profile(username=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@bp.route("/auth/firebase", methods=['OPTIONS'])
+def options_firebase_auth():
+    """Handle CORS preflight for Firebase auth endpoint"""
+    return {}, 200
+
 @bp.post("/auth/firebase")
 def firebase_auth():
     """
@@ -401,6 +406,21 @@ def firebase_auth():
                 # User exists, update Firebase UID if needed
                 user_id = user[0]
                 username = user[1]
+                user_role = user[4]  # Get role from database
+                
+                # Normalize role: map variations to standard roles (admin or manager)
+                # Only two roles: admin and manager
+                role_lower = user_role.lower().strip() if user_role else 'user'
+                if role_lower in ['admin', 'ceo']:
+                    normalized_role = 'admin'
+                elif role_lower in ['manager', 'financial manager', 'creator', 'user']:
+                    normalized_role = 'manager'
+                else:
+                    # Default to manager for unknown roles
+                    normalized_role = 'manager'
+                    print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
+                
+                print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
                 
                 # Check if firebase_uid column exists, if not we'll skip updating it
                 try:
@@ -420,7 +440,7 @@ def firebase_auth():
                         'username': user[1],
                         'email': user[2],
                         'full_name': user[3],
-                        'role': user[4],
+                        'role': normalized_role,  # Return normalized role
                         'department': user[5],
                         'firebase_uid': uid
                     }
@@ -439,8 +459,19 @@ def firebase_auth():
                     username = f"{base_username}{counter}"
                     counter += 1
                 
-                # Use requested role if provided, otherwise default to 'user'
-                role_to_use = requested_role if requested_role in ['admin', 'manager', 'user'] else 'user'
+                # Use requested role if provided, otherwise default to 'manager'
+                # Only two roles: admin and manager
+                normalized_role = requested_role.lower().strip() if requested_role else 'manager'
+                if normalized_role in ['admin', 'ceo']:
+                    role_to_use = 'admin'
+                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
+                    role_to_use = 'manager'
+                else:
+                    # Default to manager for unknown roles
+                    role_to_use = 'manager'
+                    print(f'⚠️ Unknown role "{requested_role}", defaulting to "manager"')
+                
+                print(f'🔍 Registration: requested_role="{requested_role}", normalized="{normalized_role}", using="{role_to_use}"')
                 
                 cursor.execute(
                     '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)

@@ -439,9 +439,13 @@ class ApiService {
     required String token,
     required String proposalId,
     required String commentText,
-    required String createdBy,
+    String? createdBy,
     int? sectionIndex,
+    String? sectionName,
     String? highlightedText,
+    int? parentId, // For threaded replies
+    String? blockType, // 'text', 'table', 'image'
+    String? blockId, // Identifier for the block
     List<String>? taggedUsers,
   }) async {
     try {
@@ -450,9 +454,12 @@ class ApiService {
         headers: _getHeaders(token),
         body: json.encode({
           'comment_text': commentText,
-          'created_by': createdBy,
           'section_index': sectionIndex,
+          'section_name': sectionName,
           'highlighted_text': highlightedText,
+          'parent_id': parentId,
+          'block_type': blockType,
+          'block_id': blockId,
           if (taggedUsers != null && taggedUsers.isNotEmpty)
             'tagged_users': taggedUsers,
         }),
@@ -470,13 +477,145 @@ class ApiService {
     }
   }
 
-  static Future<List<dynamic>> getComments({
+  static Future<Map<String, dynamic>?> getComments({
+    required String token,
+    required int proposalId,
+    int? sectionId,
+    String? blockId,
+    String? blockType,
+    String? status, // 'open', 'resolved', or null for all
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/comments/document/$proposalId').replace(
+        queryParameters: {
+          if (sectionId != null) 'section_id': sectionId.toString(),
+          if (blockId != null) 'block_id': blockId,
+          if (blockType != null) 'block_type': blockType,
+          if (status != null) 'status': status,
+        },
+      );
+
+      final response = await http.get(
+        uri,
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return {'comments': [], 'total': 0, 'open_count': 0, 'resolved_count': 0};
+    } catch (e) {
+      print('Error fetching comments: $e');
+      return {'comments': [], 'total': 0, 'open_count': 0, 'resolved_count': 0};
+    }
+  }
+
+  static Future<bool> resolveComment({
+    required String token,
+    required int commentId,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/api/comments/$commentId/resolve'),
+        headers: _getHeaders(token),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error resolving comment: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> reopenComment({
+    required String token,
+    required int commentId,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/api/comments/$commentId/reopen'),
+        headers: _getHeaders(token),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error reopening comment: $e');
+      return false;
+    }
+  }
+
+  // User search for @mentions autocomplete
+  static Future<List<dynamic>> searchUsersForMentions({
+    required String token,
+    required String query,
+    int limit = 10,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/users/search').replace(
+          queryParameters: {'q': query, 'limit': limit.toString()},
+        ),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['users'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      print('Error searching users: $e');
+      return [];
+    }
+  }
+
+  // Proposal archival
+  static Future<Map<String, dynamic>?> archiveProposal({
     required String token,
     required String proposalId,
   }) async {
     try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/api/proposals/$proposalId/archive'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error archiving proposal: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> restoreProposal({
+    required String token,
+    required int proposalId,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/api/proposals/$proposalId/restore'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error restoring proposal: $e');
+      return null;
+    }
+  }
+
+  static Future<List<dynamic>> getArchivedProposals({
+    required String token,
+  }) async {
+    try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/comments/proposal/$proposalId'),
+        Uri.parse('$baseUrl/api/proposals/archived'),
         headers: _getHeaders(token),
       );
 
@@ -485,7 +624,7 @@ class ApiService {
       }
       return [];
     } catch (e) {
-      print('Error fetching comments: $e');
+      print('Error fetching archived proposals: $e');
       return [];
     }
   }

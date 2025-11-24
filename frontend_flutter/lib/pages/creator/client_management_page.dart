@@ -65,6 +65,17 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return user['full_name'] ?? user['email'] ?? 'User';
   }
 
+  /// Helper function to check if an invitation email is verified
+  /// Handles different data types (boolean, string, int) and checks email_verified_at
+  bool _isEmailVerified(Map<String, dynamic> invite) {
+    final emailVerifiedValue = invite['email_verified'];
+    final emailVerifiedAt = invite['email_verified_at'];
+    return emailVerifiedValue == true || 
+        emailVerifiedValue == 'true' ||
+        emailVerifiedValue == 1 ||
+        (emailVerifiedAt != null && emailVerifiedAt.toString().isNotEmpty && emailVerifiedAt.toString() != 'null');
+  }
+
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
@@ -479,12 +490,14 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           const SizedBox(height: 12),
                           // Navigation items
                           _buildNavItem('Dashboard', 'assets/images/Dahboard.png', _currentPage == 'Dashboard', context),
-                          _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', _currentPage == 'My Proposals', context),
+                          if (!_isAdminUser()) // Only show for non-admin users
+                            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', _currentPage == 'My Proposals', context),
                           _buildNavItem('Templates', 'assets/images/content_library.png', _currentPage == 'Templates', context),
                           _buildNavItem('Content Library', 'assets/images/content_library.png', _currentPage == 'Content Library', context),
                           _buildNavItem('Client Management', 'assets/images/collaborations.png', _currentPage == 'Client Management', context),
-                          _buildNavItem('Approvals Status', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approvals Status', context),
-                          _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
+                          _buildNavItem('Approved Proposals', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approved Proposals', context),
+                          if (!_isAdminUser()) // Only show for non-admin users
+                            _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
 
                           const SizedBox(height: 20),
 
@@ -648,10 +661,27 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     );
   }
 
+  bool _isAdminUser() {
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return false;
+      final role = (user['role']?.toString() ?? '').toLowerCase().trim();
+      return role == 'admin' || role == 'ceo';
+    } catch (e) {
+      return false;
+    }
+  }
+
   void _navigateToPage(BuildContext context, String label) {
+    final isAdmin = _isAdminUser();
+    
     switch (label) {
       case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/home');
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
         break;
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
@@ -665,8 +695,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       case 'Client Management':
         // Already on client management page
         break;
-      case 'Approvals Status':
-        Navigator.pushReplacementNamed(context, '/approvals');
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
@@ -678,7 +708,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         Navigator.pushNamed(context, '/login');
         break;
       default:
-        Navigator.pushReplacementNamed(context, '/home');
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
     }
   }
 
@@ -821,8 +855,21 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
 
   Widget _buildStats() {
     final activeClients = _clients.where((c) => c['status'] == 'active').length;
-    final pendingInvites = _invitations.where((i) => i['status'] == 'pending').length;
-    final completedInvites = _invitations.where((i) => i['status'] == 'completed').length;
+    // Count only active invitations (exclude completed ones - they're now clients)
+    final activeInvitations = _invitations.where((i) {
+      final status = i['status']?.toString().toLowerCase() ?? '';
+      final clientId = i['client_id'];
+      return status != 'completed' && (clientId == null || clientId.toString().isEmpty);
+    }).toList();
+    
+    // Count pending invites - those that are not verified yet (from active invitations only)
+    final pendingInvites = activeInvitations.where((i) {
+      return !_isEmailVerified(i) && (i['status'] == 'pending' || i['status'] == null);
+    }).length;
+    // Count completed invites - those that are verified (from active invitations only)
+    final completedInvites = activeInvitations.where((i) {
+      return _isEmailVerified(i);
+    }).length;
 
     return Row(
       children: [
@@ -1027,7 +1074,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Invitations (${_invitations.length})',
+                          'Invitations (${_invitations.where((i) {
+                            final status = i['status']?.toString().toLowerCase() ?? '';
+                            final clientId = i['client_id'];
+                            return status != 'completed' && (clientId == null || clientId.toString().isEmpty);
+                          }).length})',
                           style: TextStyle(
                             color: _selectedTab == 'invitations' ? PremiumTheme.teal : Colors.white,
                             fontWeight: _selectedTab == 'invitations' ? FontWeight.w600 : FontWeight.w400,
@@ -1192,18 +1243,23 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   }
 
   Widget _buildInvitationsTable() {
-    var filteredInvitations = _invitations;
+    // Filter out completed invitations - they should appear in clients list instead
+    var filteredInvitations = _invitations.where((inv) {
+      final status = inv['status']?.toString().toLowerCase() ?? '';
+      final clientId = inv['client_id'];
+      // Exclude invitations that are completed or have a client_id (they're now clients)
+      return status != 'completed' && (clientId == null || clientId.toString().isEmpty);
+    }).toList();
+    
     // Apply verified/unverified filter
     if (_inviteFilter != 'all') {
       final wantVerified = _inviteFilter == 'verified';
       filteredInvitations = filteredInvitations.where((inv) {
-        final emailVerified = (inv['email_verified'] == true) ||
-            (inv['email_verified_at'] != null && inv['email_verified_at'].toString().isNotEmpty);
-        return wantVerified ? emailVerified : !emailVerified;
+        return wantVerified ? _isEmailVerified(inv) : !_isEmailVerified(inv);
       }).toList();
     }
     if (_searchQuery.isNotEmpty) {
-      filteredInvitations = _invitations.where((invite) {
+      filteredInvitations = filteredInvitations.where((invite) {
         final email = invite['invited_email']?.toString().toLowerCase() ?? '';
         final company = invite['expected_company']?.toString().toLowerCase() ?? '';
         final query = _searchQuery.toLowerCase();
@@ -1283,8 +1339,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final email = invite['invited_email'] ?? 'N/A';
     final company = invite['expected_company'] ?? 'Not specified';
     final status = invite['status'] ?? 'pending';
-    final emailVerified = (invite['email_verified'] == true) ||
-        (invite['email_verified_at'] != null && invite['email_verified_at'].toString().isNotEmpty);
+    final emailVerified = _isEmailVerified(invite);
     
     final sentDate = invite['invited_at'] != null
         ? DateFormat('MMM dd, yyyy').format(DateTime.parse(invite['invited_at'].toString()))
@@ -1312,9 +1367,14 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: _getStatusColor(status).withValues(alpha: 0.2),
+                color: emailVerified 
+                    ? PremiumTheme.success.withValues(alpha: 0.2)
+                    : _getStatusColor(status).withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _getStatusColor(status), width: 1),
+                border: Border.all(
+                  color: emailVerified ? PremiumTheme.success : _getStatusColor(status), 
+                  width: 1
+                ),
               ),
               child: Text(
                 emailVerified ? 'VERIFIED' : status.toUpperCase(),
@@ -1329,12 +1389,12 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
           ),
           SizedBox(
             width: 80,
-            child: PopupMenuButton<String>(
+              child: PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.white, size: 18),
               onSelected: (value) => _handleInvitationAction(value, invite),
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'resend', child: Text('Resend')),
-                if (!emailVerified) const PopupMenuItem(value: 'send_code', child: Text('Send Verification Code')),
+                if (!_isEmailVerified(invite)) const PopupMenuItem(value: 'send_code', child: Text('Send Verification Code')),
                 const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],

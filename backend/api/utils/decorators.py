@@ -21,6 +21,10 @@ def token_required(f):
     """
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Allow OPTIONS requests for CORS preflight
+        if request.method == 'OPTIONS':
+            return {}, 200
+        
         token = None
 
         # Allow CORS preflight requests to pass without authentication.

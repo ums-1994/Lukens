@@ -1,8 +1,8 @@
 """
 SQLAlchemy models for the KhonoPro Proposal System - Client Side
 """
-from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, ForeignKey, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID, ENUM
+from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, ForeignKey, CheckConstraint, Float, JSON
+from sqlalchemy.dialects.postgresql import UUID, ENUM, JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -44,6 +44,15 @@ class Proposal(Base):
     signature_data = Column(Text)  # Base64 encoded signature
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Workflow fields
+    governance_status = Column(String(50))  # 'PASSED', 'FAILED', 'PENDING', null
+    risk_score = Column(Float)  # 0-100 risk score
+    risk_level = Column(String(20))  # 'Low', 'Medium', 'High'
+    completed_steps = Column(JSONB)  # Array of completed step names: ['compose', 'govern', 'risk', etc.]
+    template_id = Column(String(255))  # Template used for this proposal
+    template_type = Column(String(50))  # 'proposal', 'sow', 'rfi'
+    proposal_data = Column(JSONB)  # Store form data, selected modules, etc.
     
     # Relationships
     client = relationship("Client", back_populates="proposals")

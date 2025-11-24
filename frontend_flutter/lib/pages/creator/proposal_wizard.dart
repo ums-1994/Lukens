@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
+import '../../theme/premium_theme.dart';
+import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
+import 'template_library_page.dart';
 
 class ProposalWizard extends StatefulWidget {
   const ProposalWizard({super.key});
@@ -17,9 +20,12 @@ class _ProposalWizardState extends State<ProposalWizard>
   int _currentStep = 0;
   static const int _totalSteps = 5;
   bool _isLoading = false;
+  bool _isLoadingTemplates = true;
+  List<Template> _availableTemplates = [];
 
   // Form data
   final Map<String, dynamic> _formData = {
+    'templateId': '',
     'templateType': '',
     'proposalTitle': '',
     'clientName': '',
@@ -29,57 +35,25 @@ class _ProposalWizardState extends State<ProposalWizard>
     'estimatedValue': '',
     'timeline': '',
     'selectedModules': <String>[],
+    'moduleContents': <String, String>{},
   };
 
-  // Template types
-  final List<Map<String, dynamic>> _templateTypes = [
-    {
-      'id': 'proposal',
-      'name': 'Proposal',
-      'description':
-          'Standard business proposal with executive summary, scope, and pricing',
-      'icon': Icons.description_outlined,
-      'color': const Color(0xFF3498DB),
-      'sections': [
-        'Executive Summary',
-        'Company Profile',
-        'Scope & Deliverables',
-        'Timeline',
-        'Investment',
-        'Terms & Conditions'
-      ],
-    },
-    {
-      'id': 'sow',
-      'name': 'Statement of Work (SOW)',
-      'description':
-          'Detailed work statement with deliverables, timeline, and responsibilities',
-      'icon': Icons.work_outline,
-      'color': const Color(0xFF2ECC71),
-      'sections': [
-        'Project Overview',
-        'Scope of Work',
-        'Deliverables',
-        'Timeline',
-        'Resources',
-        'Terms'
-      ],
-    },
-    {
-      'id': 'rfi',
-      'name': 'RFI Response',
-      'description':
-          'Response to Request for Information with technical details and capabilities',
-      'icon': Icons.quiz_outlined,
-      'color': const Color(0xFFE74C3C),
-      'sections': [
-        'Company Overview',
-        'Technical Capabilities',
-        'Past Experience',
-        'Team Qualifications',
-        'References'
-      ],
-    },
+  // Workflow state
+  Map<String, dynamic> _governanceResults =
+      {}; // AI-run governance check results
+  Map<String, dynamic> _riskAssessment = {};
+  bool _isInternalApproved = false;
+  bool _isClientSigned = false;
+  String? _proposalId; // Store created proposal ID
+  bool _isRunningGovernance = false;
+
+  // Workflow steps matching the image
+  final List<Map<String, String>> _workflowSteps = [
+    {'number': '1', 'label': 'Compose'},
+    {'number': '2', 'label': 'Govern'},
+    {'number': '3', 'label': 'AI Risk Gate'},
+    {'number': '4', 'label': 'Internal Sign-off'},
+    {'number': '5', 'label': 'Client Sign-off'},
   ];
 
   // Content modules
@@ -169,6 +143,99 @@ class _ProposalWizardState extends State<ProposalWizard>
     _formData['selectedModules'] = List<String>.from(required);
     // initialize module contents map
     _formData['moduleContents'] = <String, String>{};
+    // Load templates from template library
+    _loadTemplatesFromLibrary();
+  }
+
+  Future<void> _loadTemplatesFromLibrary() async {
+    setState(() => _isLoadingTemplates = true);
+    try {
+      // For now, use mock templates similar to template_library_page
+      // In the future, this should fetch from an API
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Mock templates - in production, fetch from API
+      final mockTemplates = [
+        Template(
+          id: '1',
+          name: 'Consulting & Technology Delivery Proposal Template',
+          description: 'Complete proposal template with all 11 sections',
+          templateType: 'proposal',
+          approvalStatus: 'approved',
+          isPublic: true,
+          isApproved: true,
+          version: 1,
+          sections: [
+            TemplateSection(title: 'Cover Page', required: true),
+            TemplateSection(title: 'Executive Summary', required: true),
+            TemplateSection(title: 'Problem Statement', required: true),
+            TemplateSection(title: 'Scope of Work', required: true),
+            TemplateSection(title: 'Project Timeline', required: true),
+            TemplateSection(title: 'Team & Bios', required: true),
+            TemplateSection(title: 'Delivery Approach', required: true),
+            TemplateSection(title: 'Pricing Table', required: true),
+            TemplateSection(title: 'Risks & Mitigation', required: true),
+            TemplateSection(title: 'Governance Model', required: true),
+            TemplateSection(
+                title: 'Appendix – Company Profile', required: true),
+          ],
+          dynamicFields: [],
+          usageCount: 0,
+          createdBy: 'admin@khonology.com',
+          createdDate: DateTime.now(),
+        ),
+        Template(
+          id: '2',
+          name: 'Standard Proposal Template',
+          description: 'Comprehensive proposal template for enterprise clients',
+          templateType: 'proposal',
+          approvalStatus: 'approved',
+          isPublic: true,
+          isApproved: true,
+          version: 2,
+          sections: [
+            TemplateSection(title: 'Executive Summary', required: true),
+            TemplateSection(title: 'Company Profile', required: true),
+            TemplateSection(title: 'Scope & Deliverables', required: true),
+          ],
+          dynamicFields: [],
+          usageCount: 15,
+          createdBy: 'admin@khonology.com',
+          createdDate: DateTime.now().subtract(const Duration(days: 30)),
+        ),
+        Template(
+          id: '3',
+          name: 'Statement of Work (SOW) Template',
+          description: 'Complete SOW template with all sections',
+          templateType: 'sow',
+          approvalStatus: 'approved',
+          isPublic: true,
+          isApproved: true,
+          version: 1,
+          sections: [
+            TemplateSection(title: 'Project Overview', required: true),
+            TemplateSection(title: 'Scope of Work', required: true),
+            TemplateSection(title: 'Deliverables', required: true),
+            TemplateSection(title: 'Timeline & Milestones', required: true),
+            TemplateSection(title: 'Resources & Team', required: true),
+            TemplateSection(title: 'Terms & Conditions', required: true),
+          ],
+          dynamicFields: [],
+          usageCount: 8,
+          createdBy: 'admin@khonology.com',
+          createdDate: DateTime.now().subtract(const Duration(days: 15)),
+        ),
+      ];
+
+      setState(() {
+        _availableTemplates =
+            mockTemplates.where((t) => t.isApproved && t.isPublic).toList();
+        _isLoadingTemplates = false;
+      });
+    } catch (e) {
+      setState(() => _isLoadingTemplates = false);
+      print('Error loading templates: $e');
+    }
   }
 
   @override
@@ -199,25 +266,32 @@ class _ProposalWizardState extends State<ProposalWizard>
   }
 
   String _getStepTitle(int step) {
-    switch (step) {
-      case 0:
-        return 'Template Selection';
-      case 1:
-        return 'Client Details';
-      case 2:
-        return 'Project Details';
-      case 3:
-        return 'Content Selection';
-      case 4:
-        return 'Review';
-      default:
-        return '';
-    }
+    return _workflowSteps[step]['label'] ?? '';
   }
 
   void _selectTemplate(String templateId) {
     setState(() {
-      _formData['templateType'] = templateId;
+      _formData['templateId'] = templateId;
+      final template = _availableTemplates.firstWhere(
+        (t) => t.id == templateId,
+        orElse: () => _availableTemplates.isNotEmpty
+            ? _availableTemplates[0]
+            : Template(
+                id: '',
+                name: '',
+                templateType: '',
+                approvalStatus: '',
+                isPublic: false,
+                isApproved: false,
+                version: 1,
+                sections: [],
+                dynamicFields: [],
+                usageCount: 0,
+                createdBy: '',
+                createdDate: DateTime.now(),
+              ),
+      );
+      _formData['templateType'] = template.templateType;
     });
   }
 
@@ -235,19 +309,17 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   bool _canProceed() {
     switch (_currentStep) {
-      case 0:
-        return _formData['templateType'].isNotEmpty;
-      case 1:
-        // Require proposal title, client name and project/opportunity name
+      case 0: // Compose - Template Selection
+        return _formData['templateId'].toString().isNotEmpty;
+      case 1: // Govern - Client Details
         return (_formData['proposalTitle'] ?? '').toString().isNotEmpty &&
             (_formData['clientName'] ?? '').toString().isNotEmpty &&
             (_formData['opportunityName'] ?? '').toString().isNotEmpty;
-      case 2:
-        // Require project type to be selected and not empty
+      case 2: // AI Risk Gate - Project Details
         return (_formData['projectType'] ?? '').toString().isNotEmpty;
-      case 3:
+      case 3: // Internal Sign-off - Content Selection
         return _formData['selectedModules'].isNotEmpty;
-      case 4:
+      case 4: // Client Sign-off - Review
         return true; // review/confirm step
       default:
         return false;
@@ -295,215 +367,165 @@ class _ProposalWizardState extends State<ProposalWizard>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Text(
-          'New Proposal',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
-      body: Column(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Top navigation bar
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: () =>
-                      Navigator.of(context).pushReplacementNamed('/home'),
-                  child: Row(
-                    children: const [
-                      Icon(Icons.arrow_back,
-                          size: 20, color: Color(0xFF64748B)),
-                      SizedBox(width: 8),
-                      Text(
-                        'Back to Dashboard',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 3,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          'Step ${_currentStep + 1} of $_totalSteps: ${_getStepTitle(_currentStep)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${((_currentStep + 1) / _totalSteps * 100).round()}% Complete',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          // Background image
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/Global BG.jpg',
+              fit: BoxFit.cover,
             ),
           ),
-
-          // Step indicator
+          // Dark gradient overlay
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(
-                  color: Color(0xFFE2E8F0),
-                  width: 1,
-                ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.black.withOpacity(0.65),
+                  Colors.black.withOpacity(0.35),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_totalSteps * 2 - 1, (i) {
-                if (i.isEven) {
-                  final step = i ~/ 2;
-                  final label = step == 0
-                      ? 'Template'
-                      : step == 1
-                          ? 'Client'
-                          : step == 2
-                              ? 'Project'
-                              : step == 3
-                                  ? 'Content'
-                                  : 'Review';
-                  return _buildStepIndicator(step, label);
-                } else {
-                  return _buildStepConnector();
-                }
-              }),
-            ),
           ),
-
-          // Content
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildTemplateSelection(),
-                _buildClientDetails(),
-                _buildProjectDetails(),
-                _buildContentSelection(),
-                _buildContentEditor(),
-                _buildReviewPage(),
-              ],
-            ),
-          ),
-
-          // Navigation buttons
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                top: BorderSide(color: Color(0xFFE2E8F0)),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (_currentStep > 0)
-                  TextButton(
-                    onPressed: _previousStep,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    child: const Text(
-                      'Previous',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _canProceed()
-                      ? (_currentStep == _totalSteps - 1
-                          ? _createProposal
-                          : _nextStep)
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3B82F6),
+          // Main content
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Header
+                  _buildHeader(),
+                  const SizedBox(height: 24),
+                  // Proposal Workflow
+                  GlassContainer(
+                    borderRadius: 16,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : Text(
-                          _currentStep == _totalSteps - 1
-                              ? 'Create Proposal'
-                              : 'Next',
-                          style: const TextStyle(
-                            fontSize: 14,
+                        horizontal: 16, vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Proposal Workflow',
+                          style: PremiumTheme.bodyLarge.copyWith(
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
                           ),
                         ),
-                ),
-              ],
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: _workflowSteps.map((step) {
+                            final stepIndex = _workflowSteps.indexOf(step);
+                            return _buildWorkflowStep(
+                              step['number']!,
+                              step['label']!,
+                              stepIndex,
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Content area
+                  Expanded(
+                    child: GlassContainer(
+                      borderRadius: 32,
+                      padding: const EdgeInsets.all(24),
+                      child: PageView(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          SizedBox.expand(
+                            child: _buildComposeStep(),
+                          ), // Step 1: Compose (combines template, client, project, content)
+                          SizedBox.expand(
+                            child: _buildGovernStep(),
+                          ), // Step 2: Govern
+                          SizedBox.expand(
+                            child: _buildRiskGateStep(),
+                          ), // Step 3: AI Risk Gate
+                          SizedBox.expand(
+                            child: _buildInternalSignoffStep(),
+                          ), // Step 4: Internal Sign-off
+                          SizedBox.expand(
+                            child: _buildClientSignoffStep(),
+                          ), // Step 5: Client Sign-off
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Navigation buttons
+                  GlassContainer(
+                    borderRadius: 24,
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (_currentStep > 0)
+                          TextButton(
+                            onPressed: _previousStep,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              'Previous',
+                              style: PremiumTheme.bodyMedium.copyWith(
+                                color: PremiumTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: _canProceed()
+                              ? (_currentStep == _totalSteps - 1
+                                  ? _createProposal
+                                  : _nextStep)
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: PremiumTheme.teal,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white),
+                                  ),
+                                )
+                              : Text(
+                                  _currentStep == _totalSteps - 1
+                                      ? 'Create Proposal'
+                                      : 'Next',
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -511,11 +533,57 @@ class _ProposalWizardState extends State<ProposalWizard>
     );
   }
 
+  Widget _buildHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'New Proposal',
+              style: PremiumTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Step ${_currentStep + 1} of $_totalSteps: ${_getStepTitle(_currentStep)} • ${((_currentStep + 1) / _totalSteps * 100).round()}% Complete',
+              style: PremiumTheme.bodyMedium,
+            ),
+          ],
+        ),
+        TextButton.icon(
+          onPressed: () =>
+              Navigator.of(context).pushReplacementNamed('/dashboard'),
+          icon: const Icon(Icons.arrow_back, color: Colors.white70),
+          label: Text(
+            'Back to Dashboard',
+            style: PremiumTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildReviewPage() {
-    // Get template details
-    final template = _templateTypes.firstWhere(
-      (t) => t['id'] == _formData['templateType'],
-      orElse: () => {'name': 'Unknown Template'},
+    // Get template details from library
+    final templateId = _formData['templateId']?.toString() ?? '';
+    final template = _availableTemplates.firstWhere(
+      (t) => t.id == templateId,
+      orElse: () => Template(
+        id: '',
+        name: 'Unknown Template',
+        templateType: '',
+        approvalStatus: '',
+        isPublic: false,
+        isApproved: false,
+        version: 1,
+        sections: [],
+        dynamicFields: [],
+        usageCount: 0,
+        createdBy: '',
+        createdDate: DateTime.now(),
+      ),
     );
 
     // Get selected modules with names instead of IDs
@@ -526,72 +594,68 @@ class _ProposalWizardState extends State<ProposalWizard>
         .map((m) => m['name'] as String)
         .toList();
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Review & Create',
-              style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2C3E50))),
-          const SizedBox(height: 8),
-          const Text('Review your proposal details and create',
-              style: TextStyle(fontSize: 16, color: Color(0xFF718096))),
-          const SizedBox(height: 24),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Review & Create',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Review your proposal details and create',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: GlassContainer(
+                borderRadius: 24,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Proposal Summary',
+                      style: PremiumTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildReviewRow('Template:', template.name),
+                    _buildReviewRow('Client:', _formData['clientName'] ?? ''),
+                    _buildReviewRow(
+                        'Project:', _formData['opportunityName'] ?? ''),
+                    _buildReviewRow(
+                        'Modules:', '${selectedModules.length} selected'),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Next Steps',
+                      style: PremiumTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildNextStepItem(
+                        '• Your proposal will be created in draft status',
+                        PremiumTheme.info),
+                    _buildNextStepItem(
+                        '• You can continue editing and adding content',
+                        PremiumTheme.info),
+                    _buildNextStepItem(
+                        '• Submit for approval when ready', PremiumTheme.info),
+                    _buildNextStepItem(
+                        '• Track progress through the approval workflow',
+                        PremiumTheme.info),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Proposal Summary',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF2C3E50))),
-                const SizedBox(height: 24),
-                _buildReviewRow('Template:',
-                    template['name'] ?? 'Standard Business Proposal'),
-                _buildReviewRow('Client:', _formData['clientName'] ?? ''),
-                _buildReviewRow('Project:', _formData['opportunityName'] ?? ''),
-                _buildReviewRow(
-                    'Modules:', '${selectedModules.length} selected'),
-                const SizedBox(height: 24),
-                const Text('Next Steps',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF2C3E50))),
-                const SizedBox(height: 16),
-                _buildNextStepItem(
-                    '• Your proposal will be created in draft status',
-                    Color(0xFF3498DB)),
-                _buildNextStepItem(
-                    '• You can continue editing and adding content',
-                    Color(0xFF3498DB)),
-                _buildNextStepItem(
-                    '• Submit for approval when ready', Color(0xFF3498DB)),
-                _buildNextStepItem(
-                    '• Track progress through the approval workflow',
-                    Color(0xFF3498DB)),
-              ],
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -602,18 +666,22 @@ class _ProposalWizardState extends State<ProposalWizard>
         children: [
           SizedBox(
             width: 120,
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF718096),
-                    fontWeight: FontWeight.w500)),
+            child: Text(
+              label,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
           Expanded(
-            child: Text(value,
-                style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF2C3E50),
-                    fontWeight: FontWeight.w600)),
+            child: Text(
+              value,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -623,8 +691,13 @@ class _ProposalWizardState extends State<ProposalWizard>
   Widget _buildNextStepItem(String text, Color color) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child:
-          Text(text, style: TextStyle(fontSize: 14, color: color, height: 1.5)),
+      child: Text(
+        text,
+        style: PremiumTheme.bodyMedium.copyWith(
+          color: color,
+          height: 1.5,
+        ),
+      ),
     );
   }
 
@@ -656,23 +729,23 @@ class _ProposalWizardState extends State<ProposalWizard>
     final contents =
         Map<String, String>.from(_formData['moduleContents'] ?? {});
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Add Content',
-              style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2C3E50))),
-          const SizedBox(height: 8),
-          const Text(
-              'Fill in the selected sections (you can complete this later)',
-              style: TextStyle(fontSize: 16, color: Colors.grey)),
-          const SizedBox(height: 24),
-          Expanded(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Add Content',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Fill in the selected sections (you can complete this later)',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
             child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 children: selectedIds.map((moduleId) {
                   final module = _contentModules.firstWhere(
@@ -685,20 +758,23 @@ class _ProposalWizardState extends State<ProposalWizard>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(module['name'] ?? '',
-                            style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF2C3E50))),
+                        Text(
+                          module['name'] ?? '',
+                          style: PremiumTheme.bodyLarge.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         const SizedBox(height: 8),
-                        Container(
-                          decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              color: Colors.white),
+                        GlassContainer(
+                          borderRadius: 16,
+                          padding: const EdgeInsets.all(16),
                           child: Column(
                             children: [
                               TextFormField(
                                 controller: controller,
+                                style: PremiumTheme.bodyMedium.copyWith(
+                                  color: PremiumTheme.textPrimary,
+                                ),
                                 onChanged: (v) {
                                   final Map<String, String> c =
                                       Map<String, String>.from(
@@ -708,11 +784,13 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 },
                                 maxLines: 6,
                                 decoration: InputDecoration(
-                                    hintText:
-                                        'Provide a high-level overview of the project...',
-                                    border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide.none)),
+                                  hintText:
+                                      'Provide a high-level overview of the project...',
+                                  hintStyle: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textTertiary,
+                                  ),
+                                  border: InputBorder.none,
+                                ),
                               ),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
@@ -720,9 +798,16 @@ class _ProposalWizardState extends State<ProposalWizard>
                                   TextButton.icon(
                                     onPressed: () =>
                                         _openContentLibraryAndInsert(moduleId),
-                                    icon: const Icon(
-                                        Icons.library_books_outlined),
-                                    label: const Text('Insert from Library'),
+                                    icon: Icon(
+                                      Icons.library_books_outlined,
+                                      color: PremiumTheme.teal,
+                                    ),
+                                    label: Text(
+                                      'Insert from Library',
+                                      style: PremiumTheme.bodyMedium.copyWith(
+                                        color: PremiumTheme.teal,
+                                      ),
+                                    ),
                                   )
                                 ],
                               )
@@ -737,211 +822,361 @@ class _ProposalWizardState extends State<ProposalWizard>
               ),
             ),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWorkflowStep(String number, String label, int stepIndex) {
+    final isActive = stepIndex <= _currentStep;
+    final isCompleted = stepIndex < _currentStep;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          if (stepIndex <= _currentStep || isCompleted) {
+            setState(() => _currentStep = stepIndex);
+            _pageController.jumpToPage(stepIndex);
+          }
+        },
+        child: Column(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: isCompleted
+                    ? PremiumTheme.success
+                    : isActive
+                        ? const Color(0xFFEAF2F8) // Light blue background
+                        : const Color(0xFFEAF2F8).withOpacity(0.5),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isCompleted
+                      ? PremiumTheme.success
+                      : PremiumTheme.info, // Blue border
+                  width: 1.5,
+                ),
+              ),
+              child: Center(
+                child: isCompleted
+                    ? const Icon(Icons.check, color: Colors.white, size: 16)
+                    : Text(
+                        number,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: isActive
+                              ? PremiumTheme.info // Blue text
+                              : PremiumTheme.info.withOpacity(0.6),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: isActive
+                    ? PremiumTheme.textPrimary
+                    : PremiumTheme.textSecondary,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                fontSize: 11,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildStepIndicator(int step, String label) {
-    final isActive = step <= _currentStep;
-    final isCompleted = step < _currentStep;
+  // Step 1: Compose - Combines template selection, client details, project details, content selection, and content editor
+  Widget _buildComposeStep() {
+    return _buildTemplateSelection(); // For now, start with template selection - we'll make this a multi-tab step
+  }
+
+  // Step 2: Govern - Governance checklist (AI-run)
+  Widget _buildGovernStep() {
+    // Auto-run governance check when step is reached
+    if (_governanceResults.isEmpty &&
+        !_isRunningGovernance &&
+        _currentStep == 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _runGovernanceCheck();
+      });
+    }
 
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: isCompleted
-                ? const Color(0xFF10B981)
-                : isActive
-                    ? const Color(0xFF3B82F6)
-                    : const Color(0xFFE2E8F0),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isCompleted
-                  ? const Color(0xFF10B981)
-                  : isActive
-                      ? const Color(0xFF3B82F6)
-                      : const Color(0xFFE2E8F0),
-              width: 2,
-            ),
-          ),
-          child: Center(
-            child: isCompleted
-                ? const Icon(Icons.check, color: Colors.white, size: 18)
-                : Text(
-                    '${step + 1}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isActive ? Colors.white : const Color(0xFF64748B),
-                    ),
-                  ),
-          ),
+        Text(
+          'Governance Check',
+          style: PremiumTheme.titleMedium,
         ),
         const SizedBox(height: 8),
         Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: isActive ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+          'AI-powered compliance and governance analysis',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: _buildGovernanceResults(),
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStepConnector() {
-    return Expanded(
-      child: Container(
-        height: 2,
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        color: const Color(0xFFE2E8F0),
-      ),
+  // Step 3: AI Risk Gate
+  Widget _buildRiskGateStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'AI Risk Assessment',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Automated risk analysis and recommendations',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: _buildRiskAssessment(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Step 4: Internal Sign-off
+  Widget _buildInternalSignoffStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Internal Sign-off',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Submit for internal review and approval',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: _buildInternalApproval(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Step 5: Client Sign-off
+  Widget _buildClientSignoffStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Client Sign-off',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Send proposal to client for review and signature',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: _buildClientSignature(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildTemplateSelection() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Select Template Type',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Choose the type of document you want to create',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: LayoutBuilder(builder: (context, constraints) {
-              // responsive columns: 3 on wide, 2 on medium, 1 on small
-              int crossAxisCount = 1;
-              if (constraints.maxWidth > 1200) {
-                crossAxisCount = 3;
-              } else if (constraints.maxWidth > 800) {
-                crossAxisCount = 2;
-              } else {
-                crossAxisCount = 1;
-              }
+    if (_isLoadingTemplates) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(PremiumTheme.teal),
+        ),
+      );
+    }
 
-              return GridView.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  childAspectRatio: crossAxisCount == 1 ? 3 : 1.2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                ),
-                itemCount: _templateTypes.length,
-                itemBuilder: (context, index) {
-                  final template = _templateTypes[index];
-                  final isSelected =
-                      _formData['templateType'] == template['id'];
-
-                  return GestureDetector(
-                    onTap: () => _selectTemplate(template['id']),
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected
-                              ? template['color']
-                              : const Color(0xFFE5E5E5),
-                          width: isSelected ? 2 : 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select Template from Library',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Choose a template from the template library to start your proposal',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: _availableTemplates.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.library_books_outlined,
+                        size: 64,
+                        color: PremiumTheme.textTertiary,
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              color: template['color'].withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(
-                              template['icon'],
-                              color: template['color'],
-                              size: 30,
-                            ),
-                          ),
-                          const SizedBox(width: 20),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
+                      const SizedBox(height: 16),
+                      Text(
+                        'No templates available',
+                        style: PremiumTheme.titleMedium.copyWith(
+                          color: PremiumTheme.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/template_library');
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Go to Template Library'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: PremiumTheme.teal,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : CustomScrollbar(
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    // responsive columns: 3 on wide, 2 on medium, 1 on small
+                    int crossAxisCount = 1;
+                    if (constraints.maxWidth > 1200) {
+                      crossAxisCount = 3;
+                    } else if (constraints.maxWidth > 800) {
+                      crossAxisCount = 2;
+                    } else {
+                      crossAxisCount = 1;
+                    }
+
+                    return GridView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        childAspectRatio: crossAxisCount == 1 ? 3 : 1.2,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                      ),
+                      itemCount: _availableTemplates.length,
+                      itemBuilder: (context, index) {
+                        final template = _availableTemplates[index];
+                        final isSelected =
+                            _formData['templateId'] == template.id;
+                        final color = template.templateType == 'sow'
+                            ? const Color(0xFF2ECC71)
+                            : template.templateType == 'rfi'
+                                ? const Color(0xFFE74C3C)
+                                : const Color(0xFF3498DB);
+
+                        return GestureDetector(
+                          onTap: () => _selectTemplate(template.id),
+                          child: GlassContainer(
+                            borderRadius: 20,
+                            padding: const EdgeInsets.all(20),
+                            gradientStart: isSelected ? color : null,
+                            gradientEnd: isSelected ? color : null,
+                            child: Row(
                               children: [
-                                Text(
-                                  template['name'],
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF2C3E50),
+                                Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    template.templateType == 'sow'
+                                        ? Icons.work_outline
+                                        : template.templateType == 'rfi'
+                                            ? Icons.quiz_outlined
+                                            : Icons.description_outlined,
+                                    color: color,
+                                    size: 30,
                                   ),
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  template['description'],
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey,
+                                const SizedBox(width: 20),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        template.name,
+                                        style: PremiumTheme.bodyLarge.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: PremiumTheme.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        template.description ?? '',
+                                        style: PremiumTheme.bodyMedium,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        '${template.sections.length} sections',
+                                        style: PremiumTheme.labelMedium,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  template['sections'].take(3).join(' • '),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF7F8C8D),
+                                if (isSelected)
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: PremiumTheme.success,
+                                    size: 24,
                                   ),
-                                ),
                               ],
                             ),
                           ),
-                          if (isSelected)
-                            const Icon(
-                              Icons.check_circle,
-                              color: Color(0xFF2ECC71),
-                              size: 24,
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            }),
-          ),
-        ],
-      ),
+                        );
+                      },
+                    );
+                  }),
+                ),
+        ),
+      ],
     );
   }
 
   Widget _buildClientDetails() {
-    // Initialize controllers with current values
+    // Initialize controllers with current values and explicit LTR direction
     final proposalTitleController = TextEditingController(
         text: _formData['proposalTitle']?.toString() ?? '');
     final clientNameController =
@@ -955,87 +1190,82 @@ class _ProposalWizardState extends State<ProposalWizard>
 
     return Directionality(
       textDirection: TextDirection.ltr,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
+      child: Builder(
+        builder: (context) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Client & Opportunity Details',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
-              ),
+              style: PremiumTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Enter client information and opportunity details',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: PremiumTheme.bodyMedium,
             ),
             const SizedBox(height: 24),
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    _buildTextField(
-                      'Proposal Title',
-                      'Enter proposal title',
-                      (value) =>
-                          setState(() => _formData['proposalTitle'] = value),
-                      Icons.description_outlined,
-                      controller: proposalTitleController,
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildTextField(
-                            'Client Name',
-                            'Company or contact name',
-                            (value) =>
-                                setState(() => _formData['clientName'] = value),
-                            Icons.business_outlined,
-                            controller: clientNameController,
+              child: CustomScrollbar(
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    children: [
+                      _buildTextField(
+                        'Proposal Title',
+                        'Enter proposal title',
+                        (value) =>
+                            setState(() => _formData['proposalTitle'] = value),
+                        Icons.description_outlined,
+                        controller: proposalTitleController,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Name',
+                              'Company or contact name',
+                              (value) => setState(
+                                  () => _formData['clientName'] = value),
+                              Icons.business_outlined,
+                              controller: clientNameController,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildTextField(
-                            'Client Email',
-                            'client@company.com',
-                            (value) => setState(
-                                () => _formData['clientEmail'] = value),
-                            Icons.email_outlined,
-                            keyboardType: TextInputType.emailAddress,
-                            controller: clientEmailController,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Email',
+                              'client@company.com',
+                              (value) => setState(
+                                  () => _formData['clientEmail'] = value),
+                              Icons.email_outlined,
+                              keyboardType: TextInputType.emailAddress,
+                              controller: clientEmailController,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                      'Project/Opportunity Name',
-                      'Brief project description',
-                      (value) =>
-                          setState(() => _formData['opportunityName'] = value),
-                      Icons.lightbulb_outline,
-                      controller: opportunityNameController,
-                    ),
-                    const SizedBox(height: 20),
-                    _buildTextField(
-                      'Estimated Value (Optional)',
-                      '0',
-                      (value) =>
-                          setState(() => _formData['estimatedValue'] = value),
-                      Icons.attach_money,
-                      keyboardType: TextInputType.number,
-                      controller: estimatedValueController,
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Project/Opportunity Name',
+                        'Brief project description',
+                        (value) => setState(
+                            () => _formData['opportunityName'] = value),
+                        Icons.lightbulb_outline,
+                        controller: opportunityNameController,
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Estimated Value (Optional)',
+                        '0',
+                        (value) =>
+                            setState(() => _formData['estimatedValue'] = value),
+                        Icons.attach_money,
+                        keyboardType: TextInputType.number,
+                        controller: estimatedValueController,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1054,30 +1284,23 @@ class _ProposalWizardState extends State<ProposalWizard>
 
     return Directionality(
       textDirection: TextDirection.ltr,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Project Details',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Specify project type, value, and timeline',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Project Details',
+            style: PremiumTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Specify project type, value, and timeline',
+            style: PremiumTheme.bodyMedium,
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: CustomScrollbar(
               child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
                     _buildDropdownField(
@@ -1112,8 +1335,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1124,40 +1347,31 @@ class _ProposalWizardState extends State<ProposalWizard>
     final optionalModules =
         _contentModules.where((m) => !m['required']).toList();
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Content Modules',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Select content modules to include in your proposal',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Expanded(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Content Modules',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Select content modules to include in your proposal',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
             child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Required modules
-                  const Text(
+                  Text(
                     'Required Modules',
-                    style: TextStyle(
-                      fontSize: 18,
+                    style: PremiumTheme.bodyLarge.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1166,12 +1380,10 @@ class _ProposalWizardState extends State<ProposalWizard>
                   const SizedBox(height: 24),
 
                   // Optional modules
-                  const Text(
+                  Text(
                     'Optional Modules',
-                    style: TextStyle(
-                      fontSize: 18,
+                    style: PremiumTheme.bodyLarge.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1181,8 +1393,8 @@ class _ProposalWizardState extends State<ProposalWizard>
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1191,61 +1403,51 @@ class _ProposalWizardState extends State<ProposalWizard>
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isSelected ? const Color(0xFF3498DB) : const Color(0xFFE5E5E5),
-          width: isSelected ? 2 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 5,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: CheckboxListTile(
-        title: Text(
-          module['name'],
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF2C3E50),
-          ),
-        ),
-        subtitle: Text(
-          module['description'],
-          style: const TextStyle(color: Colors.grey),
-        ),
-        value: isRequired || isSelected,
-        onChanged: isRequired ? null : (value) => _toggleModule(module['id']),
-        activeColor: const Color(0xFF3498DB),
-        controlAffinity: ListTileControlAffinity.leading,
-        secondary: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: module['category'] == 'Company'
-                ? const Color(0xFF3498DB).withOpacity(0.1)
-                : module['category'] == 'Project'
-                    ? const Color(0xFF2ECC71).withOpacity(0.1)
-                    : module['category'] == 'Legal'
-                        ? const Color(0xFFE74C3C).withOpacity(0.1)
-                        : const Color(0xFF9B59B6).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            module['category'],
-            style: TextStyle(
-              fontSize: 12,
+      child: GlassContainer(
+        borderRadius: 16,
+        padding: EdgeInsets.zero,
+        gradientStart: isSelected ? PremiumTheme.teal : null,
+        gradientEnd: isSelected ? PremiumTheme.teal : null,
+        child: CheckboxListTile(
+          title: Text(
+            module['name'],
+            style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
+              color: PremiumTheme.textPrimary,
+            ),
+          ),
+          subtitle: Text(
+            module['description'],
+            style: PremiumTheme.bodyMedium,
+          ),
+          value: isRequired || isSelected,
+          onChanged: isRequired ? null : (value) => _toggleModule(module['id']),
+          activeColor: PremiumTheme.teal,
+          checkColor: Colors.white,
+          controlAffinity: ListTileControlAffinity.leading,
+          secondary: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
               color: module['category'] == 'Company'
-                  ? const Color(0xFF3498DB)
+                  ? PremiumTheme.info.withOpacity(0.2)
                   : module['category'] == 'Project'
-                      ? const Color(0xFF2ECC71)
+                      ? PremiumTheme.success.withOpacity(0.2)
                       : module['category'] == 'Legal'
-                          ? const Color(0xFFE74C3C)
-                          : const Color(0xFF9B59B6),
+                          ? PremiumTheme.error.withOpacity(0.2)
+                          : PremiumTheme.purple.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              module['category'],
+              style: PremiumTheme.labelMedium.copyWith(
+                color: module['category'] == 'Company'
+                    ? PremiumTheme.info
+                    : module['category'] == 'Project'
+                        ? PremiumTheme.success
+                        : module['category'] == 'Legal'
+                            ? PremiumTheme.error
+                            : PremiumTheme.purple,
+              ),
             ),
           ),
         ),
@@ -1261,26 +1463,50 @@ class _ProposalWizardState extends State<ProposalWizard>
     TextInputType keyboardType = TextInputType.text,
     TextEditingController? controller,
   }) {
+    // Ensure controller text direction is LTR
+    if (controller != null && controller.text.isNotEmpty) {
+      // Force LTR by updating the selection
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (controller.text.isNotEmpty) {
+          controller.selection = TextSelection.fromPosition(
+            TextPosition(offset: controller.text.length),
+          );
+        }
+      });
+    }
+
     return Directionality(
       textDirection: TextDirection.ltr,
       child: TextFormField(
         controller: controller,
         textDirection: TextDirection.ltr,
+        textAlign: TextAlign.left,
+        style: PremiumTheme.bodyMedium.copyWith(
+          color: PremiumTheme.textPrimary,
+        ),
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          prefixIcon: Icon(icon, color: const Color(0xFF3498DB)),
+          labelStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textSecondary,
+          ),
+          hintStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textTertiary,
+          ),
+          prefixIcon: Icon(icon, color: PremiumTheme.teal),
+          filled: true,
+          fillColor: PremiumTheme.glassWhite,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFF3498DB), width: 2),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
           ),
         ),
         keyboardType: keyboardType,
@@ -1297,35 +1523,890 @@ class _ProposalWizardState extends State<ProposalWizard>
     Function(String) onChanged,
     IconData icon,
   ) {
-    return DropdownButtonFormField<String>(
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(icon, color: const Color(0xFF3498DB)),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: DropdownButtonFormField<String>(
+        initialValue: value?.isEmpty == true ? null : value,
+        style: PremiumTheme.bodyMedium.copyWith(
+          color: PremiumTheme.textPrimary,
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          labelStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textSecondary,
+          ),
+          hintStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textTertiary,
+          ),
+          prefixIcon: Icon(icon, color: PremiumTheme.teal),
+          filled: true,
+          fillColor: PremiumTheme.glassWhite,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
+          ),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF3498DB), width: 2),
-        ),
+        dropdownColor: PremiumTheme.darkBg2,
+        items: options.map((option) {
+          return DropdownMenuItem<String>(
+            value: option,
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                option,
+                style: PremiumTheme.bodyMedium,
+              ),
+            ),
+          );
+        }).toList(),
+        onChanged: (value) => onChanged(value ?? ''),
       ),
-      initialValue: value?.isEmpty == true ? null : value,
-      items: options.map((option) {
-        return DropdownMenuItem<String>(
-          value: option,
-          child: Directionality(
-            textDirection: TextDirection.ltr,
-            child: Text(option),
+    );
+  }
+
+  // Governance Results Builder (AI-run)
+  Widget _buildGovernanceResults() {
+    if (_isRunningGovernance) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(PremiumTheme.teal),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Running AI Governance Check...',
+            style: PremiumTheme.bodyLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Analyzing proposal compliance and requirements',
+            style: PremiumTheme.bodyMedium.copyWith(
+              color: PremiumTheme.textSecondary,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_governanceResults.isEmpty) {
+      return Column(
+        children: [
+          GlassContainer(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 64,
+                  color: PremiumTheme.textSecondary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Run Governance Check',
+                  style: PremiumTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Click the button below to analyze your proposal for governance compliance',
+                  style: PremiumTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _runGovernanceCheck,
+                  icon: const Icon(Icons.verified_user),
+                  label: const Text('Run Governance Check'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final status = _governanceResults['status'] ?? 'PENDING';
+    final score = _governanceResults['score'] ?? 0;
+    final checks = _governanceResults['checks'] ?? [];
+    final issues = _governanceResults['issues'] ?? [];
+    final passed = status == 'PASSED';
+
+    Color statusColor = PremiumTheme.success;
+    if (status == 'FAILED') statusColor = PremiumTheme.error;
+    if (status == 'PENDING') statusColor = Colors.orange;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Compact Status Summary
+        GlassContainer(
+          borderRadius: 16,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                passed ? Icons.check_circle : Icons.warning_amber_rounded,
+                color: statusColor,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Status: $status',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Score: ${score.toStringAsFixed(0)}%',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: PremiumTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _runGovernanceCheck,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Re-run'),
+                style: TextButton.styleFrom(
+                  foregroundColor: PremiumTheme.teal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: const Size(0, 32),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Checklist Results in Compact Grid
+        if (checks.isNotEmpty) ...[
+          Text(
+            'Checklist Results',
+            style: PremiumTheme.bodyMedium.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // Use 2 columns for better space utilization
+              final crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  childAspectRatio: crossAxisCount == 2 ? 4 : 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemCount: checks.length,
+                itemBuilder: (context, index) {
+                  final check = checks[index];
+                  final checkLabel = check['label'] as String? ?? '';
+                  final checkPassed = (check['passed'] as bool?) ?? false;
+                  final checkRequired = (check['required'] as bool?) ?? false;
+
+                  return GlassContainer(
+                    borderRadius: 12,
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        Icon(
+                          checkPassed ? Icons.check_circle : Icons.cancel,
+                          color: checkPassed
+                              ? PremiumTheme.success
+                              : PremiumTheme.error,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                checkLabel,
+                                style: PremiumTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  decoration: checkPassed
+                                      ? null
+                                      : TextDecoration.lineThrough,
+                                  color: checkPassed
+                                      ? PremiumTheme.textPrimary
+                                      : PremiumTheme.textSecondary,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (checkRequired && !checkPassed)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    'Required',
+                                    style: PremiumTheme.labelMedium.copyWith(
+                                      color: PremiumTheme.error,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+        // Issues/Recommendations (Compact)
+        if (issues.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Issues',
+            style: PremiumTheme.bodyMedium.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...issues.map<Widget>((issue) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: GlassContainer(
+                  borderRadius: 12,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: PremiumTheme.info,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          issue.toString(),
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+      ],
+    );
+  }
+
+  // Risk Assessment Builder
+  Widget _buildRiskAssessment() {
+    final hasRiskData = _riskAssessment.isNotEmpty;
+
+    if (!hasRiskData) {
+      return Column(
+        children: [
+          GlassContainer(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.assessment_outlined,
+                  size: 64,
+                  color: PremiumTheme.textSecondary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Run Risk Assessment',
+                  style: PremiumTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Click the button below to analyze your proposal for risks',
+                  style: PremiumTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _runRiskAssessment,
+                  icon: const Icon(Icons.analytics_outlined),
+                  label: const Text('Run Risk Assessment'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final riskLevel = _riskAssessment['risk_level'] ?? 'Low';
+    final riskScore = _riskAssessment['risk_score'] ?? 0;
+    final risks = _riskAssessment['risks'] ?? [];
+    final recommendations = _riskAssessment['recommendations'] ?? [];
+
+    Color riskColor = PremiumTheme.success;
+    if (riskLevel == 'Medium') riskColor = Colors.orange;
+    if (riskLevel == 'High') riskColor = PremiumTheme.error;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Risk Summary Card
+        GlassContainer(
+          borderRadius: 24,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: riskColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.warning_amber_rounded,
+                      color: riskColor,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Risk Level: $riskLevel',
+                          style: PremiumTheme.titleMedium.copyWith(
+                            color: riskColor,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
+                          style: PremiumTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Identified Risks
+        if (risks.isNotEmpty) ...[
+          Text(
+            'Identified Risks',
+            style: PremiumTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...risks.map<Widget>((risk) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: GlassContainer(
+                  borderRadius: 16,
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.flag_outlined,
+                        color: PremiumTheme.error,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          risk.toString(),
+                          style: PremiumTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+          const SizedBox(height: 16),
+        ],
+        // Recommendations
+        if (recommendations.isNotEmpty) ...[
+          Text(
+            'Recommendations',
+            style: PremiumTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...recommendations.map<Widget>((rec) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: GlassContainer(
+                  borderRadius: 16,
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.lightbulb_outline,
+                        color: PremiumTheme.info,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          rec.toString(),
+                          style: PremiumTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+      ],
+    );
+  }
+
+  // Internal Approval Builder
+  Widget _buildInternalApproval() {
+    return Column(
+      children: [
+        GlassContainer(
+          borderRadius: 24,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Submit for Internal Approval',
+                style: PremiumTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Before submitting, ensure:',
+                style: PremiumTheme.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildApprovalChecklistItem('✓ Governance checks passed'),
+              _buildApprovalChecklistItem('✓ Risk assessment completed'),
+              _buildApprovalChecklistItem('✓ All required sections complete'),
+              _buildApprovalChecklistItem('✓ Content reviewed for accuracy'),
+              const SizedBox(height: 24),
+              if (_isInternalApproved)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.success.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: PremiumTheme.success),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: PremiumTheme.success),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Approved internally',
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.success,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ElevatedButton.icon(
+                  onPressed: _submitForInternalApproval,
+                  icon: const Icon(Icons.send),
+                  label: const Text('Submit for Approval'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildApprovalChecklistItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle_outline,
+              color: PremiumTheme.success, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: PremiumTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Client Signature Builder
+  Widget _buildClientSignature() {
+    return Column(
+      children: [
+        GlassContainer(
+          borderRadius: 24,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Send to Client',
+                style: PremiumTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Client Information:',
+                style: PremiumTheme.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildInfoRow(
+                  'Name:', _formData['clientName'] ?? 'Not specified'),
+              _buildInfoRow(
+                  'Email:', _formData['clientEmail'] ?? 'Not specified'),
+              const SizedBox(height: 24),
+              if (_isClientSigned)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.success.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: PremiumTheme.success),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: PremiumTheme.success),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Proposal signed by client',
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.success,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ElevatedButton.icon(
+                  onPressed: _sendToClient,
+                  icon: const Icon(Icons.send),
+                  label: const Text('Send to Client'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: PremiumTheme.bodyMedium.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Action Methods
+  Future<void> _runRiskAssessment() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Simulate risk assessment - replace with actual API call
+      await Future.delayed(const Duration(seconds: 2));
+
+      setState(() {
+        _riskAssessment = {
+          'risk_level': 'Low',
+          'risk_score': 85.0,
+          'risks': [
+            'Pricing information is complete',
+            'All required sections are present',
+          ],
+          'recommendations': [
+            'Consider adding more detail to the scope section',
+            'Include timeline estimates for better clarity',
+          ],
+        };
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error running risk assessment: $e')),
+      );
+    }
+  }
+
+  // Run AI Governance Check
+  Future<void> _runGovernanceCheck() async {
+    setState(() => _isRunningGovernance = true);
+
+    try {
+      // Simulate AI governance check - replace with actual API call
+      await Future.delayed(const Duration(seconds: 2));
+
+      // Analyze proposal data
+      final hasTemplate =
+          _formData['templateId']?.toString().isNotEmpty ?? false;
+      final hasClientName =
+          _formData['clientName']?.toString().isNotEmpty ?? false;
+      final hasClientEmail =
+          _formData['clientEmail']?.toString().isNotEmpty ?? false;
+      final hasProposalTitle =
+          _formData['proposalTitle']?.toString().isNotEmpty ?? false;
+      final selectedModules =
+          List<String>.from(_formData['selectedModules'] ?? []);
+      final hasModules = selectedModules.isNotEmpty;
+
+      final checks = [
+        {
+          'id': 'required_sections',
+          'label': 'All required sections included',
+          'required': true,
+          'passed': hasModules && selectedModules.length >= 3,
+        },
+        {
+          'id': 'mandatory_fields',
+          'label': 'All mandatory fields completed',
+          'required': true,
+          'passed': hasProposalTitle && hasClientName && hasClientEmail,
+        },
+        {
+          'id': 'pricing_complete',
+          'label': 'Pricing information is complete',
+          'required': true,
+          'passed': _formData['estimatedValue']?.toString().isNotEmpty ?? false,
+        },
+        {
+          'id': 'client_info',
+          'label': 'Client information is accurate',
+          'required': true,
+          'passed': hasClientName && hasClientEmail,
+        },
+        {
+          'id': 'risk_statements',
+          'label': 'Risk statements and disclaimers included',
+          'required': true,
+          'passed': selectedModules.contains('assumptions_risks') ||
+              selectedModules.contains('terms_conditions'),
+        },
+        {
+          'id': 'compliance',
+          'label': 'Compliance requirements met',
+          'required': true,
+          'passed': hasTemplate && hasProposalTitle,
+        },
+        {
+          'id': 'reviewed_content',
+          'label': 'Content reviewed for accuracy',
+          'required': false,
+          'passed': true, // Assume passed for optional
+        },
+        {
+          'id': 'legal_terms',
+          'label': 'Legal terms and conditions included',
+          'required': false,
+          'passed': selectedModules.contains('terms_conditions'),
+        },
+      ];
+
+      final requiredChecks =
+          checks.where((c) => (c['required'] as bool?) ?? false).toList();
+      final passedRequired =
+          requiredChecks.where((c) => (c['passed'] as bool?) ?? false).length;
+      final totalRequired = requiredChecks.length;
+      final score = totalRequired > 0
+          ? (passedRequired / totalRequired * 100).round()
+          : 0;
+      final status = passedRequired == totalRequired ? 'PASSED' : 'FAILED';
+
+      final issues = <String>[];
+      if (!hasTemplate) issues.add('Template not selected');
+      if (!hasProposalTitle) issues.add('Proposal title is missing');
+      if (!hasClientName) issues.add('Client name is missing');
+      if (!hasClientEmail) issues.add('Client email is missing');
+      if (!hasModules) issues.add('No content modules selected');
+      if (selectedModules.length < 3)
+        issues.add('Insufficient content modules (minimum 3 required)');
+
+      setState(() {
+        _governanceResults = {
+          'status': status,
+          'score': score,
+          'checks': checks,
+          'issues': issues,
+        };
+        _isRunningGovernance = false;
+      });
+    } catch (e) {
+      setState(() => _isRunningGovernance = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error running governance check: $e')),
+      );
+    }
+  }
+
+  Future<void> _submitForInternalApproval() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Check if governance passed
+      final governanceStatus = _governanceResults['status'] as String?;
+
+      if (governanceStatus != 'PASSED') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Governance check must pass before submitting for approval'),
+            backgroundColor: Colors.orange,
           ),
         );
-      }).toList(),
-      onChanged: (value) => onChanged(value ?? ''),
-    );
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Simulate API call - replace with actual
+      await Future.delayed(const Duration(seconds: 1));
+
+      setState(() {
+        _isInternalApproved = true;
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Proposal submitted for internal approval'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error submitting for approval: $e')),
+      );
+    }
+  }
+
+  Future<void> _sendToClient() async {
+    if (!_isInternalApproved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please complete internal approval first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Simulate API call - replace with actual
+      await Future.delayed(const Duration(seconds: 1));
+
+      setState(() {
+        _isClientSigned = true;
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Proposal sent to client successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sending to client: $e')),
+      );
+    }
   }
 }

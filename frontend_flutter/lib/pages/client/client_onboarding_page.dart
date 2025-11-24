@@ -142,32 +142,46 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              PremiumTheme.darkBg1,
-              PremiumTheme.darkBg2,
-              PremiumTheme.darkBg3,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: _loading
-                  ? _buildLoading()
-                  : _errorMessage != null
-                      ? _buildError()
-                      : _submitted
-                          ? _buildSuccess()
-                          : _buildForm(),
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background image (matching the rest of the app)
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/Global BG.jpg',
+              fit: BoxFit.cover,
             ),
           ),
-        ),
+          // Dark gradient overlay
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.black.withOpacity(0.65),
+                  Colors.black.withOpacity(0.35),
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+          // Main content
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: _loading
+                    ? _buildLoading()
+                    : _errorMessage != null
+                        ? _buildError()
+                        : _submitted
+                            ? _buildSuccess()
+                            : _buildForm(),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

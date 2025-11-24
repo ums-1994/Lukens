@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web/web.dart' as web;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:ui_web' as ui;
 
 class ClientProposalViewer extends StatefulWidget {
   final int proposalId;
@@ -32,13 +30,102 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   List<Map<String, dynamic>> _activityLog = [];
   final TextEditingController _commentController = TextEditingController();
   bool _isSubmittingComment = false;
+  String? _currentSessionId;
 
   int _selectedTab = 0; // 0: Content, 1: Activity, 2: Comments
 
   @override
   void initState() {
     super.initState();
+    _checkIfReturnedFromSigning();
     _loadProposal();
+    _startSession();
+    _logEvent('open');
+  }
+
+  void _checkIfReturnedFromSigning() {
+    // Check if we're returning from DocuSign signing
+    if (kIsWeb) {
+      final currentUrl = web.window.location.href;
+      final uri = Uri.parse(currentUrl);
+      
+      // Check for signed=true in query params or hash
+      final signedParam = uri.queryParameters['signed'];
+      final hash = uri.fragment;
+      final hasSignedInHash = hash.contains('signed=true');
+      
+      if (signedParam == 'true' || hasSignedInHash) {
+        print('✅ Detected return from DocuSign signing');
+        // Reload proposal after a short delay to ensure backend has updated
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            _loadProposal();
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _endSession();
+    _logEvent('close');
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startSession() async {
+    try {
+      final response = await http.post(
+        Uri.parse('http://localhost:8000/api/client/session/start'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'token': widget.accessToken,
+          'proposal_id': widget.proposalId,
+        }),
+      );
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _currentSessionId = data['session_id'];
+        });
+      }
+    } catch (e) {
+      print('Error starting session: $e');
+    }
+  }
+
+  Future<void> _endSession() async {
+    if (_currentSessionId != null) {
+      try {
+        await http.post(
+          Uri.parse('http://localhost:8000/api/client/session/end'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'session_id': _currentSessionId,
+          }),
+        );
+      } catch (e) {
+        print('Error ending session: $e');
+      }
+    }
+  }
+
+  Future<void> _logEvent(String eventType, {Map<String, dynamic>? metadata}) async {
+    try {
+      await http.post(
+        Uri.parse('http://localhost:8000/api/client/activity'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'token': widget.accessToken,
+          'proposal_id': widget.proposalId,
+          'event_type': eventType,
+          'metadata': metadata ?? {},
+        }),
+      );
+    } catch (e) {
+      print('Error logging event: $e');
+    }
   }
 
   Future<void> _loadProposal() async {
@@ -55,6 +142,17 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        print('📄 Proposal data received: ${data['proposal']?['title']}');
+        final content = data['proposal']?['content'];
+        print('📄 Content type: ${content?.runtimeType}');
+        if (content != null) {
+          final contentStr = content.toString();
+          final preview = contentStr.length > 100 ? contentStr.substring(0, 100) : contentStr;
+          print('📄 Content value: $preview');
+        } else {
+          print('📄 Content is null or empty');
+        }
+        
         setState(() {
           _proposalData = data['proposal'];
           _signatureData = data['signature'] != null
@@ -62,6 +160,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               : null;
           _signingUrl = _signatureData?['signing_url']?.toString();
           _signatureStatus = _signatureData?['status']?.toString();
+          
+          // Debug logging for signature data
+          print('📝 Signature data: ${_signatureData?.toString()}');
+          print('📝 Signing URL: $_signingUrl');
+          print('📝 Signature Status: $_signatureStatus');
+          
           _comments = (data['comments'] as List?)
                   ?.map((c) => Map<String, dynamic>.from(c))
                   .toList() ??
@@ -73,11 +177,21 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           _isLoading = false;
         });
       } else {
-        final error = jsonDecode(response.body);
-        setState(() {
-          _error = error['detail'] ?? 'Failed to load proposal';
-          _isLoading = false;
-        });
+        final errorBody = response.body;
+        print('❌ Error loading proposal: ${response.statusCode}');
+        print('❌ Error body: $errorBody');
+        try {
+          final error = jsonDecode(errorBody);
+          setState(() {
+            _error = error['detail'] ?? 'Failed to load proposal';
+            _isLoading = false;
+          });
+        } catch (e) {
+          setState(() {
+            _error = 'Failed to load proposal (${response.statusCode}): $errorBody';
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
       setState(() {
@@ -116,6 +230,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       );
 
       if (response.statusCode == 201) {
+        _logEvent('comment', metadata: {'comment_length': _commentController.text.trim().length});
         _commentController.clear();
         await _loadProposal();
 
@@ -156,6 +271,20 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         onSuccess: () {
           Navigator.pop(context); // Close dialog
           Navigator.pop(context); // Go back to dashboard
+        },
+      ),
+    );
+  }
+
+  void _showApproveDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => ApproveDialog(
+        proposalId: widget.proposalId,
+        accessToken: widget.accessToken,
+        onSuccess: () {
+          Navigator.pop(context); // Close dialog
+          _loadProposal(); // Reload to show updated status
         },
       ),
     );
@@ -212,7 +341,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     final proposal = _proposalData!;
     final status = proposal['status'] as String? ?? 'Unknown';
     final signatureStatus = (_signatureStatus ?? '').toLowerCase();
-    final canTakeAction = !signatureStatus.contains('completed');
+    final isSigned = signatureStatus.contains('completed');
+    final isDeclined = signatureStatus.contains('declined');
+    // Show action bar if not signed and not declined, or if signature status is unknown
+    final canTakeAction = !isSigned && !isDeclined;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F9),
@@ -221,7 +353,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           // Header
           _buildHeader(proposal, status),
 
-          // Action Buttons
+          // Action Buttons - Always show if proposal is not signed
           if (canTakeAction) _buildActionBar(),
 
           // Tabs
@@ -288,6 +420,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
             onPressed: () {
+              _logEvent('download');
               // TODO: Download as PDF
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('PDF download coming soon')),
@@ -305,6 +438,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     final isSigned = signatureStatus.contains('completed');
     final isDeclined = signatureStatus.contains('declined');
     final hasSigningUrl = _signingUrl != null && _signingUrl!.isNotEmpty;
+    
+    // Debug logging
+    print('🔍 Action Bar - isSigned: $isSigned, isDeclined: $isDeclined, hasSigningUrl: $hasSigningUrl');
+    print('🔍 Action Bar - signatureStatus: $_signatureStatus, signingUrl: $_signingUrl');
     final statusColor = isSigned
         ? Colors.green
         : isDeclined
@@ -364,7 +501,45 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           if (!isSigned && hasSigningUrl) ...[
             const SizedBox(width: 12),
             ElevatedButton.icon(
-              onPressed: _openSigningModal,
+              onPressed: () {
+                print('🔐 ========== SIGN PROPOSAL BUTTON CLICKED ==========');
+                print('🔐 Current URL before click: ${web.window.location.href}');
+                print('🔐 Signing URL: ${_signingUrl?.substring(0, _signingUrl!.length > 80 ? 80 : _signingUrl!.length)}...');
+                
+                if (_signingUrl == null || _signingUrl!.isEmpty) {
+                  print('⚠️ No signing URL available');
+                  _openSigningModal();
+                  return;
+                }
+                
+                // Open DocuSign in the same tab (redirect mode - works on HTTP)
+                print('🔐 Opening DocuSign in same tab (redirect mode)...');
+                final url = _signingUrl!;
+                
+                try {
+                  print('🔐 Navigating to DocuSign URL: ${url.substring(0, url.length > 100 ? 100 : url.length)}...');
+                  
+                  // Use replace() to navigate to external URL (bypasses Flutter routing)
+                  // This prevents Flutter from intercepting the external DocuSign URL
+                  web.window.location.replace(url);
+                  print('✅ Navigation initiated to DocuSign using location.replace()');
+                  
+                  // Note: We don't show a SnackBar here because the page will navigate immediately
+                  // The navigation happens synchronously, so any mounted check would be unreliable
+                } catch (e, stackTrace) {
+                  print('❌ Error opening DocuSign: $e');
+                  print('❌ Stack trace: $stackTrace');
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error opening DocuSign: $e'),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 10),
+                      ),
+                    );
+                  }
+                }
+              },
               icon: const Icon(Icons.draw, size: 18),
               label: const Text('Sign Proposal'),
               style: ElevatedButton.styleFrom(
@@ -375,6 +550,18 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               ),
             ),
           ] else if (!isSigned && !hasSigningUrl) ...[
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              onPressed: _showApproveDialog,
+              icon: const Icon(Icons.check_circle, size: 18),
+              label: const Text('Approve'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF27AE60),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
             const SizedBox(width: 12),
             TextButton(
               onPressed: _loadProposal,
@@ -387,17 +574,76 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Future<void> _openSigningModal() async {
+    print('🔐 Opening signing modal...');
+    print('🔐 Current signing URL: $_signingUrl');
+    _logEvent('sign', metadata: {'action': 'signing_modal_opened'});
+    
+    // If no signing URL, try to get/create one
     if (_signingUrl == null || _signingUrl!.isEmpty) {
+      print('⚠️ No signing URL, creating one...');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content:
-                Text('Signing link not available yet. Please try again later.'),
-            backgroundColor: Colors.orange,
+            content: Text('Creating signing link...'),
+            backgroundColor: Colors.blue,
           ),
         );
       }
-      return;
+      
+      try {
+        final response = await http.post(
+          Uri.parse(
+              'http://localhost:8000/api/client/proposals/${widget.proposalId}/get_signing_url'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'token': widget.accessToken,
+          }),
+        );
+        
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final signingUrl = data['signing_url']?.toString();
+          if (signingUrl != null && signingUrl.isNotEmpty) {
+            setState(() {
+              _signingUrl = signingUrl;
+            });
+            // Continue to open modal with the new URL
+          } else {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Failed to create signing link. Please try again later.'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+        } else {
+          final error = jsonDecode(response.body);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error['detail'] ?? 'Failed to create signing link'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
     }
     
     if (!kIsWeb) {
@@ -405,84 +651,36 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       return;
     }
     
-    final protocol = web.window.location.protocol;
-    if (protocol != 'https:' && !protocol.contains('chrome-extension')) {
+    // Use redirect mode - navigate to DocuSign in the same tab (works on HTTP)
+    final urlToOpen = _signingUrl!;
+    print('🔐 Opening DocuSign URL (redirect mode): ${urlToOpen.substring(0, urlToOpen.length > 100 ? 100 : urlToOpen.length)}...');
+    
+    try {
+      if (kIsWeb) {
+        // Navigate to DocuSign in the same tab (redirect mode)
+        // Use replace() to navigate to external URL (bypasses Flutter routing)
+        print('🔐 Navigating to DocuSign in same tab...');
+        web.window.location.replace(urlToOpen);
+        print('✅ Navigation initiated to DocuSign using location.replace()');
+      } else {
+        // For mobile, use external launcher
+        await launchUrlString(
+          urlToOpen,
+          mode: LaunchMode.externalApplication,
+        );
+        print('✅ Opened DocuSign via launcher');
+      }
+    } catch (e) {
+      print('❌ Error opening DocuSign: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Embedded signing requires HTTPS. Opening DocuSign in a new tab instead.',
-            ),
-            backgroundColor: Colors.blue,
+          SnackBar(
+            content: Text('Error opening DocuSign: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
-      await launchUrlString(_signingUrl!, mode: LaunchMode.externalApplication);
-      return;
     }
-    
-    final viewId =
-        'docusign-signing-${DateTime.now().millisecondsSinceEpoch.toString()}';
-    // ignore: undefined_prefixed_name
-    ui.platformViewRegistry.registerViewFactory(viewId, (int viewId) {
-      final iframe = web.HTMLIFrameElement()
-        ..src = _signingUrl!
-        ..style.border = 'none'
-        ..allow = 'fullscreen'
-        ..width = '100%'
-        ..height = '100%';
-      return iframe;
-    });
-    
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.all(24),
-        child: SizedBox(
-          width: 900,
-          height: 700,
-          child: Column(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
-                child: Row(
-                  children: [
-                    const Text(
-                      'Sign Proposal',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.open_in_new, color: Colors.white),
-                      tooltip: 'Open in new tab',
-                      onPressed: () => launchUrlString(
-                          _signingUrl!,
-                          mode: LaunchMode.externalApplication),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    )
-                  ],
-                ),
-              ),
-              Expanded(
-                child: HtmlElementView(viewType: viewId),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    
-    await _loadProposal();
   }
 
   Widget _buildTabBar() {
@@ -586,56 +784,124 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Widget _buildContentSections(dynamic content) {
-    if (content == null) {
-      return const Text('No content available');
+    if (content == null || content.toString().isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.description_outlined, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'No content available',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The proposal content has not been added yet.',
+                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     // Try to parse as JSON
     try {
       Map<String, dynamic> sections;
       if (content is String) {
+        if (content.trim().isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: Text(
+                'No content available',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              ),
+            ),
+          );
+        }
         sections = jsonDecode(content);
       } else if (content is Map) {
         sections = Map<String, dynamic>.from(content);
       } else {
-        return SelectableText(content.toString());
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: SelectableText(
+            content.toString(),
+            style: const TextStyle(fontSize: 15, height: 1.8),
+          ),
+        );
+      }
+
+      // Check if sections is empty
+      if (sections.isEmpty) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: Text(
+              'No content available',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+          ),
+        );
       }
 
       // Build sections
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: sections.entries.map((entry) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.key,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: sections.entries.map((entry) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.key,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2C3E50),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                SelectableText(
-                  entry.value?.toString() ?? '',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    height: 1.8,
-                    color: Color(0xFF34495E),
+                  const SizedBox(height: 12),
+                  SelectableText(
+                    entry.value?.toString() ?? '',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.8,
+                      color: Color(0xFF34495E),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
       );
     } catch (e) {
-      return SelectableText(
-        content.toString(),
-        style: const TextStyle(fontSize: 15, height: 1.8),
+      print('Error parsing content: $e');
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Error parsing content',
+              style: TextStyle(fontSize: 16, color: Colors.red[600]),
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              content.toString(),
+              style: const TextStyle(fontSize: 15, height: 1.8),
+            ),
+          ],
+        ),
       );
     }
   }
@@ -995,11 +1261,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     return months[month];
   }
 
-  @override
-  void dispose() {
-    _commentController.dispose();
-    super.dispose();
-  }
 }
 
 // Reject Dialog
@@ -1176,6 +1437,251 @@ class _RejectDialogState extends State<RejectDialog> {
   @override
   void dispose() {
     _reasonController.dispose();
+    super.dispose();
+  }
+}
+
+// Approve Dialog
+class ApproveDialog extends StatefulWidget {
+  final int proposalId;
+  final String accessToken;
+  final VoidCallback onSuccess;
+
+  const ApproveDialog({
+    super.key,
+    required this.proposalId,
+    required this.accessToken,
+    required this.onSuccess,
+  });
+
+  @override
+  State<ApproveDialog> createState() => _ApproveDialogState();
+}
+
+class _ApproveDialogState extends State<ApproveDialog> {
+  final TextEditingController _signerNameController = TextEditingController();
+  final TextEditingController _signerTitleController = TextEditingController();
+  final TextEditingController _commentsController = TextEditingController();
+  bool _isSubmitting = false;
+
+  Future<void> _submit() async {
+    if (_signerNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please provide your name'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+            'http://localhost:8000/api/client/proposals/${widget.proposalId}/approve'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'token': widget.accessToken,
+          'signer_name': _signerNameController.text.trim(),
+          'signer_title': _signerTitleController.text.trim(),
+          'comments': _commentsController.text.trim(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final signingUrl = data['signing_url']?.toString();
+        
+        if (mounted) {
+          Navigator.pop(context); // Close approve dialog
+          
+          if (signingUrl != null && signingUrl.isNotEmpty) {
+            // Open DocuSign signing modal
+            _openDocuSignSigning(signingUrl);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Proposal approved, but signing URL not available'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            widget.onSuccess();
+          }
+        }
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to approve');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openDocuSignSigning(String signingUrl) async {
+    // Open DocuSign in the same tab
+    print('🔐 ApproveDialog: Opening DocuSign URL in same tab: ${signingUrl.substring(0, signingUrl.length > 100 ? 100 : signingUrl.length)}...');
+    
+    try {
+      // Navigate to DocuSign in the same tab (redirect mode - works on HTTP)
+      print('🔐 ApproveDialog: Navigating to DocuSign (redirect mode)...');
+      // Use replace() to navigate to external URL (bypasses Flutter routing)
+      web.window.location.replace(signingUrl);
+      print('✅ Navigation initiated to DocuSign from ApproveDialog using location.replace()');
+      
+      // Reload proposal after a delay to check for signature completion
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          print('🔄 ApproveDialog: Reloading proposal to check signature status...');
+          widget.onSuccess(); // Reload to check if signed
+        }
+      });
+    } catch (e) {
+      print('❌ ApproveDialog: Error opening DocuSign: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening DocuSign: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.check_circle, color: Colors.green, size: 28),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Text(
+                    'Approve Proposal',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2C3E50),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Please provide your information to approve this proposal.',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _signerNameController,
+              decoration: InputDecoration(
+                labelText: 'Your Name *',
+                hintText: 'Enter your full name',
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _signerTitleController,
+              decoration: InputDecoration(
+                labelText: 'Your Title (Optional)',
+                hintText: 'e.g., CEO, Director, Manager',
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _commentsController,
+              decoration: InputDecoration(
+                labelText: 'Comments (Optional)',
+                hintText: 'Any additional comments...',
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed:
+                      _isSubmitting ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _isSubmitting ? null : _submit,
+                  icon: _isSubmitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check_circle),
+                  label: const Text('Approve Proposal'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF27AE60),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _signerNameController.dispose();
+    _signerTitleController.dispose();
+    _commentsController.dispose();
     super.dispose();
   }
 }

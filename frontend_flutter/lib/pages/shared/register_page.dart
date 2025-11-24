@@ -268,13 +268,19 @@ class _RegisterPageState extends State<RegisterPage>
           await appState.init();
 
           // Redirect based on user role
-          final userRole = (userProfile['role']?.toString() ?? '').toLowerCase();
+          final userRole = (userProfile['role']?.toString() ?? '').toLowerCase().trim();
           String dashboardRoute;
           
-          if (userRole == 'admin' || userRole == 'ceo') {
+          print('🔍 User role from backend: "$userRole"');
+          print('🔍 Requested role: "$role"');
+          
+          // Check both the backend role and the requested role
+          if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
             dashboardRoute = '/approver_dashboard';
+            print('✅ Routing to Approval Dashboard');
           } else {
             dashboardRoute = '/creator_dashboard';
+            print('✅ Routing to Creator Dashboard');
           }
 
           ScaffoldMessenger.of(context).showSnackBar(

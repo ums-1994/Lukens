@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -7,29 +8,28 @@ import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/role_switcher.dart';
-import 'package:intl/intl.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
-class ApproverDashboardPage extends StatefulWidget {
-  const ApproverDashboardPage({super.key});
+class ApprovedProposalsPage extends StatefulWidget {
+  const ApprovedProposalsPage({super.key});
 
   @override
-  State<ApproverDashboardPage> createState() => _ApproverDashboardPageState();
+  State<ApprovedProposalsPage> createState() => _ApprovedProposalsPageState();
 }
 
-class _ApproverDashboardPageState extends State<ApproverDashboardPage>
+class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     with TickerProviderStateMixin {
-  List<Map<String, dynamic>> _signedProposals = [];
+  List<Map<String, dynamic>> _approvedProposals = [];
   bool _isLoading = true;
-  double _totalSignedValue = 0;
-  DateTime? _lastSignedDate;
+  double _totalApprovedValue = 0;
+  DateTime? _lastApprovedDate;
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
-  String _currentPage = 'Approvals Status';
+  String _currentPage = 'Approved Proposals';
 
   @override
   void initState() {
@@ -52,7 +52,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   Future<void> _loadData() async {
-    print('🔄 Approver Dashboard: Loading data...');
+    print('🔄 Approved Proposals: Loading data...');
     if (!mounted) return;
 
     setState(() => _isLoading = true);
@@ -62,41 +62,19 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       AuthService.restoreSessionFromStorage();
 
       var token = AuthService.token;
-      print('🔑 After restore - Token available: ${token != null}');
-      print('🔑 After restore - User: ${AuthService.currentUser?['email']}');
-      print('🔑 After restore - isLoggedIn: ${AuthService.isLoggedIn}');
-
       if (token == null) {
-        print(
-            '⚠️ Token still null after restore, checking localStorage directly...');
-        try {
-          final data = html.window.localStorage['lukens_auth_session'];
-          print('📦 localStorage data exists: ${data != null}');
-          if (data != null) {
-            print('📦 localStorage content: ${data.substring(0, 50)}...');
-          }
-        } catch (e) {
-          print('❌ Error accessing localStorage: $e');
-        }
-
         await Future.delayed(const Duration(milliseconds: 500));
         token = AuthService.token;
       }
 
       if (token == null) {
-        print('❌ No token available after restoration attempts');
+        print('❌ No token available');
         if (mounted) {
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                  '⚠️ Session expired. Please switch back to Creator mode.'),
+            const SnackBar(
+              content: Text('⚠️ Session expired. Please login again.'),
               backgroundColor: Colors.orange,
-              action: SnackBarAction(
-                label: 'Retry',
-                textColor: Colors.white,
-                onPressed: () => _loadData(),
-              ),
             ),
           );
         }
@@ -104,8 +82,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       }
 
       print('📡 Fetching proposals from API...');
-      print('🌐 API URL: ${ApiService.baseUrl}/api/proposals');
-
       final proposals = await ApiService.getProposals(token).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
@@ -116,14 +92,16 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       print('✅ API Response received!');
       print('✅ Number of proposals: ${proposals.length}');
 
-      final signed = proposals.where((p) {
+      // Filter for client-approved/signed proposals
+      final approved = proposals.where((p) {
         final status = (p['status'] ?? '').toString().toLowerCase();
         return status == 'signed' ||
             status == 'client signed' ||
+            status == 'approved' ||
             status == 'completed';
       }).map((p) => p as Map<String, dynamic>).toList();
 
-      signed.sort((a, b) {
+      approved.sort((a, b) {
         final aDate = a['updated_at'] != null
             ? DateTime.tryParse(a['updated_at'].toString())
             : null;
@@ -135,8 +113,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       });
 
       double totalValue = 0;
-      DateTime? latestSigned;
-      for (final proposal in signed) {
+      DateTime? latestApproved;
+      for (final proposal in approved) {
         final budget = proposal['budget'];
         if (budget is num) {
           totalValue += budget.toDouble();
@@ -145,26 +123,26 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           totalValue += double.tryParse(cleaned) ?? 0;
         }
 
-        final signedDate = proposal['updated_at'] != null
+        final approvedDate = proposal['updated_at'] != null
             ? DateTime.tryParse(proposal['updated_at'].toString())
             : null;
-        if (signedDate != null) {
-          latestSigned = (latestSigned == null || signedDate.isAfter(latestSigned))
-              ? signedDate
-              : latestSigned;
+        if (approvedDate != null) {
+          latestApproved = (latestApproved == null || approvedDate.isAfter(latestApproved))
+              ? approvedDate
+              : latestApproved;
         }
       }
 
       if (mounted) {
         setState(() {
-          _signedProposals = signed;
-          _totalSignedValue = totalValue;
-          _lastSignedDate = latestSigned;
+          _approvedProposals = approved;
+          _totalApprovedValue = totalValue;
+          _lastApprovedDate = latestApproved;
           _isLoading = false;
         });
       }
     } catch (e, stackTrace) {
-      print('❌ Error loading approver data: $e');
+      print('❌ Error loading approved proposals: $e');
       print('Stack trace: $stackTrace');
       if (mounted) {
         setState(() => _isLoading = false);
@@ -177,7 +155,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -238,17 +215,17 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                             CrossAxisAlignment.start,
                                         children: [
                                           _buildSection(
-                                            '📊 Signed Proposal Snapshot',
+                                            '📊 Approved Proposals Snapshot',
                                             _buildSnapshotMetrics(),
                                           ),
                                           const SizedBox(height: 24),
                                           _buildSection(
-                                            '🖊️ Client-Signed Proposals',
+                                            '✅ Client-Approved Proposals',
                                             _isLoading
                                                 ? const Center(
                                                     child:
                                                         CircularProgressIndicator())
-                                                : _buildSignedList(),
+                                                : _buildApprovedList(),
                                           ),
                                         ],
                                       ),
@@ -273,9 +250,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
   Widget _buildHeader(AppState app) {
     final user = AuthService.currentUser ?? app.currentUser ?? {};
-    final email = user['email']?.toString() ?? 'admin@khonology.com';
-    final backendRole = user['role']?.toString().toLowerCase() ?? 'admin';
-    final displayRole = backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Admin';
+    final email = user['email']?.toString() ?? 'user@example.com';
+    final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
+    final displayRole = backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -285,12 +262,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Signed Proposals',
+              'Approved Proposals',
               style: PremiumTheme.titleLarge,
             ),
             const SizedBox(height: 4),
             const Text(
-              'Review and sign off proposals awaiting executive approval',
+              'View proposals that have been approved and signed by clients',
               style: TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ],
@@ -357,7 +334,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(
-              Icons.verified_user,
+              Icons.check_circle,
               color: Colors.white,
               size: 28,
             ),
@@ -368,7 +345,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Client-Signed Proposals',
+                  'Client-Approved Proposals',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -377,9 +354,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _signedProposals.isEmpty
-                      ? 'No proposals have been signed by clients yet.'
-                      : '${_signedProposals.length} proposals have been signed by clients${_lastSignedDate != null ? ' (last signed ${_formatRelativeDate(_lastSignedDate!)})' : ''}.',
+                  _approvedProposals.isEmpty
+                      ? 'No proposals have been approved by clients yet.'
+                      : '${_approvedProposals.length} proposal${_approvedProposals.length == 1 ? '' : 's'} approved by clients${_lastApprovedDate != null ? ' (last approved ${_formatRelativeDate(_lastApprovedDate!)})' : ''}.',
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
@@ -392,7 +369,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               backgroundColor: Colors.white,
               foregroundColor: PremiumTheme.teal,
             ),
-            onPressed: _signedProposals.isEmpty ? null : _exportSignedProposals,
+            onPressed: _approvedProposals.isEmpty ? null : _exportApprovedProposals,
           ),
         ],
       ),
@@ -512,9 +489,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 _currentPage == 'Client Management',
                 context),
             _buildNavItem(
-                'Approvals Status',
+                'Approved Proposals',
                 'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approvals Status',
+                _currentPage == 'Approved Proposals',
                 context),
             _buildNavItem(
                 'Analytics (My Pipeline)',
@@ -655,33 +632,33 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   Widget _buildSnapshotMetrics() {
     final cards = [
       _SnapshotMetric(
-        title: 'Signed Proposals',
-        value: _signedProposals.length.toString(),
-        subtitle: 'Completed deals',
+        title: 'Approved Proposals',
+        value: _approvedProposals.length.toString(),
+        subtitle: 'Client-approved',
         gradient: PremiumTheme.blueGradient,
       ),
       _SnapshotMetric(
-        title: 'Total Signed Value',
-        value: _formatCurrency(_totalSignedValue),
+        title: 'Total Approved Value',
+        value: _formatCurrency(_totalApprovedValue),
         subtitle: 'All-time',
         gradient: PremiumTheme.purpleGradient,
       ),
       _SnapshotMetric(
-        title: 'Last Signed',
-        value: _lastSignedDate != null
-            ? _formatRelativeDate(_lastSignedDate!)
+        title: 'Last Approved',
+        value: _lastApprovedDate != null
+            ? _formatRelativeDate(_lastApprovedDate!)
             : '—',
-        subtitle: _lastSignedDate != null
-            ? DateFormat('dd MMM yyyy').format(_lastSignedDate!)
-            : 'Awaiting client signatures',
+        subtitle: _lastApprovedDate != null
+            ? DateFormat('dd MMM yyyy').format(_lastApprovedDate!)
+            : 'Awaiting approvals',
         gradient: PremiumTheme.orangeGradient,
       ),
       _SnapshotMetric(
         title: 'Average Deal Size',
-        value: _signedProposals.isEmpty
+        value: _approvedProposals.isEmpty
             ? _formatCurrency(0)
-            : _formatCurrency(_totalSignedValue / _signedProposals.length),
-        subtitle: 'Based on signed deals',
+            : _formatCurrency(_totalApprovedValue / _approvedProposals.length),
+        subtitle: 'Based on approved deals',
         gradient: PremiumTheme.tealGradient,
       ),
     ];
@@ -704,18 +681,18 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
-  Widget _buildSignedList() {
-    if (_signedProposals.isEmpty) {
+  Widget _buildApprovedList() {
+    if (_approvedProposals.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 36),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: const [
-            Icon(Icons.assignment_turned_in,
+            Icon(Icons.check_circle,
                 size: 54, color: PremiumTheme.teal),
             SizedBox(height: 12),
             Text(
-              'No proposals have been signed yet',
+              'No proposals have been approved yet',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.white70,
@@ -727,12 +704,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     }
 
     return Column(
-      children: _signedProposals.map(_buildSignedCard).toList(),
+      children: _approvedProposals.map(_buildApprovedCard).toList(),
     );
   }
 
-  Widget _buildSignedCard(Map<String, dynamic> proposal) {
-    final signedDate = proposal['updated_at'] != null
+  Widget _buildApprovedCard(Map<String, dynamic> proposal) {
+    final approvedDate = proposal['updated_at'] != null
         ? DateTime.tryParse(proposal['updated_at'].toString())
         : null;
     final value = proposal['budget'];
@@ -774,8 +751,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 const SizedBox(width: 12),
                 _buildInfoChip(
                     Icons.calendar_today,
-                    signedDate != null
-                        ? DateFormat('dd MMM yyyy').format(signedDate)
+                    approvedDate != null
+                        ? DateFormat('dd MMM yyyy').format(approvedDate)
                         : 'Unknown'),
                 if (owner.isNotEmpty) ...[
                   const SizedBox(width: 12),
@@ -832,28 +809,28 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
-  void _exportSignedProposals() {
+  void _exportApprovedProposals() {
     final buffer = StringBuffer()
-      ..writeln('Title,Client,Value,Signed Date,Owner');
-    for (final proposal in _signedProposals) {
+      ..writeln('Title,Client,Value,Approved Date,Owner');
+    for (final proposal in _approvedProposals) {
       final title = proposal['title']?.toString().replaceAll(',', ' ') ?? '';
       final client =
           proposal['client_name']?.toString().replaceAll(',', ' ') ?? '';
       final value = _formatCurrency(_parseBudget(proposal['budget']));
-      final signedDate = proposal['updated_at'] != null
+      final approvedDate = proposal['updated_at'] != null
           ? DateFormat('yyyy-MM-dd')
               .format(DateTime.parse(proposal['updated_at'].toString()))
           : '';
       final owner = proposal['owner_email'] ?? proposal['owner'] ?? '';
       buffer.writeln(
-          '"$title","$client","$value","$signedDate","$owner"');
+          '"$title","$client","$value","$approvedDate","$owner"');
     }
 
     final blob = html.Blob([buffer.toString()]);
     final url = html.Url.createObjectUrlFromBlob(blob);
     html.AnchorElement(href: url)
       ..setAttribute('download',
-          'signed_proposals_${DateTime.now().millisecondsSinceEpoch}.csv')
+          'approved_proposals_${DateTime.now().millisecondsSinceEpoch}.csv')
       ..click();
     html.Url.revokeObjectUrl(url);
   }
@@ -904,7 +881,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
-      case 'Approvals Status':
+      case 'Approved Proposals':
         // Already here
         break;
       case 'Logout':
@@ -929,3 +906,4 @@ class _SnapshotMetric {
     required this.gradient,
   });
 }
+

@@ -60,7 +60,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+# Configure CORS to allow requests from frontend
+CORS(app, 
+     supports_credentials=True,
+     origins=['http://localhost:8081', 'http://localhost:8080', 'http://127.0.0.1:8081', '*'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+     allow_headers=['Content-Type', 'Authorization', 'Collab-Token'],
+     expose_headers=['Content-Type', 'Authorization'],
+     automatic_options=True)  # Automatically handle OPTIONS requests
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -258,6 +265,28 @@ def init_pg_schema():
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
         
+        # Add new columns for enhanced comment features (PostgreSQL)
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES document_comments(id) ON DELETE CASCADE''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS block_id VARCHAR(255)''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS section_name VARCHAR(255)''')
+        
+        # Create indexes for performance (PostgreSQL-specific optimizations)
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_proposal 
+                         ON document_comments(proposal_id)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_parent 
+                         ON document_comments(parent_id) WHERE parent_id IS NOT NULL''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_status 
+                         ON document_comments(status) WHERE status = 'open' ''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_section 
+                         ON document_comments(proposal_id, section_index) WHERE section_index IS NOT NULL''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_block 
+                         ON document_comments(proposal_id, block_type, block_id) WHERE block_id IS NOT NULL''')
+        
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,
@@ -272,6 +301,23 @@ def init_pg_schema():
         expires_at TIMESTAMP,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
         FOREIGN KEY (invited_by) REFERENCES users(id)
+        )''')
+        
+        # Active collaborators table (tracks collaborators who have accessed the proposal)
+        cursor.execute('''CREATE TABLE IF NOT EXISTS collaborators (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        user_id INTEGER,
+        invited_by INTEGER NOT NULL,
+        permission_level VARCHAR(50) DEFAULT 'comment',
+        status VARCHAR(50) DEFAULT 'active',
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_accessed_at TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+        FOREIGN KEY (invited_by) REFERENCES users(id),
+        UNIQUE(proposal_id, email)
         )''')
         
         # Suggested changes table for suggest mode
@@ -429,10 +475,30 @@ def init_pg_schema():
                 pass
         raise
 
+# Handle CORS preflight requests globally (must be first before_request)
+@app.before_request
+def handle_preflight():
+    """Handle CORS preflight OPTIONS requests"""
+    if request.method == 'OPTIONS':
+        print(f'[CORS] Handling OPTIONS request for: {request.path}')
+        response = Response()
+        origin = request.headers.get('Origin', '*')
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Max-Age', '3600')
+        print(f'[CORS] OPTIONS response sent with origin: {origin}')
+        return response
+
 # Initialize database schema on first request
 @app.before_request
 def init_db():
     """Initialize PostgreSQL schema on first request"""
+    # Skip OPTIONS requests (handled by handle_preflight)
+    if request.method == 'OPTIONS':
+        return
+    
     global _db_initialized
     if _db_initialized:
         return
@@ -1508,7 +1574,15 @@ except Exception as blueprint_error:
 if __name__ == '__main__':
     # When running with 'python app.py'
     try:
-        init_db()  # Initialize database before running
+        # Initialize database before running (outside Flask context)
+        # Call init_pg_schema directly - it doesn't require Flask request context
+        print("🔄 Initializing database schema...")
+        init_pg_schema()
+        print("✅ Database schema initialized successfully")
     except Exception as e:
-        print(f"Warning: Database initialization failed: {e}")
+        print(f"⚠️ Warning: Database initialization failed: {e}")
+        # Don't raise - allow app to start even if schema init fails
+        # Schema will be initialized on first request via init_db() if needed
+        import traceback
+        traceback.print_exc()
     app.run(debug=True, host='0.0.0.0', port=8000)

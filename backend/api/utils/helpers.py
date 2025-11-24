@@ -403,83 +403,117 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
 
 
 def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, signer_title, return_url):
-    """Create DocuSign envelope with embedded signing"""
+    """
+    Create DocuSign envelope with redirect signing (works on HTTP)
+    Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
+    """
     if not DOCUSIGN_AVAILABLE:
         raise Exception("DocuSign SDK not installed")
     
     try:
         import base64
         from api.utils.docusign_utils import get_docusign_jwt_token
+        from docusign_esign.client.api_exception import ApiException
         
+        # Get access token
         access_token = get_docusign_jwt_token()
+        
+        # Get account ID - must be set in .env
         account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
         if not account_id:
-            raise Exception("DOCUSIGN_ACCOUNT_ID not set in environment")
+            raise Exception("DOCUSIGN_ACCOUNT_ID is required. Get it from: https://demo.docusign.net → Settings → My Account Information → Account ID")
+        
+        # Validate account ID format (should be a GUID)
+        if len(account_id) < 30 or '-' not in account_id:
+            raise Exception(f"Invalid DOCUSIGN_ACCOUNT_ID format: {account_id}. Should be a GUID like: 70784c46-78c0-45af-8207-f4b8e8a43ea")
+        
+        # Use DOCUSIGN_BASE_PATH (matches working implementation) or fallback to DOCUSIGN_BASE_URL
+        base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv('DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi')
         
         # Create API client
         api_client = ApiClient()
-        api_client.host = os.getenv('DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi')
+        api_client.host = base_path
         api_client.set_default_header("Authorization", f"Bearer {access_token}")
-        
-        # Create envelope
-        envelope_api = EnvelopesApi(api_client)
         
         # Create document
         document = Document(
             document_base64=base64.b64encode(pdf_bytes).decode('utf-8'),
-            name=f"Proposal_{proposal_id}.pdf",
+            name=f'Proposal_{proposal_id}.pdf',
             file_extension='pdf',
             document_id='1'
         )
         
-        # Create signer
+        # Create signer with anchor string (matches PDF placeholder /sig1/)
+        sign_here = SignHere(
+            anchor_string='/sig1/',
+            anchor_units='pixels',
+            anchor_y_offset='10',
+            anchor_x_offset='20'
+        )
+        
+        tabs = Tabs(sign_here_tabs=[sign_here])
+        
         signer = Signer(
             email=signer_email,
             name=signer_name,
             recipient_id='1',
-            routing_order='1'
+            routing_order='1',
+            # client_user_id is NOT set - this enables redirect mode (works on HTTP)
+            tabs=tabs
         )
         
-        # Create sign here tab
-        sign_here = SignHere(
-            document_id='1',
-            page_number='1',
-            recipient_id='1',
-            x_position='100',
-            y_position='700'
-        )
+        # If title provided, add custom field
+        if signer_title:
+            signer.note = f"Title: {signer_title}"
         
-        signer.tabs = Tabs(sign_here_tabs=[sign_here])
-        
-        # Create envelope definition
-        envelope_definition = EnvelopeDefinition(
-            email_subject=f"Please sign: Proposal {proposal_id}",
-            documents=[document],
-            recipients=Recipients(signers=[signer]),
-            status='sent'
-        )
+        # Create recipients
+        recipients = Recipients(signers=[signer])
         
         # Create envelope
-        envelope = envelope_api.create_envelope(account_id, envelope_definition=envelope_definition)
-        envelope_id = envelope.envelope_id
-        
-        # Create recipient view
-        recipient_view_request = RecipientViewRequest(
-            authentication_method='none',
-            email=signer_email,
-            user_name=signer_name,
-            return_url=return_url
+        envelope_definition = EnvelopeDefinition(
+            email_subject=f'Please sign: Proposal #{proposal_id}',
+            documents=[document],
+            recipients=recipients,
+            status='sent'  # Send immediately
         )
         
-        view_url = envelope_api.create_recipient_view(account_id, envelope_id, recipient_view_request=recipient_view_request)
-        signing_url = view_url.url
+        # Create envelope via API
+        envelopes_api = EnvelopesApi(api_client)
+        results = envelopes_api.create_envelope(account_id, envelope_definition=envelope_definition)
+        envelope_id = results.envelope_id
+        
+        print(f"✅ DocuSign envelope created: {envelope_id}")
+        
+        # Create recipient view (redirect signing URL - works on HTTP)
+        # For redirect mode, we don't set client_user_id (that's only for embedded)
+        recipient_view_request = RecipientViewRequest(
+            authentication_method='none',
+            # client_user_id is NOT set - this makes it redirect mode instead of embedded
+            recipient_id='1',
+            return_url=return_url,
+            user_name=signer_name,
+            email=signer_email
+        )
+        
+        view_results = envelopes_api.create_recipient_view(
+            account_id,
+            envelope_id,
+            recipient_view_request=recipient_view_request
+        )
+        
+        signing_url = view_results.url
+        
+        print(f"✅ Redirect signing URL created (works on HTTP)")
         
         return {
             'envelope_id': envelope_id,
             'signing_url': signing_url
         }
         
+    except ApiException as e:
+        print(f"❌ DocuSign API error: {e}")
+        raise
     except Exception as e:
-        print(f"❌ DocuSign error: {e}")
+        print(f"❌ Error creating DocuSign envelope: {e}")
         traceback.print_exc()
         raise

@@ -1,16 +1,18 @@
 """
-Collaborator role routes - Inviting collaborators, commenting, viewing proposals
+Collaborator routes - Invitations, guest access, comments
 """
 from flask import Blueprint, request, jsonify
 import os
 import traceback
 import secrets
+import jwt
 import psycopg2.extras
 from datetime import datetime, timedelta
 
 from api.utils.database import get_db_connection
 from api.utils.email import send_email
 from api.utils.decorators import token_required
+from api.utils.email import send_email, get_logo_html
 
 bp = Blueprint('collaborator', __name__)
 
@@ -78,9 +80,6 @@ def invite_collaborator(username=None, proposal_id=None):
             # Send invitation email (simplified - you can enhance this)
             frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
             collaboration_url = f"{frontend_url}/#/collaborate?token={access_token}"
-            
-            # Note: send_email would need to be imported from app.py or utils
-            # For now, we'll just return the URL
             
             email_sent = False
             try:
@@ -188,19 +187,18 @@ def remove_collaborator(username=None, invitation_id=None):
     except Exception as e:
         print(f"❌ Error removing collaborator: {e}")
         return {'detail': str(e)}, 500
-
 @bp.get("/api/collaborate")
 def get_collaboration_access():
-    """Get proposal access via collaboration token (no auth required)"""
+    """Get proposal access for collaborator using token"""
     try:
         token = request.args.get('token')
         if not token:
-            return {'detail': 'Access token is required'}, 400
+            return {'detail': 'Access token required'}, 400
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Verify token and load proposal basic data
+            # Verify token and load proposal basic data (explicit columns for clarity)
             cursor.execute("""
                 SELECT 
                     ci.id,
@@ -209,6 +207,9 @@ def get_collaboration_access():
                     ci.permission_level,
                     ci.expires_at,
                     ci.status,
+                    ci.invited_by,
+                    ci.invited_at,
+                    ci.accessed_at,
                     p.title,
                     p.content,
                     p.status as proposal_status,
@@ -220,7 +221,7 @@ def get_collaboration_access():
             
             invitation = cursor.fetchone()
             if not invitation:
-                return {'detail': 'Invalid access token'}, 404
+                return {'detail': 'Invalid or expired token'}, 404
             
             # Check expiration
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
@@ -229,10 +230,10 @@ def get_collaboration_access():
             # Mark invitation as accessed/accepted
             cursor.execute("""
                 UPDATE collaboration_invitations 
-                SET accessed_at = NOW(), status = 'accepted'
+                SET accessed_at = CURRENT_TIMESTAMP, status = 'active'
                 WHERE id = %s
             """, (invitation['id'],))
-            
+
             # Load owner details (for "Shared by" text)
             owner_name = None
             owner_email = None
@@ -246,7 +247,7 @@ def get_collaboration_access():
                     owner_name = owner.get('full_name')
                     owner_email = owner.get('email')
 
-            # Load existing comments for this proposal
+            # Load existing comments for this proposal (for guest and client viewers)
             cursor.execute("""
                 SELECT dc.id,
                        dc.proposal_id,
@@ -264,32 +265,52 @@ def get_collaboration_access():
             """, (invitation['proposal_id'],))
             comments = [dict(row) for row in cursor.fetchall()]
 
-            # Compute simple permission flag used by frontend
+            # Compute simple permission flag used by guest_collaboration_page.dart
             can_comment = invitation['permission_level'] in ['comment', 'edit', 'suggest']
 
-            # Shape response for guest_collaboration_page.dart while keeping
-            # existing top-level fields for backward compatibility.
+            # Also ensure collaborators table and JWT auth token are updated for full editor access
+            cursor.execute("""
+                INSERT INTO collaborators 
+                (proposal_id, email, invited_by, permission_level, status, last_accessed_at)
+                VALUES (%s, %s, %s, %s, 'active', CURRENT_TIMESTAMP)
+                ON CONFLICT (proposal_id, email) 
+                DO UPDATE SET 
+                    last_accessed_at = CURRENT_TIMESTAMP,
+                    status = 'active'
+            """, (
+                invitation['proposal_id'],
+                invitation['invited_email'],
+                invitation['invited_by'],
+                invitation['permission_level']
+            ))
+
+            guest_email = invitation['invited_email']
+            jwt_secret = os.getenv('JWT_SECRET', 'your-secret-key')
+            auth_token = jwt.encode({
+                'username': guest_email,
+                'email': guest_email,
+                'role': 'collaborator',
+                'exp': datetime.utcnow() + timedelta(days=30)
+            }, jwt_secret, algorithm='HS256')
             response = {
-                'proposal_id': invitation['proposal_id'],
-                'title': invitation['title'],
-                'content': invitation['content'],
-                'proposal_status': invitation['proposal_status'],
-                'permission_level': invitation['permission_level'],
-                'invited_email': invitation['invited_email'],
-                'can_comment': can_comment,
                 'proposal': {
                     'id': invitation['proposal_id'],
                     'title': invitation['title'],
                     'content': invitation['content'],
+                    'status': invitation['proposal_status'],
                     'owner_name': owner_name,
                     'owner_email': owner_email,
                 },
+                'permission_level': invitation['permission_level'],
+                'invited_email': invitation['invited_email'],
                 'comments': comments,
+                # Compatibility with both guest and full-editor collaboration flows
+                'can_comment': can_comment,
+                'auth_token': auth_token,
+                'can_edit': True,
+                'can_suggest': True,
             }
-
-            conn.commit()
             return response, 200
-            
     except Exception as e:
         print(f"❌ Error getting collaboration access: {e}")
         traceback.print_exc()
@@ -302,60 +323,58 @@ def add_guest_comment():
         data = request.get_json()
         token = data.get('token')
         comment_text = data.get('comment_text')
-        section_index = data.get('section_index')
-        highlighted_text = data.get('highlighted_text')
         
         if not token or not comment_text:
-            return {'detail': 'Token and comment text are required'}, 400
+            return {'detail': 'Token and comment text required'}, 400
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Verify token and get permission
+            # Get invitation
             cursor.execute("""
-                SELECT ci.proposal_id, ci.invited_email, ci.permission_level, ci.expires_at
+                SELECT ci.*, p.id as proposal_id
                 FROM collaboration_invitations ci
+                JOIN proposals p ON ci.proposal_id = p.id
                 WHERE ci.access_token = %s
             """, (token,))
             
             invitation = cursor.fetchone()
             if not invitation:
-                return {'detail': 'Invalid access token'}, 404
+                return {'detail': 'Invalid token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
-                return {'detail': 'Access token has expired'}, 403
-            
+            # Allow only comment-capable permission levels to add comments
+            proposal_id = invitation['proposal_id']
+            invited_email = invitation['invited_email']
+
             if invitation['permission_level'] not in ['comment', 'edit', 'suggest']:
                 return {'detail': 'Permission denied'}, 403
-            
-            # Create or get guest user
-            guest_email = invitation['invited_email']
-            cursor.execute("""
-                INSERT INTO users (username, email, password_hash, full_name, role)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-                RETURNING id
-            """, (guest_email, guest_email, '', f'Guest ({guest_email})', 'collaborator'))
-            
-            guest_user_id = cursor.fetchone()['id']
+
+            # Get or create user for guest, using email as key and keeping account active
+            cursor.execute('SELECT id FROM users WHERE email = %s', (invited_email,))
+            user = cursor.fetchone()
+            if user:
+                user_id = user['id'] if isinstance(user, dict) else user[0]
+            else:
+                cursor.execute("""
+                    INSERT INTO users (username, email, full_name, role, is_active)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (invited_email, invited_email, f'Guest ({invited_email})', 'collaborator', True))
+                row = cursor.fetchone()
+                user_id = row['id'] if isinstance(row, dict) else row[0]
             
             # Add comment
             cursor.execute("""
                 INSERT INTO document_comments 
-                (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, created_at
-            """, (invitation['proposal_id'], comment_text, guest_user_id, 
-                  section_index, highlighted_text, 'open'))
+                (proposal_id, comment_text, created_by, status)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, proposal_id, comment_text, created_by, created_at, status
+            """, (proposal_id, comment_text, user_id, 'open'))
             
             result = cursor.fetchone()
             conn.commit()
             
-            return {
-                'id': result['id'],
-                'message': 'Comment added successfully',
-                'created_at': result['created_at'].isoformat() if result['created_at'] else None
-            }, 201
+            return dict(result), 201
             
     except Exception as e:
         print(f"❌ Error adding guest comment: {e}")
@@ -365,12 +384,16 @@ def add_guest_comment():
 @bp.post("/api/comments/document/<proposal_id>")
 @token_required
 def create_comment(username=None, proposal_id=None):
-    """Create a new comment on a document"""
+    """Create a new comment on a document with support for threading and block-level comments"""
     try:
         data = request.get_json()
         comment_text = data.get('comment_text')
         section_index = data.get('section_index')
+        section_name = data.get('section_name')
         highlighted_text = data.get('highlighted_text')
+        parent_id = data.get('parent_id')  # For threaded replies
+        block_type = data.get('block_type')  # 'text', 'table', 'image'
+        block_id = data.get('block_id')  # Identifier for the block
         
         if not comment_text:
             return {'detail': 'Comment text is required'}, 400
@@ -391,17 +414,51 @@ def create_comment(username=None, proposal_id=None):
             proposal_row = cursor.fetchone()
             proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
             
+            # Validate parent_id if provided (must exist and belong to same proposal)
+            if parent_id:
+                cursor.execute("""
+                    SELECT id, proposal_id FROM document_comments 
+                    WHERE id = %s AND proposal_id = %s
+                """, (parent_id, proposal_id))
+                parent_comment = cursor.fetchone()
+                if not parent_comment:
+                    return {'detail': 'Parent comment not found'}, 404
+            
             # Create comment
             cursor.execute("""
                 INSERT INTO document_comments 
-                (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (proposal_id, comment_text, created_by, section_index, section_name, 
+                 highlighted_text, parent_id, block_type, block_id, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                          section_index, highlighted_text, status, updated_at
-            """, (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open'))
+                          section_index, section_name, highlighted_text, parent_id,
+                          block_type, block_id, status, updated_at
+            """, (proposal_id, comment_text, user_id, section_index, section_name, 
+                  highlighted_text, parent_id, block_type, block_id, 'open'))
             
             result = cursor.fetchone()
+            comment_id = result['id']
             conn.commit()
+            
+            # Process @mentions in comment text
+            try:
+                from app import process_mentions
+                process_mentions(comment_id, comment_text, user_id, proposal_id)
+            except Exception as e:
+                print(f"⚠️ Error processing mentions: {e}")
+            
+            # Log activity
+            try:
+                from app import log_activity
+                log_activity(
+                    proposal_id, 
+                    user_id, 
+                    'comment_added',
+                    f'Added a comment{(" on " + section_name) if section_name else ""}',
+                    {'comment_id': comment_id, 'parent_id': parent_id}
+                )
+            except Exception as e:
+                print(f"⚠️ Error logging activity: {e}")
             
             return dict(result), 201
             
@@ -410,6 +467,87 @@ def create_comment(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.get("/api/comments/document/<int:proposal_id>")
+@token_required
+def get_document_comments(username=None, proposal_id=None):
+    """Get all comments for a document with threaded structure"""
+    try:
+        section_id = request.args.get('section_id', type=int)
+        block_id = request.args.get('block_id')
+        block_type = request.args.get('block_type')
+        status_filter = request.args.get('status')  # 'open', 'resolved', or None for all
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Build WHERE clause
+            where_clauses = ['dc.proposal_id = %s']
+            params = [proposal_id]
+            
+            if section_id is not None:
+                where_clauses.append('dc.section_index = %s')
+                params.append(section_id)
+            
+            if block_id:
+                where_clauses.append('dc.block_id = %s')
+                params.append(block_id)
+                if block_type:
+                    where_clauses.append('dc.block_type = %s')
+                    params.append(block_type)
+            
+            if status_filter:
+                where_clauses.append('dc.status = %s')
+                params.append(status_filter)
+            
+            where_sql = ' AND '.join(where_clauses)
+            
+            cursor.execute(f"""
+                SELECT dc.id, dc.comment_text, dc.created_at, dc.created_by,
+                       dc.section_index, dc.section_name, dc.highlighted_text, dc.status,
+                       dc.parent_id, dc.block_type, dc.block_id,
+                       dc.resolved_by, dc.resolved_at, dc.updated_at,
+                       u.full_name as author_name, u.email as author_email, u.username as author_username,
+                       ru.full_name as resolver_name
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                LEFT JOIN users ru ON dc.resolved_by = ru.id
+                WHERE {where_sql}
+                ORDER BY dc.created_at ASC
+            """, tuple(params))
+            
+            comments = cursor.fetchall()
+            
+            # Build threaded structure (parent comments with nested replies)
+            comments_dict = {}
+            root_comments = []
+            
+            for comment in comments:
+                comment_dict = dict(comment)
+                comment_dict['replies'] = []
+                comments_dict[comment['id']] = comment_dict
+                
+                if comment['parent_id']:
+                    # This is a reply - add to parent's replies
+                    if comment['parent_id'] in comments_dict:
+                        comments_dict[comment['parent_id']]['replies'].append(comment_dict)
+                else:
+                    # This is a root comment
+                    root_comments.append(comment_dict)
+            
+            # Sort root comments by created_at DESC (newest first)
+            root_comments.sort(key=lambda x: x['created_at'], reverse=True)
+            
+            return {
+                'comments': root_comments,
+                'total': len(comments),
+                'open_count': sum(1 for c in comments if c['status'] == 'open'),
+                'resolved_count': sum(1 for c in comments if c['status'] == 'resolved')
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting document comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 @bp.get("/api/comments/proposal/<proposal_id>")
 @token_required
@@ -458,5 +596,194 @@ def get_comments(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
+@bp.patch("/api/comments/<int:comment_id>/resolve")
+@token_required
+def resolve_comment(username=None, comment_id=None):
+    """Mark a comment and all its replies as resolved"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user ID
+            cursor.execute('SELECT id, full_name FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user['id']
+            
+            # Get comment and check permissions
+            cursor.execute("""
+                SELECT id, proposal_id, status, parent_id
+                FROM document_comments 
+                WHERE id = %s
+            """, (comment_id,))
+            
+            comment = cursor.fetchone()
+            if not comment:
+                return {'detail': 'Comment not found'}, 404
+            
+            if comment['status'] == 'resolved':
+                return {'detail': 'Comment is already resolved'}, 400
+            
+            proposal_id = comment['proposal_id']
+            
+            # Resolve comment and all its replies recursively
+            def resolve_comment_and_replies(cid):
+                # Mark this comment as resolved
+                cursor.execute("""
+                    UPDATE document_comments
+                    SET status = 'resolved', resolved_by = %s, resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (user_id, cid))
+                
+                # Get all replies to this comment
+                cursor.execute("""
+                    SELECT id FROM document_comments
+                    WHERE parent_id = %s AND status = 'open'
+                """, (cid,))
+                
+                replies = cursor.fetchall()
+                for reply in replies:
+                    resolve_comment_and_replies(reply['id'])
+            
+            resolve_comment_and_replies(comment_id)
+            conn.commit()
+            
+            # Log activity
+            try:
+                from app import log_activity
+                log_activity(
+                    proposal_id,
+                    user_id,
+                    'comment_resolved',
+                    f'Resolved comment #{comment_id}',
+                    {'comment_id': comment_id}
+                )
+            except Exception as e:
+                print(f"⚠️ Error logging activity: {e}")
+            
+            return {'message': 'Comment resolved successfully'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error resolving comment: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
+@bp.patch("/api/comments/<int:comment_id>/reopen")
+@token_required
+def reopen_comment(username=None, comment_id=None):
+    """Reopen a resolved comment"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user ID
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id = user['id']
+            
+            # Get comment
+            cursor.execute("""
+                SELECT id, proposal_id, status
+                FROM document_comments 
+                WHERE id = %s
+            """, (comment_id,))
+            
+            comment = cursor.fetchone()
+            if not comment:
+                return {'detail': 'Comment not found'}, 404
+            
+            if comment['status'] != 'resolved':
+                return {'detail': 'Comment is not resolved'}, 400
+            
+            proposal_id = comment['proposal_id']
+            
+            # Reopen comment (does not reopen replies - they stay resolved)
+            cursor.execute("""
+                UPDATE document_comments
+                SET status = 'open', resolved_by = NULL, resolved_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (comment_id,))
+            
+            conn.commit()
+            
+            # Log activity
+            try:
+                from app import log_activity
+                log_activity(
+                    proposal_id,
+                    user_id,
+                    'comment_reopened',
+                    f'Reopened comment #{comment_id}',
+                    {'comment_id': comment_id}
+                )
+            except Exception as e:
+                print(f"⚠️ Error logging activity: {e}")
+            
+            return {'message': 'Comment reopened successfully'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error reopening comment: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
+@bp.get("/api/users/search")
+@token_required
+def search_users(username=None):
+    """Search users for @mention autocomplete"""
+    try:
+        query = request.args.get('q', '').strip()
+        limit = request.args.get('limit', 10, type=int)
+        
+        if not query or len(query) < 2:
+            return {'users': []}, 200
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Search users by username, email, or full_name
+            search_pattern = f'%{query}%'
+            cursor.execute("""
+                SELECT id, username, email, full_name
+                FROM users
+                WHERE is_active = true 
+                  AND (
+                    username ILIKE %s 
+                    OR email ILIKE %s 
+                    OR full_name ILIKE %s
+                  )
+                ORDER BY 
+                  CASE 
+                    WHEN username ILIKE %s THEN 1
+                    WHEN full_name ILIKE %s THEN 2
+                    ELSE 3
+                  END,
+                  username
+                LIMIT %s
+            """, (search_pattern, search_pattern, search_pattern, f'{query}%', f'{query}%', limit))
+            
+            users = cursor.fetchall()
+            
+            return {
+                'users': [
+                    {
+                        'id': u['id'],
+                        'username': u['username'],
+                        'email': u['email'],
+                        'full_name': u['full_name'] or u['username'],
+                        'display_name': u['full_name'] or u['username']
+                    }
+                    for u in users
+                ]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error searching users: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500

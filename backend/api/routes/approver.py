@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
+from api.utils.email import send_email, get_logo_html
 
 bp = Blueprint('approver', __name__)
 
@@ -18,33 +19,49 @@ bp = Blueprint('approver', __name__)
 # APPROVER ROUTES
 # ============================================================================
 
+@bp.route("/api/proposals/pending_approval", methods=['OPTIONS'])
+@bp.route("/proposals/pending_approval", methods=['OPTIONS'])
+def options_pending_approvals():
+    """Handle CORS preflight for pending approvals endpoint"""
+    return {}, 200
+
+@bp.get("/api/proposals/pending_approval")
 @bp.get("/proposals/pending_approval")
 @token_required
 def get_pending_approvals(username=None):
     """Get all proposals pending approval"""
     try:
         with get_db_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(
-                '''SELECT id, title, client, owner_id, status, created_at
-                   FROM proposals WHERE status = 'Submitted' OR status = 'In Review'
-                   ORDER BY created_at DESC'''
+                '''SELECT id, title, content, client_name, client_email, user_id, status, created_at, updated_at, budget
+                   FROM proposals 
+                   WHERE status = 'Pending CEO Approval' 
+                      OR status = 'In Review' 
+                      OR status = 'Submitted'
+                   ORDER BY updated_at DESC, created_at DESC'''
             )
             rows = cursor.fetchall()
             proposals = []
             for row in rows:
                 proposals.append({
-                    'id': row[0],
-                    'title': row[1],
-                    'client': row[2],
-                    'owner_id': row[3],
-                    'status': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None
+                    'id': row['id'],
+                    'title': row['title'],
+                    'content': row.get('content'),  # Include content field
+                    'client': row['client_name'] or row.get('client') or 'Unknown',
+                    'client_name': row['client_name'],
+                    'client_email': row['client_email'],
+                    'owner_id': row['user_id'],
+                    'status': row['status'],
+                    'budget': float(row['budget']) if row['budget'] else None,
+                    'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                    'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
                 })
             return {'proposals': proposals}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@bp.post("/api/proposals/<int:proposal_id>/approve")
 @bp.post("/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username=None, proposal_id=None):
@@ -101,14 +118,55 @@ def approve_proposal(username=None, proposal_id=None):
                 new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
                 
-                # Note: notify_proposal_collaborators would need to be imported from app.py
-                # For now, we'll skip notifications in this separated version
-                # You can add it back by importing the helper function
+                # Send email to client
+                email_sent = False
+                if client_email and client_email.strip():
+                    try:
+                        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                        # Generate client access token (you may need to create this in collaboration_invitations)
+                        import secrets
+                        access_token = secrets.token_urlsafe(32)
+                        
+                        # Store token in collaboration_invitations for client access
+                        cursor.execute("""
+                            INSERT INTO collaboration_invitations 
+                            (proposal_id, invited_email, invited_by, permission_level, access_token, status)
+                            VALUES (%s, %s, %s, %s, %s, 'pending')
+                            ON CONFLICT DO NOTHING
+                        """, (proposal_id, client_email, approver_user_id, 'view', access_token))
+                        conn.commit()
+                        
+                        client_link = f"{frontend_url}/client/proposals?token={access_token}"
+                        
+                        email_subject = f"Proposal Ready: {display_title}"
+                        email_body = f"""
+                        {get_logo_html()}
+                        <h2>Your Proposal is Ready</h2>
+                        <p>Dear {client_name or 'Client'},</p>
+                        <p>We're pleased to share your proposal: <strong>{display_title}</strong></p>
+                        <p>Click the link below to view and review your proposal:</p>
+                        <p style="text-align: center; margin: 30px 0;">
+                            <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
+                        </p>
+                        <p>Or copy and paste this link into your browser:</p>
+                        <p style="word-break: break-all; color: #666;">{client_link}</p>
+                        <p>If you have any questions, please don't hesitate to reach out.</p>
+                        <p>Best regards,<br>{approver_name}</p>
+                        """
+                        
+                        email_sent = send_email(client_email, email_subject, email_body)
+                        if email_sent:
+                            print(f"[EMAIL] Proposal email sent to {client_email}")
+                        else:
+                            print(f"[EMAIL] Failed to send proposal email to {client_email}")
+                    except Exception as email_error:
+                        print(f"[EMAIL] Error sending proposal email: {email_error}")
+                        traceback.print_exc()
                 
                 return {
                     'detail': 'Proposal approved and sent to client',
                     'status': new_status,
-                    'email_sent': bool(client_email and client_email.strip())
+                    'email_sent': email_sent
                 }, 200
             else:
                 return {'detail': 'Failed to update proposal status'}, 500
@@ -118,6 +176,7 @@ def approve_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.post("/api/proposals/<int:proposal_id>/reject")
 @bp.post("/proposals/<int:proposal_id>/reject")
 @token_required
 def reject_proposal(username=None, proposal_id=None):
@@ -185,6 +244,7 @@ def update_proposal_status(username=None, proposal_id=None):
             return {'detail': 'Status updated'}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
+
 
 
 

@@ -760,6 +760,22 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  // Proposal Analytics
+  Future<Map<String, dynamic>?> getProposalAnalytics(String proposalId) async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/proposals/$proposalId/analytics"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching proposal analytics: $e');
+    }
+    return null;
+  }
+
   Future<String?> clientSignProposal(
       String proposalId, String signerName) async {
     final r = await http.post(

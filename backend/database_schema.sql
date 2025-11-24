@@ -188,3 +188,33 @@ SELECT
     COUNT(CASE WHEN status = 'Approved' THEN 1 END) as approved_count,
     COUNT(CASE WHEN status = 'Signed' THEN 1 END) as signed_count
 FROM proposals;
+
+-- 1️⃣3️⃣ PROPOSAL CLIENT ACTIVITY TABLE (for tracking client events)
+CREATE TABLE IF NOT EXISTS proposal_client_activity (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    proposal_id UUID REFERENCES proposals(id) ON DELETE CASCADE,
+    client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+    event_type VARCHAR(50) NOT NULL,  -- 'open', 'close', 'view_section', 'download', 'sign', 'comment'
+    metadata JSONB,  -- {"section": "Pricing", "duration": 34, "page": 2, etc.}
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 1️⃣4️⃣ PROPOSAL CLIENT SESSION TABLE (for tracking time spent)
+CREATE TABLE IF NOT EXISTS proposal_client_session (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    proposal_id UUID REFERENCES proposals(id) ON DELETE CASCADE,
+    client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+    session_start TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    session_end TIMESTAMP,
+    total_seconds INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for activity tracking
+CREATE INDEX IF NOT EXISTS idx_activity_proposal_id ON proposal_client_activity(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_activity_client_id ON proposal_client_activity(client_id);
+CREATE INDEX IF NOT EXISTS idx_activity_event_type ON proposal_client_activity(event_type);
+CREATE INDEX IF NOT EXISTS idx_activity_created_at ON proposal_client_activity(created_at);
+CREATE INDEX IF NOT EXISTS idx_session_proposal_id ON proposal_client_session(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_session_client_id ON proposal_client_session(client_id);
+CREATE INDEX IF NOT EXISTS idx_session_start ON proposal_client_session(session_start);

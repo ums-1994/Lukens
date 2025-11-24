@@ -196,13 +196,15 @@ def get_proposals(username=None):
             rows = cursor.fetchall()
             proposals = []
             for row in rows:
+                # Handle NULL status - default to 'draft' (lowercase to match constraint)
+                status = row[4] if row[4] is not None else 'draft'
                 proposals.append({
                     'id': row[0],
                     'user_id': row[1],
                     'owner_id': row[1],  # For compatibility
                     'title': row[2],
                     'content': row[3],
-                    'status': row[4],
+                    'status': status,
                     'client_name': row[5],
                     'client': row[5],  # For compatibility
                     'client_email': row[6],
@@ -242,24 +244,24 @@ def create_proposal(username=None):
             # Legacy "client" column is still NOT NULL in many databases, so keep it in sync
             client_value = client_name
             
-            # Normalize status to proper capitalization
-            raw_status = data.get('status', 'Draft')
-            normalized_status = 'Draft'  # Default
+            # Normalize status - use lowercase to match database constraint
+            raw_status = data.get('status', 'draft')
+            normalized_status = 'draft'  # Default - lowercase to match constraint
             if raw_status:
                 status_lower = str(raw_status).lower().strip()
                 if status_lower == 'draft':
-                    normalized_status = 'Draft'
+                    normalized_status = 'draft'
                 elif 'pending' in status_lower and 'ceo' in status_lower:
                     normalized_status = 'Pending CEO Approval'
                 elif 'sent' in status_lower and 'client' in status_lower:
                     normalized_status = 'Sent to Client'
                 elif status_lower in ['signed', 'approved']:
-                    normalized_status = 'Signed'
+                    normalized_status = 'signed'
                 elif 'review' in status_lower:
                     normalized_status = 'In Review'
                 else:
-                    # Capitalize first letter of each word
-                    normalized_status = ' '.join(word.capitalize() for word in status_lower.split())
+                    # Keep as lowercase for basic statuses, or use exact value if it's a special status
+                    normalized_status = status_lower
             
             cursor.execute(
                 '''INSERT INTO proposals (owner_id, title, client, content, status, client_name, client_email, budget, timeline_days)
@@ -523,7 +525,6 @@ def send_for_approval(username=None, proposal_id=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             user_row = cursor.fetchone()
             if not user_row:
@@ -535,13 +536,17 @@ def send_for_approval(username=None, proposal_id=None):
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
             
+            # Update status to "Pending CEO Approval" (more descriptive than "In Review")
             cursor.execute(
-                '''UPDATE proposals SET status = 'In Review', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
+                '''UPDATE proposals SET status = 'Pending CEO Approval', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
                 (proposal_id,)
             )
             conn.commit()
-            return {'detail': 'Proposal sent for approval', 'status': 'In Review'}, 200
+            return {'detail': 'Proposal sent for approval', 'status': 'Pending CEO Approval'}, 200
     except Exception as e:
+        print(f"❌ Error sending proposal for approval: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.post("/proposals/<proposal_id>/send_to_client")
@@ -574,16 +579,70 @@ def send_to_client(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             
             # Update status
-            new_status = 'Released'
+            new_status = 'Sent to Client'
             cursor.execute(
                 """UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
                 (new_status, proposal_id)
             )
             conn.commit()
             
+            # Send email to client
+            email_sent = False
+            client_email = proposal.get('client_email')
+            client_name = proposal.get('client_name', 'Client')
+            proposal_title = proposal.get('title', 'Proposal')
+            
+            if client_email and client_email.strip():
+                try:
+                    from api.utils.email import send_email, get_logo_html
+                    import secrets
+                    
+                    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                    access_token = secrets.token_urlsafe(32)
+                    
+                    # Store token in collaboration_invitations for client access
+                    sender_id = sender.get('id')
+                    cursor.execute("""
+                        INSERT INTO collaboration_invitations 
+                        (proposal_id, invited_email, invited_by, permission_level, access_token, status)
+                        VALUES (%s, %s, %s, %s, %s, 'pending')
+                        ON CONFLICT DO NOTHING
+                    """, (proposal_id, client_email, sender_id, 'view', access_token))
+                    conn.commit()
+                    
+                    client_link = f"{frontend_url}/client/proposals?token={access_token}"
+                    
+                    sender_name = sender.get('full_name') or sender.get('username') or 'Your Team'
+                    
+                    email_subject = f"Proposal: {proposal_title}"
+                    email_body = f"""
+                    {get_logo_html()}
+                    <h2>Your Proposal is Ready</h2>
+                    <p>Dear {client_name},</p>
+                    <p>We're pleased to share your proposal: <strong>{proposal_title}</strong></p>
+                    <p>Click the link below to view and review your proposal:</p>
+                    <p style="text-align: center; margin: 30px 0;">
+                        <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
+                    </p>
+                    <p>Or copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all; color: #666;">{client_link}</p>
+                    <p>If you have any questions, please don't hesitate to reach out.</p>
+                    <p>Best regards,<br>{sender_name}</p>
+                    """
+                    
+                    email_sent = send_email(client_email, email_subject, email_body)
+                    if email_sent:
+                        print(f"[EMAIL] Proposal email sent to {client_email}")
+                    else:
+                        print(f"[EMAIL] Failed to send proposal email to {client_email}")
+                except Exception as email_error:
+                    print(f"[EMAIL] Error sending proposal email: {email_error}")
+                    traceback.print_exc()
+            
             return {
                 'detail': 'Proposal sent to client',
                 'status': new_status,
+                'email_sent': email_sent
             }, 200
     except Exception as e:
         print(f"❌ Error sending proposal to client: {e}")
@@ -1065,6 +1124,140 @@ def get_user_ai_stats(username=None):
         print(f"❌ Error fetching user AI stats: {e}")
         return {'detail': str(e)}, 500
 
+@bp.get("/api/proposals/<int:proposal_id>/analytics")
+@bp.get("/proposals/<int:proposal_id>/analytics")
+@token_required
+def get_proposal_analytics(username=None, proposal_id=None):
+    """Get client activity analytics for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify proposal exists and user has access
+            cursor.execute("""
+                SELECT id, title, status, client_name, client_email
+                FROM proposals 
+                WHERE id = %s OR id::text = %s
+            """, (proposal_id, str(proposal_id)))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            actual_proposal_id = proposal['id']
+            
+            # Get all activity events
+            cursor.execute("""
+                SELECT 
+                    pca.id, pca.event_type, pca.metadata, pca.created_at,
+                    c.name as client_name, c.email as client_email
+                FROM proposal_client_activity pca
+                LEFT JOIN clients c ON pca.client_id = c.id
+                WHERE pca.proposal_id = %s
+                ORDER BY pca.created_at DESC
+            """, (actual_proposal_id,))
+            
+            events = cursor.fetchall()
+            
+            # Get all sessions
+            cursor.execute("""
+                SELECT 
+                    pcs.id, pcs.session_start, pcs.session_end, pcs.total_seconds,
+                    c.name as client_name, c.email as client_email
+                FROM proposal_client_session pcs
+                LEFT JOIN clients c ON pcs.client_id = c.id
+                WHERE pcs.proposal_id = %s
+                ORDER BY pcs.session_start DESC
+            """, (actual_proposal_id,))
+            
+            sessions = cursor.fetchall()
+            
+            # Calculate analytics
+            total_time_seconds = sum(s['total_seconds'] or 0 for s in sessions)
+            views = len([e for e in events if e['event_type'] == 'open'])
+            downloads = len([e for e in events if e['event_type'] == 'download'])
+            signs = len([e for e in events if e['event_type'] == 'sign'])
+            comments = len([e for e in events if e['event_type'] == 'comment'])
+            
+            # Get first and last open times
+            open_events = [e for e in events if e['event_type'] == 'open']
+            first_open = min([e['created_at'] for e in open_events]) if open_events else None
+            last_open = max([e['created_at'] for e in open_events]) if open_events else None
+            
+            # Get section view times from metadata
+            section_times = {}
+            for event in events:
+                if event['event_type'] == 'view_section' and event['metadata']:
+                    metadata = event['metadata']
+                    if isinstance(metadata, dict):
+                        section = metadata.get('section', 'Unknown')
+                        duration = metadata.get('duration', 0)
+                        if section not in section_times:
+                            section_times[section] = 0
+                        section_times[section] += duration
+            
+            # Format events for response
+            formatted_events = []
+            for event in events:
+                formatted_events.append({
+                    'id': str(event['id']),
+                    'event_type': event['event_type'],
+                    'metadata': event['metadata'] if event['metadata'] else {},
+                    'created_at': event['created_at'].isoformat() if event['created_at'] else None,
+                    'client_name': event.get('client_name'),
+                    'client_email': event.get('client_email')
+                })
+            
+            # Format sessions for response
+            formatted_sessions = []
+            for session in sessions:
+                formatted_sessions.append({
+                    'id': str(session['id']),
+                    'session_start': session['session_start'].isoformat() if session['session_start'] else None,
+                    'session_end': session['session_end'].isoformat() if session['session_end'] else None,
+                    'total_seconds': session['total_seconds'],
+                    'client_name': session.get('client_name'),
+                    'client_email': session.get('client_email')
+                })
+            
+            return {
+                'proposal_id': str(actual_proposal_id),
+                'proposal_title': proposal['title'],
+                'analytics': {
+                    'total_time_seconds': total_time_seconds,
+                    'total_time_formatted': _format_duration(total_time_seconds),
+                    'views': views,
+                    'downloads': downloads,
+                    'signs': signs,
+                    'comments': comments,
+                    'first_open': first_open.isoformat() if first_open else None,
+                    'last_open': last_open.isoformat() if last_open else None,
+                    'section_times': section_times,
+                    'sessions_count': len(sessions)
+                },
+                'events': formatted_events,
+                'sessions': formatted_sessions
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error fetching proposal analytics: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+def _format_duration(seconds):
+    """Helper function to format seconds into human-readable duration"""
+    if not seconds:
+        return "0s"
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    elif minutes > 0:
+        return f"{minutes}m {secs}s"
+    else:
+        return f"{secs}s"
+
 @bp.post("/ai/feedback")
 @token_required
 def submit_ai_feedback(username=None):
@@ -1102,5 +1295,417 @@ def submit_ai_feedback(username=None):
             
     except Exception as e:
         print(f"❌ Error submitting feedback: {e}")
+        return {'detail': str(e)}, 500
+
+# ============================================================================
+# COLLABORATION ROUTES
+# ============================================================================
+
+@bp.get("/api/proposals/<int:proposal_id>/collaborators")
+@bp.get("/proposals/<int:proposal_id>/collaborators")
+@token_required
+def get_proposal_collaborators(username=None, proposal_id=None):
+    """Get all collaborators for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify ownership
+            cursor.execute('SELECT user_id FROM proposals WHERE id = %s', (proposal_id,))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            if proposal['user_id'] != username:
+                return {'detail': 'Access denied'}, 403
+            
+            # Get active collaborators from collaborators table
+            cursor.execute("""
+                SELECT c.id, c.proposal_id, c.email, c.email as invited_email, 
+                       c.permission_level, c.status, c.joined_at, c.joined_at as invited_at,
+                       c.last_accessed_at, c.last_accessed_at as accessed_at,
+                       c.invited_by, u.username as invited_by_username
+                FROM collaborators c
+                LEFT JOIN users u ON c.invited_by = u.id
+                WHERE c.proposal_id = %s
+                ORDER BY c.joined_at DESC
+            """, (proposal_id,))
+            
+            collaborators = cursor.fetchall()
+            
+            # Also get pending invitations
+            cursor.execute("""
+                SELECT id, proposal_id, invited_email, invited_email as email, 
+                       permission_level, status, invited_at, invited_at as joined_at, 
+                       accessed_at, accessed_at as last_accessed_at,
+                       invited_by, access_token
+                FROM collaboration_invitations
+                WHERE proposal_id = %s AND status = 'pending'
+                ORDER BY invited_at DESC
+            """, (proposal_id,))
+            
+            pending_invitations = cursor.fetchall()
+            
+            # Combine active collaborators and pending invitations
+            # Return both 'email' and 'invited_email' for backward compatibility
+            result = [dict(collab) for collab in collaborators]
+            result.extend([dict(inv) for inv in pending_invitations])
+            
+            return result, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting collaborators: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.post("/api/proposals/<int:proposal_id>/invite")
+@bp.post("/proposals/<int:proposal_id>/invite")
+@token_required
+def invite_collaborator(username=None, proposal_id=None):
+    """Invite a collaborator to a proposal"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        
+        if not email:
+            return {'detail': 'Email is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Verify ownership
+            cursor.execute('SELECT user_id, title FROM proposals WHERE id = %s', (proposal_id,))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            if proposal['user_id'] != username:
+                return {'detail': 'Access denied'}, 403
+            
+            # Check if invitation already exists
+            cursor.execute("""
+                SELECT id FROM collaboration_invitations
+                WHERE proposal_id = %s AND invited_email = %s
+            """, (proposal_id, email))
+            existing = cursor.fetchone()
+            if existing:
+                return {'detail': 'Invitation already sent to this email'}, 400
+            
+            # Generate access token
+            import secrets
+            access_token = secrets.token_urlsafe(32)
+            
+            # Get the user ID from the users table (invited_by is required)
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            invited_by_user_id = user_row['id']
+            
+            # All collaborators get 'edit' permission (full access: edit, comment, suggest)
+            permission_level = 'edit'
+            
+            # Create invitation
+            cursor.execute("""
+                INSERT INTO collaboration_invitations 
+                (proposal_id, invited_email, invited_by, permission_level, access_token, status)
+                VALUES (%s, %s, %s, %s, %s, 'pending')
+                RETURNING id, proposal_id, invited_email, permission_level, 
+                          status, invited_at, access_token
+            """, (proposal_id, email, invited_by_user_id, permission_level, access_token))
+            
+            invitation = cursor.fetchone()
+            conn.commit()
+            
+            # Send invitation email
+            email_sent = False
+            email_error = None
+            try:
+                from api.utils.email import send_email, get_logo_html
+                base_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                invite_url = f"{base_url}/collaborate?token={access_token}"
+                
+                email_body = f"""
+                {get_logo_html()}
+                <h2>You've been invited to collaborate</h2>
+                <p>You've been invited to collaborate on the proposal: <strong>{proposal['title']}</strong></p>
+                <p>Click the link below to access the proposal:</p>
+                <p><a href="{invite_url}" style="background-color: #27AE60; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Open Proposal</a></p>
+                <p>Or copy and paste this link:</p>
+                <p style="word-break: break-all; color: #666;">{invite_url}</p>
+                <p>This link will give you full access to edit, comment, and suggest changes.</p>
+                """
+                
+                send_email(
+                    to_email=email,
+                    subject=f"Collaboration Invitation: {proposal['title']}",
+                    html_content=email_body
+                )
+                email_sent = True
+                print(f"✅ Invitation email sent successfully to {email}")
+            except Exception as e:
+                email_error = str(e)
+                print(f"❌ Error sending invitation email to {email}: {email_error}")
+                print(f"⚠️ Email service may not be configured. Check SMTP settings.")
+                traceback.print_exc()
+            
+            result = {
+                'id': invitation['id'],
+                'proposal_id': invitation['proposal_id'],
+                'invited_email': invitation['invited_email'],
+                'permission_level': invitation['permission_level'],
+                'status': invitation['status'],
+                'invited_at': invitation['invited_at'].isoformat() if invitation['invited_at'] else None,
+                'access_token': invitation['access_token'],
+                'email_sent': email_sent
+            }
+            
+            # Include email error message if email failed to send
+            if not email_sent and email_error:
+                result['email_error'] = email_error
+            
+            return result, 201
+            
+    except Exception as e:
+        print(f"❌ Error inviting collaborator: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.delete("/api/collaborations/<int:invitation_id>")
+@bp.delete("/collaborations/<int:invitation_id>")
+@token_required
+def remove_collaborator(username=None, invitation_id=None):
+    """Remove a collaborator invitation"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get invitation and verify ownership
+            cursor.execute("""
+                SELECT ci.*, p.user_id as proposal_owner
+                FROM collaboration_invitations ci
+                JOIN proposals p ON ci.proposal_id = p.id
+                WHERE ci.id = %s
+            """, (invitation_id,))
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invitation not found'}, 404
+            
+            if invitation['proposal_owner'] != username:
+                return {'detail': 'Access denied'}, 403
+            
+            # Delete invitation
+            cursor.execute("""
+                DELETE FROM collaboration_invitations WHERE id = %s
+            """, (invitation_id,))
+            
+            conn.commit()
+            
+            return {'message': 'Collaborator removed successfully'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error removing collaborator: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+# ============================================================================
+# PROPOSAL ARCHIVAL ROUTES
+# ============================================================================
+
+@bp.patch("/api/proposals/<int:proposal_id>/archive")
+@bp.patch("/proposals/<int:proposal_id>/archive")
+@token_required
+def archive_proposal(username=None, proposal_id=None):
+    """Archive a proposal (set status to 'Archived')"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get proposal and verify ownership
+            cursor.execute("""
+                SELECT id, user_id, title, status
+                FROM proposals
+                WHERE id = %s
+            """, (proposal_id,))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            if proposal['user_id'] != username:
+                return {'detail': 'Access denied'}, 403
+            
+            if proposal['status'] == 'Archived':
+                return {'detail': 'Proposal is already archived'}, 400
+            
+            # Get user ID for activity log
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            user_id = user['id'] if user else None
+            
+            # Archive proposal
+            cursor.execute("""
+                UPDATE proposals
+                SET status = 'Archived', updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id, title, status, updated_at
+            """, (proposal_id,))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            try:
+                from app import log_activity
+                log_activity(
+                    proposal_id,
+                    user_id,
+                    'proposal_archived',
+                    f'Archived proposal "{proposal["title"]}"',
+                    {'old_status': proposal['status'], 'new_status': 'Archived'}
+                )
+            except Exception as e:
+                print(f"⚠️ Error logging activity: {e}")
+            
+            return {
+                'message': 'Proposal archived successfully',
+                'proposal': dict(result)
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error archiving proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.patch("/api/proposals/<int:proposal_id>/restore")
+@bp.patch("/proposals/<int:proposal_id>/restore")
+@token_required
+def restore_proposal(username=None, proposal_id=None):
+    """Restore a proposal from archive (admin only)"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user role to check if admin
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            is_admin = user['role'] == 'admin'
+            
+            # Get proposal
+            cursor.execute("""
+                SELECT id, user_id, title, status
+                FROM proposals
+                WHERE id = %s
+            """, (proposal_id,))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            # Check permissions (owner or admin)
+            if proposal['user_id'] != username and not is_admin:
+                return {'detail': 'Access denied. Only owner or admin can restore proposals.'}, 403
+            
+            if proposal['status'] != 'Archived':
+                return {'detail': 'Proposal is not archived'}, 400
+            
+            # Restore proposal (set to Draft)
+            cursor.execute("""
+                UPDATE proposals
+                SET status = 'Draft', updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id, title, status, updated_at
+            """, (proposal_id,))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            try:
+                from app import log_activity
+                log_activity(
+                    proposal_id,
+                    user['id'],
+                    'proposal_restored',
+                    f'Restored proposal "{proposal["title"]}" from archive',
+                    {'old_status': 'Archived', 'new_status': 'Draft'}
+                )
+            except Exception as e:
+                print(f"⚠️ Error logging activity: {e}")
+            
+            return {
+                'message': 'Proposal restored successfully',
+                'proposal': dict(result)
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error restoring proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.get("/api/proposals/archived")
+@bp.get("/proposals/archived")
+@token_required
+def get_archived_proposals(username=None):
+    """Get all archived proposals for the user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Check if user is admin (admins can see all archived proposals)
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            is_admin = user and user['role'] == 'admin'
+            
+            if is_admin:
+                # Admin can see all archived proposals
+                cursor.execute("""
+                    SELECT id, user_id, title, content, status, client_name, client_email, 
+                           budget, timeline_days, created_at, updated_at
+                    FROM proposals
+                    WHERE status = 'Archived'
+                    ORDER BY updated_at DESC
+                """)
+            else:
+                # Regular users see only their archived proposals
+                cursor.execute("""
+                    SELECT id, user_id, title, content, status, client_name, client_email, 
+                           budget, timeline_days, created_at, updated_at
+                    FROM proposals
+                    WHERE user_id = %s AND status = 'Archived'
+                    ORDER BY updated_at DESC
+                """, (username,))
+            
+            rows = cursor.fetchall()
+            proposals = []
+            
+            for row in rows:
+                proposals.append({
+                    'id': row['id'],
+                    'user_id': row['user_id'],
+                    'owner_id': row['user_id'],
+                    'title': row['title'],
+                    'content': row['content'],
+                    'status': row['status'] or 'Archived',
+                    'client_name': row['client_name'],
+                    'client': row['client_name'],
+                    'client_email': row['client_email'],
+                    'budget': float(row['budget']) if row['budget'] else None,
+                    'timeline_days': row['timeline_days'],
+                    'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                    'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
+                    'updatedAt': row['updated_at'].isoformat() if row['updated_at'] else None,
+                })
+            
+            return proposals, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting archived proposals: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 

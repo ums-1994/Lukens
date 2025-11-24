@@ -550,9 +550,9 @@ class _ProposalsPageState extends State<ProposalsPage>
                 _currentPage == 'Client Management',
                 context),
             _buildNavItem(
-                'Approvals Status',
+                'Approved Proposals',
                 'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approvals Status',
+                _currentPage == 'Approved Proposals',
                 context),
             _buildNavItem(
                 'Analytics (My Pipeline)',
@@ -950,8 +950,8 @@ class _ProposalsPageState extends State<ProposalsPage>
       case 'Client Management':
         Navigator.pushReplacementNamed(context, '/client_management');
         break;
-      case 'Approvals Status':
-        Navigator.pushReplacementNamed(context, '/approvals');
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
