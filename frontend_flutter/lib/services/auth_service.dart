@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:html' as html;
 
 class AuthService {
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'https://lukens-backend.onrender.com';
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 

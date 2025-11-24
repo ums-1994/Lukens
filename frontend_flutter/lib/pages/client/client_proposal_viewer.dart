@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web/web.dart' as web;
+import '../../api.dart';
 
 class ClientProposalViewer extends StatefulWidget {
   final int proposalId;
@@ -77,7 +78,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   Future<void> _startSession() async {
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:8000/api/client/session/start'),
+        Uri.parse('$baseUrl/api/client/session/start'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'token': widget.accessToken,
@@ -99,7 +100,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     if (_currentSessionId != null) {
       try {
         await http.post(
-          Uri.parse('http://localhost:8000/api/client/session/end'),
+          Uri.parse('$baseUrl/api/client/session/end'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'session_id': _currentSessionId,
@@ -114,7 +115,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   Future<void> _logEvent(String eventType, {Map<String, dynamic>? metadata}) async {
     try {
       await http.post(
-        Uri.parse('http://localhost:8000/api/client/activity'),
+        Uri.parse('$baseUrl/api/client/activity'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'token': widget.accessToken,
@@ -137,7 +138,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     try {
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}?token=${widget.accessToken}'),
+            '$baseUrl/api/client/proposals/${widget.proposalId}?token=${widget.accessToken}'),
       );
 
       if (response.statusCode == 200) {
@@ -219,7 +220,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}/comment'),
+            '$baseUrl/api/client/proposals/${widget.proposalId}/comment'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -593,7 +594,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       try {
         final response = await http.post(
           Uri.parse(
-              'http://localhost:8000/api/client/proposals/${widget.proposalId}/get_signing_url'),
+              '$baseUrl/api/client/proposals/${widget.proposalId}/get_signing_url'),
           headers: {
             'Content-Type': 'application/json',
           },
@@ -1302,7 +1303,7 @@ class _RejectDialogState extends State<RejectDialog> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}/reject'),
+            '$baseUrl/api/client/proposals/${widget.proposalId}/reject'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1482,7 +1483,7 @@ class _ApproveDialogState extends State<ApproveDialog> {
     try {
       final response = await http.post(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals/${widget.proposalId}/approve'),
+            '$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
         headers: {
           'Content-Type': 'application/json',
         },

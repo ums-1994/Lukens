@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'dart:async';
 import 'package:flutter/gestures.dart';
+import '../../api.dart';
 
 class GuestCollaborationPage extends StatefulWidget {
   const GuestCollaborationPage({super.key});
@@ -109,7 +110,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         if (_accessToken != null) 'collab_token': _accessToken!,
       }..removeWhere((k, v) => v == null);
 
-      final uri = Uri.http('localhost:8000', '/users/search', params);
+      final uri = Uri.parse('$baseUrl/users/search')
+          .replace(queryParameters: params);
       final resp = await http.get(uri);
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as List<dynamic>;
@@ -302,7 +304,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:8000/api/collaborate?token=$_accessToken'),
+        Uri.parse('$baseUrl/api/collaborate?token=$_accessToken'),
       );
 
       if (response.statusCode == 200) {
@@ -357,7 +359,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
           .toList();
 
       final response = await http.post(
-        Uri.parse('http://localhost:8000/api/collaborate/comment'),
+        Uri.parse('$baseUrl/api/collaborate/comment'),
         headers: {
           'Content-Type': 'application/json',
         },

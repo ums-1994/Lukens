@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class AIAnalysisService {
-  static const String _baseUrl = 'http://localhost:8000';
+  static const String _baseUrl = 'https://lukens-backend.onrender.com';
   static String? _authToken;
 
   // Set authentication token

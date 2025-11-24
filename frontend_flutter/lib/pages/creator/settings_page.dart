@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../api.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -50,7 +51,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:8000/api/settings'),
+        Uri.parse('$baseUrl/api/settings'),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -136,7 +137,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<bool> _updateGeneralSettings(Map<String, dynamic> settings) async {
     try {
       final response = await http.put(
-        Uri.parse('http://localhost:8000/api/settings/system'),
+        Uri.parse('$baseUrl/api/settings/system'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(settings),
       );
@@ -157,7 +158,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<bool> _updateAISettings(Map<String, dynamic> settings) async {
     try {
       final response = await http.put(
-        Uri.parse('http://localhost:8000/api/settings/ai'),
+        Uri.parse('$baseUrl/api/settings/ai'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(settings),
       );
