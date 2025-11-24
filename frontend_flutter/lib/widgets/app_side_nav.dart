@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/asset_service.dart';
+import '../theme/premium_theme.dart';
 
 class AppSideNav extends StatelessWidget {
   const AppSideNav({
@@ -8,12 +9,14 @@ class AppSideNav extends StatelessWidget {
     required this.currentLabel,
     required this.onSelect,
     required this.onToggle,
+    required this.isAdmin,
   });
 
   final bool isCollapsed;
   final String currentLabel;
   final ValueChanged<String> onSelect;
   final VoidCallback onToggle;
+  final bool isAdmin;
 
   static const double collapsedWidth = 90.0;
   static const double expandedWidth = 250.0;
@@ -24,7 +27,7 @@ class AppSideNav extends StatelessWidget {
     {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
     {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
     {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
-    {'label': 'Approvals Status', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
+    {'label': 'Approved Proposals', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
     {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
   ];
 
@@ -38,7 +41,22 @@ class AppSideNav extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         width: isCollapsed ? collapsedWidth : expandedWidth,
-        color: const Color(0xFF34495E),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.black.withOpacity(0.3),
+              Colors.black.withOpacity(0.2),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          border: Border(
+            right: BorderSide(
+              color: PremiumTheme.glassWhiteBorder,
+              width: 1,
+            ),
+          ),
+        ),
         child: SafeArea(
           child: Column(
             children: [
@@ -88,7 +106,9 @@ class AppSideNav extends StatelessWidget {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      for (final it in _items) _buildItem(it['label']!, it['icon']!),
+                      for (final it in _items)
+                        if (!_shouldHideItemForAdmin(it['label']!))
+                          _buildItem(it['label']!, it['icon']!),
                     ],
                   ),
                 ),
@@ -114,6 +134,13 @@ class AppSideNav extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  bool _shouldHideItemForAdmin(String label) {
+    if (!isAdmin) return false;
+    if (label == 'My Proposals') return true;
+    if (label == 'Analytics (My Pipeline)') return true;
+    return false;
   }
 
   Widget _buildItem(String label, String assetPath) {

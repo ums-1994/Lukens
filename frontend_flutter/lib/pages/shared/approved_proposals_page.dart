@@ -8,6 +8,7 @@ import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/role_switcher.dart';
+import '../../widgets/app_side_nav.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -194,7 +195,16 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                   Expanded(
                     child: Row(
                       children: [
-                        _buildSidebar(context),
+                        AppSideNav(
+                          isCollapsed: _isSidebarCollapsed,
+                          currentLabel: _currentPage,
+                          isAdmin: false,
+                          onToggle: _toggleSidebar,
+                          onSelect: (label) {
+                            setState(() => _currentPage = label);
+                            _navigateToPage(context, label);
+                          },
+                        ),
                         const SizedBox(width: 24),
                         Expanded(
                           child: GlassContainer(

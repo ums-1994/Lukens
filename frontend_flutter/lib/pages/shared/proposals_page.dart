@@ -7,6 +7,7 @@ import '../../api.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/app_side_nav.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -346,7 +347,16 @@ class _ProposalsPageState extends State<ProposalsPage>
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildSidebar(context),
+                    AppSideNav(
+                      isCollapsed: _isSidebarCollapsed,
+                      currentLabel: _currentPage,
+                      isAdmin: false,
+                      onToggle: _toggleSidebar,
+                      onSelect: (label) {
+                        setState(() => _currentPage = label);
+                        _navigateToPage(context, label);
+                      },
+                    ),
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),

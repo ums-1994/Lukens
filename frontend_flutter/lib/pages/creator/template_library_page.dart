@@ -6,6 +6,7 @@ import '../../theme/premium_theme.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
+import '../../widgets/app_side_nav.dart';
 
 class TemplateLibraryPage extends StatefulWidget {
   const TemplateLibraryPage({Key? key}) : super(key: key);
@@ -705,7 +706,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             : Row(
                 children: [
                   // Sidebar
-                  _buildSidebar(context),
+                  AppSideNav(
+                    isCollapsed: _isSidebarCollapsed,
+                    currentLabel: _currentPage,
+                    isAdmin: false,
+                    onToggle: _toggleSidebar,
+                    onSelect: (label) {
+                      setState(() => _currentPage = label);
+                      _navigateToPage(context, label);
+                    },
+                  ),
                   // Content Area
                   Expanded(
                     child: SingleChildScrollView(
