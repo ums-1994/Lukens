@@ -92,7 +92,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _mentionQuery = '';
 
   // Backend integration
-  int? _savedProposalId; // Store the actual backend proposal ID
+  dynamic _savedProposalId; // Store the actual backend proposal ID (int or UUID)
   String? _authToken;
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
 
@@ -2070,10 +2070,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         print('🔍 Create proposal result: $result');
 
         if (result != null && result['id'] != null) {
+          final rawId = result['id'];
+          final idAsString = rawId.toString();
+          if (idAsString.isEmpty) {
+            print('⚠️ Proposal creation returned empty ID value');
+            throw Exception('Backend did not return a proposal ID');
+          }
           setState(() {
-            _savedProposalId = result['id'] is int
-                ? result['id']
-                : int.tryParse(result['id'].toString());
+            // Store the ID exactly as returned (works for both integers and UUIDs)
+            _savedProposalId = idAsString;
           });
           print('✅ Proposal created with ID: $_savedProposalId');
           print(
@@ -2081,6 +2086,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         } else {
           print('⚠️ Proposal creation returned null or no ID');
           print('🔍 Full result: $result');
+          throw Exception('Failed to create proposal on the server');
         }
       } else {
         // Update existing proposal
