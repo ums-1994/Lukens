@@ -203,22 +203,30 @@ class AppSideNav extends StatelessWidget {
 
   Widget _buildWhiteCircleIcon(String assetPath, bool active) {
     return Container(
-      width: 42,
-      height: 42,
+      width: 40,
+      height: 40,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF111827),
         shape: BoxShape.circle,
         border: Border.all(
-          color: active ? const Color(0xFFE74C3C) : const Color(0xFFCBD5E1),
+          color: active ? const Color(0xFFE74C3C) : const Color(0xFF4B5563),
           width: active ? 2 : 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: active
+            ? [
+                BoxShadow(
+                  color: const Color(0xFFE74C3C).withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       padding: const EdgeInsets.all(6),
       child: ClipOval(
