@@ -163,9 +163,13 @@ class AppSideNav extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: active ? const Color(0xFF3498DB) : Colors.transparent,
+            // Keep row background transparent so the sidebar color is stable
+            color: Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            border: active ? Border.all(color: const Color(0xFF2980B9), width: 1) : null,
+            // Use a subtle red border to indicate the active item
+            border: active
+                ? Border.all(color: const Color(0xFFE74C3C), width: 1)
+                : null,
           ),
           child: Row(
             children: [

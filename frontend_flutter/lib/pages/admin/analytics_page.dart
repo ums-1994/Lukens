@@ -13,6 +13,7 @@ import '../../api.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/app_side_nav.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -25,6 +26,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     with TickerProviderStateMixin {
   String _selectedPeriod = 'Last 30 Days';
   bool _isSidebarCollapsed = true;
+  String _currentPage = 'Analytics (My Pipeline)';
   late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
   static const String _currencySymbol = 'R';
@@ -712,112 +714,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             Expanded(
               child: Row(
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal:
-                                            _isSidebarCollapsed ? 0 : 8,
-                                      ),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        _buildNavItem(
-                            'Dashboard',
-                              'assets/images/Dahboard.png', false, context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png', false, context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png', false, context),
-                          _buildNavItem(
-                            'Content Library',
-                            'assets/images/content_library.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Client Management',
-                            'assets/images/collaborations.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Approved Proposals',
-                            'assets/images/Time Allocation_Approval_Blue.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Analytics (My Pipeline)',
-                            'assets/images/analytics.png',
-                            true,
-                            context,
-                          ),
-                          const SizedBox(height: 20),
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-                          const SizedBox(height: 12),
-                          _buildNavItem(
-                            'Logout',
-                            'assets/images/Logout_KhonoBuzz.png',
-                            false,
-                            context,
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
+                  AppSideNav(
+                    isCollapsed: _isSidebarCollapsed,
+                    currentLabel: _currentPage,
+                    isAdmin: false,
+                    onToggle: _toggleSidebar,
+                    onSelect: (label) {
+                      setState(() => _currentPage = label);
+                      _navigateToPage(context, label);
+                    },
                   ),
                   Expanded(
                     child: CustomScrollbar(
