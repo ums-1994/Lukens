@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 class ContentLibraryService {
-  static const String baseUrl = 'https://lukens-backend.onrender.com';
+  static const String baseUrl = 'http://localhost:8000';
 
   // Get headers with authentication
   Map<String, String> _getHeaders({String? token}) {

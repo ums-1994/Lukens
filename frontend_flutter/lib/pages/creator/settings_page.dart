@@ -50,7 +50,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('https://lukens-backend.onrender.com/api/settings'),
+        Uri.parse('http://localhost:8000/api/settings'),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -136,7 +136,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<bool> _updateGeneralSettings(Map<String, dynamic> settings) async {
     try {
       final response = await http.put(
-        Uri.parse('https://lukens-backend.onrender.com/api/settings/system'),
+        Uri.parse('http://localhost:8000/api/settings/system'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(settings),
       );
@@ -157,7 +157,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<bool> _updateAISettings(Map<String, dynamic> settings) async {
     try {
       final response = await http.put(
-        Uri.parse('https://lukens-backend.onrender.com/api/settings/ai'),
+        Uri.parse('http://localhost:8000/api/settings/ai'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(settings),
       );
