@@ -1,6 +1,4 @@
-"""
-Email sending utilities
-"""
+"""Email sending utilities"""
 import os
 import smtplib
 import traceback
@@ -8,6 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 import base64
+import requests
 
 # Cloudinary for logo hosting
 try:
@@ -20,10 +19,52 @@ except ImportError:
 
 
 def send_email(to_email, subject, html_content):
-    """Send email using SMTP"""
+    """Send email.
+
+    Uses Brevo (Sendinblue) HTTP API when BREVO_API_KEY is configured,
+    and falls back to SMTP settings otherwise (useful for local dev).
+    """
     try:
         print(f"[EMAIL] Attempting to send email to {to_email}")
 
+        # Prefer Brevo HTTP API if available (works on Render free tier)
+        brevo_api_key = os.getenv('BREVO_API_KEY')
+        if brevo_api_key:
+            try:
+                brevo_sender_email = os.getenv('BREVO_SENDER_EMAIL') or os.getenv('SMTP_FROM_EMAIL') or os.getenv('SMTP_USER')
+                brevo_sender_name = os.getenv('BREVO_SENDER_NAME') or os.getenv('SMTP_FROM_NAME', 'Khonology')
+
+                if not brevo_sender_email:
+                    print('[ERROR] Brevo sender email is not configured (BREVO_SENDER_EMAIL or SMTP_FROM_EMAIL)')
+                else:
+                    print(f"[EMAIL] Using Brevo API with sender {brevo_sender_name} <{brevo_sender_email}>")
+                    url = 'https://api.brevo.com/v3/smtp/email'
+                    headers = {
+                        'accept': 'application/json',
+                        'content-type': 'application/json',
+                        'api-key': brevo_api_key,
+                    }
+                    payload = {
+                        'sender': {
+                            'name': brevo_sender_name,
+                            'email': brevo_sender_email,
+                        },
+                        'to': [{'email': to_email}],
+                        'subject': subject,
+                        'htmlContent': html_content,
+                    }
+                    response = requests.post(url, headers=headers, json=payload, timeout=10)
+                    if response.status_code in (200, 201, 202):
+                        print(f"[SUCCESS] Brevo email sent to {to_email} (status {response.status_code})")
+                        return True
+                    else:
+                        print(f"[ERROR] Brevo email failed: {response.status_code} - {response.text}")
+            except Exception as brevo_exc:
+                print(f"[ERROR] Brevo API error: {brevo_exc}")
+                traceback.print_exc()
+                # Fall through to SMTP fallback
+
+        # SMTP fallback (useful for local dev / non-Render environments)
         smtp_host = os.getenv('SMTP_HOST')
         smtp_port = int(os.getenv('SMTP_PORT', '587'))
         smtp_user = os.getenv('SMTP_USER')
@@ -39,7 +80,6 @@ def send_email(to_email, subject, html_content):
             print(f"[ERROR] Missing: Host={smtp_host}, User={smtp_user}, Pass={'SET' if smtp_pass else 'NOT SET'}")
             return False
 
-        # Create message
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
@@ -49,7 +89,6 @@ def send_email(to_email, subject, html_content):
         msg.attach(html_part)
 
         print('[EMAIL] Connecting to SMTP server...')
-
         try:
             with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
                 print('[EMAIL] Starting TLS...')
@@ -58,38 +97,30 @@ def send_email(to_email, subject, html_content):
                 print('[EMAIL] Logging in...')
                 try:
                     server.login(smtp_user, smtp_pass)
-
                 except smtplib.SMTPAuthenticationError as auth_error:
                     error_code = getattr(auth_error, 'smtp_code', None)
                     error_msg = str(auth_error)
-
                     print(f"[ERROR] SMTP Authentication failed (Code: {error_code})")
                     print(f"[ERROR] Error: {error_msg}")
-
-                    if 'gmail.com' in smtp_host.lower() or 'google' in smtp_host.lower():
+                    if smtp_host and ('gmail.com' in smtp_host.lower() or 'google' in smtp_host.lower()):
                         print("[HELP] Gmail authentication troubleshooting:")
                         print("  1. Enable 2-Step Verification")
                         print("  2. Generate an App Password")
                         print("  3. Use the App Password instead of your normal password")
                     else:
                         print("[HELP] Check SMTP username, password, host, port")
-
-                    raise
-
-                except (smtplib.SMTPException, OSError, ConnectionError) as smtp_error:
-                    print(f"[ERROR] SMTP connection error: {smtp_error}")
                     raise
 
                 print('[EMAIL] Sending message...')
                 server.send_message(msg)
 
-            print(f"[SUCCESS] Email sent to {to_email}")
-            return True
-
-        except Exception as smtp_exc:
-            print(f"[ERROR] SMTP error: {smtp_exc}")
+        except (smtplib.SMTPException, OSError, ConnectionError) as smtp_error:
+            print(f"[ERROR] SMTP connection error: {smtp_error}")
             traceback.print_exc()
             return False
+
+        print(f"[SUCCESS] Email sent to {to_email}")
+        return True
 
     except Exception as exc:
         print(f"[ERROR] Unexpected error while sending email: {exc}")
