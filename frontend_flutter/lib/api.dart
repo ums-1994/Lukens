@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 
-const String baseUrl = "http://localhost:8000";
+const String baseUrl = "https://lukens-backend.onrender.com";
 
 class AppState extends ChangeNotifier {
   List<dynamic> templates = [];
