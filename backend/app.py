@@ -302,23 +302,57 @@ def init_pg_schema():
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
         FOREIGN KEY (invited_by) REFERENCES users(id)
         )''')
-        
+
+        # Determine proposals.id type (integer vs uuid) so collaborators FK matches existing schema
+        try:
+            cursor.execute("""
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_name = 'proposals' AND column_name = 'id'
+            """)
+            _collab_proposals_id_type_row = cursor.fetchone()
+            _collab_proposals_id_type = (
+                _collab_proposals_id_type_row[0]
+                if _collab_proposals_id_type_row and _collab_proposals_id_type_row[0]
+                else 'integer'
+            )
+        except Exception:
+            # Fallback for older databases where proposals.id is INTEGER
+            _collab_proposals_id_type = 'integer'
+
         # Active collaborators table (tracks collaborators who have accessed the proposal)
-        cursor.execute('''CREATE TABLE IF NOT EXISTS collaborators (
-        id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        user_id INTEGER,
-        invited_by INTEGER NOT NULL,
-        permission_level VARCHAR(50) DEFAULT 'comment',
-        status VARCHAR(50) DEFAULT 'active',
-        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_accessed_at TIMESTAMP,
-        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-        FOREIGN KEY (invited_by) REFERENCES users(id),
-        UNIQUE(proposal_id, email)
-        )''')
+        if _collab_proposals_id_type == 'uuid':
+            cursor.execute('''CREATE TABLE IF NOT EXISTS collaborators (
+            id SERIAL PRIMARY KEY,
+            proposal_id UUID NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            user_id INTEGER,
+            invited_by INTEGER NOT NULL,
+            permission_level VARCHAR(50) DEFAULT 'comment',
+            status VARCHAR(50) DEFAULT 'active',
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_accessed_at TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (invited_by) REFERENCES users(id),
+            UNIQUE(proposal_id, email)
+            )''')
+        else:
+            cursor.execute('''CREATE TABLE IF NOT EXISTS collaborators (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            user_id INTEGER,
+            invited_by INTEGER NOT NULL,
+            permission_level VARCHAR(50) DEFAULT 'comment',
+            status VARCHAR(50) DEFAULT 'active',
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_accessed_at TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (invited_by) REFERENCES users(id),
+            UNIQUE(proposal_id, email)
+            )''')
         
         # Suggested changes table for suggest mode
         cursor.execute('''CREATE TABLE IF NOT EXISTS suggested_changes (
