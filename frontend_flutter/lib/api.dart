@@ -809,10 +809,21 @@ class AppState extends ChangeNotifier {
     );
     if (r.statusCode == 200) {
       final data = jsonDecode(r.body);
-      authToken = data["access_token"];
+
+      // Backend returns `token`; keep backward compatibility with `access_token`
+      final token = (data["access_token"] ?? data["token"])?.toString();
+      if (token == null || token.isEmpty) {
+        return "Login failed: missing token in response";
+      }
+      authToken = token;
+
+      // If backend sent the user object, use it immediately
+      if (data["user"] is Map<String, dynamic>) {
+        currentUser = Map<String, dynamic>.from(data["user"]);
+      }
 
       // IMPORTANT: Sync token with AuthService for content library
-      if (currentUser != null) {
+      if (currentUser != null && authToken != null) {
         AuthService.setUserData(currentUser!, authToken!);
       }
 

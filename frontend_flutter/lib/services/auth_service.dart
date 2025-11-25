@@ -146,18 +146,32 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        _token = data['access_token'];
-        // Create a basic user object since backend doesn't return user data in login
-        _currentUser = {
-          'email': email,
-          'username': email,
-          'role': 'Business Developer'
-        };
+
+        // Backend returns `token`, older code expected `access_token`
+        final token = (data['access_token'] ?? data['token'])?.toString();
+        if (token == null || token.isEmpty) {
+          throw Exception('Login response missing access token');
+        }
+
+        // Prefer user object from backend if provided
+        final backendUser = data['user'];
+        if (backendUser is Map<String, dynamic>) {
+          _currentUser = backendUser;
+        } else {
+          _currentUser = {
+            'email': email,
+            'username': email,
+            'role': 'Business Developer'
+          };
+        }
+
+        _token = token;
         _persistSession();
+
         return {
-          'access_token': data['access_token'],
-          'token_type': data['token_type'],
-          'user': _currentUser
+          'access_token': token,
+          'token_type': data['token_type'] ?? 'bearer',
+          'user': _currentUser,
         };
       } else {
         final error = json.decode(response.body);

@@ -147,7 +147,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> updateProposal({
     required String token,
-    required int id,
+    required dynamic id, // Accept int or UUID
     required String title,
     required String content,
     String? clientName,
@@ -156,7 +156,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/proposals/$id'),
+        Uri.parse('$baseUrl/proposals/${id.toString()}'),
         headers: _getHeaders(token),
         body: json.encode({
           'title': title,
@@ -365,14 +365,14 @@ class ApiService {
   // Proposal Versions
   static Future<Map<String, dynamic>?> createVersion({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
     required int versionNumber,
     required String content,
     String? changeDescription,
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
+        Uri.parse('$baseUrl/api/proposals/${proposalId.toString()}/versions'),
         headers: _getHeaders(token),
         body: json.encode({
           'version_number': versionNumber,
@@ -395,11 +395,11 @@ class ApiService {
 
   static Future<List<dynamic>> getVersions({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
+        Uri.parse('$baseUrl/api/proposals/${proposalId.toString()}/versions'),
         headers: _getHeaders(token),
       );
 
@@ -415,12 +415,12 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> getVersion({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
     required int versionNumber,
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/versions/$versionNumber'),
+        Uri.parse('$baseUrl/api/proposals/${proposalId.toString()}/versions/$versionNumber'),
         headers: _getHeaders(token),
       );
 
@@ -437,7 +437,7 @@ class ApiService {
   // Document Comments
   static Future<Map<String, dynamic>?> createComment({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
     required String commentText,
     String? createdBy,
     int? sectionIndex,
@@ -450,7 +450,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/comments/document/$proposalId'),
+        Uri.parse('$baseUrl/api/comments/document/${proposalId.toString()}'),
         headers: _getHeaders(token),
         body: json.encode({
           'comment_text': commentText,
@@ -479,14 +479,14 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> getComments({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
     int? sectionId,
     String? blockId,
     String? blockType,
     String? status, // 'open', 'resolved', or null for all
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/api/comments/document/$proposalId').replace(
+      final uri = Uri.parse('$baseUrl/api/comments/document/${proposalId.toString()}').replace(
         queryParameters: {
           if (sectionId != null) 'section_id': sectionId.toString(),
           if (blockId != null) 'block_id': blockId,
@@ -572,11 +572,11 @@ class ApiService {
   // Proposal archival
   static Future<Map<String, dynamic>?> archiveProposal({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
   }) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/archive'),
+        Uri.parse('$baseUrl/api/proposals/${proposalId.toString()}/archive'),
         headers: _getHeaders(token),
       );
 
@@ -592,11 +592,11 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> restoreProposal({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
   }) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/restore'),
+        Uri.parse('$baseUrl/api/proposals/${proposalId.toString()}/restore'),
         headers: _getHeaders(token),
       );
 
@@ -688,14 +688,14 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> analyzeRisks({
     required String token,
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID
   }) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/ai/analyze-risks'),
         headers: _getHeaders(token),
         body: json.encode({
-          'proposal_id': proposalId,
+          'proposal_id': proposalId.toString(),
         }),
       );
 
