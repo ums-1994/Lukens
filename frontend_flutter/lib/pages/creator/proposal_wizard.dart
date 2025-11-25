@@ -22,11 +22,13 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isLoading = false;
   bool _isLoadingTemplates = true;
   List<Template> _availableTemplates = [];
+  Template? _selectedTemplate;
 
   // Form data
   final Map<String, dynamic> _formData = {
     'templateId': '',
     'templateType': '',
+    'templateKey': '',
     'proposalTitle': '',
     'clientName': '',
     'clientEmail': '',
@@ -46,6 +48,7 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isClientSigned = false;
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
+  bool _isAnalyzingRisk = false;
 
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
@@ -150,86 +153,16 @@ class _ProposalWizardState extends State<ProposalWizard>
   Future<void> _loadTemplatesFromLibrary() async {
     setState(() => _isLoadingTemplates = true);
     try {
-      // For now, use mock templates similar to template_library_page
-      // In the future, this should fetch from an API
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Mock templates - in production, fetch from API
-      final mockTemplates = [
-        Template(
-          id: '1',
-          name: 'Consulting & Technology Delivery Proposal Template',
-          description: 'Complete proposal template with all 11 sections',
-          templateType: 'proposal',
-          approvalStatus: 'approved',
-          isPublic: true,
-          isApproved: true,
-          version: 1,
-          sections: [
-            TemplateSection(title: 'Cover Page', required: true),
-            TemplateSection(title: 'Executive Summary', required: true),
-            TemplateSection(title: 'Problem Statement', required: true),
-            TemplateSection(title: 'Scope of Work', required: true),
-            TemplateSection(title: 'Project Timeline', required: true),
-            TemplateSection(title: 'Team & Bios', required: true),
-            TemplateSection(title: 'Delivery Approach', required: true),
-            TemplateSection(title: 'Pricing Table', required: true),
-            TemplateSection(title: 'Risks & Mitigation', required: true),
-            TemplateSection(title: 'Governance Model', required: true),
-            TemplateSection(
-                title: 'Appendix – Company Profile', required: true),
-          ],
-          dynamicFields: [],
-          usageCount: 0,
-          createdBy: 'admin@khonology.com',
-          createdDate: DateTime.now(),
-        ),
-        Template(
-          id: '2',
-          name: 'Standard Proposal Template',
-          description: 'Comprehensive proposal template for enterprise clients',
-          templateType: 'proposal',
-          approvalStatus: 'approved',
-          isPublic: true,
-          isApproved: true,
-          version: 2,
-          sections: [
-            TemplateSection(title: 'Executive Summary', required: true),
-            TemplateSection(title: 'Company Profile', required: true),
-            TemplateSection(title: 'Scope & Deliverables', required: true),
-          ],
-          dynamicFields: [],
-          usageCount: 15,
-          createdBy: 'admin@khonology.com',
-          createdDate: DateTime.now().subtract(const Duration(days: 30)),
-        ),
-        Template(
-          id: '3',
-          name: 'Statement of Work (SOW) Template',
-          description: 'Complete SOW template with all sections',
-          templateType: 'sow',
-          approvalStatus: 'approved',
-          isPublic: true,
-          isApproved: true,
-          version: 1,
-          sections: [
-            TemplateSection(title: 'Project Overview', required: true),
-            TemplateSection(title: 'Scope of Work', required: true),
-            TemplateSection(title: 'Deliverables', required: true),
-            TemplateSection(title: 'Timeline & Milestones', required: true),
-            TemplateSection(title: 'Resources & Team', required: true),
-            TemplateSection(title: 'Terms & Conditions', required: true),
-          ],
-          dynamicFields: [],
-          usageCount: 8,
-          createdBy: 'admin@khonology.com',
-          createdDate: DateTime.now().subtract(const Duration(days: 15)),
-        ),
-      ];
+      final app = context.read<AppState>();
+      await app.fetchTemplates();
+      final fetched = app.templates
+          .map((raw) => Template.fromJson(
+              Map<String, dynamic>.from(raw as Map<String, dynamic>)))
+          .where((template) => template.isApproved && template.isPublic)
+          .toList();
 
       setState(() {
-        _availableTemplates =
-            mockTemplates.where((t) => t.isApproved && t.isPublic).toList();
+        _availableTemplates = fetched;
         _isLoadingTemplates = false;
       });
     } catch (e) {
@@ -280,6 +213,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                 id: '',
                 name: '',
                 templateType: '',
+                templateKey: '',
                 approvalStatus: '',
                 isPublic: false,
                 isApproved: false,
@@ -292,6 +226,29 @@ class _ProposalWizardState extends State<ProposalWizard>
               ),
       );
       _formData['templateType'] = template.templateType;
+      _formData['templateKey'] = template.templateKey ?? template.id;
+      _selectedTemplate = template;
+
+      final List<String> requiredModules = template.sections
+          .where((section) => section.required)
+          .map((section) => section.key ?? _slugify(section.title))
+          .whereType<String>()
+          .where((key) => key.isNotEmpty)
+          .toList();
+      if (requiredModules.isNotEmpty) {
+        _formData['selectedModules'] = requiredModules;
+      }
+
+      final contents =
+          Map<String, String>.from(_formData['moduleContents'] ?? {});
+      for (final section in template.sections) {
+        final key = section.key ?? _slugify(section.title);
+        final defaultContent = section.defaultContent ?? '';
+        if (key.isNotEmpty && defaultContent.isNotEmpty) {
+          contents[key] = defaultContent;
+        }
+      }
+      _formData['moduleContents'] = contents;
     });
   }
 
@@ -333,20 +290,38 @@ class _ProposalWizardState extends State<ProposalWizard>
       final app = context.read<AppState>();
 
       // Create proposal in backend
-      await app.createProposal(
+      final extraData = {
+        'client_name': _formData['clientName'],
+        'client_email': _formData['clientEmail'],
+        'template_id': _formData['templateId'],
+        'template_key': _formData['templateKey'],
+        'selected_modules': _formData['selectedModules'],
+        'module_contents': _formData['moduleContents'],
+        'project_type': _formData['projectType'],
+        'estimated_value': _formData['estimatedValue'],
+        'timeline': _formData['timeline'],
+        'opportunity_name': _formData['opportunityName'],
+      };
+
+      final created = await app.createProposal(
         _formData['opportunityName'],
         _formData['clientName'],
+        templateKey: _selectedTemplate?.templateType,
+        extraData: extraData,
       );
 
-      // Generate a temporary proposal ID for the compose page
-      final proposalId = 'temp-${DateTime.now().millisecondsSinceEpoch}';
+      if (created == null) {
+        throw Exception('Unable to create proposal');
+      }
+
+      _proposalId = created['id']?.toString();
 
       // Navigate to enhanced compose page
       Navigator.pushReplacementNamed(
         context,
         '/enhanced-compose',
         arguments: {
-          'proposalId': proposalId,
+          'proposalId': _proposalId ?? '',
           'proposalTitle': _formData['opportunityName'],
           'templateType': _formData['templateType'],
           'selectedModules': _formData['selectedModules'],
@@ -574,6 +549,7 @@ class _ProposalWizardState extends State<ProposalWizard>
         id: '',
         name: 'Unknown Template',
         templateType: '',
+        templateKey: '',
         approvalStatus: '',
         isPublic: false,
         isApproved: false,
@@ -1642,9 +1618,20 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
 
     final status = _governanceResults['status'] ?? 'PENDING';
-    final score = _governanceResults['score'] ?? 0;
-    final checks = _governanceResults['checks'] ?? [];
-    final issues = _governanceResults['issues'] ?? [];
+    final num scoreValue = _governanceResults['score'] is num
+        ? _governanceResults['score']
+        : 0;
+    final scoreText = scoreValue.toStringAsFixed(0);
+    final issuesRaw = (_governanceResults['issues'] as List?) ?? [];
+    final actions =
+        List<String>.from(_governanceResults['required_actions'] ?? []);
+    final issues = issuesRaw
+        .map((issue) => issue is Map<String, dynamic>
+            ? (issue['description'] ??
+                issue['section'] ??
+                issue.toString())
+            : issue.toString())
+        .toList();
     final passed = status == 'PASSED';
 
     Color statusColor = PremiumTheme.success;
@@ -1678,7 +1665,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                       ),
                     ),
                     Text(
-                      'Score: ${score.toStringAsFixed(0)}%',
+                      'Score: $scoreText%',
                       style: PremiumTheme.bodyMedium.copyWith(
                         color: PremiumTheme.textSecondary,
                         fontSize: 12,
@@ -1702,90 +1689,6 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
         ),
         const SizedBox(height: 12),
-        // Checklist Results in Compact Grid
-        if (checks.isNotEmpty) ...[
-          Text(
-            'Checklist Results',
-            style: PremiumTheme.bodyMedium.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // Use 2 columns for better space utilization
-              final crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  childAspectRatio: crossAxisCount == 2 ? 4 : 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: checks.length,
-                itemBuilder: (context, index) {
-                  final check = checks[index];
-                  final checkLabel = check['label'] as String? ?? '';
-                  final checkPassed = (check['passed'] as bool?) ?? false;
-                  final checkRequired = (check['required'] as bool?) ?? false;
-
-                  return GlassContainer(
-                    borderRadius: 12,
-                    padding: const EdgeInsets.all(10),
-                    child: Row(
-                      children: [
-                        Icon(
-                          checkPassed ? Icons.check_circle : Icons.cancel,
-                          color: checkPassed
-                              ? PremiumTheme.success
-                              : PremiumTheme.error,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                checkLabel,
-                                style: PremiumTheme.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                  decoration: checkPassed
-                                      ? null
-                                      : TextDecoration.lineThrough,
-                                  color: checkPassed
-                                      ? PremiumTheme.textPrimary
-                                      : PremiumTheme.textSecondary,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              if (checkRequired && !checkPassed)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    'Required',
-                                    style: PremiumTheme.labelMedium.copyWith(
-                                      color: PremiumTheme.error,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ],
         // Issues/Recommendations (Compact)
         if (issues.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -1824,6 +1727,43 @@ class _ProposalWizardState extends State<ProposalWizard>
                 ),
               )),
         ],
+        if (actions.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Required Actions',
+            style: PremiumTheme.bodyMedium.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...actions.map(
+            (action) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: GlassContainer(
+                borderRadius: 12,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.checklist_rtl,
+                      color: PremiumTheme.info,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        action,
+                        style: PremiumTheme.bodyMedium.copyWith(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1831,6 +1771,22 @@ class _ProposalWizardState extends State<ProposalWizard>
   // Risk Assessment Builder
   Widget _buildRiskAssessment() {
     final hasRiskData = _riskAssessment.isNotEmpty;
+
+    if (_isAnalyzingRisk) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(PremiumTheme.teal),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Running AI Risk Assessment...',
+            style: PremiumTheme.bodyMedium,
+          ),
+        ],
+      );
+    }
 
     if (!hasRiskData) {
       return Column(
@@ -1875,10 +1831,25 @@ class _ProposalWizardState extends State<ProposalWizard>
       );
     }
 
-    final riskLevel = _riskAssessment['risk_level'] ?? 'Low';
-    final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final risks = _riskAssessment['risks'] ?? [];
-    final recommendations = _riskAssessment['recommendations'] ?? [];
+    final riskLevel =
+        _riskAssessment['risk_level'] ?? _riskAssessment['riskLevel'] ?? 'Low';
+    final num riskScore = _riskAssessment['risk_score'] is num
+        ? _riskAssessment['risk_score']
+        : 0;
+    final issuesRaw = (_riskAssessment['issues'] as List?) ??
+        (_riskAssessment['risks'] as List?) ??
+        [];
+    final recommendations =
+        (_riskAssessment['recommendations'] as List?) ??
+            (_riskAssessment['required_actions'] as List?) ??
+            [];
+    final issues = issuesRaw
+        .map((issue) => issue is Map<String, dynamic>
+            ? (issue['description'] ??
+                issue['section'] ??
+                issue.toString())
+            : issue.toString())
+        .toList();
 
     Color riskColor = PremiumTheme.success;
     if (riskLevel == 'Medium') riskColor = Colors.orange;
@@ -1934,7 +1905,7 @@ class _ProposalWizardState extends State<ProposalWizard>
         ),
         const SizedBox(height: 16),
         // Identified Risks
-        if (risks.isNotEmpty) ...[
+        if (issues.isNotEmpty) ...[
           Text(
             'Identified Risks',
             style: PremiumTheme.bodyLarge.copyWith(
@@ -1942,7 +1913,7 @@ class _ProposalWizardState extends State<ProposalWizard>
             ),
           ),
           const SizedBox(height: 12),
-          ...risks.map<Widget>((risk) => Padding(
+          ...issues.map<Widget>((risk) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GlassContainer(
                   borderRadius: 16,
@@ -2195,142 +2166,68 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   // Action Methods
   Future<void> _runRiskAssessment() async {
-    setState(() => _isLoading = true);
+    await _runAnalysis(governance: false);
+  }
+
+  Future<void> _runGovernanceCheck() async {
+    await _runAnalysis(governance: true);
+  }
+
+  Future<void> _runAnalysis({required bool governance}) async {
+    if (governance) {
+      setState(() => _isRunningGovernance = true);
+    } else {
+      setState(() => _isAnalyzingRisk = true);
+    }
 
     try {
-      // Simulate risk assessment - replace with actual API call
-      await Future.delayed(const Duration(seconds: 2));
-
-      setState(() {
-        _riskAssessment = {
-          'risk_level': 'Low',
-          'risk_score': 85.0,
-          'risks': [
-            'Pricing information is complete',
-            'All required sections are present',
-          ],
-          'recommendations': [
-            'Consider adding more detail to the scope section',
-            'Include timeline estimates for better clarity',
-          ],
-        };
-        _isLoading = false;
-      });
+      final app = context.read<AppState>();
+      final payload = _buildAnalysisPayload();
+      final result = await app.analyzeProposalAI(payload);
+      if (result != null) {
+        setState(() {
+          _governanceResults =
+              Map<String, dynamic>.from(result['governance'] ?? {});
+          _riskAssessment =
+              Map<String, dynamic>.from(result['analysis'] ?? {});
+        });
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error running risk assessment: $e')),
+        SnackBar(content: Text('Analysis failed: $e')),
       );
+    } finally {
+      if (governance) {
+        setState(() => _isRunningGovernance = false);
+      } else {
+        setState(() => _isAnalyzingRisk = false);
+      }
     }
   }
 
-  // Run AI Governance Check
-  Future<void> _runGovernanceCheck() async {
-    setState(() => _isRunningGovernance = true);
-
-    try {
-      // Simulate AI governance check - replace with actual API call
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Analyze proposal data
-      final hasTemplate =
-          _formData['templateId']?.toString().isNotEmpty ?? false;
-      final hasClientName =
-          _formData['clientName']?.toString().isNotEmpty ?? false;
-      final hasClientEmail =
-          _formData['clientEmail']?.toString().isNotEmpty ?? false;
-      final hasProposalTitle =
-          _formData['proposalTitle']?.toString().isNotEmpty ?? false;
-      final selectedModules =
-          List<String>.from(_formData['selectedModules'] ?? []);
-      final hasModules = selectedModules.isNotEmpty;
-
-      final checks = [
-        {
-          'id': 'required_sections',
-          'label': 'All required sections included',
-          'required': true,
-          'passed': hasModules && selectedModules.length >= 3,
-        },
-        {
-          'id': 'mandatory_fields',
-          'label': 'All mandatory fields completed',
-          'required': true,
-          'passed': hasProposalTitle && hasClientName && hasClientEmail,
-        },
-        {
-          'id': 'pricing_complete',
-          'label': 'Pricing information is complete',
-          'required': true,
-          'passed': _formData['estimatedValue']?.toString().isNotEmpty ?? false,
-        },
-        {
-          'id': 'client_info',
-          'label': 'Client information is accurate',
-          'required': true,
-          'passed': hasClientName && hasClientEmail,
-        },
-        {
-          'id': 'risk_statements',
-          'label': 'Risk statements and disclaimers included',
-          'required': true,
-          'passed': selectedModules.contains('assumptions_risks') ||
-              selectedModules.contains('terms_conditions'),
-        },
-        {
-          'id': 'compliance',
-          'label': 'Compliance requirements met',
-          'required': true,
-          'passed': hasTemplate && hasProposalTitle,
-        },
-        {
-          'id': 'reviewed_content',
-          'label': 'Content reviewed for accuracy',
-          'required': false,
-          'passed': true, // Assume passed for optional
-        },
-        {
-          'id': 'legal_terms',
-          'label': 'Legal terms and conditions included',
-          'required': false,
-          'passed': selectedModules.contains('terms_conditions'),
-        },
-      ];
-
-      final requiredChecks =
-          checks.where((c) => (c['required'] as bool?) ?? false).toList();
-      final passedRequired =
-          requiredChecks.where((c) => (c['passed'] as bool?) ?? false).length;
-      final totalRequired = requiredChecks.length;
-      final score = totalRequired > 0
-          ? (passedRequired / totalRequired * 100).round()
-          : 0;
-      final status = passedRequired == totalRequired ? 'PASSED' : 'FAILED';
-
-      final issues = <String>[];
-      if (!hasTemplate) issues.add('Template not selected');
-      if (!hasProposalTitle) issues.add('Proposal title is missing');
-      if (!hasClientName) issues.add('Client name is missing');
-      if (!hasClientEmail) issues.add('Client email is missing');
-      if (!hasModules) issues.add('No content modules selected');
-      if (selectedModules.length < 3)
-        issues.add('Insufficient content modules (minimum 3 required)');
-
-      setState(() {
-        _governanceResults = {
-          'status': status,
-          'score': score,
-          'checks': checks,
-          'issues': issues,
-        };
-        _isRunningGovernance = false;
-      });
-    } catch (e) {
-      setState(() => _isRunningGovernance = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error running governance check: $e')),
-      );
-    }
+  Map<String, dynamic> _buildAnalysisPayload() {
+    final modules = List<String>.from(_formData['selectedModules'] ?? []);
+    final moduleContents =
+        Map<String, String>.from(_formData['moduleContents'] ?? {});
+    final sections = modules
+        .map((moduleId) => {
+              'key': moduleId,
+              'title': _moduleLabel(moduleId),
+              'content': moduleContents[moduleId] ?? ''
+            })
+        .toList();
+    return {
+      'proposal_id': _proposalId,
+      'title': _formData['opportunityName'],
+      'client_name': _formData['clientName'],
+      'client_email': _formData['clientEmail'],
+      'project_type': _formData['projectType'],
+      'estimated_value': _formData['estimatedValue'],
+      'timeline': _formData['timeline'],
+      'selected_modules': modules,
+      'module_contents': moduleContents,
+      'sections': sections,
+    };
   }
 
   Future<void> _submitForInternalApproval() async {
@@ -2408,5 +2305,21 @@ class _ProposalWizardState extends State<ProposalWizard>
         SnackBar(content: Text('Error sending to client: $e')),
       );
     }
+  }
+
+  String _moduleLabel(String moduleId) {
+    final match = _contentModules.firstWhere(
+      (module) => module['id'] == moduleId,
+      orElse: () => {'name': moduleId},
+    );
+    return (match['name'] ?? moduleId).toString();
+  }
+
+  String _slugify(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_+'), '')
+        .replaceAll(RegExp(r'_+$'), '');
   }
 }

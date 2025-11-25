@@ -19,6 +19,9 @@ class AppState extends ChangeNotifier {
     if (AuthService.token != null && AuthService.currentUser != null) {
       authToken = AuthService.token;
       currentUser = AuthService.currentUser;
+      if (authToken != null && authToken!.isNotEmpty) {
+        AIAnalysisService.setAuthToken(authToken!);
+      }
       print('✅ Synced token from AuthService on startup');
     }
 
@@ -56,8 +59,22 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchTemplates() async {
-    // For now, return empty templates since backend doesn't have this endpoint yet
-    templates = [];
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/templates"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body);
+        templates = List<dynamic>.from(data['templates'] ?? []);
+      } else {
+        templates = [];
+      }
+    } catch (e) {
+      print('Error fetching templates: $e');
+      templates = [];
+    }
+    notifyListeners();
   }
 
   Future<void> fetchContent() async {
@@ -375,14 +392,24 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> createProposal(String title, String client,
-      {String? templateKey}) async {
+      {String? templateKey, Map<String, dynamic>? extraData}) async {
     try {
+      final body = {
+        "title": title,
+        "client": client,
+        "client_name": client,
+        if (templateKey != null) "template_key": templateKey,
+        if (extraData != null) ...extraData,
+      };
       final r = await http.post(
         Uri.parse("$baseUrl/proposals"),
         headers: _headers,
-        body: jsonEncode(
-            {"title": title, "client": client, "template_key": templateKey}),
+        body: jsonEncode(body),
       );
+      if (r.statusCode >= 400) {
+        print('Error creating proposal: ${r.statusCode} - ${r.body}');
+        return null;
+      }
       final p = jsonDecode(r.body);
       currentProposal = p;
       await fetchProposals();
@@ -444,15 +471,33 @@ class AppState extends ChangeNotifier {
     return [];
   }
 
+  Future<Map<String, dynamic>?> fetchProposalById(String proposalId) async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/proposals/$proposalId"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching proposal by id: $e');
+    }
+    return null;
+  }
+
   Future<List<dynamic>> getContentModules() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/content-modules"),
+        Uri.parse("$baseUrl/content"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
-        return data['modules'] ?? [];
+        if (data is List) return data;
+        if (data is Map && data.containsKey('content')) {
+          return data['content'] ?? [];
+        }
       }
     } catch (e) {
       print('Error fetching content modules: $e');
@@ -466,7 +511,7 @@ class AppState extends ChangeNotifier {
       final r = await http.post(
         Uri.parse("$baseUrl/proposals/ai-analysis"),
         headers: _headers,
-        body: jsonEncode(proposalData),
+        body: jsonEncode({"proposal": proposalData}),
       );
       if (r.statusCode == 200) {
         return jsonDecode(r.body);

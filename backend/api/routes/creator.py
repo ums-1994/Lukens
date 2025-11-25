@@ -2,17 +2,257 @@
 Creator role routes - Content management, proposal CRUD, AI features, uploads
 """
 from flask import Blueprint, request, jsonify
+import json
 import os
+import re
 import traceback
 import cloudinary
 import cloudinary.uploader
 import psycopg2.extras
+from psycopg2.extras import Json, RealDictCursor
 from datetime import datetime
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
+from api.data.default_templates import DEFAULT_TEMPLATES
 
 bp = Blueprint('creator', __name__)
+
+# ============================================================================
+# HELPERS
+# ============================================================================
+
+def _seed_default_templates(conn):
+    """Populate proposal_templates with default records if empty."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM proposal_templates')
+        count = cursor.fetchone()
+        total = count[0] if count else 0
+        if total and total > 0:
+            return
+        for template in DEFAULT_TEMPLATES:
+            cursor.execute(
+                '''
+                INSERT INTO proposal_templates
+                (template_key, name, description, template_type, category, status,
+                 is_public, is_approved, version, sections, dynamic_fields)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (template_key) DO NOTHING
+                ''',
+                (
+                    template.get('template_key'),
+                    template.get('name'),
+                    template.get('description'),
+                    template.get('template_type', 'proposal'),
+                    template.get('category', 'Standard'),
+                    template.get('status', 'draft'),
+                    template.get('is_public', True),
+                    template.get('is_approved', False),
+                    template.get('version', 1),
+                    Json(template.get('sections', [])),
+                    Json(template.get('dynamic_fields', [])),
+                ),
+            )
+        conn.commit()
+        print(f"✅ Seeded {len(DEFAULT_TEMPLATES)} default proposal templates")
+    except Exception as seed_error:
+        print(f"⚠️ Failed to seed default templates: {seed_error}")
+
+
+def _parse_sections(value):
+    if not value:
+        return []
+    if isinstance(value, (list, dict)):
+        return value
+    try:
+        return json.loads(value)
+    except (ValueError, TypeError):
+        return []
+
+
+def _serialize_template_row(row):
+    sections = _parse_sections(row.get('sections'))
+    dynamic_fields = _parse_sections(row.get('dynamic_fields'))
+    return {
+        'id': row.get('id'),
+        'template_key': row.get('template_key'),
+        'name': row.get('name'),
+        'description': row.get('description'),
+        'template_type': row.get('template_type', 'proposal'),
+        'category': row.get('category'),
+        'status': row.get('status'),
+        'is_public': row.get('is_public', True),
+        'is_approved': row.get('is_approved', False),
+        'version': row.get('version', 1),
+        'sections': sections,
+        'dynamic_fields': dynamic_fields,
+        'usage_count': row.get('usage_count', 0),
+        'created_by': row.get('created_by'),
+        'created_at': row.get('created_at').isoformat() if row.get('created_at') else None,
+        'updated_at': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+    }
+
+
+def _normalize_selected_modules(selected):
+    if not selected:
+        return []
+    if isinstance(selected, list):
+        return [str(item) for item in selected]
+    return [str(selected)]
+
+
+def _normalize_module_contents(contents):
+    if not contents:
+        return {}
+    if isinstance(contents, dict):
+        return {str(k): (v or '') for k, v in contents.items()}
+    return {}
+
+
+def _build_sections_payload(template_sections, selected_modules, module_contents):
+    payload = []
+    selected = set(_normalize_selected_modules(selected_modules))
+
+    for section in template_sections or []:
+        key = section.get('key') or section.get('title')
+        if not key:
+            continue
+        include = section.get('required', False) or not selected or key in selected
+        if not include:
+            continue
+        content = module_contents.get(key) or section.get('body') or ''
+        payload.append({
+            'key': key,
+            'title': section.get('title', key.replace('_', ' ').title()),
+            'required': section.get('required', False),
+            'content': content,
+        })
+
+    # Append any ad-hoc sections provided by the user that were not part of the template
+    for module_key, module_value in module_contents.items():
+        if any(item.get('key') == module_key for item in payload):
+            continue
+        payload.append({
+            'key': module_key,
+            'title': module_key.replace('_', ' ').title(),
+            'required': False,
+            'content': module_value,
+        })
+
+    return payload
+
+
+def _load_proposal_payload(cursor, proposal_id):
+    cursor.execute(
+        '''SELECT id, owner_id, title, content, sections, status, client_name, client_email,
+                  budget, timeline_days, template_key
+           FROM proposals WHERE id = %s''',
+        (proposal_id,)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        'id': row[0],
+        'owner_id': row[1],
+        'title': row[2],
+        'content': row[3],
+        'sections': _parse_sections(row[4]),
+        'status': row[5],
+        'client_name': row[6],
+        'client_email': row[7],
+        'budget': row[8],
+        'timeline_days': row[9],
+        'template_key': row[10],
+    }
+
+
+def _basic_governance_check(proposal_payload):
+    issues = []
+    risk_score = 0
+    sections = proposal_payload.get('sections') or []
+    section_lookup = {}
+    for section in sections:
+        key = section.get('key') or section.get('title')
+        section_lookup[key] = section.get('content', '')
+
+    required_sections = ['executive_summary', 'scope_deliverables', 'company_profile', 'terms_conditions']
+    for required in required_sections:
+        if not section_lookup.get(required):
+            issues.append({
+                'category': 'missing_section',
+                'section': required,
+                'severity': 'high',
+                'description': f'{required.replace("_", " ").title()} is required',
+                'recommendation': 'Add content using the template library'
+            })
+            risk_score += 10
+
+    if not proposal_payload.get('client_name'):
+        issues.append({
+            'category': 'metadata',
+            'section': 'client_name',
+            'severity': 'medium',
+            'description': 'Client name is missing',
+            'recommendation': 'Provide client information in Compose step'
+        })
+        risk_score += 5
+
+    readiness_score = max(0, 100 - risk_score)
+    return {
+        'status': 'PASSED' if risk_score == 0 else 'FAILED',
+        'score': readiness_score,
+        'issues': issues,
+        'risk_score': risk_score,
+        'can_release': risk_score == 0,
+        'required_actions': [issue['description'] for issue in issues]
+    }
+
+
+def _governance_from_analysis(analysis):
+    issues = analysis.get('issues', [])
+    risk_score = int(analysis.get('risk_score', 0) or 0)
+    readiness_score = max(0, 100 - risk_score)
+    return {
+        'status': 'PASSED' if analysis.get('can_release') else 'FAILED',
+        'score': readiness_score,
+        'issues': issues,
+        'risk_score': risk_score,
+        'can_release': analysis.get('can_release', False),
+        'required_actions': analysis.get('required_actions') or [],
+        'summary': analysis.get('summary')
+    }
+
+
+def _persist_governance(conn, proposal_id, governance_payload):
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        INSERT INTO proposal_governance
+        (proposal_id, readiness_score, status, issues, risk_score, can_release, analysis, last_checked)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (proposal_id) DO UPDATE SET
+            readiness_score = EXCLUDED.readiness_score,
+            status = EXCLUDED.status,
+            issues = EXCLUDED.issues,
+            risk_score = EXCLUDED.risk_score,
+            can_release = EXCLUDED.can_release,
+            analysis = EXCLUDED.analysis,
+            last_checked = CURRENT_TIMESTAMP
+        ''',
+        (
+            proposal_id,
+            governance_payload.get('score', 0),
+            governance_payload.get('status', 'pending'),
+            Json(governance_payload.get('issues', [])),
+            governance_payload.get('risk_score'),
+            governance_payload.get('can_release', False),
+            Json(governance_payload),
+        )
+    )
+    conn.commit()
+
 
 # ============================================================================
 # CONTENT LIBRARY ROUTES
@@ -166,6 +406,60 @@ def get_trash(username=None):
         return {'detail': str(e)}, 500
 
 # ============================================================================
+# TEMPLATE LIBRARY ROUTES
+# ============================================================================
+
+@bp.get("/templates")
+@token_required
+def list_templates(username=None):
+    """Return all proposal templates."""
+    try:
+        with get_db_connection() as conn:
+            _seed_default_templates(conn)
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute('''
+                SELECT id, template_key, name, description, template_type, category,
+                       status, is_public, is_approved, version, sections,
+                       dynamic_fields, usage_count, created_by, created_at, updated_at
+                FROM proposal_templates
+                ORDER BY name
+            ''')
+            rows = cursor.fetchall()
+            templates = [_serialize_template_row(row) for row in rows]
+            return {'templates': templates}, 200
+    except Exception as e:
+        print(f"❌ Error fetching templates: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/templates/<int:template_id>")
+@token_required
+def get_template(username=None, template_id=None):
+    """Return a single template."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(
+                '''
+                SELECT id, template_key, name, description, template_type, category,
+                       status, is_public, is_approved, version, sections,
+                       dynamic_fields, usage_count, created_by, created_at, updated_at
+                FROM proposal_templates
+                WHERE id = %s OR template_key = %s
+                ''',
+                (template_id, str(template_id)),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return {'detail': 'Template not found'}, 404
+            return _serialize_template_row(row), 200
+    except Exception as e:
+        print(f"❌ Error fetching template {template_id}: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+# ============================================================================
 # PROPOSAL ROUTES (CREATOR)
 # ============================================================================
 
@@ -186,33 +480,44 @@ def get_proposals(username=None):
                 return {'detail': 'User not found'}, 404
             owner_id = user_row[0]
             
-            cursor.execute(
-                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
-                          budget, timeline_days, created_at, updated_at
-                   FROM proposals WHERE owner_id = %s
-                   ORDER BY created_at DESC''',
+            list_cursor = conn.cursor(cursor_factory=RealDictCursor)
+            list_cursor.execute(
+                '''SELECT p.id, p.owner_id, p.title, p.content, p.sections, p.status,
+                          p.client_name, p.client_email, p.budget, p.timeline_days,
+                          p.created_at, p.updated_at, p.template_key,
+                          g.status AS governance_status, g.readiness_score, g.risk_score, g.can_release
+                   FROM proposals p
+                   LEFT JOIN proposal_governance g ON g.proposal_id = p.id
+                   WHERE p.owner_id = %s
+                   ORDER BY p.created_at DESC''',
                 (owner_id,)
             )
-            rows = cursor.fetchall()
+            rows = list_cursor.fetchall()
             proposals = []
             for row in rows:
                 # Handle NULL status - default to 'draft' (lowercase to match constraint)
-                status = row[4] if row[4] is not None else 'draft'
+                status = row.get('status') if row.get('status') is not None else 'draft'
                 proposals.append({
-                    'id': row[0],
-                    'user_id': row[1],
-                    'owner_id': row[1],  # For compatibility
-                    'title': row[2],
-                    'content': row[3],
+                    'id': row.get('id'),
+                    'user_id': row.get('owner_id'),
+                    'owner_id': row.get('owner_id'),  # For compatibility
+                    'title': row.get('title'),
+                    'content': row.get('content'),
+                    'sections': _parse_sections(row.get('sections')),
                     'status': status,
-                    'client_name': row[5],
-                    'client': row[5],  # For compatibility
-                    'client_email': row[6],
-                    'budget': float(row[7]) if row[7] else None,
-                    'timeline_days': row[8],
-                    'created_at': row[9].isoformat() if row[9] else None,
-                    'updated_at': row[10].isoformat() if row[10] else None,
-                    'updatedAt': row[10].isoformat() if row[10] else None,
+                    'client_name': row.get('client_name'),
+                    'client': row.get('client_name'),  # For compatibility
+                    'client_email': row.get('client_email'),
+                    'budget': float(row.get('budget')) if row.get('budget') else None,
+                    'timeline_days': row.get('timeline_days'),
+                    'created_at': row.get('created_at').isoformat() if row.get('created_at') else None,
+                    'updated_at': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+                    'updatedAt': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+                    'template_key': row.get('template_key'),
+                    'governance_status': row.get('governance_status') or 'pending',
+                    'readiness_score': row.get('readiness_score'),
+                    'risk_score': row.get('risk_score'),
+                    'can_release': row.get('can_release'),
                 })
             print(f"✅ Found {len(proposals)} proposals for user {username}")
             return proposals, 200
@@ -243,6 +548,76 @@ def create_proposal(username=None):
             client_email = data.get('client_email') or ''
             # Legacy "client" column is still NOT NULL in many databases, so keep it in sync
             client_value = client_name
+            template_id = data.get('template_id') or data.get('templateId')
+            template_key_value = data.get('template_key') or data.get('templateKey')
+            selected_modules = data.get('selected_modules') or data.get('selectedModules') or []
+            module_contents = _normalize_module_contents(
+                data.get('module_contents') or data.get('moduleContents')
+            )
+            template_sections = []
+            if template_id:
+                cursor.execute(
+                    '''SELECT sections, template_key FROM proposal_templates WHERE id = %s''',
+                    (template_id,)
+                )
+                template_row = cursor.fetchone()
+                if template_row:
+                    tpl_sections = template_row[0]
+                    tpl_key = template_row[1]
+                    template_sections = tpl_sections if isinstance(tpl_sections, list) else _parse_sections(tpl_sections)
+                    if tpl_key and not template_key_value:
+                        template_key_value = tpl_key
+            elif template_key_value:
+                cursor.execute(
+                    '''SELECT sections FROM proposal_templates WHERE template_key = %s''',
+                    (template_key_value,)
+                )
+                template_row = cursor.fetchone()
+                if template_row:
+                    tpl_sections = template_row[0]
+                    template_sections = tpl_sections if isinstance(tpl_sections, list) else _parse_sections(tpl_sections)
+            sections_payload = _build_sections_payload(template_sections, selected_modules, module_contents)
+
+            basic_info_lines = []
+            if client_name:
+                basic_info_lines.append(f"Client: {client_name}")
+            opportunity_name = data.get('opportunity_name') or data.get('opportunityName')
+            if opportunity_name:
+                basic_info_lines.append(f"Opportunity: {opportunity_name}")
+            project_type = data.get('project_type') or data.get('projectType')
+            if project_type:
+                basic_info_lines.append(f"Project Type: {project_type}")
+            timeline_label = data.get('timeline') or data.get('timelineLabel')
+            if timeline_label:
+                basic_info_lines.append(f"Timeline: {timeline_label}")
+            estimated_value_input = data.get('estimated_value') or data.get('estimatedValue')
+            if estimated_value_input:
+                basic_info_lines.append(f"Estimated Value: {estimated_value_input}")
+            if basic_info_lines:
+                sections_payload.insert(0, {
+                    'key': 'basic_information',
+                    'title': 'Basic Information',
+                    'required': True,
+                    'content': '\n'.join(basic_info_lines)
+                })
+            sections_json = json.dumps(sections_payload) if sections_payload else None
+
+            budget_value = data.get('budget')
+            if not budget_value and estimated_value_input:
+                cleaned = re.sub(r'[^0-9.\-]', '', str(estimated_value_input))
+                try:
+                    budget_value = float(cleaned)
+                except ValueError:
+                    budget_value = None
+
+            timeline_days = data.get('timeline_days') or data.get('timelineDays')
+            if not timeline_days and timeline_label:
+                numbers = re.findall(r'\d+', str(timeline_label))
+                if numbers:
+                    try:
+                        timeline_days = int(numbers[0])
+                    except ValueError:
+                        timeline_days = None
             
             # Normalize status - use lowercase to match database constraint
             raw_status = data.get('status', 'draft')
@@ -262,40 +637,44 @@ def create_proposal(username=None):
                 else:
                     # Keep as lowercase for basic statuses, or use exact value if it's a special status
                     normalized_status = status_lower
-            
-            cursor.execute(
-                '''INSERT INTO proposals (owner_id, title, client, content, status, client_name, client_email, budget, timeline_days)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, owner_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
-                (
-                    owner_id,
-                    data.get('title', 'Untitled Document'),
-                    client_value,
-                    data.get('content'),
-                    normalized_status,
-                    client_name,
-                    client_email,
-                    data.get('budget'),
-                    data.get('timeline_days')
-                )
+        cursor.execute(
+            '''INSERT INTO proposals (owner_id, title, client, content, sections, status, client_name, client_email, budget, timeline_days, template_key)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+                   RETURNING id, owner_id, title, content, sections, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+            (
+                owner_id,
+                data.get('title', 'Untitled Document'),
+                client_value,
+                data.get('content'),
+                sections_json,
+                normalized_status,
+                client_name,
+                client_email,
+                budget_value,
+                timeline_days,
+                template_key_value
             )
+        )
             result = cursor.fetchone()
             conn.commit()
             
+            sections_response = _parse_sections(result[4]) if len(result) > 4 else []
             proposal = {
                 'id': result[0],
                 'user_id': result[1],
                 'owner_id': result[1],
                 'title': result[2],
                 'content': result[3],
-                'status': result[4],
-                'client_name': result[5],
-                'client': result[5],
-                'client_email': result[6],
-                'budget': float(result[7]) if result[7] else None,
-                'timeline_days': result[8],
-                'created_at': result[9].isoformat() if result[9] else None,
-                'updated_at': result[10].isoformat() if result[10] else None,
+                'sections': sections_response,
+                'status': result[5],
+                'client_name': result[6],
+                'client': result[6],
+                'client_email': result[7],
+                'budget': float(result[8]) if result[8] else None,
+                'timeline_days': result[9],
+                'created_at': result[10].isoformat() if result[10] else None,
+                'updated_at': result[11].isoformat() if result[11] else None,
+                'template_key': template_key_value,
             }
             
             print(f"✅ Proposal created: {proposal['id']}")
@@ -341,6 +720,17 @@ def update_proposal(username=None, proposal_id=None):
             if 'content' in data:
                 updates.append('content = %s')
                 params.append(data['content'])
+            if 'sections' in data:
+                sections_value = data.get('sections')
+                if isinstance(sections_value, (list, dict)):
+                    updates.append('sections = %s')
+                    params.append(json.dumps(sections_value))
+                elif sections_value is None:
+                    updates.append('sections = %s')
+                    params.append(None)
+                else:
+                    updates.append('sections = %s')
+                    params.append(sections_value)
             if 'status' in data:
                 updates.append('status = %s')
                 params.append(data['status'])
@@ -360,6 +750,9 @@ def update_proposal(username=None, proposal_id=None):
             if 'timeline_days' in data:
                 updates.append('timeline_days = %s')
                 params.append(data['timeline_days'])
+            if 'template_key' in data:
+                updates.append('template_key = %s')
+                params.append(data['template_key'])
             
             if not updates:
                 return {'detail': 'No updates provided'}, 400
@@ -369,7 +762,7 @@ def update_proposal(username=None, proposal_id=None):
             
             cursor.execute(
                 f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s
-                   RETURNING id, owner_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+                   RETURNING id, owner_id, title, content, sections, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
                 params
             )
             result = cursor.fetchone()
@@ -381,14 +774,15 @@ def update_proposal(username=None, proposal_id=None):
                 'owner_id': result[1],
                 'title': result[2],
                 'content': result[3],
-                'status': result[4],
-                'client_name': result[5],
-                'client': result[5],
-                'client_email': result[6],
-                'budget': float(result[7]) if result[7] else None,
-                'timeline_days': result[8],
-                'created_at': result[9].isoformat() if result[9] else None,
-                'updated_at': result[10].isoformat() if result[10] else None,
+                'sections': _parse_sections(result[4]),
+                'status': result[5],
+                'client_name': result[6],
+                'client': result[6],
+                'client_email': result[7],
+                'budget': float(result[8]) if result[8] else None,
+                'timeline_days': result[9],
+                'created_at': result[10].isoformat() if result[10] else None,
+                'updated_at': result[11].isoformat() if result[11] else None,
             }
             
             print(f"✅ Proposal updated: {proposal_id}")
@@ -435,27 +829,43 @@ def get_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
-                          budget, timeline_days, created_at, updated_at
+                '''SELECT id, owner_id, title, content, sections, status, client_name, client_email, 
+                          budget, timeline_days, created_at, updated_at, template_key
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
             result = cursor.fetchone()
             if result:
+                cursor.execute(
+                    '''SELECT status, readiness_score, risk_score, can_release, issues, last_checked
+                       FROM proposal_governance WHERE proposal_id = %s''',
+                    (proposal_id,)
+                )
+                governance_row = cursor.fetchone()
                 return {
                     'id': result[0],
                     'user_id': result[1],
                     'owner_id': result[1],
                     'title': result[2],
                     'content': result[3],
-                    'status': result[4],
-                    'client_name': result[5],
-                    'client': result[5],
-                    'client_email': result[6],
-                    'budget': float(result[7]) if result[7] else None,
-                    'timeline_days': result[8],
-                    'created_at': result[9].isoformat() if result[9] else None,
-                    'updated_at': result[10].isoformat() if result[10] else None,
+                    'sections': _parse_sections(result[4]),
+                    'status': result[5],
+                    'client_name': result[6],
+                    'client': result[6],
+                    'client_email': result[7],
+                    'budget': float(result[8]) if result[8] else None,
+                    'timeline_days': result[9],
+                    'created_at': result[10].isoformat() if result[10] else None,
+                    'updated_at': result[11].isoformat() if result[11] else None,
+                    'template_key': result[12],
+                    'governance': {
+                        'status': governance_row[0] if governance_row else None,
+                        'readiness_score': governance_row[1] if governance_row else None,
+                        'risk_score': governance_row[2] if governance_row else None,
+                        'can_release': governance_row[3] if governance_row else None,
+                        'issues': _parse_sections(governance_row[4]) if governance_row and len(governance_row) > 4 else [],
+                        'last_checked': governance_row[5].isoformat() if governance_row and governance_row[5] else None,
+                    } if governance_row else None,
                 }, 200
             return {'detail': 'Proposal not found'}, 404
     except Exception as e:
@@ -829,6 +1239,127 @@ def get_version(username=None, proposal_id=None, version_number=None):
 # ============================================================================
 # AI ROUTES
 # ============================================================================
+
+@bp.get("/ai/status")
+@token_required
+def ai_status(username=None):
+    """Report whether AI features are configured."""
+    ai_enabled = bool(os.getenv("OPENROUTER_API_KEY"))
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+    return {
+        'ai_enabled': ai_enabled,
+        'model': model,
+        'provider': 'OpenRouter' if ai_enabled else None
+    }, 200
+
+
+@bp.post("/ai/generate-section")
+@token_required
+def ai_generate_section(username=None):
+    """Alias for AI section generation to match frontend service."""
+    data = request.get_json() or {}
+    section_type = data.get('section_type', 'general')
+    context = data.get('context', {})
+    from ai_service import ai_service
+    generated_content = ai_service.generate_proposal_section(section_type, context)
+    return {'generated_content': generated_content, 'section_type': section_type}, 200
+
+
+@bp.post("/ai/improve-content")
+@token_required
+def ai_improve_section(username=None):
+    """Alias for AI improve endpoint with consistent response."""
+    data = request.get_json() or {}
+    content = data.get('content', '')
+    section_type = data.get('section_type', 'general')
+    if not content:
+        return {'detail': 'Content is required'}, 400
+    from ai_service import ai_service
+    improvements = ai_service.improve_content(content, section_type)
+    return {'improvements': improvements}, 200
+
+
+@bp.post("/ai/check-compliance")
+@token_required
+def ai_check_compliance(username=None):
+    """Run compliance check for a proposal."""
+    data = request.get_json() or {}
+    proposal_id = data.get('proposal_id')
+    proposal_payload = data.get('proposal')
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            if proposal_id and not proposal_payload:
+                payload = _load_proposal_payload(cursor, proposal_id)
+                if not payload:
+                    return {'detail': 'Proposal not found'}, 404
+                proposal_payload = payload
+        if not proposal_payload:
+            return {'detail': 'Proposal payload is required'}, 400
+        from ai_service import ai_service
+        compliance = ai_service.check_compliance(proposal_payload)
+        return {'compliance': compliance}, 200
+    except Exception as e:
+        print(f"❌ Error running compliance check: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/proposals/ai-analysis")
+@token_required
+def ai_analyze_proposal(username=None):
+    """Run full AI readiness + risk analysis for a proposal or ad-hoc payload."""
+    data = request.get_json() or {}
+    proposal_id = data.get('proposal_id')
+    proposal_payload = data.get('proposal') or data.get('payload')
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            if proposal_id and not proposal_payload:
+                payload = _load_proposal_payload(cursor, proposal_id)
+                if not payload:
+                    return {'detail': 'Proposal not found'}, 404
+                proposal_payload = payload
+
+            if not proposal_payload:
+                return {'detail': 'Proposal data is required'}, 400
+
+            try:
+                from ai_service import ai_service
+                analysis = ai_service.analyze_proposal_risks(proposal_payload)
+                governance = _governance_from_analysis(analysis)
+            except Exception as ai_error:
+                print(f"⚠️ AI analysis failed, using fallback: {ai_error}")
+                governance = _basic_governance_check(proposal_payload)
+                analysis = {
+                    'overall_risk_level': 'medium',
+                    'can_release': governance.get('can_release'),
+                    'risk_score': governance.get('risk_score', 50),
+                    'issues': governance.get('issues', []),
+                    'summary': 'AI service unavailable, fallback applied',
+                    'required_actions': governance.get('required_actions', []),
+                }
+
+            if proposal_id:
+                _persist_governance(conn, proposal_id, governance)
+
+            response = {
+                'analysis': {
+                    'risk_score': analysis.get('risk_score'),
+                    'risk_level': analysis.get('overall_risk_level'),
+                    'issues': analysis.get('issues', []),
+                    'recommendations': analysis.get('required_actions', []),
+                    'can_release': analysis.get('can_release'),
+                    'summary': analysis.get('summary'),
+                },
+                'governance': governance
+            }
+            return response, 200
+    except Exception as e:
+        print(f"❌ Error analyzing proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 
 @bp.post("/ai/generate")
 @token_required

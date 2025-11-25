@@ -34,14 +34,14 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/analyze-risks'),
+        Uri.parse('$_baseUrl/proposals/ai-analysis'),
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return _convertToUIFormat(data['analysis']);
+        return _convertToUIFormat(data['analysis'] ?? {});
       } else {
         throw Exception('Risk analysis failed: ${response.statusCode}');
       }
@@ -155,7 +155,25 @@ class AIAnalysisService {
       Map<String, dynamic> proposalData) async {
     // If proposal has an ID, use the new risk analysis
     if (proposalData.containsKey('id')) {
-      return await analyzeProposalRisks(proposalData['id']);
+      return await analyzeProposalRisks(proposalData['id'].toString());
+    }
+
+    try {
+      final headers = {
+        'Content-Type': 'application/json',
+        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+      };
+      final response = await http.post(
+        Uri.parse('$_baseUrl/proposals/ai-analysis'),
+        headers: headers,
+        body: jsonEncode({'proposal': proposalData}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return _convertToUIFormat(data['analysis'] ?? {});
+      }
+    } catch (e) {
+      print('AI Analysis Error: $e');
     }
 
     // Otherwise use mock analysis

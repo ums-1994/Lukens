@@ -81,196 +81,14 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     });
 
     try {
-      // Mock API call - replace with your actual API
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Mock data
-      final List<Template> mockTemplates = [
-        Template(
-          id: '1',
-          name: 'Consulting & Technology Delivery Proposal Template',
-          description:
-              'Complete proposal template with all 11 sections - Cover Page, Executive Summary, Problem Statement, Scope of Work, Timeline, Team, Delivery Approach, Pricing, Risks, Governance, and Company Profile',
-          templateType: 'proposal',
-          approvalStatus: 'approved',
-          isPublic: true,
-          isApproved: true,
-          version: 1,
-          sections: [
-            TemplateSection(title: 'Cover Page', required: true),
-            TemplateSection(title: 'Executive Summary', required: true),
-            TemplateSection(title: 'Problem Statement', required: true),
-            TemplateSection(title: 'Scope of Work', required: true),
-            TemplateSection(title: 'Project Timeline', required: true),
-            TemplateSection(title: 'Team & Bios', required: true),
-            TemplateSection(title: 'Delivery Approach', required: true),
-            TemplateSection(title: 'Pricing Table', required: true),
-            TemplateSection(title: 'Risks & Mitigation', required: true),
-            TemplateSection(title: 'Governance Model', required: true),
-            TemplateSection(
-                title: 'Appendix – Company Profile', required: true),
-          ],
-          dynamicFields: [
-            DynamicField(fieldKey: 'client_name', fieldName: 'Client Name'),
-            DynamicField(
-                fieldKey: 'client_stakeholder',
-                fieldName: 'Client Stakeholder'),
-            DynamicField(fieldKey: 'project_name', fieldName: 'Project Name'),
-            DynamicField(fieldKey: 'date', fieldName: 'Date'),
-            DynamicField(fieldKey: 'total_cost', fieldName: 'Total Cost'),
-            DynamicField(
-                fieldKey: 'engagement_lead_name',
-                fieldName: 'Engagement Lead Name'),
-            DynamicField(
-                fieldKey: 'technical_lead_name',
-                fieldName: 'Technical Lead Name'),
-            DynamicField(
-                fieldKey: 'business_analyst_name',
-                fieldName: 'Business Analyst Name'),
-            DynamicField(
-                fieldKey: 'qa_analyst_name', fieldName: 'QA/Test Analyst Name'),
-          ],
-          usageCount: 0,
-          createdBy: 'admin@khonology.com',
-          createdDate: DateTime.now(),
-          content: jsonEncode({
-            "templateType": "proposal",
-            "name": "Consulting & Technology Delivery Proposal Template",
-            "description": "Complete proposal template with all sections",
-            "sections": [
-              {
-                "title": "Cover Page",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"cover\", \"page\", \"module\"] -->\n<h1>Consulting & Technology Delivery Proposal</h1>\n\n<p><strong>Client:</strong> {{Client Name}}</p>\n<p><strong>Prepared For:</strong> {{Client Stakeholder}}</p>\n<p><strong>Prepared By:</strong> Khonology Team</p>\n<p><strong>Date:</strong> {{Date}}</p>\n\n<h2>Cover Summary</h2>\n<p>Khonology proposes a customised consulting and technology delivery engagement to support {{Client Name}} in achieving operational excellence, digital transformation, and data-driven decision-making.</p>"
-              },
-              {
-                "title": "Executive Summary",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"executive\", \"summary\", \"module\"] -->\n<h1>Executive Summary</h1>\n\n<h2>Purpose of This Proposal</h2>\n<p>This proposal outlines Khonology's recommended approach, delivery methodology, timelines, governance, and expected outcomes for the {{Project Name}} initiative.</p>\n\n<h2>What We Bring</h2>\n<ul>\n<li>Strong expertise in digital transformation and enterprise delivery</li>\n<li>Deep experience in banking, insurance, ESG reporting, and financial services</li>\n<li>Proven capability across data engineering, cloud, automation, and governance</li>\n<li>A people-first consulting culture focused on delivery excellence</li>\n</ul>\n\n<h2>Expected Outcomes</h2>\n<ul>\n<li>Streamlined processes</li>\n<li>Robust governance</li>\n<li>Improved operational visibility</li>\n<li>Higher efficiency and reduced risk</li>\n<li>A scalable delivery architecture to support strategic goals</li>\n</ul>"
-              },
-              {
-                "title": "Problem Statement",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"problem\", \"statement\", \"module\"] -->\n<h1>Problem Statement</h1>\n\n<h2>Current State Challenges</h2>\n<p>{{Client Name}} is experiencing the following challenges:</p>\n<ul>\n<li>Limited visibility into operational performance</li>\n<li>Manual processes creating inefficiencies</li>\n<li>High reporting complexity</li>\n<li>Lack of integrated workflows or automated governance</li>\n<li>Upcoming deadlines causing pressure on compliance and reporting</li>\n</ul>\n\n<h2>Opportunity</h2>\n<p>With a modern delivery framework, workflows, and reporting structures, {{Client Name}} can unlock operational excellence and achieve strategic growth objectives.</p>"
-              },
-              {
-                "title": "Scope of Work",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"scope\", \"work\", \"module\"] -->\n<h1>Scope of Work</h1>\n\n<p>Khonology proposes the following Scope of Work:</p>\n\n<h2>1. Discovery & Assessment</h2>\n<ul>\n<li>Requirements gathering</li>\n<li>Stakeholder workshops</li>\n<li>Current-state assessment</li>\n</ul>\n\n<h2>2. Solution Design</h2>\n<ul>\n<li>Technical architecture</li>\n<li>Workflow design</li>\n<li>Data models and integration approach</li>\n</ul>\n\n<h2>3. Build & Configuration</h2>\n<ul>\n<li>Product configuration</li>\n<li>UI/UX setup</li>\n<li>Data pipeline setup</li>\n<li>Reporting components</li>\n</ul>\n\n<h2>4. Implementation & Testing</h2>\n<ul>\n<li>UAT support</li>\n<li>QA testing</li>\n<li>Release preparation</li>\n</ul>\n\n<h2>5. Training & Knowledge Transfer</h2>\n<ul>\n<li>System training</li>\n<li>Documentation handover</li>\n</ul>"
-              },
-              {
-                "title": "Project Timeline",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"timeline\", \"project\", \"module\"] -->\n<h1>Project Timeline</h1>\n\n<table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Duration</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Discovery</td>\n<td>1–2 Weeks</td>\n<td>Requirements & assessment</td>\n</tr>\n<tr>\n<td>Design</td>\n<td>1 Week</td>\n<td>Architecture & workflow design</td>\n</tr>\n<tr>\n<td>Build</td>\n<td>2–4 Weeks</td>\n<td>Development & configuration</td>\n</tr>\n<tr>\n<td>UAT</td>\n<td>1–2 Weeks</td>\n<td>Testing & validation</td>\n</tr>\n<tr>\n<td>Go-Live</td>\n<td>1 Week</td>\n<td>Deployment & full handover</td>\n</tr>\n</tbody>\n</table>"
-              },
-              {
-                "title": "Team & Bios",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"team\", \"bios\", \"module\"] -->\n<h1>Team & Bios</h1>\n\n<h2>Engagement Lead – {{Name}}</h2>\n<p>Responsible for oversight, governance, and stakeholder engagement.</p>\n\n<h2>Technical Lead – {{Name}}</h2>\n<p>Owns architecture, technical design, integration, and delivery.</p>\n\n<h2>Business Analyst – {{Name}}</h2>\n<p>Facilitates workshops, documents requirements, and translations.</p>\n\n<h2>QA/Test Analyst – {{Name}}</h2>\n<p>Ensures solution quality and manages UAT cycles.</p>"
-              },
-              {
-                "title": "Delivery Approach",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"delivery\", \"approach\", \"module\"] -->\n<h1>Delivery Approach</h1>\n\n<p>Khonology follows a structured delivery methodology combining Agile, Lean, and governance best practices.</p>\n\n<h2>Key Features</h2>\n<ul>\n<li>Iterative sprint cycles</li>\n<li>Frequent stakeholder engagement</li>\n<li>Automated governance checkpoints</li>\n<li>Traceability from requirements → delivery → reporting</li>\n</ul>"
-              },
-              {
-                "title": "Pricing Table",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"pricing\", \"table\", \"module\"] -->\n<h1>Pricing Table</h1>\n\n<table>\n<thead>\n<tr>\n<th>Service Component</th>\n<th>Quantity</th>\n<th>Rate</th>\n<th>Total</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Assessment & Discovery</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Build & Configuration</td>\n<td>4 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>UAT & Release</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Training & Handover</td>\n<td>1 Week</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n</tbody>\n</table>\n\n<p><strong>Total Estimated Cost:</strong> R {{Total}}</p>\n\n<p>Final costs will be confirmed after detailed scoping.</p>"
-              },
-              {
-                "title": "Risks & Mitigation",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"risks\", \"mitigation\", \"module\"] -->\n<h1>Risks & Mitigation</h1>\n\n<table>\n<thead>\n<tr>\n<th>Risk</th>\n<th>Impact</th>\n<th>Likelihood</th>\n<th>Mitigation</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Limited stakeholder availability</td>\n<td>High</td>\n<td>Medium</td>\n<td>Align early calendars</td>\n</tr>\n<tr>\n<td>Data quality issues</td>\n<td>High</td>\n<td>High</td>\n<td>Early validation</td>\n</tr>\n<tr>\n<td>Changing scope</td>\n<td>Medium</td>\n<td>Medium</td>\n<td>Governance checkpoints</td>\n</tr>\n<tr>\n<td>Lack of documentation</td>\n<td>Medium</td>\n<td>High</td>\n<td>Early analysis and mapping</td>\n</tr>\n</tbody>\n</table>"
-              },
-              {
-                "title": "Governance Model",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"governance\", \"model\", \"module\"] -->\n<h1>Governance Model</h1>\n\n<h2>Governance Structure</h2>\n<ul>\n<li>Engagement Lead</li>\n<li>Product Owner (Client)</li>\n<li>Delivery Team</li>\n<li>QA & Compliance Group</li>\n</ul>\n\n<h2>Tools</h2>\n<ul>\n<li>Jira</li>\n<li>Teams/Email</li>\n<li>Automated reporting dashboard</li>\n</ul>\n\n<h2>Cadence</h2>\n<ul>\n<li>Daily standups</li>\n<li>Weekly status updates</li>\n<li>Monthly executive review</li>\n</ul>"
-              },
-              {
-                "title": "Appendix – Company Profile",
-                "required": true,
-                "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"company\", \"profile\", \"module\"] -->\n<h1>Appendix – Company Profile</h1>\n\n<h2>About Khonology</h2>\n<p>Khonology is a South African-based digital consulting and technology delivery company specialising in:</p>\n<ul>\n<li>Enterprise automation</li>\n<li>Digital transformation</li>\n<li>ESG reporting</li>\n<li>Data engineering & cloud</li>\n<li>Business analysis and enterprise delivery</li>\n</ul>\n\n<p>We partner with organisations to deliver impactful solutions that transform operations and unlock measurable value.</p>"
-              }
-            ]
-          }),
-        ),
-        Template(
-          id: '2',
-          name: 'Standard Proposal Template',
-          description: 'Comprehensive proposal template for enterprise clients',
-          templateType: 'proposal',
-          approvalStatus: 'approved',
-          isPublic: true,
-          isApproved: true,
-          version: 2,
-          sections: [
-            TemplateSection(title: 'Executive Summary', required: true),
-            TemplateSection(title: 'Company Profile', required: true),
-            TemplateSection(title: 'Scope & Deliverables', required: true),
-          ],
-          dynamicFields: [
-            DynamicField(fieldKey: 'client_name', fieldName: 'Client Name'),
-            DynamicField(fieldKey: 'project_scope', fieldName: 'Project Scope'),
-          ],
-          usageCount: 15,
-          createdBy: 'admin@khonology.com',
-          createdDate: DateTime.now().subtract(const Duration(days: 30)),
-        ),
-        Template(
-          id: '3',
-          name: 'Statement of Work (SOW) Template',
-          description:
-              'Complete SOW template with all sections - Project Overview, Scope, Deliverables, Timeline, Resources, and Terms',
-          templateType: 'sow',
-          approvalStatus: 'approved',
-          isPublic: true,
-          isApproved: true,
-          version: 1,
-          sections: [
-            TemplateSection(title: 'Project Overview', required: true),
-            TemplateSection(title: 'Scope of Work', required: true),
-            TemplateSection(title: 'Deliverables', required: true),
-            TemplateSection(title: 'Timeline & Milestones', required: true),
-            TemplateSection(title: 'Resources & Team', required: true),
-            TemplateSection(title: 'Terms & Conditions', required: true),
-          ],
-          usageCount: 8,
-          createdBy: 'admin@khonology.com',
-          createdDate: DateTime.now().subtract(const Duration(days: 15)),
-        ),
-        Template(
-          id: '4',
-          name: 'My Custom Proposal',
-          description: 'Custom proposal template for tech clients',
-          templateType: 'proposal',
-          approvalStatus: 'draft',
-          isPublic: false,
-          isApproved: false,
-          version: 1,
-          sections: [
-            TemplateSection(title: 'Technical Approach', required: true),
-          ],
-          usageCount: 0,
-          createdBy: 'current_user',
-          createdDate: DateTime.now().subtract(const Duration(days: 2)),
-        ),
-      ];
-
+      final app = context.read<AppState>();
+      await app.fetchTemplates();
+      final fetched = app.templates
+          .map((raw) => Template.fromJson(
+              Map<String, dynamic>.from(raw as Map<String, dynamic>)))
+          .toList();
       setState(() {
-        _templates = mockTemplates;
+        _templates = fetched;
         _applyFilters();
         _isLoading = false;
       });
@@ -1915,6 +1733,7 @@ class Template {
   final String name;
   final String? description;
   final String templateType;
+  final String? templateKey;
   final String approvalStatus;
   final bool isPublic;
   final bool isApproved;
@@ -1932,6 +1751,7 @@ class Template {
     required this.name,
     this.description,
     required this.templateType,
+    this.templateKey,
     required this.approvalStatus,
     required this.isPublic,
     required this.isApproved,
@@ -1944,18 +1764,62 @@ class Template {
     this.basedOnTemplateId,
     this.content,
   });
+
+  factory Template.fromJson(Map<String, dynamic> json) {
+    final sections = (json['sections'] as List?)
+            ?.map((section) => TemplateSection.fromJson(
+                Map<String, dynamic>.from(section as Map)))
+            .toList() ??
+        [];
+    final dynamicFields = (json['dynamic_fields'] as List?)
+            ?.map((field) =>
+                DynamicField.fromJson(Map<String, dynamic>.from(field as Map)))
+            .toList() ??
+        [];
+    return Template(
+      id: json['id']?.toString() ?? '',
+      name: json['name'] ?? '',
+      description: json['description'],
+      templateType: json['template_type'] ?? 'proposal',
+      templateKey: json['template_key']?.toString(),
+      approvalStatus: json['status'] ?? json['approval_status'] ?? 'draft',
+      isPublic: json['is_public'] ?? true,
+      isApproved: json['is_approved'] ?? false,
+      version: json['version'] ?? 1,
+      sections: sections,
+      dynamicFields: dynamicFields,
+      usageCount: json['usage_count'] ?? 0,
+      createdBy: json['created_by']?.toString() ?? 'system',
+      createdDate: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
+          : DateTime.now(),
+      basedOnTemplateId: json['based_on_template_id']?.toString(),
+      content: json['content']?.toString(),
+    );
+  }
 }
 
 class TemplateSection {
+  final String? key;
   final String title;
   final bool required;
   final String? defaultContent;
 
   TemplateSection({
+    this.key,
     required this.title,
     this.required = false,
     this.defaultContent,
   });
+
+  factory TemplateSection.fromJson(Map<String, dynamic> json) {
+    return TemplateSection(
+      key: json['key']?.toString(),
+      title: json['title'] ?? (json['key']?.toString() ?? ''),
+      required: json['required'] ?? false,
+      defaultContent: json['content'] ?? json['body'],
+    );
+  }
 }
 
 class DynamicField {
@@ -1966,6 +1830,13 @@ class DynamicField {
     required this.fieldKey,
     required this.fieldName,
   });
+
+  factory DynamicField.fromJson(Map<String, dynamic> json) {
+    return DynamicField(
+      fieldKey: json['field_key'] ?? '',
+      fieldName: json['field_name'] ?? '',
+    );
+  }
 }
 
 class StatusConfig {

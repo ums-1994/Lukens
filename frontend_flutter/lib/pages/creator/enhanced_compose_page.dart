@@ -26,6 +26,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
   late TabController _tabController;
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, dynamic> _proposalData = {};
+  List<String> _activeModules = [];
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -33,6 +34,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _activeModules = List<String>.from(widget.selectedModules);
     _initializeProposal();
   }
 
@@ -79,6 +81,45 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
       _controllers['projectType'] = TextEditingController();
       _controllers['estimatedValue'] = TextEditingController();
       _controllers['timeline'] = TextEditingController();
+
+      final app = context.read<AppState>();
+      if (widget.proposalId.isNotEmpty) {
+        final fetched = await app.fetchProposalById(widget.proposalId);
+        if (fetched != null) {
+          _proposalData.addAll(fetched);
+          _controllers['clientName']?.text =
+              (fetched['client_name'] ?? '').toString();
+          _controllers['clientEmail']?.text =
+              (fetched['client_email'] ?? '').toString();
+          _controllers['projectType']?.text =
+              (fetched['project_type'] ?? '').toString();
+          _controllers['estimatedValue']?.text =
+              (fetched['budget'] ?? '').toString();
+          _controllers['timeline']?.text =
+              (fetched['timeline'] ?? fetched['timeline_days'] ?? '')
+                  .toString();
+
+          final sections = fetched['sections'] as List?;
+          if (sections != null) {
+            for (final section in sections) {
+              final sectionMap = Map<String, dynamic>.from(section as Map);
+              final key = sectionMap['key']?.toString() ??
+                  sectionMap['title']?.toString() ??
+                  '';
+              if (key.isEmpty) continue;
+              final content = sectionMap['content']?.toString() ?? '';
+              _proposalData[key] = content;
+              _controllers.putIfAbsent(
+                  key, () => TextEditingController(text: content));
+              _controllers[key]?.text = content;
+              if (!_activeModules.contains(key)) {
+                _activeModules.add(key);
+              }
+            }
+          }
+          setState(() {});
+        }
+      }
     } finally {
       setState(() => _isLoading = false);
     }
@@ -263,8 +304,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
           const SizedBox(height: 24),
 
           // Content Modules
-          ...widget.selectedModules
-              .map((module) => _buildModuleSection(module)),
+          ..._activeModules.map((module) => _buildModuleSection(module)),
         ],
       ),
     );
@@ -324,8 +364,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
           const SizedBox(height: 24),
 
           // Content Sections
-          ...widget.selectedModules
-              .map((module) => _buildPreviewSection(module)),
+          ..._activeModules.map((module) => _buildPreviewSection(module)),
         ],
       ),
     );
