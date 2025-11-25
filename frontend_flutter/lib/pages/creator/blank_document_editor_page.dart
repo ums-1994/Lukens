@@ -3544,211 +3544,271 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  Widget _buildRightSidebar() {
-    final width = _isSettingsCollapsed ? 56.0 : 320.0;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      width: width,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(left: BorderSide(color: Colors.grey[200]!, width: 1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 16,
-            offset: const Offset(-4, 0),
-          ),
-        ],
-      ),
-      child: _isSettingsCollapsed
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  onPressed: () => setState(() => _isSettingsCollapsed = false),
-                  icon: const Icon(Icons.tune, color: Color(0xFF64748B)),
-                  tooltip: 'Expand settings',
-                ),
-                const SizedBox(height: 8),
-                RotatedBox(
-                  quarterTurns: 1,
-                  child: Text(
-                    'Settings',
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.tune, color: Color(0xFF0EA5E9)),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Document settings',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => setState(() => _isSettingsCollapsed = true),
-                        icon: const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
-                        tooltip: 'Collapse settings',
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSettingDropdown('Page size', _pageSize, [
-                          'A4',
-                          'Letter',
-                          'Legal',
-                        ], (value) => setState(() => _pageSize = value)),
-                        _buildSettingDropdown('Margins', _pageMargin, [
-                          '0.5 in',
-                          '1.0 in',
-                          '1.5 in',
-                        ], (value) => setState(() => _pageMargin = value)),
-                        _buildSettingDropdown('Background / cover', _backgroundStyle, [
-                          'None',
-                          'Gradient',
-                          'Image overlay',
-                        ], (value) => setState(() => _backgroundStyle = value)),
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Brand colors',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF475569),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildColorPalette(),
-                        const SizedBox(height: 20),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Watermark'),
-                          subtitle:
-                              const Text('Show company watermark on every page'),
-                          value: _showWatermark,
-                          onChanged: (value) => setState(() => _showWatermark = value),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildSettingDropdown('Number formatting', _numberFormat, [
-                          '1,234.00',
-                          '1.234,00',
-                          '1234.00',
-                        ], (value) => setState(() => _numberFormat = value)),
-                        _buildSettingDropdown('Currency', _selectedCurrency, [
-                          'Rand (ZAR)',
-                          'US Dollar (USD)',
-                          'Euro (EUR)',
-                          'British Pound (GBP)',
-                        ], (value) => setState(() => _selectedCurrency = value)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
+  List<Widget> _buildA4Pages() {
+    const double pageWidth = 900;
+    const double pageHeight = 1273;
 
-  Widget _buildSettingDropdown(
-    String label,
-    String value,
-    List<String> options,
-    ValueChanged<String> onChanged,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF475569),
-            ),
+    return List.generate(
+      _sections.length,
+      (index) {
+        final section = _sections[index];
+        return Container(
+          width: pageWidth,
+          constraints: const BoxConstraints(
+            minHeight: 600,
+            maxHeight: pageHeight,
           ),
-          const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            value: value,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: options
-                .map((option) => DropdownMenuItem<String>(
-                      value: option,
-                      child: Text(option),
-                    ))
-                .toList(),
-            onChanged: (newValue) {
-              if (newValue != null) onChanged(newValue);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildColorPalette() {
-    final colors = [
-      const Color(0xFF0F172A),
-      const Color(0xFF1D4ED8),
-      const Color(0xFF0EA5E9),
-      const Color(0xFFF97316),
-      const Color(0xFF0F766E),
-      const Color(0xFFDB2777),
-    ];
-
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: colors.map((color) {
-        final isSelected = color.value == _brandPrimary.value;
-        return GestureDetector(
-          onTap: () => setState(() => _brandPrimary = color),
-          child: Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected ? const Color(0xFF0EA5E9) : Colors.white,
-                width: 3,
+          margin: const EdgeInsets.only(bottom: 32),
+          decoration: BoxDecoration(
+            color: section.backgroundImageUrl == null
+                ? section.backgroundColor
+                : Colors.white,
+            image: section.backgroundImageUrl != null
+                ? DecorationImage(
+                    image: NetworkImage(section.backgroundImageUrl!),
+                    fit: BoxFit.cover,
+                    opacity: 0.7,
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 5),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.35),
-                  blurRadius: 8,
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(60),
+                  child: _buildSectionContent(index),
                 ),
-              ],
-            ),
+              ),
+              Positioned(
+                bottom: 20,
+                right: 60,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100]!.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Text(
+                    'Page ${index + 1} of ${_sections.length}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
-      }).toList(),
+      },
+    );
+  }
+
+  Widget _buildAddPageButton() {
+    return Center(
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () {
+              final newSection = _DocumentSection(
+                title: 'Untitled Section',
+                content: '',
+              );
+              setState(() {
+                _sections.add(newSection);
+                _selectedSectionIndex = _sections.length - 1;
+
+                newSection.controller.addListener(_onContentChanged);
+                newSection.titleController.addListener(_onContentChanged);
+                newSection.contentFocus.addListener(() => setState(() {}));
+                newSection.titleFocus.addListener(() => setState(() {}));
+              });
+            },
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF0EA5E9),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0EA5E9).withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.add,
+                color: Colors.white,
+                size: 32,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Add New Page',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyTable(DocumentTable table) {
+    final isPriceTable = table.type == 'price';
+    final headers = table.cells.isNotEmpty ? table.cells.first : [];
+    final rows = table.cells.length > 1 ? table.cells.sublist(1) : [];
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: isPriceTable
+                  ? const Color(0xFF0EA5E9).withValues(alpha: 0.08)
+                  : Colors.grey[100],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
+            ),
+            child: Row(
+              children: headers.asMap().entries.map((entry) {
+                final index = entry.key;
+                final header = entry.value;
+                return Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        right: BorderSide(
+                          color: Colors.grey[200]!,
+                          width: index == headers.length - 1 ? 0 : 1,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      header,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isPriceTable
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          ...rows.map((row) {
+            return Row(
+              children: row.asMap().entries.map((entry) {
+                final index = entry.key;
+                final cell = entry.value;
+                return Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: Colors.grey[200]!),
+                        right: BorderSide(
+                          color: Colors.grey[200]!,
+                          width: index == row.length - 1 ? 0 : 1,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      cell,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          }),
+          if (isPriceTable) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildPriceSummaryRow('Subtotal', table.getSubtotal()),
+                  _buildPriceSummaryRow(
+                    'VAT (${(table.vatRate * 100).toStringAsFixed(0)}%)',
+                    table.getVAT(),
+                  ),
+                  _buildPriceSummaryRow(
+                    'Total',
+                    table.getTotal(),
+                    emphasize: true,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceSummaryRow(String label, double value,
+      {bool emphasize = false}) {
+    final textStyle = TextStyle(
+      fontSize: emphasize ? 14 : 12,
+      fontWeight: emphasize ? FontWeight.w700 : FontWeight.w500,
+      color: emphasize ? const Color(0xFF0F172A) : const Color(0xFF475569),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: textStyle),
+          Text('R ${value.toStringAsFixed(2)}', style: textStyle),
+        ],
+      ),
     );
   }
 
