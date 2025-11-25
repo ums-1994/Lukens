@@ -471,6 +471,95 @@ class AppState extends ChangeNotifier {
     return [];
   }
 
+  Future<Map<String, dynamic>?> fetchTemplateById(String templateId) async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/templates/$templateId"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching template: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> createTemplate(
+      Map<String, dynamic> payload) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/templates"),
+        headers: _headers,
+        body: jsonEncode(payload),
+      );
+      if (r.statusCode == 200 || r.statusCode == 201) {
+        await fetchTemplates();
+        return jsonDecode(r.body);
+      } else {
+        print('Error creating template: ${r.statusCode} - ${r.body}');
+      }
+    } catch (e) {
+      print('Error creating template: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> updateTemplate(
+      String templateId, Map<String, dynamic> payload) async {
+    try {
+      final r = await http.put(
+        Uri.parse("$baseUrl/templates/$templateId"),
+        headers: _headers,
+        body: jsonEncode(payload),
+      );
+      if (r.statusCode == 200) {
+        await fetchTemplates();
+        return jsonDecode(r.body);
+      } else {
+        print('Error updating template: ${r.statusCode} - ${r.body}');
+      }
+    } catch (e) {
+      print('Error updating template: $e');
+    }
+    return null;
+  }
+
+  Future<bool> deleteTemplate(String templateId) async {
+    try {
+      final r = await http.delete(
+        Uri.parse("$baseUrl/templates/$templateId"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        await fetchTemplates();
+        return true;
+      }
+      print('Error deleting template: ${r.statusCode} - ${r.body}');
+    } catch (e) {
+      print('Error deleting template: $e');
+    }
+    return false;
+  }
+
+  Future<Map<String, dynamic>?> approveTemplate(String templateId) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/templates/$templateId/approve"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        await fetchTemplates();
+        return jsonDecode(r.body);
+      }
+      print('Error approving template: ${r.statusCode} - ${r.body}');
+    } catch (e) {
+      print('Error approving template: $e');
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> fetchProposalById(String proposalId) async {
     try {
       final r = await http.get(

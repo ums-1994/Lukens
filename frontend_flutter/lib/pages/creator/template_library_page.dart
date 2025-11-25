@@ -29,6 +29,12 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   List<Template> _filteredTemplates = [];
   List<Template> _myTemplates = [];
   List<Template> _publicTemplates = [];
+  String? _currentUsername;
+
+  bool get _isAdminUser {
+    final role = AuthService.currentUser?['role']?.toString().toLowerCase();
+    return role == 'admin';
+  }
 
   final Map<String, StatusConfig> _statusConfig = {
     'draft': StatusConfig(
@@ -88,6 +94,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
               Map<String, dynamic>.from(raw as Map<String, dynamic>)))
           .toList();
       setState(() {
+        _currentUsername = AuthService.currentUser?['username']?.toString();
         _templates = fetched;
         _applyFilters();
         _isLoading = false;
@@ -116,42 +123,39 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
       return matchesSearch && matchesType && matchesStatus;
     }).toList();
 
-    // Separate my templates and public templates
-    _myTemplates =
-        _filteredTemplates.where((t) => t.createdBy == 'current_user').toList();
+    final currentUsername = _currentUsername;
+    _myTemplates = currentUsername == null
+        ? []
+        : _filteredTemplates
+            .where((t) => t.createdByUsername == currentUsername)
+            .toList();
     _publicTemplates =
         _filteredTemplates.where((t) => t.isPublic && t.isApproved).toList();
   }
 
   Future<void> _cloneTemplate(Template template) async {
     try {
-      // Mock API call - replace with your actual API
-      await Future.delayed(const Duration(seconds: 1));
-
-      final clonedTemplate = Template(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: '${template.name} (Copy)',
-        description: template.description,
-        templateType: template.templateType,
-        approvalStatus: 'draft',
-        isPublic: false,
-        isApproved: false,
-        version: 1,
-        sections: template.sections,
-        dynamicFields: template.dynamicFields,
-        usageCount: 0,
-        createdBy: 'current_user',
-        createdDate: DateTime.now(),
-        basedOnTemplateId: template.id,
+      setState(() => _isLoading = true);
+      final app = context.read<AppState>();
+      final payload = _buildTemplatePayloadFromTemplate(
+        template,
+        status: 'draft',
+        isPublicOverride: false,
       );
+      payload['name'] = '${template.name} (Copy)';
+      payload['description'] = template.description;
 
-      setState(() {
-        _templates.insert(0, clonedTemplate);
-        _applyFilters();
-      });
+      final result = await app.createTemplate(payload);
+      if (result == null) {
+        setState(() => _isLoading = false);
+        _showError('Unable to clone template');
+        return;
+      }
 
+      await _loadTemplates();
       _showSuccess('Template cloned successfully!');
     } catch (e) {
+      setState(() => _isLoading = false);
       _showError('Failed to clone template: $e');
     }
   }
@@ -184,18 +188,38 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
 
     if (confirmed == true) {
       try {
-        // Mock API call - replace with your actual API
-        await Future.delayed(const Duration(seconds: 1));
-
-        setState(() {
-          _templates.removeWhere((t) => t.id == templateId);
-          _applyFilters();
-        });
-
+        setState(() => _isLoading = true);
+        final app = context.read<AppState>();
+        final success = await app.deleteTemplate(templateId);
+        if (!success) {
+          setState(() => _isLoading = false);
+          _showError('Failed to delete template');
+          return;
+        }
+        await _loadTemplates();
         _showSuccess('Template deleted successfully!');
       } catch (e) {
+        setState(() => _isLoading = false);
         _showError('Failed to delete template: $e');
       }
+    }
+  }
+
+  Future<void> _approveTemplate(Template template) async {
+    try {
+      setState(() => _isLoading = true);
+      final app = context.read<AppState>();
+      final result = await app.approveTemplate(template.id);
+      if (result == null) {
+        setState(() => _isLoading = false);
+        _showError('Unable to approve template');
+        return;
+      }
+      await _loadTemplates();
+      _showSuccess('Template approved and published!');
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError('Failed to approve template: $e');
     }
   }
 
@@ -215,6 +239,18 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
         backgroundColor: Colors.red,
       ),
     );
+  }
+
+  Future<void> _openTemplateBuilder({String? templateId}) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TemplateBuilder(templateId: templateId),
+      ),
+    );
+    if (result == true) {
+      await _loadTemplates();
+    }
   }
 
   void _toggleSidebar() {
@@ -515,7 +551,17 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
 
   @override
   Widget build(BuildContext context) {
+    final isAdmin = _isAdminUser;
     return Scaffold(
+      floatingActionButton: isAdmin
+          ? FloatingActionButton.extended(
+              onPressed: () => _openTemplateBuilder(),
+              backgroundColor: PremiumTheme.teal,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('New Template'),
+            )
+          : null,
       body: Container(
         color: Colors.transparent,
         child: _isLoading
@@ -527,7 +573,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                   AppSideNav(
                     isCollapsed: _isSidebarCollapsed,
                     currentLabel: _currentPage,
-                    isAdmin: false,
+                    isAdmin: isAdmin,
                     onToggle: _toggleSidebar,
                     onSelect: (label) {
                       setState(() => _currentPage = label);
@@ -562,17 +608,6 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 ],
               ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Navigate to TemplateBuilder
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const TemplateBuilder()),
-          );
-        },
-        child: const Icon(Icons.add, color: Colors.white),
-        backgroundColor: PremiumTheme.teal,
-      ),
     );
   }
 
@@ -598,6 +633,18 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           ],
         ),
         const Spacer(),
+        if (_isAdminUser)
+          ElevatedButton.icon(
+            onPressed: () => _openTemplateBuilder(),
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text('Create Template',
+                style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PremiumTheme.teal,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+          ),
       ],
     );
   }
@@ -853,14 +900,9 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 ? _buildEmptyState(
                     icon: Icons.dashboard,
                     message: 'You haven\'t created any templates yet',
-                    showButton: true,
-                    onButtonPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const TemplateBuilder()),
-                      );
-                    },
+                    showButton: _isAdminUser,
+                    onButtonPressed:
+                        _isAdminUser ? () => _openTemplateBuilder() : null,
                   )
                 : GridView.builder(
                     shrinkWrap: true,
@@ -1022,56 +1064,47 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 ),
               ),
               const SizedBox(width: 8),
-              if (isMyTemplate) ...[
-                OutlinedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            TemplateBuilder(templateId: template.id),
+              Wrap(
+                spacing: 6,
+                children: [
+                  if (_isAdminUser || isMyTemplate)
+                    OutlinedButton(
+                      onPressed: () => _openTemplateBuilder(
+                          templateId: template.id),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                        foregroundColor: Colors.white,
                       ),
-                    );
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                    foregroundColor: PremiumTheme.textSecondary,
-                  ),
-                  child: const Icon(Icons.edit, size: 16),
-                ),
-                const SizedBox(width: 4),
-                OutlinedButton(
-                  onPressed: () => _cloneTemplate(template),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                    foregroundColor: PremiumTheme.textSecondary,
-                  ),
-                  child: const Icon(Icons.copy, size: 16),
-                ),
-                const SizedBox(width: 4),
-                OutlinedButton(
-                  onPressed: () => _deleteTemplate(template.id),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: PremiumTheme.error),
-                    foregroundColor: PremiumTheme.error,
-                  ),
-                  child: const Icon(Icons.delete, size: 16),
-                ),
-              ] else ...[
-                Expanded(
-                  child: OutlinedButton.icon(
+                      child: const Icon(Icons.edit, size: 16),
+                    ),
+                  if (_isAdminUser && template.approvalStatus != 'approved')
+                    OutlinedButton(
+                      onPressed: () => _approveTemplate(template),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: PremiumTheme.success),
+                        foregroundColor: PremiumTheme.success,
+                      ),
+                      child: const Icon(Icons.check_circle, size: 16),
+                    ),
+                  OutlinedButton(
                     onPressed: () => _cloneTemplate(template),
-                    icon: Icon(Icons.copy,
-                        size: 16, color: Colors.white.withOpacity(0.7)),
-                    label: Text('Clone',
-                        style: TextStyle(color: Colors.white.withOpacity(0.7))),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      foregroundColor: Colors.white,
                     ),
+                    child: const Icon(Icons.copy, size: 16),
                   ),
-                ),
-              ],
+                  if (_isAdminUser || isMyTemplate)
+                    OutlinedButton(
+                      onPressed: () => _deleteTemplate(template.id),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: PremiumTheme.error),
+                        foregroundColor: PremiumTheme.error,
+                      ),
+                      child: const Icon(Icons.delete, size: 16),
+                    ),
+                ],
+              ),
             ],
           ),
         ],
@@ -1708,6 +1741,55 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     );
   }
 
+  Map<String, dynamic> _buildTemplatePayloadFromTemplate(
+    Template template, {
+    String status = 'draft',
+    bool? isPublicOverride,
+  }) {
+    final sectionsPayload = template.sections.asMap().entries.map((entry) {
+      final section = entry.value;
+      return {
+        'key': _sectionKey(section.key, section.title, entry.key),
+        'title': section.title,
+        'required': section.required,
+        'content': section.defaultContent ?? '',
+        'order': entry.key,
+      };
+    }).toList();
+
+    final dynamicFieldsPayload =
+        template.dynamicFields.map((field) => field.toJson()).toList();
+
+    return {
+      'name': template.name,
+      'description': template.description,
+      'template_type': template.templateType,
+      'is_public': isPublicOverride ?? template.isPublic,
+      'status': status,
+      'sections': sectionsPayload,
+      'dynamic_fields': dynamicFieldsPayload,
+    };
+  }
+
+  String _sectionKey(String? key, String title, int order) {
+    if (key != null && key.isNotEmpty) {
+      return key;
+    }
+    final slug = _slugify(title);
+    if (slug.isEmpty) {
+      return 'section_$order';
+    }
+    return '${slug}_$order';
+  }
+
+  String _slugify(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+  }
+
   String _extractTextFromTag(String html, String tag) {
     final openTag = '<$tag>';
     final closeTag = '</$tag>';
@@ -1742,6 +1824,7 @@ class Template {
   final List<DynamicField> dynamicFields;
   final int usageCount;
   final String createdBy;
+  final String? createdByUsername;
   final DateTime createdDate;
   final String? basedOnTemplateId;
   final String? content; // Full template content as JSON or HTML
@@ -1760,6 +1843,7 @@ class Template {
     this.dynamicFields = const [],
     required this.usageCount,
     required this.createdBy,
+    this.createdByUsername,
     required this.createdDate,
     this.basedOnTemplateId,
     this.content,
@@ -1790,6 +1874,7 @@ class Template {
       dynamicFields: dynamicFields,
       usageCount: json['usage_count'] ?? 0,
       createdBy: json['created_by']?.toString() ?? 'system',
+      createdByUsername: json['created_by_username']?.toString(),
       createdDate: json['created_at'] != null
           ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
           : DateTime.now(),
@@ -1825,17 +1910,32 @@ class TemplateSection {
 class DynamicField {
   final String fieldKey;
   final String fieldName;
+  final String? source;
+  final String? description;
 
   DynamicField({
     required this.fieldKey,
     required this.fieldName,
+    this.source,
+    this.description,
   });
 
   factory DynamicField.fromJson(Map<String, dynamic> json) {
     return DynamicField(
       fieldKey: json['field_key'] ?? '',
       fieldName: json['field_name'] ?? '',
+      source: json['source']?.toString(),
+      description: json['description']?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'field_key': fieldKey,
+      'field_name': fieldName,
+      if (source != null) 'source': source,
+      if (description != null) 'description': description,
+    };
   }
 }
 

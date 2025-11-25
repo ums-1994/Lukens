@@ -13,7 +13,7 @@ from psycopg2.extras import Json, RealDictCursor
 from datetime import datetime
 
 from api.utils.database import get_db_connection
-from api.utils.decorators import token_required
+from api.utils.decorators import token_required, admin_required
 from api.data.default_templates import DEFAULT_TEMPLATES
 
 bp = Blueprint('creator', __name__)
@@ -60,6 +60,13 @@ def _seed_default_templates(conn):
         print(f"⚠️ Failed to seed default templates: {seed_error}")
 
 
+def _slugify(value):
+    if not value:
+        return ''
+    value = re.sub(r'[^a-zA-Z0-9]+', '-', value.strip().lower())
+    return value.strip('-')
+
+
 def _parse_sections(value):
     if not value:
         return []
@@ -89,6 +96,7 @@ def _serialize_template_row(row):
         'dynamic_fields': dynamic_fields,
         'usage_count': row.get('usage_count', 0),
         'created_by': row.get('created_by'),
+        'created_by_username': row.get('created_by_username'),
         'created_at': row.get('created_at').isoformat() if row.get('created_at') else None,
         'updated_at': row.get('updated_at').isoformat() if row.get('updated_at') else None,
     }
@@ -141,6 +149,23 @@ def _build_sections_payload(template_sections, selected_modules, module_contents
         })
 
     return payload
+
+
+def _fetch_template_by_id(conn, template_id):
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute(
+        '''
+        SELECT pt.id, pt.template_key, pt.name, pt.description, pt.template_type, pt.category,
+               pt.status, pt.is_public, pt.is_approved, pt.version, pt.sections,
+               pt.dynamic_fields, pt.usage_count, pt.created_by, pt.created_at, pt.updated_at,
+               u.username AS created_by_username
+        FROM proposal_templates pt
+        LEFT JOIN users u ON pt.created_by = u.id
+        WHERE pt.id = %s
+        ''',
+        (template_id,)
+    )
+    return cursor.fetchone()
 
 
 def _load_proposal_payload(cursor, proposal_id):
@@ -418,11 +443,13 @@ def list_templates(username=None):
             _seed_default_templates(conn)
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute('''
-                SELECT id, template_key, name, description, template_type, category,
-                       status, is_public, is_approved, version, sections,
-                       dynamic_fields, usage_count, created_by, created_at, updated_at
-                FROM proposal_templates
-                ORDER BY name
+                SELECT pt.id, pt.template_key, pt.name, pt.description, pt.template_type, pt.category,
+                       pt.status, pt.is_public, pt.is_approved, pt.version, pt.sections,
+                       pt.dynamic_fields, pt.usage_count, pt.created_by, pt.created_at, pt.updated_at,
+                       u.username AS created_by_username
+                FROM proposal_templates pt
+                LEFT JOIN users u ON pt.created_by = u.id
+                ORDER BY pt.name
             ''')
             rows = cursor.fetchall()
             templates = [_serialize_template_row(row) for row in rows]
@@ -442,11 +469,13 @@ def get_template(username=None, template_id=None):
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 '''
-                SELECT id, template_key, name, description, template_type, category,
-                       status, is_public, is_approved, version, sections,
-                       dynamic_fields, usage_count, created_by, created_at, updated_at
-                FROM proposal_templates
-                WHERE id = %s OR template_key = %s
+                SELECT pt.id, pt.template_key, pt.name, pt.description, pt.template_type, pt.category,
+                       pt.status, pt.is_public, pt.is_approved, pt.version, pt.sections,
+                       pt.dynamic_fields, pt.usage_count, pt.created_by, pt.created_at, pt.updated_at,
+                       u.username AS created_by_username
+                FROM proposal_templates pt
+                LEFT JOIN users u ON pt.created_by = u.id
+                WHERE pt.id = %s OR pt.template_key = %s
                 ''',
                 (template_id, str(template_id)),
             )
@@ -458,6 +487,202 @@ def get_template(username=None, template_id=None):
         print(f"❌ Error fetching template {template_id}: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
+
+
+@bp.post("/templates")
+@token_required
+@admin_required
+def create_template(username=None):
+    """Create a new proposal template (admin only)."""
+    try:
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        if not name:
+            return {'detail': 'Template name is required'}, 400
+        sections = data.get('sections') or []
+        if not isinstance(sections, list) or not sections:
+            return {'detail': 'At least one section is required'}, 400
+
+        template_type = data.get('template_type') or data.get('templateType') or 'proposal'
+        template_key = data.get('template_key') or data.get('templateKey') or _slugify(name)
+        if not template_key:
+            return {'detail': 'Template key could not be generated'}, 400
+
+        dynamic_fields = data.get('dynamic_fields') or data.get('dynamicFields') or []
+        category = data.get('category') or 'Standard'
+        status = data.get('status') or 'draft'
+        is_public = bool(data.get('is_public', False))
+        is_approved = bool(data.get('is_approved', status.lower() == 'approved'))
+        version = data.get('version') or 1
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            creator_id = user_row['id']
+
+            cursor.execute(
+                '''SELECT 1 FROM proposal_templates WHERE template_key = %s''',
+                (template_key,)
+            )
+            if cursor.fetchone():
+                return {'detail': 'Template key already exists'}, 400
+
+            cursor.execute(
+                '''
+                INSERT INTO proposal_templates
+                (template_key, name, description, template_type, category, status,
+                 is_public, is_approved, version, sections, dynamic_fields, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, template_key, name, description, template_type, category,
+                          status, is_public, is_approved, version, sections,
+                          dynamic_fields, usage_count, created_by, created_at, updated_at
+                ''',
+                (
+                    template_key,
+                    name,
+                    data.get('description'),
+                    template_type,
+                    category,
+                    status,
+                    is_public,
+                    is_approved,
+                    version,
+                    Json(sections),
+                    Json(dynamic_fields),
+                    creator_id
+                )
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            result['created_by_username'] = username
+            return _serialize_template_row(result), 201
+    except Exception as e:
+        print(f"❌ Error creating template: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.put("/templates/<int:template_id>")
+@token_required
+@admin_required
+def update_template(username=None, template_id=None):
+    """Update an existing template."""
+    try:
+        data = request.get_json() or {}
+        if not data:
+            return {'detail': 'No updates provided'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            updates = []
+            params = []
+
+            if 'name' in data:
+                updates.append('name = %s')
+                params.append(data['name'])
+            if 'description' in data:
+                updates.append('description = %s')
+                params.append(data['description'])
+            if 'template_type' in data or 'templateType' in data:
+                updates.append('template_type = %s')
+                params.append(data.get('template_type') or data.get('templateType'))
+            if 'category' in data:
+                updates.append('category = %s')
+                params.append(data['category'])
+            if 'status' in data:
+                updates.append('status = %s')
+                params.append(data['status'])
+            if 'is_public' in data:
+                updates.append('is_public = %s')
+                params.append(data['is_public'])
+            if 'is_approved' in data:
+                updates.append('is_approved = %s')
+                params.append(data['is_approved'])
+            if 'version' in data:
+                updates.append('version = %s')
+                params.append(data['version'])
+            if 'sections' in data:
+                updates.append('sections = %s')
+                params.append(Json(data['sections']))
+            if 'dynamic_fields' in data or 'dynamicFields' in data:
+                updates.append('dynamic_fields = %s')
+                params.append(Json(data.get('dynamic_fields') or data.get('dynamicFields')))
+            if 'template_key' in data or 'templateKey' in data:
+                updates.append('template_key = %s')
+                params.append(data.get('template_key') or data.get('templateKey'))
+
+            if not updates:
+                return {'detail': 'No updates provided'}, 400
+
+            updates.append('updated_at = CURRENT_TIMESTAMP')
+            params.append(template_id)
+
+            cursor.execute(
+                f'''UPDATE proposal_templates SET {', '.join(updates)} WHERE id = %s''',
+                params
+            )
+            conn.commit()
+
+            template_row = _fetch_template_by_id(conn, template_id)
+            if not template_row:
+                return {'detail': 'Template not found'}, 404
+            return _serialize_template_row(template_row), 200
+    except Exception as e:
+        print(f"❌ Error updating template {template_id}: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.delete("/templates/<int:template_id>")
+@token_required
+@admin_required
+def delete_template(username=None, template_id=None):
+    """Delete a template."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM proposal_templates WHERE id = %s', (template_id,))
+            if cursor.rowcount == 0:
+                return {'detail': 'Template not found'}, 404
+            conn.commit()
+            return {'detail': 'Template deleted'}, 200
+    except Exception as e:
+        print(f"❌ Error deleting template {template_id}: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/templates/<int:template_id>/approve")
+@token_required
+@admin_required
+def approve_template(username=None, template_id=None):
+    """Approve and publish a template."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                UPDATE proposal_templates
+                SET status = 'approved', is_approved = TRUE, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                ''',
+                (template_id,)
+            )
+            if cursor.rowcount == 0:
+                return {'detail': 'Template not found'}, 404
+            conn.commit()
+
+            template_row = _fetch_template_by_id(conn, template_id)
+            return _serialize_template_row(template_row), 200
+    except Exception as e:
+        print(f"❌ Error approving template {template_id}: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 
 # ============================================================================
 # PROPOSAL ROUTES (CREATOR)

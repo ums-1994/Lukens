@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../api.dart';
 
 class TemplateBuilder extends StatefulWidget {
   final String? templateId;
@@ -15,6 +18,10 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
   final TextEditingController _tagsController = TextEditingController();
 
   TemplateData _templateData = TemplateData(
+    id: null,
+    templateKey: null,
+    status: 'draft',
+    isApproved: false,
     name: '',
     description: '',
     templateType: 'proposal',
@@ -23,6 +30,8 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
     isPublic: false,
     tags: '',
   );
+
+  bool get _isEditing => widget.templateId != null;
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -61,42 +70,29 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
 
     try {
       if (widget.templateId != null) {
-        await Future.delayed(const Duration(seconds: 1));
-
-        final mockTemplate = TemplateData(
-          name: 'Standard Consulting Proposal',
-          description: 'Comprehensive proposal template for enterprise clients',
-          templateType: 'proposal',
-          sections: [
-            TemplateSection(
-              key: 'section_1',
-              title: 'Executive Summary',
-              required: true,
-              defaultContent: 'This proposal outlines our approach to delivering exceptional value...',
-              order: 0,
-            ),
-            TemplateSection(
-              key: 'section_2',
-              title: 'Company Profile',
-              required: true,
-              defaultContent: 'Our company brings extensive expertise in...',
-              order: 1,
-            ),
-          ],
-          dynamicFields: _defaultDynamicFields,
-          isPublic: false,
-          tags: 'consulting, technology, enterprise',
-        );
-
-        setState(() {
-          _templateData = mockTemplate;
-          _nameController.text = mockTemplate.name;
-          _descriptionController.text = mockTemplate.description;
-          _tagsController.text = mockTemplate.tags;
-        });
+        final app = context.read<AppState>();
+        final response = await app.fetchTemplateById(widget.templateId!);
+        if (response != null) {
+          final templateJson = Map<String, dynamic>.from(response);
+          var loadedTemplate = TemplateData.fromJson(templateJson);
+          if (loadedTemplate.dynamicFields.isEmpty) {
+            loadedTemplate = loadedTemplate.copyWith(
+              dynamicFields: List<DynamicField>.from(_defaultDynamicFields),
+            );
+          }
+          setState(() {
+            _templateData = loadedTemplate;
+            _nameController.text = loadedTemplate.name;
+            _descriptionController.text = loadedTemplate.description;
+            _tagsController.text = loadedTemplate.tags;
+          });
+        } else {
+          _showError('Unable to load template data');
+        }
       } else {
         setState(() {
-          _templateData = _templateData.copyWith(dynamicFields: _defaultDynamicFields);
+          _templateData = _templateData.copyWith(
+              dynamicFields: List<DynamicField>.from(_defaultDynamicFields));
         });
       }
     } catch (e) {
@@ -173,13 +169,19 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
     });
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
+      final payload = _buildTemplatePayload(submitForApproval);
+      final app = context.read<AppState>();
+      Map<String, dynamic>? result;
 
-      _templateData = _templateData.copyWith(
-        name: _nameController.text,
-        description: _descriptionController.text,
-        tags: _tagsController.text,
-      );
+      if (_isEditing) {
+        result = await app.updateTemplate(widget.templateId!, payload);
+      } else {
+        result = await app.createTemplate(payload);
+      }
+
+      if (result == null) {
+        throw Exception('No response from server');
+      }
 
       if (submitForApproval) {
         _showSuccess('Template submitted for approval!');
@@ -187,9 +189,9 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
         _showSuccess('Template saved successfully!');
       }
 
-      Future.delayed(const Duration(seconds: 1), () {
+      Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) {
-          Navigator.pop(context);
+          Navigator.pop(context, true);
         }
       });
     } catch (e) {
@@ -200,6 +202,40 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
         _isSubmitting = false;
       });
     }
+  }
+
+  Map<String, dynamic> _buildTemplatePayload(bool submitForApproval) {
+    final sectionsPayload =
+        _templateData.sections.asMap().entries.map((entry) {
+      final section = entry.value;
+      final key = _resolveSectionKey(section.key, section.title, entry.key);
+      return {
+        'key': key,
+        'title': section.title,
+        'required': section.required,
+        'content': section.defaultContent ?? '',
+        'order': entry.key,
+      };
+    }).toList();
+
+    final dynamicFieldsPayload =
+        _templateData.dynamicFields.map((field) => field.toJson()).toList();
+
+    final status = submitForApproval ? 'pending_approval' : 'draft';
+
+    return {
+      'name': _nameController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'template_type': _templateData.templateType,
+      'is_public': _templateData.isPublic,
+      'status': status,
+      'tags': _tagsController.text.trim(),
+      'sections': sectionsPayload,
+      'dynamic_fields': dynamicFieldsPayload,
+      if (_templateData.templateKey != null &&
+          _templateData.templateKey!.isNotEmpty)
+        'template_key': _templateData.templateKey,
+    };
   }
 
   void _insertDynamicField(int sectionIndex, String fieldKey) {
@@ -224,6 +260,25 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
         backgroundColor: Colors.red,
       ),
     );
+  }
+
+  String _resolveSectionKey(String? key, String title, int order) {
+    if (key != null && key.isNotEmpty) {
+      return key;
+    }
+    final slug = _slugify(title);
+    if (slug.isEmpty) {
+      return 'section_$order';
+    }
+    return '${slug}_$order';
+  }
+
+  String _slugify(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
   }
 
   @override
@@ -282,16 +337,15 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
               label: const Text('Save Draft'),
             ),
             const SizedBox(width: 12),
-            if (widget.templateId != null)
-              ElevatedButton.icon(
-                onPressed: _isSubmitting ? null : () => _saveTemplate(true),
-                icon: const Icon(Icons.send, size: 16),
-                label: const Text('Submit for Approval'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple,
-                  foregroundColor: Colors.white,
-                ),
+            ElevatedButton.icon(
+              onPressed: _isSubmitting ? null : () => _saveTemplate(true),
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Submit for Approval'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.purple,
+                foregroundColor: Colors.white,
               ),
+            ),
           ],
         ),
       ],
@@ -590,6 +644,10 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
 }
 
 class TemplateData {
+  final String? id;
+  final String? templateKey;
+  final String status;
+  final bool isApproved;
   final String name;
   final String description;
   final String templateType;
@@ -599,6 +657,10 @@ class TemplateData {
   final String tags;
 
   TemplateData({
+    required this.id,
+    required this.templateKey,
+    required this.status,
+    required this.isApproved,
     required this.name,
     required this.description,
     required this.templateType,
@@ -608,7 +670,42 @@ class TemplateData {
     required this.tags,
   });
 
+  factory TemplateData.fromJson(Map<String, dynamic> json) {
+    final sections = (json['sections'] as List?)
+            ?.asMap()
+            .entries
+            .map((entry) => TemplateSection.fromJson(
+                  Map<String, dynamic>.from(entry.value as Map),
+                  fallbackOrder: entry.key,
+                ))
+            .toList() ??
+        [];
+    final dynamicFields = (json['dynamic_fields'] as List?)
+            ?.map((field) =>
+                DynamicField.fromJson(Map<String, dynamic>.from(field as Map)))
+            .toList() ??
+        [];
+
+    return TemplateData(
+      id: json['id']?.toString(),
+      templateKey: json['template_key']?.toString(),
+      status: json['status']?.toString() ?? 'draft',
+      isApproved: json['is_approved'] ?? false,
+      name: json['name'] ?? '',
+      description: json['description'] ?? '',
+      templateType: json['template_type'] ?? 'proposal',
+      sections: sections,
+      dynamicFields: dynamicFields,
+      isPublic: json['is_public'] ?? false,
+      tags: json['tags']?.toString() ?? '',
+    );
+  }
+
   TemplateData copyWith({
+    String? id,
+    String? templateKey,
+    String? status,
+    bool? isApproved,
     String? name,
     String? description,
     String? templateType,
@@ -618,6 +715,10 @@ class TemplateData {
     String? tags,
   }) {
     return TemplateData(
+      id: id ?? this.id,
+      templateKey: templateKey ?? this.templateKey,
+      status: status ?? this.status,
+      isApproved: isApproved ?? this.isApproved,
       name: name ?? this.name,
       description: description ?? this.description,
       templateType: templateType ?? this.templateType,
@@ -644,40 +745,38 @@ class TemplateSection {
     required this.order,
   });
 
+  factory TemplateSection.fromJson(Map<String, dynamic> json,
+      {int fallbackOrder = 0}) {
+    return TemplateSection(
+      key: json['key']?.toString() ??
+          'section_${DateTime.now().millisecondsSinceEpoch}',
+      title: json['title']?.toString() ?? 'Untitled Section',
+      required: json['required'] ?? false,
+      defaultContent: json['content'] ?? json['body'],
+      order: json['order'] ?? fallbackOrder,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'key': key,
+      'title': title,
+      'required': required,
+      'content': defaultContent ?? '',
+      'order': order,
+    };
+  }
+
   TemplateSection copyWithField(String field, dynamic value) {
     switch (field) {
       case 'title':
-        return TemplateSection(
-          key: key,
-          title: value,
-          required: required,
-          defaultContent: defaultContent,
-          order: order,
-        );
+        return copyWith(title: value);
       case 'required':
-        return TemplateSection(
-          key: key,
-          title: title,
-          required: value,
-          defaultContent: defaultContent,
-          order: order,
-        );
+        return copyWith(required: value);
       case 'defaultContent':
-        return TemplateSection(
-          key: key,
-          title: title,
-          required: required,
-          defaultContent: value,
-          order: order,
-        );
+        return copyWith(defaultContent: value);
       case 'order':
-        return TemplateSection(
-          key: key,
-          title: title,
-          required: required,
-          defaultContent: defaultContent,
-          order: value,
-        );
+        return copyWith(order: value);
       default:
         return this;
     }
@@ -712,4 +811,36 @@ class DynamicField {
     required this.source,
     required this.description,
   });
+
+  factory DynamicField.fromJson(Map<String, dynamic> json) {
+    return DynamicField(
+      fieldName: json['field_name'] ?? '',
+      fieldKey: json['field_key'] ?? '',
+      source: json['source'] ?? 'proposal',
+      description: json['description'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'field_name': fieldName,
+      'field_key': fieldKey,
+      'source': source,
+      'description': description,
+    };
+  }
+
+  DynamicField copyWith({
+    String? fieldName,
+    String? fieldKey,
+    String? source,
+    String? description,
+  }) {
+    return DynamicField(
+      fieldName: fieldName ?? this.fieldName,
+      fieldKey: fieldKey ?? this.fieldKey,
+      source: source ?? this.source,
+      description: description ?? this.description,
+    );
+  }
 }
