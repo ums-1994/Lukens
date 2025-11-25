@@ -3091,7 +3091,323 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  Widget _buildTopHeader(bool isReadOnly) {
+    final minutesSinceSave = _lastSaved == null
+        ? null
+        : DateTime.now().difference(_lastSaved!).inMinutes;
+    final autosaveLabel = _hasUnsavedChanges
+        ? 'Saving...'
+        : minutesSinceSave == null
+            ? 'Autosave ready'
+            : minutesSinceSave == 0
+                ? 'Saved moments ago'
+                : 'Saved ${minutesSinceSave}m ago';
+    final currencies = [
+      'Rand (ZAR)',
+      'US Dollar (USD)',
+      'Euro (EUR)',
+      'British Pound (GBP)',
+      'Indian Rupee (INR)',
+    ];
 
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 360,
+                  child: TextField(
+                    controller: _titleController,
+                    enabled: !isReadOnly,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Proposal title',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => _onContentChanged(),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _hasUnsavedChanges ? Icons.sync : Icons.check_circle,
+                        size: 16,
+                        color: _hasUnsavedChanges
+                            ? const Color(0xFFF59E0B)
+                            : const Color(0xFF10B981),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        autosaveLabel,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF475569),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                PopupMenuButton<int>(
+                  tooltip: 'Version history',
+                  enabled: _versionHistory.isNotEmpty,
+                  itemBuilder: (context) {
+                    if (_versionHistory.isEmpty) {
+                      return [];
+                    }
+                    return _versionHistory.map((version) {
+                      return PopupMenuItem<int>(
+                        value: version['version_number'] as int? ?? 0,
+                        child: Text(
+                          "v${version['version_number']} • ${version['change_description'] ?? 'Manual save'}",
+                        ),
+                      );
+                    }).toList();
+                  },
+                  onSelected: (value) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Version v$value coming soon'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.history, size: 18, color: Color(0xFF475569)),
+                        SizedBox(width: 8),
+                        Text('Version history'),
+                        SizedBox(width: 4),
+                        Icon(Icons.expand_more, size: 18, color: Color(0xFF475569)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                PopupMenuButton<String>(
+                  tooltip: 'Select currency',
+                  itemBuilder: (context) => currencies
+                      .map((currency) => PopupMenuItem<String>(
+                            value: currency,
+                            child: Text(currency),
+                          ))
+                      .toList(),
+                  onSelected: (value) {
+                    setState(() => _selectedCurrency = value);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.currency_exchange,
+                            size: 18, color: Color(0xFF475569)),
+                        const SizedBox(width: 8),
+                        Text(_selectedCurrency),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.expand_more, size: 18, color: Color(0xFF475569)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 24),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _shareDocument,
+                icon: const Icon(Icons.person_add_alt_1, size: 16),
+                label: const Text('Share'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() => _showCommentsPanel = !_showCommentsPanel);
+                },
+                icon: const Icon(Icons.comment_outlined, size: 16),
+                label: Text(_showCommentsPanel ? 'Hide comments' : 'Comments'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _showPreview,
+                icon: const Icon(Icons.visibility_outlined, size: 16),
+                label: const Text('Preview'),
+              ),
+              ElevatedButton.icon(
+                onPressed: isReadOnly ? null : _sendForApproval,
+                icon: const Icon(Icons.verified_outlined, size: 16),
+                label: const Text('Send for approval'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0EA5E9),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'More actions',
+                onSelected: (value) {
+                  switch (value) {
+                    case 'duplicate':
+                      _duplicateSection(_selectedSectionIndex);
+                      break;
+                    case 'page':
+                      _insertSection(_selectedSectionIndex);
+                      break;
+                    case 'settings':
+                      setState(() => _isSettingsCollapsed = !_isSettingsCollapsed);
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'page', child: Text('Add new page')),
+                  const PopupMenuItem(value: 'duplicate', child: Text('Duplicate block')),
+                  PopupMenuItem(
+                    value: 'settings',
+                    child: Text(_isSettingsCollapsed
+                        ? 'Expand document settings'
+                        : 'Collapse document settings'),
+                  ),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: const Icon(Icons.more_horiz, color: Color(0xFF475569)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolbar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildToolbarGroup(
+              'Text',
+              [
+                _buildSmallDropdown(_selectedTextStyle, [
+                  'Normal Text',
+                  'Heading 1',
+                  'Heading 2',
+                  'Heading 3',
+                  'Title'
+                ], (value) {
+                  setState(() => _selectedTextStyle = value!);
+                }),
+                _buildSmallDropdown(_selectedFont, [
+                  'Plus Jakarta Sans',
+                  'Arial',
+                  'Times New Roman',
+                  'Georgia',
+                  'Courier New'
+                ], (value) {
+                  setState(() => _selectedFont = value!);
+                }),
+                _buildSmallDropdown(_selectedFontSize, [
+                  '10px',
+                  '12px',
+                  '14px',
+                  '16px',
+                  '18px',
+                  '20px',
+                  '24px',
+                  '28px'
+                ], (value) {
+                  setState(() => _selectedFontSize = value!);
+                }),
+                _buildToolbarIconButton(
+                  Icons.format_bold,
+                  'Bold',
+                  () => setState(() => _isBold = !_isBold),
+                  isActive: _isBold,
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_italic,
+                  'Italic',
+                  () => setState(() => _isItalic = !_isItalic),
+                  isActive: _isItalic,
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_underlined,
+                  'Underline',
+                  () => setState(() => _isUnderlined = !_isUnderlined),
+                  isActive: _isUnderlined,
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_color_text,
+                  'Text color',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Text color picker coming soon'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+                _buildToolbarIconButton(
+                  Icons.highlight,
+                  'Highlight',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Highlight picker coming soon'),
+                        duration: Duration(seconds: 2),
   Widget _buildDocumentCanvas(bool isReadOnly) {
     final hasContent = _sections.any(
         (section) => section.controller.text.trim().isNotEmpty);
@@ -3119,6 +3435,68 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildToolbarGroup(String title, List<Widget> children) {
+    return Container(
+      margin: const EdgeInsets.only(right: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: children,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolbarIconButton(
+    IconData icon,
+    String tooltip,
+    VoidCallback onTap, {
+    bool isActive = false,
+  }) {
+    return Material(
+      color: isActive ? const Color(0xFFE0F2FE) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: isActive ? const Color(0xFF0EA5E9) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Tooltip(
+            message: tooltip,
+            child: Icon(
+              icon,
+              size: 18,
+              color: isActive ? const Color(0xFF0F172A) : const Color(0xFF475569),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -3165,6 +3543,215 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       ),
     );
   }
+
+  Widget _buildRightSidebar() {
+    final width = _isSettingsCollapsed ? 56.0 : 320.0;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      width: width,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(left: BorderSide(color: Colors.grey[200]!, width: 1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(-4, 0),
+          ),
+        ],
+      ),
+      child: _isSettingsCollapsed
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: () => setState(() => _isSettingsCollapsed = false),
+                  icon: const Icon(Icons.tune, color: Color(0xFF64748B)),
+                  tooltip: 'Expand settings',
+                ),
+                const SizedBox(height: 8),
+                RotatedBox(
+                  quarterTurns: 1,
+                  child: Text(
+                    'Settings',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.tune, color: Color(0xFF0EA5E9)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Document settings',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => setState(() => _isSettingsCollapsed = true),
+                        icon: const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+                        tooltip: 'Collapse settings',
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSettingDropdown('Page size', _pageSize, [
+                          'A4',
+                          'Letter',
+                          'Legal',
+                        ], (value) => setState(() => _pageSize = value)),
+                        _buildSettingDropdown('Margins', _pageMargin, [
+                          '0.5 in',
+                          '1.0 in',
+                          '1.5 in',
+                        ], (value) => setState(() => _pageMargin = value)),
+                        _buildSettingDropdown('Background / cover', _backgroundStyle, [
+                          'None',
+                          'Gradient',
+                          'Image overlay',
+                        ], (value) => setState(() => _backgroundStyle = value)),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Brand colors',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildColorPalette(),
+                        const SizedBox(height: 20),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Watermark'),
+                          subtitle:
+                              const Text('Show company watermark on every page'),
+                          value: _showWatermark,
+                          onChanged: (value) => setState(() => _showWatermark = value),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildSettingDropdown('Number formatting', _numberFormat, [
+                          '1,234.00',
+                          '1.234,00',
+                          '1234.00',
+                        ], (value) => setState(() => _numberFormat = value)),
+                        _buildSettingDropdown('Currency', _selectedCurrency, [
+                          'Rand (ZAR)',
+                          'US Dollar (USD)',
+                          'Euro (EUR)',
+                          'British Pound (GBP)',
+                        ], (value) => setState(() => _selectedCurrency = value)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildSettingDropdown(
+    String label,
+    String value,
+    List<String> options,
+    ValueChanged<String> onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: value,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            items: options
+                .map((option) => DropdownMenuItem<String>(
+                      value: option,
+                      child: Text(option),
+                    ))
+                .toList(),
+            onChanged: (newValue) {
+              if (newValue != null) onChanged(newValue);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorPalette() {
+    final colors = [
+      const Color(0xFF0F172A),
+      const Color(0xFF1D4ED8),
+      const Color(0xFF0EA5E9),
+      const Color(0xFFF97316),
+      const Color(0xFF0F766E),
+      const Color(0xFFDB2777),
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: colors.map((color) {
+        final isSelected = color.value == _brandPrimary.value;
+        return GestureDetector(
+          onTap: () => setState(() => _brandPrimary = color),
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? const Color(0xFF0EA5E9) : Colors.white,
+                width: 3,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.35),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
 
   void _insertContentIntoSection(String contentType, String content) {
     if (_sections.isEmpty) return;

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'services/ai_analysis_service.dart';
 
 const String baseUrl = "https://lukens-backend.onrender.com";
 
