@@ -41,17 +41,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   DateTime? _lastSaved;
   List<_DocumentSection> _sections = [];
   int _hoveredSectionIndex = -1;
-  String _selectedPanel = 'templates'; // templates, build, upload, signature
   int _selectedSectionIndex =
       0; // Track which section is selected for content insertion
   String _selectedCurrency = 'Rand (ZAR)';
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
-  String _signatureSearchQuery = '';
-  String _uploadTabSelected = 'this_document'; // 'this_document' or 'library'
-  bool _showSectionsSidebar = false; // Toggle sections sidebar visibility
   bool _showCommentsPanel = false; // Toggle right-side comment panel visibility
+  bool _isSettingsCollapsed = false;
 
   // Formatting state
   String _selectedTextStyle = 'Normal Text';
@@ -62,15 +59,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   bool _isItalic = false;
   bool _isUnderlined = false;
 
+  // Document settings
+  String _pageSize = 'A4';
+  String _pageMargin = '1.0 in';
+  String _backgroundStyle = 'None';
+  bool _showWatermark = false;
+  String _numberFormat = '1,234.00';
+  Color _brandPrimary = const Color(0xFF0F172A);
+
   // Sidebar state
   bool _isSidebarCollapsed = false;
-  String _currentPage = 'Editor';
 
-  List<String> _signatures = [
-    'Client Signature',
-    'Authorized By',
-    'Manager Approval'
-  ];
   List<Map<String, dynamic>> _comments = [];
   late TextEditingController _commentController;
   final FocusNode _commentFocusNode = FocusNode();
@@ -686,6 +685,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         _sections.removeAt(index);
       });
     }
+  }
+
+  void _duplicateSection(int index) {
+    if (index < 0 || index >= _sections.length) return;
+    final section = _sections[index];
+    final duplicated = _DocumentSection(
+      title: '${section.title} Copy',
+      content: section.controller.text,
+      backgroundColor: section.backgroundColor,
+      backgroundImageUrl: section.backgroundImageUrl,
+      sectionType: section.sectionType,
+      isCoverPage: section.isCoverPage,
+      inlineImages: section.inlineImages
+          .map((img) => InlineImage(
+                url: img.url,
+                width: img.width,
+                height: img.height,
+                x: img.x,
+                y: img.y,
+              ))
+          .toList(),
+      tables: section.tables
+          .map(
+            (table) => DocumentTable(
+              type: table.type,
+              cells: table.cells
+                  .map((row) => row.map((cell) => cell).toList())
+                  .toList(),
+              vatRate: table.vatRate,
+            ),
+          )
+          .toList(),
+    );
+
+    setState(() {
+      _sections.insert(index + 1, duplicated);
+      _selectedSectionIndex = index + 1;
+    });
   }
 
   void _createSnippet(int index) {
@@ -2790,166 +2827,254 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
     
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      body: Row(
-        children: [
-          // Left Sidebar (hide in read-only mode)
-          if (!isReadOnly) _buildLeftSidebar(),
-          // Sections Sidebar (conditional, hide in read-only mode)
-          if (!isReadOnly && _showSectionsSidebar) _buildSectionsSidebar(),
-          // Main content
-          Expanded(
-            child: Column(
-              children: [
-                // Top header
-                _buildTopHeader(),
-                // Formatting toolbar (hide in read-only mode)
-                if (!isReadOnly) _buildToolbar(),
-                // Main document area
-                Expanded(
-                  child: Row(
-                    children: [
-                      // Center content
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            SingleChildScrollView(
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 40,
-                                    vertical: 50,
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      // Generate A4 pages
-                                      ..._buildA4Pages(),
-                                      // Plus button to add new page
-                                      const SizedBox(height: 24),
-                                      _buildAddPageButton(),
-                                      const SizedBox(height: 40),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Right sidebar (hide in read-only mode)
-                      if (!isReadOnly) _buildRightSidebar(),
-                      // Comments panel (right-side, toggleable)
-                      if (_showCommentsPanel) _buildCommentsPanel(),
-                    ],
-                  ),
-                ),
-              ],
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildTopHeader(isReadOnly),
+            if (!isReadOnly) _buildToolbar(),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isReadOnly) _buildLeftSidebar(),
+                  Expanded(child: _buildDocumentCanvas(isReadOnly)),
+                  if (!isReadOnly) _buildRightSidebar(),
+                  if (_showCommentsPanel) _buildCommentsPanel(),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildLeftSidebar() {
-    return GestureDetector(
-      onTap: () {
-        if (_isSidebarCollapsed) {
-          setState(() => _isSidebarCollapsed = false);
-        }
-      },
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: _isSidebarCollapsed ? 90.0 : 250.0,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
+    final width = _isSidebarCollapsed ? 90.0 : 280.0;
+    final blockItems = [
+      {'icon': Icons.text_fields, 'label': 'Text', 'type': 'text'},
+      {'icon': Icons.image_outlined, 'label': 'Image', 'type': 'image'},
+      {'icon': Icons.videocam_outlined, 'label': 'Video', 'type': 'video'},
+      {'icon': Icons.table_chart_outlined, 'label': 'Table', 'type': 'table'},
+      {'icon': Icons.price_change_outlined, 'label': 'Pricing', 'type': 'pricing'},
+      {'icon': Icons.segment, 'label': 'Section Header', 'type': 'section_header'},
+      {'icon': Icons.horizontal_rule, 'label': 'Page Break', 'type': 'page_break'},
+      {'icon': Icons.category_outlined, 'label': 'Shapes', 'type': 'shape'},
+      {'icon': Icons.library_add_check_outlined, 'label': 'Library', 'type': 'library'},
+    ];
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      width: width,
+      margin: const EdgeInsets.only(left: 24, top: 16, bottom: 16),
+      padding: EdgeInsets.all(_isSidebarCollapsed ? 8 : 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 25,
+            offset: const Offset(0, 12),
           ),
-          border: Border(
-            right: BorderSide(
-              color: PremiumTheme.glassWhiteBorder,
-              width: 1,
-            ),
-          ),
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              const SizedBox(height: 16),
-              // Toggle button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: InkWell(
-                  onTap: _toggleSidebar,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: PremiumTheme.glassWhite,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: PremiumTheme.glassWhiteBorder,
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: _isSidebarCollapsed
-                          ? MainAxisAlignment.center
-                          : MainAxisAlignment.spaceBetween,
-                      children: [
-                        if (!_isSidebarCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
+        ],
+      ),
+      child: _isSidebarCollapsed
+          ? Column(
+              children: [
+                IconButton(
+                  onPressed: _toggleSidebar,
+                  icon: const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+                  tooltip: 'Expand library',
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView(
+                    children: blockItems
+                        .map(
+                          (block) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Tooltip(
+                              message: block['label'] as String,
+                              child: InkWell(
+                                onTap: () =>
+                                    _handleBlockSelected(block['type'] as String),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    block['icon'] as IconData,
+                                    color: const Color(0xFF0EA5E9),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8,
-                          ),
-                          child: Icon(
-                            _isSidebarCollapsed
-                                ? Icons.keyboard_arrow_right
-                                : Icons.keyboard_arrow_left,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
+                        )
+                        .toList(),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              // Navigation items - show admin sidebar if user is admin
-              _buildAdminSidebarItems(),
-              const SizedBox(height: 20),
-              // Divider
-              if (!_isSidebarCollapsed)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  height: 1,
-                  color: const Color(0xFF2C3E50),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.extension, color: Color(0xFF0EA5E9)),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Block Library',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: _toggleSidebar,
+                      icon: const Icon(Icons.chevron_left, color: Color(0xFF94A3B8)),
+                      tooltip: 'Collapse library',
+                    ),
+                  ],
                 ),
-              const SizedBox(height: 12),
-              // Logout button
-              _buildNavItem(
-                  'Logout', 'assets/images/Logout_KhonoBuzz.png', false),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
+                const SizedBox(height: 16),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: blockItems.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 1.1,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
+                  itemBuilder: (context, index) {
+                    final block = blockItems[index];
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () =>
+                            _handleBlockSelected(block['type'] as String),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                block['icon'] as IconData,
+                                size: 26,
+                                color: const Color(0xFF0EA5E9),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                block['label'] as String,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF475569),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Document Outline',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.separated(
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemCount: _sections.length,
+                    itemBuilder: (context, index) {
+                      final section = _sections[index];
+                      final isActive = index == _selectedSectionIndex;
+                      String preview =
+                          section.controller.text.replaceAll('\\n', ' ').trim();
+                      if (preview.isEmpty) preview = 'Add content';
+                      if (preview.length > 70) {
+                        preview = '${preview.substring(0, 70)}...';
+                      }
+                      return GestureDetector(
+                        onTap: () => setState(() => _selectedSectionIndex = index),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? const Color(0xFFEEF6FF)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isActive
+                                  ? const Color(0xFF3B82F6)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.drag_indicator,
+                                      size: 16, color: Color(0xFF94A3B8)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      section.titleController.text.isEmpty
+                                          ? 'Untitled Section'
+                                          : section.titleController.text,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: isActive
+                                            ? const Color(0xFF0F172A)
+                                            : const Color(0xFF475569),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                preview,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -2957,2211 +3082,86 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
   }
 
-  bool _isAdminUser() {
-    if (!mounted) return false;
-    try {
-      final user = AuthService.currentUser;
-      if (user == null) return false;
-      final role = (user['role']?.toString() ?? '').toLowerCase().trim();
-      return role == 'admin' || role == 'ceo';
-    } catch (e) {
-      return false;
-    }
-  }
-
-  Widget _buildAdminSidebarItems() {
-    final isAdmin = _isAdminUser();
-    
-    if (isAdmin) {
-      // Admin sidebar items
-      return Column(
-        children: [
-          _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-              _currentPage == 'Dashboard'),
-          _buildNavItem('Proposals for Review',
-              'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Proposals for Review'),
-          _buildNavItem('Governance & Risk',
-              'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Governance & Risk'),
-          _buildNavItem('Template Management',
-              'assets/images/content_library.png',
-              _currentPage == 'Template Management'),
-          _buildNavItem('Content Library',
-              'assets/images/content_library.png',
-              _currentPage == 'Content Library'),
-          _buildNavItem('Client Management',
-              'assets/images/collaborations.png',
-              _currentPage == 'Client Management'),
-          _buildNavItem('User Management',
-              'assets/images/collaborations.png',
-              _currentPage == 'User Management'),
-          _buildNavItem('Approved Proposals',
-              'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Approved Proposals'),
-          _buildNavItem('Audit Logs',
-              'assets/images/analytics.png',
-              _currentPage == 'Audit Logs'),
-          _buildNavItem('Settings',
-              'assets/images/analytics.png',
-              _currentPage == 'Settings'),
-        ],
-      );
-    } else {
-      // Creator sidebar items
-      return Column(
-        children: [
-          _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-              _currentPage == 'Dashboard'),
-          _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-              _currentPage == 'My Proposals'),
-          _buildNavItem('Templates', 'assets/images/content_library.png',
-              _currentPage == 'Templates'),
-          _buildNavItem('Content Library',
-              'assets/images/content_library.png',
-              _currentPage == 'Content Library'),
-          _buildNavItem('Client Management',
-              'assets/images/collaborations.png',
-              _currentPage == 'Client Management'),
-          _buildNavItem('Approved Proposals',
-              'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Approved Proposals'),
-          _buildNavItem('Analytics (My Pipeline)',
-              'assets/images/analytics.png',
-              _currentPage == 'Analytics (My Pipeline)'),
-        ],
-      );
-    }
-  }
-
-  Widget _buildNavItem(String label, String assetPath, bool isActive) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
-          ),
-        ),
+  void _shareDocument() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Share workflow coming soon'),
+        duration: Duration(seconds: 2),
       ),
     );
   }
 
-  void _navigateToPage(String pageName) {
-    final isAdmin = _isAdminUser();
-    
-    switch (pageName) {
-      case 'Dashboard':
-        if (isAdmin) {
-          Navigator.pushReplacementNamed(context, '/approver_dashboard');
-        } else {
-          Navigator.pushReplacementNamed(context, '/creator_dashboard');
-        }
-        break;
-      case 'Proposals for Review':
-        Navigator.pushReplacementNamed(context, '/approver_dashboard');
-        break;
-      case 'Governance & Risk':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Governance & Risk Panel - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        break;
-      case 'Template Management':
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        if (isAdmin) {
-          Navigator.pushReplacementNamed(context, '/client_management');
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Client Management - Coming soon'),
-              backgroundColor: Color(0xFF00BCD4),
+
+  Widget _buildDocumentCanvas(bool isReadOnly) {
+    final hasContent = _sections.any(
+        (section) => section.controller.text.trim().isNotEmpty);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 50),
+                child: Column(
+                  children: [
+                    if (!hasContent) _buildCanvasPlaceholder(),
+                    ..._buildA4Pages(),
+                    if (!isReadOnly) ...[
+                      const SizedBox(height: 24),
+                      _buildAddPageButton(),
+                      const SizedBox(height: 40),
+                    ],
+                  ],
+                ),
+              ),
             ),
-          );
-        }
-        break;
-      case 'User Management':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('User Management - Coming soon'),
-            backgroundColor: Colors.orange,
           ),
-        );
-        break;
-      case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Templates - Coming soon'),
-            backgroundColor: Color(0xFF00BCD4),
-          ),
-        );
-        break;
-      case 'Approved Proposals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
-        break;
-      case 'Audit Logs':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Audit Logs - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        break;
-      case 'Settings':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Admin Settings - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        break;
-      case 'Analytics (My Pipeline)':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Analytics - Coming soon'),
-            backgroundColor: Color(0xFF00BCD4),
-          ),
-        );
-        break;
-      case 'Logout':
-        Navigator.pushReplacementNamed(context, '/login');
-        break;
-    }
+        ],
+      ),
+    );
   }
 
-  Widget _buildSectionsSidebar() {
+  Widget _buildCanvasPlaceholder() {
     return Container(
-      width: 220,
+      width: 760,
+      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.only(bottom: 32),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(right: BorderSide(color: Colors.grey[200]!, width: 1)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Sections',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${_sections.length} section${_sections.length != 1 ? 's' : ''}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[500],
-                  ),
-                ),
-              ],
+        children: const [
+          Icon(Icons.edit_note, size: 48, color: Color(0xFF94A3B8)),
+          SizedBox(height: 12),
+          Text(
+            'Click anywhere to start building your proposal...',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF0F172A),
             ),
           ),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _sections.length,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemBuilder: (context, index) {
-                bool isSelected = _selectedSectionIndex == index;
-                final section = _sections[index];
-                return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          _selectedSectionIndex = index;
-                        });
-                        _sections[index].contentFocus.requestFocus();
-                      },
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFF00BCD4).withValues(alpha: 0.1)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(6),
-                          border: isSelected
-                              ? Border.all(
-                                  color: const Color(0xFF00BCD4),
-                                  width: 1.5,
-                                )
-                              : null,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    section.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: isSelected
-                                          ? const Color(0xFF00BCD4)
-                                          : const Color(0xFF1A1A1A),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                // Section type badge
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: section.isCoverPage
-                                        ? const Color(0xFF00BCD4)
-                                            .withValues(alpha: 0.1)
-                                        : Colors.grey[100],
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    section.sectionType == 'cover'
-                                        ? 'Cover'
-                                        : section.sectionType == 'appendix'
-                                            ? 'Appendix'
-                                            : section.sectionType ==
-                                                    'references'
-                                                ? 'Refs'
-                                                : 'Page',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w500,
-                                      color: section.isCoverPage
-                                          ? const Color(0xFF00BCD4)
-                                          : Colors.grey[600],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _sections[index].controller.text.isEmpty
-                                  ? 'Empty section'
-                                  : _sections[index]
-                                      .controller
-                                      .text
-                                      .split('\n')
-                                      .first
-                                      .substring(
-                                        0,
-                                        (_sections[index]
-                                                    .controller
-                                                    .text
-                                                    .split('\n')
-                                                    .first
-                                                    .length >
-                                                40)
-                                            ? 40
-                                            : _sections[index]
-                                                .controller
-                                                .text
-                                                .split('\n')
-                                                .first
-                                                .length,
-                                      ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopHeader() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      child: Row(
-        children: [
-          // Title and badge
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.grey[300]!, width: 1),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.edit,
-                            size: 16, color: Color(0xFF00BCD4)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _titleController,
-                            enabled: !widget
-                                .readOnly, // Disable editing in read-only mode
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
-                            ),
-                            decoration: InputDecoration(
-                              hintText: widget.readOnly
-                                  ? '' // No hint in read-only mode
-                                  : 'Click to edit document title...',
-                              hintStyle: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFFBDC3C7),
-                              ),
-                              border: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              contentPadding: EdgeInsets.zero,
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00BCD4),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'Document',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                // View Only badge (show in read-only mode)
-                if (widget.readOnly) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF39C12),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.visibility, size: 12, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text(
-                          'View Only',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 24),
-          // Price
-          Row(
-            children: [
-              Text(
-                '${_getCurrencySymbol()} ',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-              SizedBox(
-                width: 80,
-                child: TextField(
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    // Price value input - ready for future use
-                    setState(() {});
-                  },
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide:
-                          BorderSide(color: Colors.grey[300]!, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF00BCD4),
-                        width: 1,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          // Save status with version info
-          GestureDetector(
-            onTap: _showVersionHistory,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isSaving
-                    ? Colors.blue.withOpacity(0.1)
-                    : (_hasUnsavedChanges
-                        ? Colors.orange.withOpacity(0.1)
-                        : Colors.green.withOpacity(0.1)),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: _isSaving
-                      ? Colors.blue
-                      : (_hasUnsavedChanges ? Colors.orange : Colors.green),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_isSaving)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                      ),
-                    )
-                  else
-                    Icon(
-                      _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
-                      size: 14,
-                      color: _hasUnsavedChanges ? Colors.orange : Colors.green,
-                    ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _isSaving
-                        ? 'Saving...'
-                        : (_hasUnsavedChanges
-                            ? 'Unsaved changes'
-                            : (_lastSaved == null ? 'Not Saved' : 'Saved')),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _isSaving
-                          ? Colors.blue[800]
-                          : (_hasUnsavedChanges
-                              ? Colors.orange[800]
-                              : Colors.green[800]),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Version history button
-          OutlinedButton.icon(
-            onPressed: _showVersionHistory,
-            icon: const Icon(Icons.history, size: 16),
-            label: Text('v$_currentVersionNumber'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF00BCD4)),
-              foregroundColor: const Color(0xFF00BCD4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Save and Close button
-          ElevatedButton.icon(
-            onPressed: _saveAndClose,
-            icon: const Icon(Icons.save, size: 16),
-            label: const Text('Save and Close'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00BCD4),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Collaboration button
-          OutlinedButton.icon(
-            onPressed: () => _showCollaborationDialog(),
-            icon: Icon(
-              _isCollaborating ? Icons.people : Icons.person_add,
-              size: 16,
-            ),
-            label: Text(_isCollaborating
-                ? 'Collaborators (${_collaborators.length})'
-                : 'Share'),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: _isCollaborating ? Colors.green : Colors.grey,
-              ),
-              foregroundColor: _isCollaborating ? Colors.green : Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Comments button
-          OutlinedButton.icon(
-            onPressed: () {
-              setState(() {
-                _showCommentsPanel = !_showCommentsPanel;
-              });
-              
-              // Load comments when panel is opened
-              if (_showCommentsPanel && _savedProposalId != null) {
-                _loadCommentsFromDatabase(_savedProposalId!);
-              }
-            },
-            icon: const Icon(Icons.comment, size: 16),
-            label: Text('Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF00BCD4)),
-              foregroundColor: const Color(0xFF00BCD4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // More Actions menu (Archive, etc.)
-          if (_savedProposalId != null)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 20),
-              onSelected: (value) async {
-                switch (value) {
-                  case 'archive':
-                    await _archiveProposal();
-                    break;
-                  case 'restore':
-                    await _restoreProposal();
-                    break;
-                }
-              },
-              itemBuilder: (context) {
-                final isArchived = _proposalStatus?.toLowerCase() == 'archived';
-                return [
-                  if (!isArchived)
-                    const PopupMenuItem(
-                      value: 'archive',
-                      child: Row(
-                        children: [
-                          Icon(Icons.archive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Archive Proposal'),
-                        ],
-                      ),
-                    )
-                  else
-                    const PopupMenuItem(
-                      value: 'restore',
-                      child: Row(
-                        children: [
-                          Icon(Icons.unarchive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Restore Proposal'),
-                        ],
-                      ),
-                    ),
-                ];
-              },
-            ),
-          const SizedBox(width: 12),
-          // Status Badge
-          if (_proposalStatus != null && _proposalStatus != 'draft')
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _getStatusColor(_proposalStatus!),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_getStatusIcon(_proposalStatus!),
-                      size: 14, color: Colors.white),
-                  const SizedBox(width: 6),
-                  Text(
-                    _getStatusLabel(_proposalStatus!),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (_proposalStatus != null && _proposalStatus != 'draft')
-            const SizedBox(width: 12),
-          // Send for Approval button
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            ElevatedButton.icon(
-              onPressed: _sendForApproval,
-              icon: const Icon(Icons.send, size: 16),
-              label: const Text('Send for Approval'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2ECC71),
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            const SizedBox(width: 12),
-          // Action buttons
-          OutlinedButton.icon(
-            onPressed: _showPreview,
-            icon: const Icon(Icons.visibility, size: 16),
-            label: const Text('Preview'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.grey),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // User initials
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text(
-                _getUserInitials(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildToolbar() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-      child: Row(
-        children: [
-          // Undo/Redo
-          IconButton(
-            icon: const Icon(Icons.undo),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Undo - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-            tooltip: 'Undo',
-            iconSize: 18,
-            splashRadius: 20,
-          ),
-          IconButton(
-            icon: const Icon(Icons.redo),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Redo - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-            tooltip: 'Redo',
-            iconSize: 18,
-            splashRadius: 20,
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Style dropdown
-          _buildSmallDropdown(_selectedTextStyle, [
-            'Normal Text',
-            'Heading 1',
-            'Heading 2',
-            'Heading 3',
-            'Title'
-          ], (value) {
-            setState(() {
-              _selectedTextStyle = value!;
-            });
-          }),
-          const SizedBox(width: 8),
-          // Font dropdown
-          _buildSmallDropdown(_selectedFont, [
-            'Plus Jakarta Sans',
-            'Arial',
-            'Times New Roman',
-            'Georgia',
-            'Courier New'
-          ], (value) {
-            setState(() {
-              _selectedFont = value!;
-            });
-          }),
-          const SizedBox(width: 8),
-          // Font size dropdown
-          _buildSmallDropdown(_selectedFontSize, [
-            '10px',
-            '12px',
-            '14px',
-            '16px',
-            '18px',
-            '20px',
-            '24px',
-            '28px'
-          ], (value) {
-            setState(() {
-              _selectedFontSize = value!;
-            });
-          }),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Text formatting
-          IconButton(
-            icon: Icon(Icons.format_bold,
-                color: _isBold ? const Color(0xFF00BCD4) : null),
-            onPressed: () {
-              setState(() {
-                _isBold = !_isBold;
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Bold',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_italic,
-                color: _isItalic ? const Color(0xFF00BCD4) : null),
-            onPressed: () {
-              setState(() {
-                _isItalic = !_isItalic;
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Italic',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_underlined,
-                color: _isUnderlined ? const Color(0xFF00BCD4) : null),
-            onPressed: () {
-              setState(() {
-                _isUnderlined = !_isUnderlined;
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Underline',
-          ),
-          IconButton(
-            icon: const Icon(Icons.format_color_text),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Text color picker - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Text Color',
-          ),
-          IconButton(
-            icon: const Icon(Icons.link),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Insert link - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Link',
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Alignment
-          IconButton(
-            icon: Icon(Icons.format_align_left,
-                color: _selectedAlignment == 'left'
-                    ? const Color(0xFF00BCD4)
-                    : null),
-            onPressed: () {
-              setState(() {
-                _selectedAlignment = 'left';
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Align Left',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_align_center,
-                color: _selectedAlignment == 'center'
-                    ? const Color(0xFF00BCD4)
-                    : null),
-            onPressed: () {
-              setState(() {
-                _selectedAlignment = 'center';
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Align Center',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_align_right,
-                color: _selectedAlignment == 'right'
-                    ? const Color(0xFF00BCD4)
-                    : null),
-            onPressed: () {
-              setState(() {
-                _selectedAlignment = 'right';
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Align Right',
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Lists
-          IconButton(
-            icon: const Icon(Icons.format_list_bulleted),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text =
-                      currentText + '\n• Item 1\n• Item 2\n• Item 3';
-                });
-              }
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Bullet List',
-          ),
-          IconButton(
-            icon: const Icon(Icons.format_list_numbered),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text =
-                      currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
-                });
-              }
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Numbered List',
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Insert
-          IconButton(
-            icon: const Icon(Icons.table_chart),
-            onPressed: () => _showTableTypeDialog(),
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Insert Table',
-          ),
-          IconButton(
-            icon: const Icon(Icons.library_add),
-            onPressed: _addFromLibrary,
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Insert from Content Library',
-          ),
-          IconButton(
-            icon: const Icon(Icons.auto_awesome),
-            onPressed: _showAIAssistantDialog,
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'AI Assistant',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSmallDropdown(
-      String label, List<String> items, Function(String?) onChanged) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[400]!),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: DropdownButton<String>(
-        value: label,
-        underline: const SizedBox(),
-        isDense: true,
-        items: items.map((item) {
-          return DropdownMenuItem(
-            value: item,
-            child: Text(item, style: const TextStyle(fontSize: 12)),
-          );
-        }).toList(),
-        onChanged: onChanged,
-      ),
-    );
-  }
-
-  List<Widget> _buildA4Pages() {
-    // A4 dimensions: 210mm x 297mm (aspect ratio 0.707)
-    // Using larger width of 900px for better visibility
-    // Height: 1273px (A4 aspect ratio maintained)
-    const double pageWidth = 900;
-    const double pageHeight = 1273; // A4 aspect ratio
-
-    return List.generate(
-      _sections.length,
-      (index) {
-        final section = _sections[index];
-        return Container(
-          width: pageWidth,
-          constraints: const BoxConstraints(
-            minHeight: 600,
-            maxHeight: pageHeight,
-          ),
-          margin: const EdgeInsets.only(bottom: 32),
-          decoration: BoxDecoration(
-            color: section.backgroundImageUrl == null
-                ? section.backgroundColor
-                : Colors.white,
-            image: section.backgroundImageUrl != null
-                ? DecorationImage(
-                    image: NetworkImage(section.backgroundImageUrl!),
-                    fit: BoxFit.cover,
-                    opacity: 0.7, // Background image visibility
-                  )
-                : null,
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 20,
-                offset: const Offset(0, 5),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(60),
-                  child: _buildSectionContent(index),
-                ),
-              ),
-              // Page number indicator at bottom
-              Positioned(
-                bottom: 20,
-                right: 60,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100]!.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Text(
-                    'Page ${index + 1} of ${_sections.length}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAddPageButton() {
-    return Center(
-      child: Column(
-        children: [
-          InkWell(
-            onTap: () {
-              final newSection = _DocumentSection(
-                title: 'Untitled Section',
-                content: '',
-              );
-              setState(() {
-                _sections.add(newSection);
-                _selectedSectionIndex = _sections.length - 1;
-
-                // Add listeners to new section
-                newSection.controller.addListener(_onContentChanged);
-                newSection.titleController.addListener(_onContentChanged);
-
-                // Add focus listeners for UI updates
-                newSection.contentFocus.addListener(() => setState(() {}));
-                newSection.titleFocus.addListener(() => setState(() {}));
-              });
-            },
-            customBorder: const CircleBorder(),
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF00BCD4),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF00BCD4).withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.add,
-                color: Colors.white,
-                size: 32,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Add New Page',
+          SizedBox(height: 8),
+          Text(
+            'Add text blocks, media, tables, pricing or import approved content from your library.',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF1A1A1A),
+              color: Color(0xFF64748B),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSectionContent(int index) {
-    final section = _sections[index];
-    final isHovered = _hoveredSectionIndex == index;
-    final isSelected = _selectedSectionIndex == index;
-
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() => _hoveredSectionIndex = index);
-      },
-      onExit: (_) {
-        setState(() => _hoveredSectionIndex = -1);
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.deferToChild,
-        onTap: () {
-          setState(() => _selectedSectionIndex = index);
-        },
-        child: Container(
-          margin: EdgeInsets.zero,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: isSelected ? const Color(0xFF00BCD4) : Colors.transparent,
-              width: isSelected ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(4),
-            color: isSelected
-                ? const Color(0xFF00BCD4).withValues(alpha: 0.03)
-                : Colors.transparent,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Clean content area - text field for writing
-              TextField(
-                focusNode: section.contentFocus,
-                controller: section.controller,
-                maxLines: null,
-                minLines: 15,
-                enabled: !widget.readOnly, // Disable editing in read-only mode
-                style: _getContentTextStyle(),
-                textAlign: _getTextAlignment(),
-                textAlignVertical: TextAlignVertical.top,
-                decoration: InputDecoration(
-                  hintText: widget.readOnly
-                      ? '' // No hint in read-only mode
-                      : 'Start writing your content here...',
-                  hintStyle: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFFBDC3C7),
-                  ),
-                  border: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.all(8),
-                ),
-              ),
-              // Display tables below text (with drag and drop)
-              if (section.tables.isNotEmpty)
-                ReorderableListView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  onReorder: (oldIndex, newIndex) {
-                    setState(() {
-                      if (newIndex > oldIndex) {
-                        newIndex -= 1;
-                      }
-                      final table = section.tables.removeAt(oldIndex);
-                      section.tables.insert(newIndex, table);
-                    });
-                  },
-                  children: section.tables.asMap().entries.map((entry) {
-                    final tableIndex = entry.key;
-                    final table = entry.value;
-                    return _buildInteractiveTable(index, tableIndex, table, key: ValueKey('table_${index}_$tableIndex'));
-                  }).toList(),
-                )
-              else
-                const SizedBox.shrink(),
-              // Display images below tables
-              ...section.inlineImages.asMap().entries.map((entry) {
-                final imageIndex = entry.key;
-                final image = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Container(
-                    width: image.width,
-                    height: image.height,
-                    decoration: BoxDecoration(
-                      border:
-                          Border.all(color: const Color(0xFF00BCD4), width: 2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            image.url,
-                            width: image.width,
-                            height: image.height,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        // Delete button
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: Material(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(12),
-                            child: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _sections[index]
-                                      .inlineImages
-                                      .removeAt(imageIndex);
-                                });
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(Icons.close,
-                                    size: 16, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Build resizable inline image
-  Widget _buildResizableImage(
-      int sectionIndex, int imageIndex, InlineImage image) {
-    return Positioned(
-      left: image.x,
-      top: image.y,
-      child: GestureDetector(
-        // Drag to move the image
-        onPanUpdate: (details) {
-          setState(() {
-            image.x = (image.x + details.delta.dx).clamp(0.0, 700.0);
-            image.y = (image.y + details.delta.dy).clamp(0.0, 1000.0);
-          });
-        },
-        child: Container(
-          width: image.width,
-          height: image.height,
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFF00BCD4), width: 2),
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              // The image itself
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Image.network(
-                  image.url,
-                  width: image.width,
-                  height: image.height,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                            : null,
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: Colors.grey[200],
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.broken_image,
-                                size: 48, color: Colors.grey[400]),
-                            const SizedBox(height: 8),
-                            Text('Failed to load image',
-                                style: TextStyle(
-                                    color: Colors.grey[600], fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              // Move indicator (top-left)
-              Positioned(
-                top: 4,
-                left: 4,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00BCD4),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Icon(Icons.drag_indicator,
-                      size: 16, color: Colors.white),
-                ),
-              ),
-              // Delete button (top-right)
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Material(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _sections[sectionIndex]
-                            .inlineImages
-                            .removeAt(imageIndex);
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Image removed'),
-                          backgroundColor: Colors.orange,
-                        ),
-                      );
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.close, size: 16, color: Colors.white),
-                    ),
-                  ),
-                ),
-              ),
-              // Resize handle (bottom-right corner)
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    setState(() {
-                      // Update width and height based on drag
-                      image.width =
-                          (image.width + details.delta.dx).clamp(100.0, 800.0);
-                      image.height =
-                          (image.height + details.delta.dy).clamp(100.0, 600.0);
-                    });
-                  },
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF00BCD4),
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(4),
-                        bottomRight: Radius.circular(6),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.zoom_out_map,
-                      size: 16,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Build drag target for tables
-  Widget _buildTableDragTarget(int sectionIndex, int targetIndex) {
-    return DragTarget<int>(
-      onWillAccept: (data) {
-        // Accept if dragging a different table
-        return data != null && data != targetIndex && data != targetIndex - 1;
-      },
-      onAccept: (draggedIndex) {
-        setState(() {
-          final tables = _sections[sectionIndex].tables;
-          if (draggedIndex < 0 || draggedIndex >= tables.length) return;
-          
-          // Remove the table being dragged
-          final draggedTable = tables.removeAt(draggedIndex);
-          
-          // Calculate the correct insertion position
-          // targetIndex represents where we want to insert (before the table at that index)
-          int insertIndex = targetIndex;
-          
-          // If we removed a table before the target, adjust the index
-          if (draggedIndex < targetIndex) {
-            insertIndex = targetIndex - 1;
-          }
-          
-          // Ensure valid index
-          insertIndex = insertIndex.clamp(0, tables.length);
-          
-          // Only move if position actually changed
-          if (insertIndex != draggedIndex) {
-            tables.insert(insertIndex, draggedTable);
-          } else {
-            // Put it back if no change
-            tables.insert(draggedIndex, draggedTable);
-          }
-        });
-      },
-      builder: (context, candidateData, rejectedData) {
-        final isActive = candidateData.isNotEmpty;
-        return Container(
-          height: isActive ? 50 : 8,
-          margin: const EdgeInsets.symmetric(vertical: 2),
-          decoration: BoxDecoration(
-            color: isActive
-                ? const Color(0xFF00BCD4).withOpacity(0.3)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-            border: isActive
-                ? Border.all(color: const Color(0xFF00BCD4), width: 2)
-                : null,
-          ),
-          child: isActive
-              ? const Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.drag_handle, color: Color(0xFF00BCD4), size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Drop table here',
-                        style: TextStyle(
-                          color: Color(0xFF00BCD4),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : const SizedBox.shrink(),
-        );
-      },
-    );
-  }
-
-  // Build interactive editable table
-  Widget _buildInteractiveTable(
-      int sectionIndex, int tableIndex, DocumentTable table, {Key? key}) {
-    // Get currency symbol using the proper method
-    final currencySymbol = _getCurrencySymbol();
-
-    return _buildTableContent(sectionIndex, tableIndex, table, currencySymbol, key: key);
-  }
-
-  // Build the actual table content
-  Widget _buildTableContent(
-      int sectionIndex, int tableIndex, DocumentTable table, String currencySymbol, {Key? key}) {
-    return _buildTableContainer(sectionIndex, tableIndex, table, currencySymbol, key: key);
-  }
-
-  // Build the table container
-  Widget _buildTableContainer(
-      int sectionIndex, int tableIndex, DocumentTable table, String currencySymbol, {Key? key}) {
-    return Container(
-      key: key,
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Table header with controls
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4).withOpacity(0.1),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                topRight: Radius.circular(8),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    // Drag handle icon (for ReorderableListView)
-                    Icon(
-                      Icons.drag_handle,
-                      size: 18,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${table.type == 'price' ? 'Price' : 'Text'} Table',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.add_circle_outline, size: 18),
-                      onPressed: () => setState(() => table.addRow()),
-                      tooltip: 'Add Row',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                    const SizedBox(width: 8),
-                    // Disable add column for price tables (fixed structure)
-                    IconButton(
-                      icon: const Icon(Icons.view_column, size: 18),
-                      onPressed: table.type == 'price'
-                          ? null
-                          : () => setState(() => table.addColumn()),
-                      tooltip: table.type == 'price'
-                          ? 'Price tables have fixed columns'
-                          : 'Add Column',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline,
-                          size: 18, color: Colors.red),
-                      onPressed: () {
-                        setState(() {
-                          _sections[sectionIndex].tables.removeAt(tableIndex);
-                        });
-                      },
-                      tooltip: 'Delete Table',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          // Table content
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
-                border: TableBorder.all(color: Colors.grey[300]!),
-                columns: List.generate(
-                  table.cells[0].length,
-                  (colIndex) => DataColumn(
-                    label: Expanded(
-                      child: Text(
-                        table.cells[0][colIndex],
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                        textDirection: TextDirection.ltr,
-                      ),
-                    ),
-                  ),
-                ),
-                rows: List.generate(
-                  table.cells.length - 1,
-                  (rowIndex) => DataRow(
-                    cells: List.generate(
-                      table.cells[rowIndex + 1].length,
-                      (colIndex) => DataCell(
-                        Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: TextField(
-                            textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.left,
-                            controller: TextEditingController(
-                              text: table.cells[rowIndex + 1][colIndex],
-                            ),
-                            onChanged: (value) {
-                              setState(() {
-                                table.cells[rowIndex + 1][colIndex] = value;
-                                // Auto-calculate total for price tables
-                                if (table.type == 'price' && colIndex == 2 ||
-                                    colIndex == 3) {
-                                  final qty = double.tryParse(
-                                          table.cells[rowIndex + 1][2]) ??
-                                      0;
-                                  final price = double.tryParse(
-                                          table.cells[rowIndex + 1][3]) ??
-                                      0;
-                                  table.cells[rowIndex + 1][4] =
-                                      (qty * price).toStringAsFixed(2);
-                                }
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.all(8),
-                            ),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              textBaseline: TextBaseline.alphabetic,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Price table footer
-          if (table.type == 'price') ...[
-            const Divider(height: 1),
-            Container(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      const Text('Subtotal: ',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text(
-                          '$currencySymbol${table.getSubtotal().toStringAsFixed(2)}'),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                          'VAT (${(table.vatRate * 100).toStringAsFixed(0)}%): ',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(
-                          '$currencySymbol${table.getVAT().toStringAsFixed(2)}'),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      const Text('Total: ',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text(
-                          '$currencySymbol${table.getTotal().toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReadOnlyTable(DocumentTable table) {
-    final currencySymbol = _getCurrencySymbol();
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4).withOpacity(0.1),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                topRight: Radius.circular(8),
-              ),
-            ),
-            child: Text(
-              '${table.type == 'price' ? 'Price' : 'Text'} Table',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-          ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(Colors.grey[200]),
-              border: TableBorder.all(color: Colors.grey[300]!),
-              columns: List.generate(
-                table.cells[0].length,
-                (colIndex) => DataColumn(
-                  label: Text(
-                    table.cells[0][colIndex],
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-              rows: List.generate(
-                table.cells.length - 1,
-                (rowIndex) => DataRow(
-                  cells: List.generate(
-                    table.cells[rowIndex + 1].length,
-                    (colIndex) => DataCell(
-                      Text(
-                        table.cells[rowIndex + 1][colIndex],
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (table.type == 'price') ...[
-            const Divider(height: 1),
-            Container(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      const Text('Subtotal: ',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text(
-                          '$currencySymbol${table.getSubtotal().toStringAsFixed(2)}'),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                          'VAT (${(table.vatRate * 100).toStringAsFixed(0)}%): ',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(
-                          '$currencySymbol${table.getVAT().toStringAsFixed(2)}'),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      const Text('Total: ',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text(
-                        '$currencySymbol${table.getTotal().toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // Removed old buttons section - keeping only content
-  Widget _buildSectionContentOld(int index) {
-    final section = _sections[index];
-    final isHovered = _hoveredSectionIndex == index;
-    final isSelected = _selectedSectionIndex == index;
-
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() => _hoveredSectionIndex = index);
-      },
-      onExit: (_) {
-        setState(() => _hoveredSectionIndex = -1);
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.deferToChild,
-        onTap: () {
-          setState(() => _selectedSectionIndex = index);
-        },
-        child: Container(
-          margin: EdgeInsets.zero,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: isSelected ? const Color(0xFF00BCD4) : Colors.transparent,
-              width: isSelected ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(4),
-            color: isSelected
-                ? const Color(0xFF00BCD4).withValues(alpha: 0.03)
-                : Colors.transparent,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  // Removed section title from here
-                  const SizedBox(width: 8),
-                  // Hover buttons
-                  if (isHovered) ...[
-                    // Insert Section button
-                    Tooltip(
-                      message: 'Insert Section',
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2C3E50),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: GestureDetector(
-                            onTapDown: (details) {
-                              _showInsertSectionMenu(
-                                index,
-                                details.globalPosition,
-                              );
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Icon(
-                                Icons.add,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Create Snippet button
-                    Tooltip(
-                      message: 'Create a Snippet',
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2C3E50),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _createSnippet(index),
-                            child: const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Icon(
-                                Icons.save,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Delete Block button
-                    Tooltip(
-                      message: 'Delete Block',
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2C3E50),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: _sections.length > 1
-                                ? () => _deleteSection(index)
-                                : null,
-                            child: Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Icon(
-                                Icons.delete_outline,
-                                size: 16,
-                                color: _sections.length > 1
-                                    ? Colors.white
-                                    : Colors.grey[400],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // More options
-                    PopupMenuButton(
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          child: Row(
-                            children: [
-                              Icon(Icons.edit, size: 16),
-                              SizedBox(width: 8),
-                              Text('Edit'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          child: Row(
-                            children: [
-                              Icon(Icons.copy, size: 16),
-                              SizedBox(width: 8),
-                              Text('Duplicate'),
-                            ],
-                          ),
-                        ),
-                      ],
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2C3E50),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Padding(
-                          padding: EdgeInsets.all(6),
-                          child: Icon(
-                            Icons.more_vert,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Section title (editable)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: TextField(
-                  focusNode: section.titleFocus,
-                  controller: section.titleController,
-                  decoration: InputDecoration(
-                    hintText: 'Section title (e.g. Introduction)',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                  ),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1A3A52),
-                  ),
-                  onChanged: (val) {
-                    // mark content changed for autosave
-                    _onContentChanged();
-                    setState(() {});
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Content area
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: section.contentFocus.hasFocus
-                        ? const Color(0xFF00BCD4)
-                        : Colors.grey[200]!,
-                    width: 1,
-                  ),
-                ),
-                child: TextField(
-                  focusNode: section.contentFocus,
-                  controller: section.controller,
-                  enabled: true,
-                  maxLines: null,
-                  textAlign: _getTextAlignment(),
-                  textAlignVertical: TextAlignVertical.top,
-                  style: _getContentTextStyle(),
-                  decoration: InputDecoration(
-                    hintText:
-                        'Click here to start typing or insert content from library...',
-                    hintStyle: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[400],
-                    ),
-                    border: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -5172,7 +3172,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final section = _sections[_selectedSectionIndex];
     String newContent = section.controller.text;
 
-    // Add content based on type
     switch (contentType) {
       case 'text':
         newContent += '\n[Text Block - Edit this text]';
@@ -5193,6 +3192,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       case 'signature':
         newContent += '\n\nSignature: __________________ Date: __________\n';
         break;
+      case 'section_header':
+        newContent += '\n\n=== Section Header ===\n';
+        break;
+      case 'page_break':
+        newContent += '\n\n--- Page Break ---\n';
+        break;
     }
 
     setState(() {
@@ -5201,1833 +3206,47 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$contentType inserted into "${section.title}"'),
+        content: Text('$contentType inserted into \"${section.title}\"'),
         backgroundColor: const Color(0xFF27AE60),
         duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  void _addImageToSection(String imageUrl) async {
+  void _addPricingTable() {
     if (_sections.isEmpty) return;
-
     final section = _sections[_selectedSectionIndex];
-
-    // Ask user: Background or Inline Image?
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Insert Image'),
-        content: const Text('How would you like to use this image?'),
-        actions: [
-          TextButton.icon(
-            icon: const Icon(Icons.wallpaper),
-            label: const Text('Set as Background'),
-            onPressed: () => Navigator.pop(context, 'background'),
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.image),
-            label: const Text('Insert as Image'),
-            onPressed: () => Navigator.pop(context, 'inline'),
-          ),
-          TextButton(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
-    );
-
-    if (choice == null) return;
-
     setState(() {
-      if (choice == 'background') {
-        // Set as background image
-        section.backgroundImageUrl = imageUrl;
-        section.backgroundColor = Colors.white;
-      } else if (choice == 'inline') {
-        // Add as inline image
-        section.inlineImages.add(InlineImage(url: imageUrl));
-      }
+      section.tables.add(DocumentTable.priceTable());
     });
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    choice == 'background'
-                        ? 'Background image set!'
-                        : 'Image inserted!',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    choice == 'background'
-                        ? 'Image set as background for "${section.title}"'
-                        : 'You can resize the image by dragging the corner handle',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF27AE60),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  void _showTableTypeDialog() async {
-    final tableType = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Insert Table'),
-        content: const Text('What type of table would you like to insert?'),
-        actions: [
-          TextButton.icon(
-            icon: const Icon(Icons.table_chart),
-            label: const Text('Text Table'),
-            onPressed: () => Navigator.pop(context, 'text'),
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.attach_money),
-            label: const Text('Price Table'),
-            onPressed: () => Navigator.pop(context, 'price'),
-          ),
-          TextButton(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
-    );
-
-    if (tableType == null || _sections.isEmpty) return;
-
-    setState(() {
-      final section = _sections[_selectedSectionIndex];
-      if (tableType == 'price') {
-        section.tables.add(DocumentTable.priceTable());
-      } else {
-        section.tables.add(DocumentTable());
-      }
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content:
-            Text('${tableType == 'price' ? 'Price' : 'Text'} table inserted'),
+        content: Text('Pricing table added to \"${section.title}\"'),
         backgroundColor: const Color(0xFF27AE60),
         duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  void _insertSignatureIntoSection(String signatureName) {
-    if (_sections.isEmpty) return;
-
-    final section = _sections[_selectedSectionIndex];
-    String newContent = section.controller.text;
-    newContent +=
-        '\n\nSignature ($signatureName): __________________ Date: __________\n';
-
-    setState(() {
-      section.controller.text = newContent;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Signature "$signatureName" added to "${section.title}"'),
-        backgroundColor: const Color(0xFF27AE60),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Widget _buildRightSidebar() {
-    return Container(
-      width: 300,
-      color: Colors.white,
-      child: Column(
-        children: [
-          // Panel tabs/icons at the top
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildPanelTabIcon(Icons.tune, 'templates', 'Templates'),
-                _buildPanelTabIcon(Icons.add_box_outlined, 'build', 'Build'),
-                _buildPanelTabIcon(
-                    Icons.cloud_upload_outlined, 'upload', 'Upload'),
-                _buildPanelTabIcon(Icons.edit_note, 'signature', 'Signature'),
-              ],
-            ),
-          ),
-          // Panel content
-          Expanded(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: _buildPanelContent(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPanelTabIcon(IconData icon, String panelName, String tooltip) {
-    bool isActive = _selectedPanel == panelName;
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              _selectedPanel = panelName;
-            });
-          },
-          customBorder: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Icon(
-              icon,
-              size: 22,
-              color: isActive ? const Color(0xFF00BCD4) : Colors.grey[600],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPanelContent() {
-    switch (_selectedPanel) {
-      case 'templates':
-        return _buildTemplatesPanel();
-      case 'build':
-        return _buildBuildPanel();
-      case 'upload':
-        return _buildUploadPanel();
+  void _handleBlockSelected(String type) {
+    switch (type) {
+      case 'text':
+      case 'image':
+      case 'video':
+      case 'table':
+      case 'shape':
       case 'signature':
-        return _buildSignaturePanel();
-      default:
-        return _buildTemplatesPanel();
+      case 'section_header':
+      case 'page_break':
+        _insertContentIntoSection(type, '');
+        break;
+      case 'pricing':
+        _addPricingTable();
+        break;
+      case 'library':
+        _addFromLibrary();
+        break;
     }
-  }
-
-  Widget _buildTemplatesPanel() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Template Settings',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
-          ),
-        ),
-        const SizedBox(height: 20),
-        // Template Style Button
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              _showTemplateStyleDialog();
-            },
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Template Style',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF1A3A52),
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward_ios,
-                      size: 16, color: const Color(0xFF1A3A52)),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Adjust margins, orientation, background, etc.',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 24),
-        Container(height: 1, color: Colors.grey[200]),
-        const SizedBox(height: 24),
-        // Currency Options
-        const Text(
-          'Currency Options',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Template Currency',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
-        ),
-        const SizedBox(height: 10),
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              _showCurrencyDropdown();
-            },
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _selectedCurrency,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF1A1A1A),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Icon(Icons.expand_more, size: 18, color: Colors.grey[600]),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildColorOption(Color color, String label) {
-    if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
-      return const SizedBox.shrink();
-    }
-    final section = _sections[_selectedSectionIndex];
-    final isSelected = section.backgroundColor == color;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          section.backgroundColor = color;
-          section.backgroundImageUrl =
-              null; // Clear image when color is selected
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Page ${_selectedSectionIndex + 1} background changed to $label'),
-            backgroundColor: const Color(0xFF00BCD4),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      },
-      child: Column(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: color,
-              border: Border.all(
-                color: isSelected ? const Color(0xFF00BCD4) : Colors.grey[300]!,
-                width: isSelected ? 3 : 1,
-              ),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: isSelected
-                  ? [
-                      BoxShadow(
-                        color: const Color(0xFF00BCD4).withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: isSelected
-                ? const Center(
-                    child: Icon(
-                      Icons.check,
-                      color: Color(0xFF00BCD4),
-                      size: 24,
-                    ),
-                  )
-                : null,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: isSelected ? const Color(0xFF00BCD4) : Colors.grey[600],
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _selectBackgroundImageFromLibrary() async {
-    if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a page first'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    final selectedModule = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
-    );
-
-    if (selectedModule != null) {
-      final content = selectedModule['content'] ?? '';
-      final title = selectedModule['title'] ?? 'Background';
-
-      // Check if it's an image URL
-      final isUrl =
-          content.startsWith('http://') || content.startsWith('https://');
-
-      if (isUrl) {
-        setState(() {
-          final section = _sections[_selectedSectionIndex];
-          section.backgroundImageUrl = content;
-          section.backgroundColor =
-              Colors.white; // Reset color when image is selected
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Background image "$title" applied to Page ${_selectedSectionIndex + 1}'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select an image from the library'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    }
-  }
-
-  void _showTemplateStyleDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: SizedBox(
-            width: 400,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Page Style Settings',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00BCD4),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Page ${_selectedSectionIndex + 1}',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Orientation',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content:
-                                    Text('Orientation changed to Portrait'),
-                                backgroundColor: Color(0xFF27AE60),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.portrait),
-                          label: const Text('Portrait'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00BCD4),
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content:
-                                    Text('Orientation changed to Landscape'),
-                                backgroundColor: Color(0xFF27AE60),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.landscape),
-                          label: const Text('Landscape'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey[400],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Margins',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Enter margin size (in cm)',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Background Color',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _buildColorOption(Colors.white, 'White'),
-                      _buildColorOption(const Color(0xFFF5F5F5), 'Light Gray'),
-                      _buildColorOption(const Color(0xFFFFF8DC), 'Cream'),
-                      _buildColorOption(
-                          const Color(0xFFFFF9E6), 'Light Yellow'),
-                      _buildColorOption(const Color(0xFFE8F5E9), 'Light Green'),
-                      _buildColorOption(const Color(0xFFE3F2FD), 'Light Blue'),
-                      _buildColorOption(const Color(0xFFFCE4EC), 'Light Pink'),
-                      _buildColorOption(
-                          const Color(0xFFF3E5F5), 'Light Purple'),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Background Image',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => _selectBackgroundImageFromLibrary(),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(6),
-                          color: (_sections.isNotEmpty &&
-                                  _selectedSectionIndex < _sections.length &&
-                                  _sections[_selectedSectionIndex]
-                                          .backgroundImageUrl !=
-                                      null)
-                              ? Colors.blue[50]
-                              : Colors.grey[50],
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              (_sections.isNotEmpty &&
-                                      _selectedSectionIndex <
-                                          _sections.length &&
-                                      _sections[_selectedSectionIndex]
-                                              .backgroundImageUrl !=
-                                          null)
-                                  ? Icons.image
-                                  : Icons.add_photo_alternate,
-                              color: const Color(0xFF00BCD4),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                (_sections.isNotEmpty &&
-                                        _selectedSectionIndex <
-                                            _sections.length &&
-                                        _sections[_selectedSectionIndex]
-                                                .backgroundImageUrl !=
-                                            null)
-                                    ? 'Background image selected'
-                                    : 'Select from Content Library',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            if (_sections.isNotEmpty &&
-                                _selectedSectionIndex < _sections.length &&
-                                _sections[_selectedSectionIndex]
-                                        .backgroundImageUrl !=
-                                    null)
-                              IconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                onPressed: () {
-                                  setState(() {
-                                    _sections[_selectedSectionIndex]
-                                        .backgroundImageUrl = null;
-                                  });
-                                },
-                                tooltip: 'Remove background',
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Template settings saved'),
-                              backgroundColor: Color(0xFF27AE60),
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF27AE60),
-                        ),
-                        child: const Text('Save'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showCurrencyDropdown() {
-    showMenu<String>(
-      context: context,
-      position: const RelativeRect.fromLTRB(0, 0, 0, 0),
-      items: [
-        'Rand (ZAR)',
-        'US Dollar (USD)',
-        'Euro (EUR)',
-        'British Pound (GBP)',
-        'Indian Rupee (INR)',
-      ].map((currency) {
-        return PopupMenuItem<String>(
-          value: currency,
-          child: Text(currency),
-        );
-      }).toList(),
-    ).then((value) {
-      if (value != null) {
-        setState(() {
-          _selectedCurrency = value;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Currency changed to $value'),
-            backgroundColor: const Color(0xFF27AE60),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    });
-  }
-
-  Widget _buildBuildPanel() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Build',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
-          ),
-        ),
-        const SizedBox(height: 20),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            _buildBuildItem(Icons.text_fields, 'Text'),
-            _buildBuildItem(Icons.image_outlined, 'Image'),
-            _buildBuildItem(Icons.video_library_outlined, 'Video'),
-            _buildBuildItem(Icons.table_chart_outlined, 'Table'),
-            _buildBuildItem(Icons.dashboard_customize_outlined, 'Shape'),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBuildItem(IconData icon, String label) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          String contentType = label.toLowerCase();
-          if (contentType == 'shape') contentType = 'shape';
-          _insertContentIntoSection(contentType, '');
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey[200]!),
-            borderRadius: BorderRadius.circular(8),
-            color: Colors.grey[50],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 32, color: const Color(0xFF1A3A52)),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUploadPanel() {
-    bool hasImages = _uploadedImages.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Uploads',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Tabs
-        Row(
-          children: [
-            Expanded(
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      _uploadTabSelected = 'this_document';
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Column(
-                      children: [
-                        Text(
-                          'This document',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: _uploadTabSelected == 'this_document'
-                                ? const Color(0xFF1A3A52)
-                                : Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 2,
-                          color: _uploadTabSelected == 'this_document'
-                              ? const Color(0xFF1A3A52)
-                              : Colors.transparent,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      _uploadTabSelected = 'library';
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Column(
-                      children: [
-                        Text(
-                          'Your library',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: _uploadTabSelected == 'library'
-                                ? const Color(0xFF1A3A52)
-                                : Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 2,
-                          color: _uploadTabSelected == 'library'
-                              ? const Color(0xFF1A3A52)
-                              : Colors.transparent,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-        // Show upload for "This document" tab or library for "Your library" tab
-        if (_uploadTabSelected == 'this_document') ...[
-          // Drag & Drop Upload Area
-          DragTarget<Object>(
-            onWillAcceptWithDetails: (details) => true,
-            onAcceptWithDetails: (details) {
-              _handleFileDrop(details.data);
-            },
-            builder: (context, candidateData, rejectedData) {
-              final isDragging = candidateData.isNotEmpty;
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    _addSampleImage();
-                  },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: isDragging
-                            ? const Color(0xFF00BCD4)
-                            : Colors.grey[300]!,
-                        width: isDragging ? 2 : 1,
-                        style: BorderStyle.solid,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                      color: isDragging
-                          ? const Color(0xFF00BCD4).withValues(alpha: 0.05)
-                          : Colors.grey[50],
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          isDragging
-                              ? Icons.file_download
-                              : Icons.cloud_upload_outlined,
-                          size: 32,
-                          color: isDragging
-                              ? const Color(0xFF00BCD4)
-                              : Colors.grey[600],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          isDragging
-                              ? 'Drop images here'
-                              : 'Click to upload from computer',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: isDragging
-                                ? const Color(0xFF00BCD4)
-                                : Colors.grey[600],
-                          ),
-                        ),
-                        if (!isDragging)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'Supports JPG, PNG, WebP, GIF',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          // Images list or empty state
-          if (!hasImages)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: Column(
-                  children: [
-                    Text(
-                      'No images yet',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Images you upload will appear here',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[500],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: List.generate(
-                _uploadedImages.length,
-                (index) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: InkWell(
-                    onTap: () {
-                      _addImageToSection(_uploadedImages[index]);
-                    },
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[200]!),
-                        borderRadius: BorderRadius.circular(6),
-                        color: Colors.grey[50],
-                      ),
-                      child: Row(
-                        children: [
-                          // Actual image thumbnail
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(4),
-                              image: _uploadedImages[index].isNotEmpty
-                                  ? DecorationImage(
-                                      image:
-                                          NetworkImage(_uploadedImages[index]),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : null,
-                            ),
-                            child: _uploadedImages[index].isEmpty
-                                ? const Icon(Icons.image,
-                                    color: Colors.grey, size: 30)
-                                : null,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Image ${index + 1}',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF1A1A1A),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Click to insert',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(Icons.add_circle_outline,
-                              size: 20, color: Colors.green[600]),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ] else if (_uploadTabSelected == 'library') ...[
-          // Library images
-          if (_isLoadingLibraryImages)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
-            )
-          else if (_libraryImages.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(Icons.image, size: 48, color: Colors.grey[400]),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No Images in Library',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: _loadLibraryImages,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Refresh'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: List.generate(
-                _libraryImages.length,
-                (index) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: InkWell(
-                    onTap: () {
-                      _addImageToSection(_libraryImages[index]['content']);
-                    },
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[200]!),
-                        borderRadius: BorderRadius.circular(6),
-                        color: Colors.grey[50],
-                      ),
-                      child: Row(
-                        children: [
-                          // Image thumbnail
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(4),
-                              image: _libraryImages[index]['content'] != null &&
-                                      _libraryImages[index]['content']
-                                          .toString()
-                                          .isNotEmpty
-                                  ? DecorationImage(
-                                      image: NetworkImage(
-                                          _libraryImages[index]['content']),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : null,
-                            ),
-                            child: _libraryImages[index]['content'] == null ||
-                                    _libraryImages[index]['content']
-                                        .toString()
-                                        .isEmpty
-                                ? const Icon(Icons.image,
-                                    color: Colors.grey, size: 30)
-                                : null,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _libraryImages[index]['label'] ?? 'Untitled',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF1A1A1A),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'Click to insert',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(Icons.add_circle_outline,
-                              size: 20, color: Colors.green[600]),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ],
-    );
-  }
-
-  Future<void> _addSampleImage() async {
-    try {
-      // Pick image file from computer
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true, // Important for web
-      );
-
-      if (result == null || result.files.isEmpty) {
-        // User cancelled the picker
-        return;
-      }
-
-      final file = result.files.first;
-
-      // Show uploading indicator
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
-              ),
-              SizedBox(width: 12),
-              Text('Uploading image...'),
-            ],
-          ),
-          backgroundColor: Color(0xFF00BCD4),
-          duration: Duration(seconds: 30),
-        ),
-      );
-
-      // Upload to Cloudinary
-      final appState = Provider.of<AppState>(context, listen: false);
-      Map<String, dynamic>? uploadResult;
-
-      if (file.bytes != null) {
-        // For web, use bytes
-        uploadResult = await appState.uploadImageToCloudinary(
-          '', // Empty path for web
-          fileBytes: file.bytes!,
-          fileName: file.name,
-        );
-      } else {
-        throw Exception('Could not read file data');
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).clearSnackBars();
-
-      if (uploadResult != null && uploadResult['url'] != null) {
-        final imageUrl = uploadResult['url'] as String;
-        setState(() {
-          _uploadedImages.add(imageUrl);
-        });
-
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${file.name} uploaded successfully!'),
-            backgroundColor: const Color(0xFF27AE60),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      } else {
-        throw Exception('Failed to upload image');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Upload failed: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-  }
-
-  void _handleFileDrop(Object data) {
-    // Handle file drop - for now, we'll simulate adding an image
-    // In a real implementation, you would process the dropped file
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final imageUrl =
-        'https://via.placeholder.com/300x200?text=Dropped+Image+$timestamp';
-
-    setState(() {
-      _uploadedImages.add(imageUrl);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Image dropped successfully'),
-        backgroundColor: Color(0xFF27AE60),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Widget _buildSignaturePanel() {
-    List<String> filteredSignatures = _signatures
-        .where((sig) =>
-            sig.toLowerCase().contains(_signatureSearchQuery.toLowerCase()))
-        .toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Signatures',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Search field
-        TextField(
-          onChanged: (value) {
-            setState(() {
-              _signatureSearchQuery = value;
-            });
-          },
-          decoration: InputDecoration(
-            hintText: 'Start typing',
-            hintStyle: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[400],
-            ),
-            prefixIcon: Icon(Icons.search, color: Colors.grey[600], size: 18),
-            prefixText: 'Signatures for   ',
-            prefixStyle: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[600],
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
-              borderSide: BorderSide(color: Colors.grey[300]!),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(
-                color: Color(0xFF00BCD4),
-              ),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        // Signature items list
-        if (filteredSignatures.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: Text(
-                'No signatures found',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ),
-          )
-        else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: List.generate(
-              filteredSignatures.length,
-              (index) {
-                final signature = filteredSignatures[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        _insertSignatureIntoSection(signature);
-                      },
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFE0B2), // Light orange/peach
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.grey[300]!),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.edit,
-                              size: 24,
-                              color: const Color(0xFFF57C00),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    signature,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF1A1A1A),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Click to insert',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(Icons.arrow_forward_ios,
-                                size: 14, color: Colors.grey[600]),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        const SizedBox(height: 20),
-        // Add new signature button
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              _showAddSignatureDialog();
-            },
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
-                borderRadius: BorderRadius.circular(6),
-                color: Colors.grey[50],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.add, size: 18, color: Color(0xFF1A3A52)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Add New Signature',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: const Color(0xFF1A3A52),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _showAddSignatureDialog() {
-    TextEditingController signatureName = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: SizedBox(
-            width: 400,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Add New Signature',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A1A),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: signatureName,
-                    decoration: InputDecoration(
-                      labelText: 'Signature Name',
-                      hintText: 'e.g., Company Director',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (signatureName.text.isNotEmpty) {
-                            setState(() {
-                              _signatures.add(signatureName.text);
-                            });
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                    'Signature "${signatureName.text}" added'),
-                                backgroundColor: const Color(0xFF27AE60),
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF27AE60),
-                        ),
-                        child: const Text('Add'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showCommentDialog() {
-    _clearMentionState();
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: SizedBox(
-            width: 500,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.comment,
-                          color: Color(0xFF00BCD4), size: 24),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Add Comment',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Section selection
-                  if (_sections.isNotEmpty) ...[
-                    Text(
-                      'Target Section',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<int>(
-                      initialValue: _selectedSectionForComment ?? 0,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                      ),
-                      items: _sections.asMap().entries.map((entry) {
-                        return DropdownMenuItem<int>(
-                          value: entry.key,
-                          child: Text(
-                            entry.value.titleController.text.isNotEmpty
-                                ? entry.value.titleController.text
-                                : 'Untitled Section',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedSectionForComment = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Highlighted text display
-                  if (_highlightedText.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE3F2FD),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                            color:
-                                const Color(0xFF00BCD4).withValues(alpha: 0.3)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Highlighted Text:',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _highlightedText.length > 100
-                                ? '${_highlightedText.substring(0, 100)}...'
-                                : _highlightedText,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF1A1A1A),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Comment input
-                  TextField(
-                    controller: _commentController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      labelText: 'Comment',
-                      hintText:
-                          'Enter your comment here... use @ to tag teammates',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    focusNode: _commentFocusNode,
-                  ),
-                  if (_isSearchingMentions &&
-                      _mentionQuery.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: const [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Searching teammates...',
-                          style: TextStyle(fontSize: 12),
-                        )
-                      ],
-                    ),
-                  ] else if (_mentionSuggestions.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: _mentionSuggestions.length,
-                        separatorBuilder: (_, __) => Divider(
-                          height: 1,
-                          color: Colors.grey[200],
-                        ),
-                        itemBuilder: (context, index) {
-                          final user = _mentionSuggestions[index];
-                          final name = user['full_name']?.toString() ??
-                              user['first_name']?.toString() ??
-                              user['email']?.toString() ??
-                              'User';
-                          final email = user['email']?.toString();
-                          final username = user['username']?.toString();
-                          return ListTile(
-                            dense: true,
-                            onTap: () => _insertMention(user),
-                            leading: CircleAvatar(
-                              radius: 14,
-                              backgroundColor: const Color(0xFF00BCD4),
-                              child: Text(
-                                name.isNotEmpty
-                                    ? name[0].toUpperCase()
-                                    : '@',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              [
-                                if (username != null && username.isNotEmpty)
-                                  '@$username',
-                                if (email != null && email.isNotEmpty) email,
-                              ].join(' • '),
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            trailing: const Icon(
-                              Icons.alternate_email,
-                              color: Color(0xFF00BCD4),
-                              size: 18,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ] else if (_mentionQuery.isNotEmpty &&
-                      !_isSearchingMentions) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.search_off,
-                            size: 16, color: Colors.orange),
-                        const SizedBox(width: 6),
-                        Text(
-                          'No teammates found for "$_mentionQuery"',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange[800],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-
-                  // Action buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () {
-                          _commentController.clear();
-                          _clearMentionState();
-                          Navigator.pop(context);
-                        },
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 10),
-                      ElevatedButton(
-                        onPressed: () async {
-                          await _addComment();
-                          Navigator.pop(context);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00BCD4),
-                        ),
-                        child: const Text('Add Comment'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
   }
 
   Widget _buildCommentsPanel() {
