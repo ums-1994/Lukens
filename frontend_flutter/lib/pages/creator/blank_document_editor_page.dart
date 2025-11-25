@@ -3320,6 +3320,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+
   Widget _buildToolbar() {
     return Container(
       decoration: BoxDecoration(
@@ -3408,33 +3409,130 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       const SnackBar(
                         content: Text('Highlight picker coming soon'),
                         duration: Duration(seconds: 2),
-  Widget _buildDocumentCanvas(bool isReadOnly) {
-    final hasContent = _sections.any(
-        (section) => section.controller.text.trim().isNotEmpty);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Stack(
-        children: [
-          SingleChildScrollView(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 50),
-                child: Column(
-                  children: [
-                    if (!hasContent) _buildCanvasPlaceholder(),
-                    ..._buildA4Pages(),
-                    if (!isReadOnly) ...[
-                      const SizedBox(height: 24),
-                      _buildAddPageButton(),
-                      const SizedBox(height: 40),
-                    ],
-                  ],
+                      ),
+                    );
+                  },
                 ),
-              ),
+                _buildToolbarIconButton(
+                  Icons.link,
+                  'Insert link',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Link insertion coming soon'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
-          ),
-        ],
+            _buildToolbarGroup(
+              'Paragraph',
+              [
+                _buildToolbarIconButton(
+                  Icons.format_align_left,
+                  'Align left',
+                  () => setState(() => _selectedAlignment = 'left'),
+                  isActive: _selectedAlignment == 'left',
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_align_center,
+                  'Align center',
+                  () => setState(() => _selectedAlignment = 'center'),
+                  isActive: _selectedAlignment == 'center',
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_align_right,
+                  'Align right',
+                  () => setState(() => _selectedAlignment = 'right'),
+                  isActive: _selectedAlignment == 'right',
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_align_justify,
+                  'Justify',
+                  () => setState(() => _selectedAlignment = 'justify'),
+                  isActive: _selectedAlignment == 'justify',
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_list_bulleted,
+                  'Bulleted list',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('List controls coming soon'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_list_numbered,
+                  'Numbered list',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('List controls coming soon'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_indent_increase,
+                  'Indent',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Indent controls coming soon'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+                _buildToolbarIconButton(
+                  Icons.format_indent_decrease,
+                  'Outdent',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Indent controls coming soon'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            _buildToolbarGroup(
+              'Insert',
+              [
+                _buildToolbarIconButton(
+                  Icons.link,
+                  'Link',
+                  () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Link insertion coming soon'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+                _buildToolbarIconButton(
+                  Icons.table_chart_outlined,
+                  'Table',
+                  () => _insertContentIntoSection('table', ''),
+                ),
+                _buildToolbarIconButton(
+                  Icons.image_outlined,
+                  'Image',
+                  () => _insertContentIntoSection('image', ''),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3498,6 +3596,346 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSmallDropdown(
+    String selectedValue,
+    List<String> options,
+    ValueChanged<String?> onChanged,
+  ) {
+    return SizedBox(
+      width: 150,
+      child: DropdownButtonFormField<String>(
+        value: selectedValue,
+        isDense: true,
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+        ),
+        items: options
+            .map(
+              (option) => DropdownMenuItem<String>(
+                value: option,
+                child: Text(option, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  Widget _buildDocumentCanvas(bool isReadOnly) {
+    final hasContent =
+        _sections.any((section) => section.controller.text.trim().isNotEmpty);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 50),
+                child: Column(
+                  children: [
+                    if (!hasContent) _buildCanvasPlaceholder(),
+                    ..._buildA4Pages(),
+                    if (!isReadOnly) ...[
+                      const SizedBox(height: 24),
+                      _buildAddPageButton(),
+                      const SizedBox(height: 40),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRightSidebar() {
+    final collapsedWidth = 60.0;
+    final expandedWidth = 320.0;
+    final colors = [
+      const Color(0xFF0EA5E9),
+      const Color(0xFF6366F1),
+      const Color(0xFF10B981),
+      const Color(0xFFF97316),
+      const Color(0xFFEF4444),
+      const Color(0xFF0F172A),
+    ];
+
+    if (_isSettingsCollapsed) {
+      return Container(
+        width: collapsedWidth,
+        margin: const EdgeInsets.only(right: 24, top: 16, bottom: 16),
+        child: GestureDetector(
+          onTap: () => setState(() => _isSettingsCollapsed = false),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: const Center(
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Text(
+                  'Document Settings',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: expandedWidth,
+      margin: const EdgeInsets.only(right: 24, top: 16, bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 25,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Document settings',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Collapse settings',
+                onPressed: () => setState(() => _isSettingsCollapsed = true),
+                icon: const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSettingDropdown(
+                    label: 'Page size',
+                    value: _pageSize,
+                    options: const ['A4', 'A3', 'Letter', 'Legal'],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _pageSize = value);
+                      }
+                    },
+                  ),
+                  _buildSettingDropdown(
+                    label: 'Margins',
+                    value: _pageMargin,
+                    options: const ['0.5 in', '1.0 in', '1.5 in', 'Custom'],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _pageMargin = value);
+                      }
+                    },
+                  ),
+                  _buildSettingDropdown(
+                    label: 'Background / cover',
+                    value: _backgroundStyle,
+                    options: const ['None', 'Gradient', 'Image', 'Pattern'],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _backgroundStyle = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Brand colors',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF475569),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildColorPalette(
+                    colors: colors,
+                    selected: _brandPrimary,
+                    onColorSelected: (color) {
+                      setState(() => _brandPrimary = color);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    value: _showWatermark,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Show watermark',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Adds an internal watermark to every page',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                    ),
+                    onChanged: (value) {
+                      setState(() => _showWatermark = value);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  _buildSettingDropdown(
+                    label: 'Number formatting',
+                    value: _numberFormat,
+                    options: const ['1,234.00', '1.234,00', '1 234,00'],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _numberFormat = value);
+                      }
+                    },
+                  ),
+                  _buildSettingDropdown(
+                    label: 'Currency',
+                    value: _selectedCurrency,
+                    options: const [
+                      'Rand (ZAR)',
+                      'US Dollar (USD)',
+                      'Euro (EUR)',
+                      'British Pound (GBP)'
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _selectedCurrency = value);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingDropdown({
+    required String label,
+    required String value,
+    required List<String> options,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: value,
+            decoration: InputDecoration(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+            ),
+            items: options
+                .map(
+                  (option) => DropdownMenuItem<String>(
+                    value: option,
+                    child: Text(option),
+                  ),
+                )
+                .toList(),
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorPalette({
+    required List<Color> colors,
+    required Color selected,
+    required ValueChanged<Color> onColorSelected,
+  }) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: colors
+          .map(
+            (color) => GestureDetector(
+              onTap: () => onColorSelected(color),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: color == selected
+                        ? const Color(0xFF0EA5E9)
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: color == selected
+                    ? const Icon(Icons.check, color: Colors.white, size: 16)
+                    : null,
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 
