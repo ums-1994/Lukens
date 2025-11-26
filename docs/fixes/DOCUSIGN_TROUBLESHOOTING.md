@@ -1,173 +1,265 @@
-# 🔧 DocuSign Key Upload - Complete Troubleshooting Guide
+# 🔧 DocuSign Troubleshooting Guide
 
-## 🚨 **Current Error:**
+## Quick Fix Applied ✅
+
+The **Account ID issue has been fixed**. The system now extracts `account_id` from DocuSign's JWT response instead of requiring it in `.env`.
+
+## Common Issues & Solutions
+
+### 1. "DocuSign SDK not installed" Error
+
+**Error:**
 ```
-invalid_grant - no_valid_keys_or_signatures
-```
-
-**What this means:** DocuSign cannot verify your JWT signature because the public key doesn't match your private key.
-
----
-
-## ✅ **COMPLETE FIX - Step by Step**
-
-### **STEP 1: Delete ALL Existing Keys** 🗑️
-
-1. Go to: **https://demo.docusign.net**
-2. Click your **profile icon** (top right) → **Settings**
-3. Click **"Apps and Keys"** in the left sidebar
-4. Click on your app (you'll see Integration Key: `c72eda5f-1c22-46a2-97b6-df3e40a9bbcd`)
-5. Scroll down to the **"RSA Keypairs"** section
-6. **⚠️ CRITICAL:** For EVERY keypair you see:
-   - Click the **trash icon (🗑️)**
-   - Confirm deletion
-   - Repeat until the section shows **"No RSA Keypairs"**
-
-**Why:** If you have multiple keys, DocuSign randomly picks one. We need ONLY the correct key.
-
----
-
-### **STEP 2: Add the Correct Public Key** ✅
-
-1. Still in the same **RSA Keypairs** section (should now be empty)
-2. Click **"+ ADD RSA KEYPAIR"** button
-3. A text area will appear
-4. **Copy THIS EXACT TEXT** (all 7 lines):
-
-```
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0PqLuapcAjn4B7JiTKoP
-1arrPV5vGllYrtJ0vaP/4+Mh0RH8x5FlRIOLUEdV5lkPzeoN8jGa3kdOjYN58F0b
-uhnm5IOjVZPvGxPDdUuW6hwbXuOiAFrZ/fJJZ4dvzb96bv1slqyJ5a+6XuOZSRqk
-+hcwELstyv0XzFawRFXqT26ZlpyCMDs75C9bBEElR/fYzMyTvlTdygwEigf0mjoP
-s4ICpfYHPFBgLl7eRGDNwaT2hLcPaLPcMxCNlw1nrdKEU46hquELeqEEB7IV8cQa
-CE6C9j+pikpFOkHzHWv6Y+HFLmTuXneDVfv1SchdZCLgEwG8VFelFiA2V8z1bwXA
-awIDAQAB
------END PUBLIC KEY-----
+DocuSign SDK not installed
 ```
 
-5. **Paste** it into the text area
-6. Click **"SAVE"** button
-7. You should see a success message: "RSA public key added successfully"
-
----
-
-### **STEP 3: Wait for DocuSign to Process** ⏰
-
-**DocuSign needs 3-5 minutes to propagate your key to their servers.**
-
-- Set a **5-minute timer**
-- Get a coffee ☕
-- Do NOT test immediately!
-
----
-
-### **STEP 4: Test the Connection** 🧪
-
-After waiting 5 minutes, run:
-
-```powershell
+**Solution:**
+```bash
 cd backend
-python quick_test.py
+pip install docusign-esign
 ```
 
-**Expected Output:**
-```
-✅ SUCCESS! DocuSign authentication works!
-🎉 Your integration is ready to use!
-```
-
----
-
-## 🔍 **Common Mistakes Checklist**
-
-| ❌ Mistake | ✅ Correct |
-|-----------|----------|
-| Adding multiple keys | Delete ALL old keys first |
-| Missing BEGIN/END lines | Include the entire 7-line key |
-| Testing immediately | Wait 5 minutes after saving |
-| Copying with extra spaces | Copy exactly as shown |
-| Partial key upload | Must include all characters |
-
----
-
-## 🆘 **Still Not Working?**
-
-If you still get errors after following ALL steps above:
-
-### Option A: Check for Typos
-
-Run this to verify your configuration:
-```powershell
-python diagnose_docusign.py
-```
-
-### Option B: Regenerate Everything
-
-If all else fails, start completely fresh:
-
-```powershell
-# Delete old keys
-del docusign_private.key
-del docusign_public.key
-
-# Generate new keypair
-python generate_docusign_keys.py
-
-# Show the new public key
-python show_public_key.py
-
-# Upload the NEW key to DocuSign (delete all old ones first!)
-# Wait 5 minutes
-# Test again
-python quick_test.py
+**Verify:**
+```python
+python -c "from docusign_esign import ApiClient; print('✅ SDK installed')"
 ```
 
 ---
 
-## 📸 **What You Should See in DocuSign**
+### 2. "DocuSign credentials not configured" Error
 
-After correctly adding the key, the RSA Keypairs section should look like this:
-
+**Error:**
 ```
-RSA Keypairs
-├─ Public key #1
-│  └─ Added: [today's date]
-│  └─ [Trash icon]
-└─ + ADD RSA KEYPAIR (button)
+DOCUSIGN_INTEGRATION_KEY not set in environment variables
+DOCUSIGN_USER_ID not set in environment variables
 ```
 
-**You should see ONLY ONE keypair!**
+**Solution:**
+Add to your `.env` file in `backend/`:
+```env
+DOCUSIGN_INTEGRATION_KEY=your-integration-key
+DOCUSIGN_USER_ID=your-user-id
+DOCUSIGN_PRIVATE_KEY_PATH=./docusign_private.key
+# Optional - will be extracted from JWT if not set
+DOCUSIGN_ACCOUNT_ID=your-account-id
+```
+
+**How to get credentials:**
+1. Go to https://developers.docusign.com/
+2. Create/select an Integration
+3. Get Integration Key (Client ID)
+4. Get User ID (API Username)
+5. Generate RSA keypair and upload public key
+6. Save private key to `docusign_private.key`
 
 ---
 
-## 🎯 **Quick Reference**
+### 3. "Private key file not found" Error
 
-Run `python show_public_key.py` anytime to see your public key again.
+**Error:**
+```
+DocuSign private key file not found: ./docusign_private.key
+```
+
+**Solution:**
+1. Place your private key file at `backend/docusign_private.key`
+2. Or set `DOCUSIGN_PRIVATE_KEY_PATH` in `.env` to point to your key file
+3. Or set `DOCUSIGN_PRIVATE_KEY` in `.env` with the key content (use `\n` for newlines)
+
+**Key format should be:**
+```
+-----BEGIN RSA PRIVATE KEY-----
+...
+-----END RSA PRIVATE KEY-----
+```
 
 ---
 
-## 📞 **Need Help?**
+### 4. "Consent required" Error
 
-If this still doesn't work after following ALL steps:
+**Error:**
+```
+DocuSign consent required
+```
 
-1. Take a screenshot of your DocuSign RSA Keypairs section
-2. Run: `python diagnose_docusign.py` and share the output
-3. Verify your Integration Key matches: `c72eda5f-1c22-46a2-97b6-df3e40a9bbcd`
+**Solution:**
+1. Visit the consent URL provided in the error message
+2. Log in with your DocuSign account
+3. Grant consent for the integration
+4. Try again
+
+**Manual consent URL format:**
+```
+https://account-d.docusign.com/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=YOUR_INTEGRATION_KEY&redirect_uri=https://www.docusign.com
+```
 
 ---
 
-**Last Updated:** 2025-10-28
+### 5. "Account ID" Error (FIXED ✅)
 
-**Your Files:**
-- Private Key: `backend/docusign_private.key` (keep secret!)
-- Public Key: `backend/docusign_public.key` (upload to DocuSign)
+**Error (OLD):**
+```
+Invalid value specified for accountId
+DOCUSIGN_ACCOUNT_ID is required
+```
 
+**Status:** ✅ **FIXED** - Account ID is now extracted from JWT response automatically.
 
+**If you still see this error:**
+1. Check backend logs for: `✅ DocuSign authentication successful` and `Account ID: [UUID]`
+2. If Account ID is not shown, the JWT response might not include accounts array
+3. Fallback: Set `DOCUSIGN_ACCOUNT_ID` in `.env` as temporary workaround
 
+---
 
+### 6. "Could not determine DocuSign Account ID" Error
 
+**Error:**
+```
+Could not determine DocuSign Account ID from JWT response
+```
 
+**Possible causes:**
+1. JWT response doesn't include `accounts` array
+2. User doesn't have access to any accounts
+3. Integration key doesn't have proper permissions
 
+**Solution:**
+1. Check DocuSign integration settings
+2. Ensure integration has "signature" and "impersonation" scopes
+3. Verify user has access to at least one account
+4. Set `DOCUSIGN_ACCOUNT_ID` in `.env` as fallback
 
+---
 
+### 7. "Failed to create envelope" Error
+
+**Error:**
+```
+DocuSign API error: [error details]
+```
+
+**Common causes:**
+1. Invalid signer email format
+2. PDF generation failed
+3. Network/connectivity issues
+4. DocuSign API rate limits
+
+**Solution:**
+1. Check signer email is valid format
+2. Verify PDF generation works: `generate_proposal_pdf()` returns valid bytes
+3. Check network connectivity to DocuSign API
+4. Review DocuSign API error message for specific issue
+
+---
+
+### 8. Frontend: "DocuSign send failed" Error
+
+**Error in browser console:**
+```
+DocuSign send failed: 500 - [error message]
+```
+
+**Solution:**
+1. Check backend logs for detailed error
+2. Verify backend is running and accessible
+3. Check authentication token is valid
+4. Verify proposal exists and user has permission
+
+---
+
+## Diagnostic Steps
+
+### Step 1: Check SDK Installation
+```bash
+cd backend
+python -c "from docusign_esign import ApiClient; print('✅ SDK OK')"
+```
+
+### Step 2: Check Environment Variables
+```bash
+cd backend
+python test_docusign_fix.py
+```
+
+### Step 3: Test JWT Authentication
+```python
+from api.utils.docusign_utils import get_docusign_jwt_token
+auth_data = get_docusign_jwt_token()
+print(f"Token: {auth_data['access_token'][:30]}...")
+print(f"Account ID: {auth_data['account_id']}")
+```
+
+### Step 4: Test Envelope Creation
+```bash
+# Use the API endpoint
+POST /api/proposals/{id}/docusign/send
+{
+  "signer_name": "Test User",
+  "signer_email": "test@example.com",
+  "return_url": "http://localhost:8081"
+}
+```
+
+---
+
+## Expected Log Output (When Working)
+
+When DocuSign is working correctly, you should see:
+
+```
+🔐 Authenticating with DocuSign...
+   Integration Key: abc12345...xyz9
+   User ID: user@example.com
+   Auth Server: account-d.docusign.com
+✅ DocuSign authentication successful
+   Account ID: 12345678-1234-1234-1234-123456789abc
+   Account Name: My Account
+ℹ️  Using account_id from JWT response: 12345678-1234-1234-1234-123456789abc
+✅ DocuSign envelope created: abc123-def456-ghi789
+✅ Redirect signing URL created (works on HTTP)
+```
+
+---
+
+## Quick Test Script
+
+Run this to test the fix:
+
+```bash
+cd backend
+python test_docusign_fix.py
+```
+
+This will check:
+- ✅ SDK installation
+- ✅ Environment variables
+- ✅ Private key file
+- ✅ JWT authentication
+- ✅ Account ID extraction
+
+---
+
+## Still Not Working?
+
+If DocuSign still doesn't work after checking all above:
+
+1. **Check backend logs** - Look for detailed error messages
+2. **Verify credentials** - Double-check all DocuSign credentials are correct
+3. **Test JWT manually** - Use the test script to isolate the issue
+4. **Check DocuSign dashboard** - Verify integration is active and has consent
+5. **Review error details** - The specific error message will indicate the exact problem
+
+---
+
+## Files Modified (Fix Applied)
+
+1. ✅ `backend/api/utils/docusign_utils.py` - Extracts account_id from JWT
+2. ✅ `backend/api/utils/helpers.py` - Uses account_id from JWT
+3. ✅ `backend/app.py` - Updated to use utils version
+4. ✅ `tests/integration/backend/test_proposal_signing.py` - Updated test
+
+---
+
+**Last Updated:** After Account ID fix
+**Status:** Account ID extraction fixed - other issues may require credential configuration
