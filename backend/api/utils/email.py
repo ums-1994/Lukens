@@ -21,48 +21,109 @@ except ImportError:
 def send_email(to_email, subject, html_content):
     """Send email using SMTP"""
     try:
-        print(f"[EMAIL] Attempting to send email to {to_email}")
+        print(f"[EMAIL] ========================================")
+        print(f"[EMAIL] Attempting to send email to: {to_email}")
+        print(f"[EMAIL] Subject: {subject}")
+        
+        # Load environment variables explicitly
+        from dotenv import load_dotenv
+        load_dotenv()
         
         smtp_host = os.getenv('SMTP_HOST')
-        smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        smtp_port_str = os.getenv('SMTP_PORT', '587')
+        smtp_port = int(smtp_port_str) if smtp_port_str else 587
         smtp_user = os.getenv('SMTP_USER')
         smtp_pass = os.getenv('SMTP_PASS')
         smtp_from_email = os.getenv('SMTP_FROM_EMAIL', smtp_user)
         smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
         
-        print(f"[EMAIL] SMTP Config - Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
-        print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
+        print(f"[EMAIL] SMTP Configuration:")
+        print(f"[EMAIL]   Host: {smtp_host}")
+        print(f"[EMAIL]   Port: {smtp_port}")
+        print(f"[EMAIL]   User: {smtp_user}")
+        print(f"[EMAIL]   Pass: {'***SET***' if smtp_pass else 'NOT SET'}")
+        print(f"[EMAIL]   From Email: {smtp_from_email}")
+        print(f"[EMAIL]   From Name: {smtp_from_name}")
         
         if not all([smtp_host, smtp_user, smtp_pass]):
-            print(f"[ERROR] SMTP configuration incomplete")
-            print(f"[ERROR] Missing: Host={smtp_host}, User={smtp_user}, Pass={'SET' if smtp_pass else 'NOT SET'}")
+            print(f"[ERROR] ❌ SMTP configuration incomplete!")
+            print(f"[ERROR]   Host: {smtp_host or 'MISSING'}")
+            print(f"[ERROR]   User: {smtp_user or 'MISSING'}")
+            print(f"[ERROR]   Pass: {'SET' if smtp_pass else 'MISSING'}")
             return False
         
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
-        msg['To'] = to_email
-        
-        # Attach HTML content
-        html_part = MIMEText(html_content, 'html')
-        msg.attach(html_part)
-        
         # Send email
-        print(f"[EMAIL] Connecting to SMTP server...")
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
+        print(f"[EMAIL] Connecting to SMTP server {smtp_host}:{smtp_port}...")
+        server = None
+        try:
+            # 1. Establish connection
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+            print(f"[EMAIL] ✅ Connected to SMTP server")
+            server.ehlo()
+            
+            # 2. **CRITICAL FIX: Start TLS Encryption**
             print(f"[EMAIL] Starting TLS...")
             server.starttls()
-            print(f"[EMAIL] Logging in...")
+            server.ehlo()
+            print(f"[EMAIL] ✅ TLS started successfully")
+            
+            # 3. Login using the App Password
+            print(f"[EMAIL] Logging in as {smtp_user}...")
             server.login(smtp_user, smtp_pass)
-            print(f"[EMAIL] Sending message...")
-            server.send_message(msg)
+            print(f"[EMAIL] ✅ Login successful")
+            
+            # 4. Construct and send message
+            msg = MIMEMultipart('alternative')
+            msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
+            msg['To'] = to_email
+            msg['Subject'] = subject
+            
+            # Attach HTML content
+            html_part = MIMEText(html_content, 'html')
+            msg.attach(html_part)
+            
+            print(f"[EMAIL] Sending message to {to_email}...")
+            print(f"[EMAIL] Message details:")
+            print(f"[EMAIL]   From: {msg['From']}")
+            print(f"[EMAIL]   To: {msg['To']}")
+            print(f"[EMAIL]   Subject: {msg['Subject']}")
+            
+            server.sendmail(smtp_from_email, to_email, msg.as_string())
+            print(f"[EMAIL] ✅ Email successfully sent to {to_email}")
+            print(f"[EMAIL] ========================================")
+            return True
+            
+        except smtplib.SMTPAuthenticationError as auth_err:
+            print(f"[EMAIL ERROR] ❌ SMTP Authentication Failed. Check SMTP_PASS (App Password) and SMTP_USER. Error: {auth_err}")
+            print(f"[EMAIL ERROR]   This usually means:")
+            print(f"[EMAIL ERROR]   1. Wrong password/app password")
+            print(f"[EMAIL ERROR]   2. Gmail 'Less secure app access' not enabled (use App Password instead)")
+            print(f"[EMAIL ERROR]   3. 2FA enabled but not using App Password")
+            print(f"[EMAIL] ========================================")
+            return False
+        except smtplib.SMTPException as smtp_err:
+            print(f"[EMAIL ERROR] ❌ An SMTP error occurred during sending. Error: {smtp_err}")
+            print(f"[EMAIL] ========================================")
+            return False
+        except Exception as e:
+            print(f"[EMAIL ERROR] ❌ An unexpected error occurred: {e}")
+            print(f"[EMAIL ERROR]   Error type: {type(e).__name__}")
+            traceback.print_exc()
+            print(f"[EMAIL] ========================================")
+            return False
+        finally:
+            # 5. Quit the server connection
+            if server:
+                try:
+                    server.quit()
+                    print(f"[EMAIL] ✅ SMTP connection closed")
+                except:
+                    pass
         
-        print(f"[SUCCESS] Email sent to {to_email}")
-        return True
     except Exception as e:
-        print(f"[ERROR] Error sending email: {e}")
+        print(f"[ERROR] ❌ Unexpected error sending email: {e}")
         traceback.print_exc()
+        print(f"[EMAIL] ========================================")
         return False
 
 def send_password_reset_email(email, reset_token):

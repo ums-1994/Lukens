@@ -128,22 +128,22 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.title,
-                              style: const TextStyle(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.title,
+            style: const TextStyle(
                                 fontSize: 26,
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white,
                                 letterSpacing: -0.5,
                                 decoration: TextDecoration.none,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              widget.description,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.description,
                               style: const TextStyle(
                                 fontSize: 15,
                                 color: Colors.white70,
@@ -159,8 +159,8 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                 ],
               ),
             ),
-            ...proposals.map((proposal) => _buildProposalCard(proposal)).toList(),
-            ],
+          ...proposals.map((proposal) => _buildProposalCard(proposal)).toList(),
+        ],
           ),
         ),
       ),
@@ -172,8 +172,8 @@ class _ProposalSelectorState extends State<ProposalSelector> {
       child: Padding(
         padding: const EdgeInsets.all(32.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -197,18 +197,18 @@ class _ProposalSelectorState extends State<ProposalSelector> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
+        Text(
               _error ?? 'An error occurred while loading proposals',
-              textAlign: TextAlign.center,
+          textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.white70,
                 fontSize: 14,
                 decoration: TextDecoration.none,
               ),
-            ),
+        ),
             const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _loadProposals,
+        ElevatedButton.icon(
+          onPressed: _loadProposals,
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text(
                 'Retry',
@@ -222,8 +222,8 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-            ),
-          ],
+        ),
+      ],
         ),
       ),
     );
@@ -234,8 +234,8 @@ class _ProposalSelectorState extends State<ProposalSelector> {
       child: Padding(
         padding: const EdgeInsets.all(32.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -258,19 +258,19 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                 decoration: TextDecoration.none,
               ),
             ),
-            const SizedBox(height: 12),
-            const Text(
+        const SizedBox(height: 12),
+        const Text(
               'Create a draft proposal first, then return here to manage governance and run AI risk checks.',
-              textAlign: TextAlign.center,
+          textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white70,
                 fontSize: 15,
                 height: 1.5,
                 decoration: TextDecoration.none,
               ),
-            ),
+        ),
             const SizedBox(height: 32),
-            ElevatedButton.icon(
+        ElevatedButton.icon(
               onPressed: () => Navigator.pushNamed(context, '/proposals'),
               icon: const Icon(Icons.add, size: 20),
               label: const Text(
@@ -286,8 +286,8 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                 ),
                 elevation: 0,
               ),
-            ),
-          ],
+        ),
+      ],
         ),
       ),
     );
@@ -346,7 +346,7 @@ class _ProposalSelectorState extends State<ProposalSelector> {
         'Client not set';
     final updatedAt =
         proposal['updated_at'] ?? proposal['updatedAt'] ?? proposal['created_at'];
-    
+
     final statusColor = _getStatusColor(status);
 
     return Container(
@@ -378,11 +378,11 @@ class _ProposalSelectorState extends State<ProposalSelector> {
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Padding(
+      child: Padding(
             padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                 // Header Row
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,17 +433,17 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                 ),
                 const SizedBox(height: 16),
                 // Title
-                Text(
-                  title,
-                  style: const TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                     letterSpacing: -0.5,
                     height: 1.2,
                     decoration: TextDecoration.none,
-                  ),
-                ),
+              ),
+            ),
                 const SizedBox(height: 20),
                 // Info Grid
                 Row(
@@ -455,8 +455,8 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                         value: client,
                         iconColor: PremiumTheme.cyan,
                       ),
-                    ),
-                    if (updatedAt != null) ...[
+            ),
+            if (updatedAt != null) ...[
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildInfoCard(
@@ -465,14 +465,14 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                           value: _formatDate(updatedAt),
                           iconColor: PremiumTheme.teal,
                         ),
-                      ),
-                    ],
+              ),
+            ],
                   ],
                 ),
                 const SizedBox(height: 24),
                 // Action Buttons
                 Row(
-                  children: [
+              children: [
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
@@ -506,9 +506,9 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                             ),
                             elevation: 0,
                           ),
-                          onPressed: () => widget.onSelect(
-                              Map<String, dynamic>.from(proposal)),
-                        ),
+                  onPressed: () => widget.onSelect(
+                      Map<String, dynamic>.from(proposal)),
+                ),
                       ),
                     ),
                     if (widget.onRunRiskGate != null) ...[
@@ -540,16 +540,16 @@ class _ProposalSelectorState extends State<ProposalSelector> {
                                 borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                            onPressed: () =>
-                                widget.onRunRiskGate?.call(Map<String, dynamic>.from(proposal)),
-                          ),
+                    onPressed: () =>
+                        widget.onRunRiskGate?.call(Map<String, dynamic>.from(proposal)),
+                  ),
                         ),
                       ),
                     ],
-                  ],
-                ),
               ],
             ),
+          ],
+        ),
           ),
         ),
       ),

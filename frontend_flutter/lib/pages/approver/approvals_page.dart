@@ -143,14 +143,25 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Approve Proposal'),
-        content: TextField(
+        title: const Text('Approve & Send to Client'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This will approve the proposal and send it to the client via email.',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextField(
           controller: commentsCtrl,
           decoration: const InputDecoration(
             labelText: 'Comments (optional)',
             border: OutlineInputBorder(),
           ),
           maxLines: 3,
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -160,9 +171,26 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
+              
+              // Show loading
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => const AlertDialog(
+                  content: SizedBox(
+                    height: 80,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ),
+              );
+              
               final app = context.read<AppState>();
               final error = await app.approveProposal(proposalId,
                   comments: commentsCtrl.text);
+              
+              if (mounted) {
+                Navigator.of(context, rootNavigator: true).pop(); // Close loading
+                
               if (error != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(error), backgroundColor: Colors.red),
@@ -170,15 +198,19 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                      content: Text('Proposal approved!'),
+                        content: Text('✅ Proposal approved and email sent to client!'),
                       backgroundColor: Colors.green),
                 );
+                  // Reload pending approvals and refresh data
                 _loadPendingApprovals();
+                  await app.fetchProposals();
+                  await app.fetchDashboard();
+                }
               }
             },
             style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2ECC71)),
-            child: const Text('Approve'),
+            child: const Text('Approve & Send to Client'),
           ),
         ],
       ),
@@ -286,13 +318,12 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
     if (_showingAnalysis) return;
     final appState = context.read<AppState>();
     String? token = AuthService.token ?? appState.authToken;
-    token ??= 'dev-bypass-token';
     final proposalId = _parseProposalId(proposal['id']);
 
-    if (token == null) {
+    if (token == null || token.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No auth token available. Log in again.'),
+          content: Text('No auth token available. Please log in again.'),
         ),
       );
       return;
@@ -360,6 +391,10 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
         'Review completed.';
     final requiredActions = List<String>.from(
         payload['required_actions'] is List ? payload['required_actions'] : []);
+    
+    // Check proposal status
+    final proposalStatus = (proposal['status'] ?? 'draft').toString().toLowerCase();
+    final isDraft = proposalStatus == 'draft' || proposalStatus.isEmpty;
 
     showModalBottomSheet(
       context: context,
@@ -473,12 +508,275 @@ class _ApprovalsPageState extends State<ApprovalsPage> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 16),
+                // Show proposal status warning if not draft
+                if (!isDraft) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Current status: ${proposal['status'] ?? 'Unknown'}\nOnly proposals in "draft" status can be sent for approval.',
+                            style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                const SizedBox(height: 8),
+                // Action buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    if (canRelease && isDraft)
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.send, size: 20),
+                        label: const Text('Review & Send to CEO for Approval'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF3498DB),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await _sendToCEOForApproval(proposal);
+                        },
+                      )
+                    else if (canRelease && !isDraft)
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.info_outline, size: 20),
+                        label: const Text('Proposal Not in Draft'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.orange,
+                          side: const BorderSide(color: Colors.orange),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                        ),
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please use a proposal in "draft" status. Create a new proposal to send for approval.'),
+                              backgroundColor: Colors.orange,
+                              duration: Duration(seconds: 4),
+                            ),
+                          );
+                        },
+                      )
+                    else
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.edit, size: 20),
+                        label: const Text('Review Proposal'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Navigate to proposal editor or show message
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Please fix the issues before approving.'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _sendToCEOForApproval(Map<String, dynamic> proposal) async {
+    final proposalId = _parseProposalId(proposal['id']);
+    if (proposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid proposal ID'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: SizedBox(
+          height: 80,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+    );
+
+    try {
+      final app = context.read<AppState>();
+      final error = await app.sendForApproval(proposalId.toString());
+      
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Close loading
+        
+        if (error != null) {
+          // Show detailed error message with helpful suggestion
+          final errorMsg = error.contains('already') || error.contains('Cannot send')
+              ? '⚠️ This proposal cannot be sent for approval.\n\nReason: ${error.contains("Current status") ? error.split("Current status:")[1].split(".")[0].trim() : "Proposal is not in draft status"}\n\n💡 Solution: Create a new draft proposal or use a proposal that is still in "draft" status.'
+              : error;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMsg),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 6),
+              action: SnackBarAction(
+                label: 'Create New',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.pushNamed(context, '/proposals');
+                },
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Proposal sent to CEO for approval!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          // Reload data to reflect status change
+          await app.fetchProposals();
+          await app.updateDashboardCountsWithPending();
+          await app.fetchDashboard();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _approveAndSendToClient(
+      Map<String, dynamic> proposal) async {
+    final proposalId = _parseProposalId(proposal['id']);
+    if (proposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid proposal ID'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Approve & Send to Client'),
+        content: Text(
+            'Are you sure you want to approve "${proposal['title'] ?? 'this proposal'}" and send it to the client?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Approve & Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: SizedBox(
+          height: 80,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+    );
+
+    try {
+      final app = context.read<AppState>();
+      final error = await app.approveProposal(proposalId.toString());
+      
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Close loading
+        
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal approved and sent to client!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          // Reload pending approvals
+          _loadPendingApprovals();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   static Color _severityColor(String severity) {

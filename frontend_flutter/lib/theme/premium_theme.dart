@@ -82,8 +82,8 @@ class PremiumTheme {
       gradient: gradientStart != null && gradientEnd != null
           ? LinearGradient(
               colors: [
-                gradientStart.withValues(alpha: 0.15),
-                gradientEnd.withValues(alpha: 0.15),
+                gradientStart.withOpacity(0.15),
+                gradientEnd.withOpacity(0.15),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -103,7 +103,7 @@ class PremiumTheme {
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.2),
+          color: Colors.black.withOpacity(0.2),
           blurRadius: 20,
           offset: const Offset(0, 10),
         ),
@@ -118,7 +118,7 @@ class PremiumTheme {
       borderRadius: BorderRadius.circular(borderRadius),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.3),
+          color: Colors.black.withOpacity(0.3),
           blurRadius: 15,
           offset: const Offset(0, 8),
         ),
@@ -253,7 +253,7 @@ class PremiumStatCard extends StatelessWidget {
                   child: Text(
                     title,
                     style: PremiumTheme.bodyMedium.copyWith(
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: Colors.white.withOpacity(0.9),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -262,7 +262,7 @@ class PremiumStatCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
+                      color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(icon, color: Colors.white, size: 20),
@@ -282,7 +282,7 @@ class PremiumStatCard extends StatelessWidget {
               Text(
                 subtitle!,
                 style: PremiumTheme.labelMedium.copyWith(
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: Colors.white.withOpacity(0.7),
                 ),
               ),
             ],
@@ -320,7 +320,7 @@ class CriticalIssueCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
+                color: Colors.white.withOpacity(0.2),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -333,7 +333,7 @@ class CriticalIssueCard extends StatelessWidget {
             Text(
               title,
               style: PremiumTheme.labelMedium.copyWith(
-                color: Colors.white.withValues(alpha: 0.9),
+                color: Colors.white.withOpacity(0.9),
                 fontSize: 14,
               ),
               textAlign: TextAlign.center,

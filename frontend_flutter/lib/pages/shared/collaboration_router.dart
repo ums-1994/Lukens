@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../client/client_dashboard_home.dart';
 import '../guest/guest_collaboration_page.dart';
-import '../creator/blank_document_editor_page.dart';
+import '../creator/blank_document_editor_page.dart'
+    show BlankDocumentEditorPage;
 import '../../services/auth_service.dart';
 
 /// Router that determines whether to show Client Dashboard or Guest Collaboration
@@ -31,7 +32,50 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
       print(
           '🔍 Checking collaboration type for token: ${(widget.token.length > 20 ? widget.token.substring(0, 20) : widget.token)}...');
 
-      // First, try the collaborate endpoint (for collaborators)
+      // First, try the secure proposal endpoint (for encrypted client proposals)
+      print('   Trying secure proposal endpoint...');
+      final secureProposalResponse = await http
+          .get(
+            Uri.parse(
+                'http://localhost:8000/api/secure-proposal?token=${widget.token}'),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (secureProposalResponse.statusCode == 200) {
+        final data = jsonDecode(secureProposalResponse.body);
+        final proposal = data['proposal'] as Map<String, dynamic>?;
+        
+        print('✅ Secure encrypted proposal found');
+        print('   Proposal ID: ${proposal?['id']}');
+        print('   Title: ${proposal?['title']}');
+        print('   Encrypted: ${data['proposal']?['is_encrypted'] ?? false}');
+        
+        // Route to a secure proposal viewer (read-only)
+        // For now, route to client dashboard which can handle secure proposals
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const ClientDashboardHome(),
+            ),
+          );
+        }
+        return;
+      } else if (secureProposalResponse.statusCode == 401) {
+        // Check if password is required
+        final errorData = jsonDecode(secureProposalResponse.body);
+        if (errorData['requires_password'] == true) {
+          print('🔒 Password required for secure proposal');
+          // Show password dialog
+          if (mounted) {
+            _showPasswordDialog();
+          }
+          return;
+        }
+      }
+
+      // Second, try the collaborate endpoint (for collaborators)
+      print('   Trying collaborate endpoint...');
       final collaborateResponse = await http
           .get(
             Uri.parse(
@@ -158,7 +202,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
         return;
       }
 
-      // If both fail, show error
+      // If all fail, show error
       throw Exception('Invalid or expired token');
     } catch (e) {
       print('❌ Error determining route: $e');
@@ -168,6 +212,85 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
         });
       }
     }
+  }
+
+  void _showPasswordDialog() {
+    final passwordController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('🔒 Password Required'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('This proposal is password protected. Please enter the password to continue.'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final password = passwordController.text;
+              if (password.isEmpty) return;
+              
+              Navigator.pop(context);
+              
+              // Retry with password
+              try {
+                final response = await http.get(
+                  Uri.parse('http://localhost:8000/api/secure-proposal?token=${widget.token}&password=$password'),
+                ).timeout(const Duration(seconds: 5));
+                
+                if (response.statusCode == 200) {
+                  final data = jsonDecode(response.body);
+                  final proposal = data['proposal'] as Map<String, dynamic>?;
+                  
+                  if (mounted) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ClientDashboardHome(),
+                      ),
+                    );
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Invalid password. Please try again.'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    _showPasswordDialog(); // Retry
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  setState(() {
+                    _error = 'Error accessing secure proposal: $e';
+                  });
+                }
+              }
+            },
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

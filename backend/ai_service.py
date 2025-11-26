@@ -70,10 +70,16 @@ class AIService:
             response.raise_for_status()
             
             result = response.json()
+            if "choices" not in result or len(result["choices"]) == 0:
+                raise Exception("OpenRouter API returned no choices in response")
+            if "message" not in result["choices"][0] or "content" not in result["choices"][0]["message"]:
+                raise Exception("OpenRouter API response missing message content")
             return result["choices"][0]["message"]["content"]
         
         except requests.exceptions.RequestException as e:
             raise Exception(f"OpenRouter API request failed: {str(e)}")
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            raise Exception(f"OpenRouter API response parsing failed: {str(e)}")
     
     def analyze_proposal_risks(self, proposal_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -127,17 +133,11 @@ Be thorough and flag even small deviations that could compound into larger risks
             {"role": "user", "content": prompt}
         ]
         
-        response = self._make_request(messages, temperature=0.3)
-        
-        # Parse JSON response
         try:
-            # Extract JSON from response (in case there's extra text)
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            json_str = response[start_idx:end_idx]
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
+            response = self._make_request(messages, temperature=0.3)
+        except Exception as e:
+            # If API request fails, return a structured error response
+            print(f"[WARN] AI risk analysis request failed: {e}")
             return {
                 "overall_risk_level": "medium",
                 "can_release": False,
@@ -146,7 +146,54 @@ Be thorough and flag even small deviations that could compound into larger risks
                     "category": "analysis_error",
                     "severity": "medium",
                     "section": "AI Analysis",
-                    "description": "Could not parse AI response",
+                    "description": f"AI service unavailable: {str(e)}",
+                    "recommendation": "Retry analysis or proceed with manual review"
+                }],
+                "summary": "AI analysis service encountered an error",
+                "required_actions": ["Retry AI analysis or proceed with manual review"]
+            }
+        
+        # Parse JSON response
+        try:
+            # Extract JSON from response (in case there's extra text)
+            if not response or not isinstance(response, str):
+                raise ValueError("Empty or invalid response from AI service")
+            
+            start_idx = response.find('{')
+            end_idx = response.rfind('}') + 1
+            
+            if start_idx == -1 or end_idx == 0:
+                raise ValueError("No JSON object found in AI response")
+            
+            json_str = response[start_idx:end_idx]
+            parsed = json.loads(json_str)
+            
+            # Validate required fields
+            if not isinstance(parsed, dict):
+                raise ValueError("AI response is not a JSON object")
+            
+            # Ensure required fields exist with defaults
+            return {
+                "overall_risk_level": parsed.get("overall_risk_level", "medium"),
+                "can_release": parsed.get("can_release", False),
+                "risk_score": parsed.get("risk_score", 50),
+                "issues": parsed.get("issues", []),
+                "summary": parsed.get("summary", "Analysis completed"),
+                "required_actions": parsed.get("required_actions", [])
+            }
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            # Fallback if JSON parsing fails
+            print(f"[WARN] Failed to parse AI risk analysis response: {e}")
+            print(f"[DEBUG] Raw response: {response[:500] if response else 'None'}")
+            return {
+                "overall_risk_level": "medium",
+                "can_release": False,
+                "risk_score": 50,
+                "issues": [{
+                    "category": "analysis_error",
+                    "severity": "medium",
+                    "section": "AI Analysis",
+                    "description": f"Could not parse AI response: {str(e)}",
                     "recommendation": "Manual review required"
                 }],
                 "summary": "AI analysis completed but response format was unexpected",

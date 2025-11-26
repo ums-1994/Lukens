@@ -95,15 +95,15 @@ class MyApp extends StatelessWidget {
               context: context,
               locale: const Locale('en', 'US'),
               child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Image.asset(
-                      'assets/images/Global BG.jpg',
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  if (child != null) child,
-                ],
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/Global BG.jpg',
+                  fit: BoxFit.cover,
+                ),
+              ),
+              if (child != null) child,
+            ],
               ),
             ),
           );
@@ -127,6 +127,54 @@ class MyApp extends StatelessWidget {
               builder: (context) => ClientOnboardingPage(token: token),
               settings: settings,
             );
+          }
+
+          // Handle secure proposal routes
+          if (settings.name == '/secure-proposal' ||
+              (settings.name != null &&
+                  settings.name!.contains('secure-proposal'))) {
+            print('🔒 Secure proposal route detected!');
+            
+            // Extract token from settings.name (it includes query params)
+            String? token;
+            
+            // Try to get token from the route name itself
+            if (settings.name != null && settings.name!.contains('token=')) {
+              final uri = Uri.parse('http://dummy${settings.name}');
+              token = uri.queryParameters['token'];
+              print('📍 Token from route name: $token');
+            }
+            
+            // Fallback: Try current URL
+            if (token == null || token.isEmpty) {
+              final currentUrl = web.window.location.href;
+              print('📍 Trying current URL: $currentUrl');
+              final uri = Uri.parse(currentUrl);
+              
+              // Check fragment for token
+              if (uri.fragment.contains('token=')) {
+                final fragmentUri =
+                    Uri.parse('http://dummy?${uri.fragment.split('?').last}');
+                token = fragmentUri.queryParameters['token'];
+                print('📍 Token from fragment: $token');
+              }
+              
+              // Check query parameters
+              if ((token == null || token.isEmpty) && uri.queryParameters.containsKey('token')) {
+                token = uri.queryParameters['token'];
+                print('📍 Token from query params: $token');
+              }
+            }
+            
+            if (token != null && token.isNotEmpty) {
+              print('✅ Token found for secure proposal');
+              final validToken = token;
+              return MaterialPageRoute(
+                builder: (context) => CollaborationRouter(token: validToken),
+              );
+            } else {
+              print('❌ No token found for secure proposal');
+            }
           }
 
           // Handle collaboration routes with token

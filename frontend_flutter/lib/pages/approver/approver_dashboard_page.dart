@@ -99,10 +99,17 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
         return;
       }
 
-      print('📡 Fetching proposals from API...');
-      print('🌐 API URL: ${ApiService.baseUrl}/api/proposals');
+      print('📡 Fetching pending approvals from API...');
+      print('🌐 API URL: ${ApiService.baseUrl}/proposals/pending_approval');
 
-      final proposals = await ApiService.getProposals(token).timeout(
+      // Use the correct endpoint for pending approvals
+      final pendingResponse = await http.get(
+        Uri.parse('${ApiService.baseUrl}/proposals/pending_approval'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           print('⏱️ Timeout! API call took too long');
@@ -110,42 +117,39 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
         },
       );
 
-      print('✅ API Response received!');
-      print('✅ Number of proposals: ${proposals.length}');
-      print('✅ Proposals type: ${proposals.runtimeType}');
-
-      if (proposals.isEmpty) {
-        print('⚠️ WARNING: No proposals returned from API!');
+      print('✅ Pending Approvals Response: ${pendingResponse.statusCode}');
+      
+      if (pendingResponse.statusCode == 200) {
+        final pendingData = json.decode(pendingResponse.body);
+        _pendingProposals = List<Map<String, dynamic>>.from(
+          pendingData['proposals'] ?? []
+        );
+        print('⏳ Pending approvals found: ${_pendingProposals.length}');
+        
+        // Debug: Print pending proposals
+        for (var p in _pendingProposals) {
+          print('  - ${p['title']} (ID: ${p['id']}, Status: ${p['status']})');
+        }
+      } else {
+        print('⚠️ Failed to fetch pending approvals: ${pendingResponse.statusCode} - ${pendingResponse.body}');
+        _pendingProposals = [];
       }
 
-      // Debug: Print all proposal statuses
-      print('\n📋 All Proposals:');
-      for (var i = 0; i < proposals.length; i++) {
-        final p = proposals[i];
-        print('  [$i] Title: "${p['title']}"');
-        print('      Status: "${p['status']}"');
-        print('      ID: ${p['id']}');
-        print('      User: ${p['user_id']}');
-      }
-      print('');
+      // Also fetch all proposals to get recently approved ones
+      print('📡 Fetching all proposals for recently approved...');
+      final allProposals = await ApiService.getProposals(token).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          print('⏱️ Timeout! API call took too long');
+          throw Exception('Request timed out');
+        },
+      );
 
-      // Filter for pending approval
-      _pendingProposals = proposals
-          .where((p) {
-            final status = p['status'] as String?;
-            print(
-                '🔍 Checking proposal "${p['title']}" with status: [$status]');
-            // Check exact match first, then case-insensitive
-            return status == 'Pending CEO Approval' ||
-                status?.toLowerCase() == 'pending ceo approval';
-          })
-          .map((p) => p as Map<String, dynamic>)
-          .toList();
+      print('✅ All Proposals Response received!');
+      print('✅ Number of proposals: ${allProposals.length}');
 
-      print('⏳ Pending approvals found: ${_pendingProposals.length}');
-
-      // Filter for recently approved/sent
-      _recentlyApproved = proposals
+      // Filter for recently approved/sent (from all proposals, not just user's)
+      _recentlyApproved = allProposals
           .where((p) {
             final status = (p['status'] as String?)?.toLowerCase() ?? '';
             return status == 'sent to client' || status == 'approved';
@@ -542,17 +546,18 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage> {
 
     return Column(
       children: _pendingProposals.map((proposal) {
-        final submittedBy = proposal['user_id'] ?? 'Unknown';
+        final submittedBy = proposal['owner_id'] ?? proposal['user_id'] ?? 'Unknown';
         final createdAt = proposal['created_at'] != null
             ? DateTime.parse(proposal['created_at'])
             : DateTime.now();
         final daysAgo = DateTime.now().difference(createdAt).inDays;
+        final clientName = proposal['client'] ?? proposal['client_name'] ?? 'No client';
 
         return _buildApprovalItem(
           proposal['id'],
           proposal['title'] ?? 'Untitled',
-          proposal['client_name'] ?? 'No client',
-          'Submitted by: $submittedBy • ${daysAgo == 0 ? "Today" : "$daysAgo days ago"}',
+          clientName,
+          'Submitted ${daysAgo == 0 ? "Today" : "$daysAgo days ago"}',
         );
       }).toList(),
     );

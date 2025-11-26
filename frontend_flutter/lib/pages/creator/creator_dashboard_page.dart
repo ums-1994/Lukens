@@ -825,26 +825,26 @@ class _DashboardPageState extends State<DashboardPage>
               onTap: () => _runRiskAnalysisForProposal(targetProposal),
               borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: PremiumTheme.glassWhite,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: PremiumTheme.glassWhiteBorder,
-                    width: 1,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: PremiumTheme.glassWhite,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: PremiumTheme.glassWhiteBorder,
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                     Row(
                       children: [
                         Expanded(
                           child: Text(
                             targetProposal['title'] ?? 'Untitled Proposal',
-                            style: PremiumTheme.bodyLarge.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: PremiumTheme.textPrimary,
+                  style: PremiumTheme.bodyLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: PremiumTheme.textPrimary,
                               decoration: TextDecoration.none,
                             ),
                           ),
@@ -853,27 +853,27 @@ class _DashboardPageState extends State<DashboardPage>
                           Icons.arrow_forward_ios,
                           size: 16,
                           color: PremiumTheme.orange,
-                        ),
+                  ),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
+                ),
+                const SizedBox(height: 8),
+                Text(
                       'Click to run AI risk analysis and detect potential issues',
                       style: PremiumTheme.bodyMedium.copyWith(
                         decoration: TextDecoration.none,
                       ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.orange.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: PremiumTheme.orange.withOpacity(0.3),
+                      width: 1,
                     ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: PremiumTheme.orange.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: PremiumTheme.orange.withOpacity(0.3),
-                          width: 1,
-                        ),
-                      ),
+                  ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -885,9 +885,9 @@ class _DashboardPageState extends State<DashboardPage>
                           const SizedBox(width: 6),
                           Text(
                             'Run Analysis',
-                            style: PremiumTheme.labelMedium.copyWith(
-                              color: PremiumTheme.orange,
-                              fontWeight: FontWeight.w600,
+                    style: PremiumTheme.labelMedium.copyWith(
+                      color: PremiumTheme.orange,
+                      fontWeight: FontWeight.w600,
                               decoration: TextDecoration.none,
                             ),
                           ),
@@ -935,12 +935,12 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
-                      ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
         ],
       ),
     );

@@ -344,21 +344,21 @@ class _ProposalWizardState extends State<ProposalWizard>
         context: context,
         locale: const Locale('en', 'US'),
         child: Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF1E293B),
-            title: const Text(
-              'New Proposal',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-            elevation: 0,
-            automaticallyImplyLeading: false,
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text(
+          'New Proposal',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
           ),
-          body: Column(
+        ),
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
+      body: Column(
         children: [
           // Top navigation bar
           Container(
@@ -1319,9 +1319,9 @@ class _ProposalWizardState extends State<ProposalWizard>
           return Localizations.override(
             context: context,
             locale: const Locale('en', 'US'),
-            child: TextFormField(
-              controller: controller,
-              textDirection: TextDirection.ltr,
+      child: TextFormField(
+        controller: controller,
+        textDirection: TextDirection.ltr,
               textAlign: TextAlign.left,
               textAlignVertical: TextAlignVertical.center,
               textInputAction: TextInputAction.next,
@@ -1330,26 +1330,26 @@ class _ProposalWizardState extends State<ProposalWizard>
                 LTRTextInputFormatter(), // Custom formatter to fix reversed text
                 FilteringTextInputFormatter.deny(RegExp(r'[\u200E\u200F\u202A-\u202E\u2066-\u2069]')), // Remove RTL/LTR marks
               ],
-              decoration: InputDecoration(
-                labelText: label,
+        decoration: InputDecoration(
+          labelText: label,
                 labelStyle: const TextStyle(color: Colors.white70),
-                hintText: hint,
+          hintText: hint,
                 hintStyle: const TextStyle(color: Colors.white60),
-                prefixIcon: Icon(icon, color: const Color(0xFF3498DB)),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFF3498DB), width: 2),
-                ),
-              ),
-              keyboardType: keyboardType,
+          prefixIcon: Icon(icon, color: const Color(0xFF3498DB)),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF3498DB), width: 2),
+          ),
+        ),
+        keyboardType: keyboardType,
               onChanged: (value) {
                 // Aggressive fix: if text appears reversed, correct it immediately
                 if (controller != null && value.length >= 2) {
