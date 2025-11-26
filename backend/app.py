@@ -6,15 +6,12 @@ import base64
 import hashlib
 import hmac
 import secrets
-import smtplib
 import difflib
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse, parse_qs
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import traceback
 from io import BytesIO
 
@@ -56,6 +53,7 @@ from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 from api.utils.risk_checks import run_prechecks, combine_assessments
+from api.utils.email import send_email
 
 # Load environment variables
 load_dotenv()
@@ -1111,54 +1109,6 @@ def verify_token(token):
     return token_data['username']
 
 
-def send_email(to_email, subject, html_content):
-    """Send email using SMTP"""
-    try:
-        print(f"[EMAIL] Attempting to send email to {to_email}")
-        
-        smtp_host = os.getenv('SMTP_HOST')
-        smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        smtp_user = os.getenv('SMTP_USER')
-        smtp_pass = os.getenv('SMTP_PASS')
-        smtp_from_email = os.getenv('SMTP_FROM_EMAIL', smtp_user)
-        smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
-        
-        print(f"[EMAIL] SMTP Config - Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
-        print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
-        
-        if not all([smtp_host, smtp_user, smtp_pass]):
-            print(f"[ERROR] SMTP configuration incomplete")
-            print(f"[ERROR] Missing: Host={smtp_host}, User={smtp_user}, Pass={'SET' if smtp_pass else 'NOT SET'}")
-            return False
-        
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
-        msg['To'] = to_email
-        
-        # Attach HTML content
-        html_part = MIMEText(html_content, 'html')
-        msg.attach(html_part)
-        
-        # Send email
-        print(f"[EMAIL] Connecting to SMTP server...")
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            print(f"[EMAIL] Starting TLS...")
-            server.starttls()
-            print(f"[EMAIL] Logging in...")
-            server.login(smtp_user, smtp_pass)
-            print(f"[EMAIL] Sending message...")
-            server.send_message(msg)
-        
-        print(f"[SUCCESS] Email sent to {to_email}")
-        return True
-    except Exception as e:
-        print(f"[ERROR] Error sending email: {e}")
-        traceback.print_exc()
-        return False
-
-
 def send_password_reset_email(email, reset_token):
     """Send password reset email"""
     frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
@@ -1768,12 +1718,25 @@ def update_proposal(username, proposal_id):
             params = []
             
             # Update all columns that exist in the database
+            # NOTE: We intentionally support a superset of fields so the
+            #       Flutter editor can send rich proposal data.
             if 'title' in data:
                 updates.append('title = %s')
                 params.append(data['title'])
             if 'content' in data:
                 updates.append('content = %s')
                 params.append(data['content'])
+            # Allow updating structured sections JSON used by the new editor
+            if 'sections' in data:
+                updates.append('sections = %s')
+                # Store as JSON string for compatibility with existing readers
+                try:
+                    sections_json = json.dumps(data['sections'])
+                except Exception:
+                    # If it's already a JSON string or something unexpected,
+                    # fall back to str() to avoid crashing the request.
+                    sections_json = str(data['sections'])
+                params.append(sections_json)
             if 'status' in data:
                 updates.append('status = %s')
                 params.append(data['status'])
@@ -1894,11 +1857,19 @@ def send_for_approval(username, proposal_id):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
+
+            # Get current user's ID from username
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+
+            user_id = user[0]
+
             # Check if proposal exists and belongs to user
             cursor.execute(
                 'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
-                (proposal_id, username)
+                (proposal_id, user_id)
             )
             proposal = cursor.fetchone()
             
@@ -2156,54 +2127,77 @@ def track_client_view(username, proposal_id):
 @app.get("/proposals/pending_approval")
 @token_required
 def get_pending_approvals(username):
+    """Return proposals that are pending approval (backend used by /approvals)."""
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, title, client, owner_id, status, created_at
-               FROM proposals WHERE status = 'Submitted' ORDER BY created_at DESC'''
-        )
-        rows = cursor.fetchall()
-        release_pg_conn(conn)
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT id, title, client, owner_id, status, created_at
+                   FROM proposals
+                   WHERE status = 'Submitted'
+                   ORDER BY created_at DESC'''
+            )
+            rows = cursor.fetchall()
+
         proposals = []
         for row in rows:
-            proposals.append({
-                'id': row[0],
-                'title': row[1],
-                'client': row[2],
-                'owner_id': row[3],
-                'status': row[4],
-                'created_at': row[5].isoformat() if row[5] else None
-            })
-            return {'proposals': proposals}, 200
+            created_at = row[5]
+            if hasattr(created_at, "isoformat"):
+                created_at = created_at.isoformat()
+            elif created_at is not None:
+                created_at = str(created_at)
+
+            proposals.append(
+                {
+                    'id': row[0],
+                    'title': row[1],
+                    'client': row[2],
+                    'owner_id': row[3],
+                    'status': row[4],
+                    'created_at': created_at,
+                }
+            )
+
+        return {'proposals': proposals}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
 @app.get("/proposals/my_proposals")
 @token_required
 def get_my_proposals(username):
+    """Return proposals owned by the current user."""
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, title, client, owner_id, status, created_at
-               FROM proposals WHERE owner_id = (SELECT id FROM users WHERE username = %s)
-               ORDER BY created_at DESC''',
-            (username,)
-        )
-        rows = cursor.fetchall()
-        release_pg_conn(conn)
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT id, title, client, owner_id, status, created_at
+                   FROM proposals
+                   WHERE owner_id = (SELECT id FROM users WHERE username = %s)
+                   ORDER BY created_at DESC''',
+                (username,),
+            )
+            rows = cursor.fetchall()
+
         proposals = []
         for row in rows:
-            proposals.append({
-                'id': row[0],
-                'title': row[1],
-                'client': row[2],
-                'owner_id': row[3],
-                'status': row[4],
-                'created_at': row[5].isoformat() if row[5] else None
-            })
-            return {'proposals': proposals}, 200
+            created_at = row[5]
+            if hasattr(created_at, "isoformat"):
+                created_at = created_at.isoformat()
+            elif created_at is not None:
+                created_at = str(created_at)
+
+            proposals.append(
+                {
+                    'id': row[0],
+                    'title': row[1],
+                    'client': row[2],
+                    'owner_id': row[3],
+                    'status': row[4],
+                    'created_at': created_at,
+                }
+            )
+
+        return {'proposals': proposals}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 

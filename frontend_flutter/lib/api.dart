@@ -247,8 +247,8 @@ class AppState extends ChangeNotifier {
         final data = jsonDecode(r.body);
         proposals = List<dynamic>.from(data);
 
-        // Calculate dashboard counts from real data
-        _updateDashboardCounts();
+        // Calculate dashboard counts from real data and include pending approvals
+        await updateDashboardCountsWithPending();
       } else {
         print('Error fetching proposals: ${r.statusCode} - ${r.body}');
         proposals = [];
@@ -266,6 +266,21 @@ class AppState extends ChangeNotifier {
       counts[status] = (counts[status] ?? 0) + 1;
     }
     dashboardCounts = counts;
+  }
+
+  Future<void> updateDashboardCountsWithPending() async {
+    try {
+      // Get user's proposals counts
+      _updateDashboardCounts();
+      
+      // Also fetch pending approvals to get accurate count across all users
+      final pendingApprovals = await getPendingApprovals();
+      dashboardCounts['Pending CEO Approval'] = pendingApprovals.length;
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error updating dashboard counts with pending: $e');
+    }
   }
 
   Future<void> fetchDashboard() async {
@@ -457,6 +472,25 @@ class AppState extends ChangeNotifier {
       return null;
     } catch (e) {
       return "Error approving proposal: $e";
+    }
+  }
+
+  Future<String?> sendForApproval(String proposalId) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$baseUrl/api/proposals/$proposalId/send-for-approval"),
+        headers: _headers,
+      );
+      if (r.statusCode >= 400) {
+        final data = jsonDecode(r.body);
+        return data["detail"] ?? "Failed to send for approval";
+      }
+      await fetchProposals();
+      await fetchDashboard();
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return "Error sending for approval: $e";
     }
   }
 
