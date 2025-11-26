@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/ai_analysis_service.dart';
 import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
@@ -94,6 +95,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   dynamic _savedProposalId; // Store the actual backend proposal ID (int or UUID)
   String? _authToken;
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
+  Map<String, dynamic>? _readiness;
+  List<Map<String, dynamic>> _readinessChecks = [];
+  bool _isLoadingReadiness = false;
 
   @override
   void initState() {
@@ -192,6 +196,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           await _loadProposalFromDatabase(proposalId);
           await _loadVersionsFromDatabase(proposalId);
           await _loadCommentsFromDatabase(proposalId);
+          await _loadProposalReadiness(proposalId);
         }
       }
 
@@ -495,6 +500,52 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
     } catch (e) {
       print('⚠️ Error loading comments: $e');
+    }
+  }
+
+  Future<void> _loadProposalReadiness(dynamic proposalId) async {
+    if (proposalId == null) return;
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) {
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoadingReadiness = true;
+        });
+      }
+
+      final readiness = await ApiService.getProposalReadiness(
+        token: token,
+        proposalId: proposalId,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoadingReadiness = false;
+        if (readiness != null) {
+          _readiness = readiness;
+          final checks = readiness['checks'] as List<dynamic>? ?? [];
+          _readinessChecks = checks
+              .map((item) => Map<String, dynamic>.from(
+                  item as Map<String, dynamic>))
+              .toList();
+        } else {
+          _readiness = null;
+          _readinessChecks = [];
+        }
+      });
+    } catch (e) {
+      print('⚠️ Error loading readiness: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingReadiness = false;
+        });
+      }
     }
   }
 
@@ -2120,6 +2171,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           print('✅ Proposal created with ID: $_savedProposalId');
           print(
               '💾 Proposal ID saved in state - future saves will UPDATE this proposal');
+          await _loadProposalReadiness(_savedProposalId);
         } else {
           print('⚠️ Proposal creation returned null or no ID');
           print('🔍 Full result: $result');
@@ -3843,6 +3895,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       }
                     },
                   ),
+                  const SizedBox(height: 24),
+                  _buildReadinessPanel(),
                 ],
               ),
             ),
@@ -3936,49 +3990,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           )
           .toList(),
-    );
-  }
-
-  Widget _buildCanvasPlaceholder() {
-    return Container(
-      width: 760,
-      padding: const EdgeInsets.all(24),
-      margin: const EdgeInsets.only(bottom: 32),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: const [
-          Icon(Icons.edit_note, size: 48, color: Color(0xFF94A3B8)),
-          SizedBox(height: 12),
-          Text(
-            'Click anywhere to start building your proposal...',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Add text blocks, media, tables, pricing or import approved content from your library.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF64748B),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

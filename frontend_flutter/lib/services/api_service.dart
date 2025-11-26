@@ -710,6 +710,28 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>?> getProposalReadiness({
+    required String token,
+    required dynamic proposalId, // Accept int or UUID
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/proposals/${proposalId.toString()}/readiness'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      print(
+          'Error fetching proposal readiness: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error fetching proposal readiness: $e');
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>?> generateFullProposal({
     required String token,
     required String prompt,

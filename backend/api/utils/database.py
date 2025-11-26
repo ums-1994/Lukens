@@ -197,8 +197,19 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_governance (
-        proposal_id INTEGER PRIMARY KEY,
+        # Use the same data type as proposals.id for proposal_governance.proposal_id
+        cursor.execute("""
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_name = 'proposals' AND column_name = 'id'
+        """)
+        row = cursor.fetchone()
+        proposal_id_type = 'INTEGER'
+        if row and row[0] and str(row[0]).lower() == 'uuid':
+            proposal_id_type = 'UUID'
+
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS proposal_governance (
+        proposal_id {proposal_id_type} PRIMARY KEY,
         readiness_score INTEGER DEFAULT 0,
         status VARCHAR(50) DEFAULT 'pending',
         issues JSONB,
@@ -604,9 +615,19 @@ def init_pg_schema():
         )''')
 
         # Readiness checks table for proposal governance
-        cursor.execute('''CREATE TABLE IF NOT EXISTS readiness_checks (
+        cursor.execute("""
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_name = 'proposals' AND column_name = 'id'
+        """)
+        row = cursor.fetchone()
+        readiness_proposal_id_type = 'INTEGER'
+        if row and row[0] and str(row[0]).lower() == 'uuid':
+            readiness_proposal_id_type = 'UUID'
+
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS readiness_checks (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id {readiness_proposal_id_type} NOT NULL,
         check_key VARCHAR(100) NOT NULL,
         check_name VARCHAR(255) NOT NULL,
         category VARCHAR(50),

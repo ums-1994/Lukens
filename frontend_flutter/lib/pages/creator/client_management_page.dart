@@ -1283,8 +1283,636 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   }
 
   void _showClientDetails(Map<String, dynamic> client) {
-    // TODO: Show client details dialog with notes and proposals
-    _showSnackBar('Client details view coming soon!');
+    final clientIdValue = client['id'];
+    if (clientIdValue == null) {
+      _showSnackBar('Client ID is missing for this record');
+      return;
+    }
+
+    int? clientId;
+    if (clientIdValue is int) {
+      clientId = clientIdValue;
+    } else {
+      clientId = int.tryParse(clientIdValue.toString());
+    }
+
+    if (clientId == null) {
+      _showSnackBar('Client ID is not a valid number');
+      return;
+    }
+
+    final token = AuthService.token;
+    if (token == null) {
+      _showSnackBar('Authentication error: Please log in again');
+      return;
+    }
+
+    final int resolvedClientId = clientId;
+
+    Future.wait([
+      ClientService.getClientProposals(token, resolvedClientId),
+      ClientService.getClientNotes(token, resolvedClientId),
+    ]).then((results) {
+      if (!mounted) return;
+
+      List<Map<String, dynamic>> linkedProposals = List<Map<String, dynamic>>.from(
+        results[0].map((p) => Map<String, dynamic>.from(p)),
+      );
+      List<Map<String, dynamic>> clientNotes = List<Map<String, dynamic>>.from(
+        results[1].map((n) => Map<String, dynamic>.from(n)),
+      );
+
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              Future<void> _refreshProposals() async {
+                try {
+                  final refreshed = await ClientService.getClientProposals(
+                    token,
+                    resolvedClientId,
+                  );
+                  setDialogState(() {
+                    linkedProposals = List<Map<String, dynamic>>.from(
+                      refreshed.map((p) => Map<String, dynamic>.from(p)),
+                    );
+                  });
+                } catch (e) {
+                  _showSnackBar('Failed to refresh proposals: $e');
+                }
+              }
+
+              Future<void> _linkProposal() async {
+                final app = Provider.of<AppState>(dialogContext, listen: false);
+                final allProposals = app.proposals;
+
+                final linkedIds = linkedProposals
+                    .map((p) => p['id']?.toString())
+                    .where((id) => id != null)
+                    .cast<String>()
+                    .toSet();
+
+                final available = allProposals.where((p) {
+                  final idVal = p['id'];
+                  if (idVal == null) return false;
+                  final idStr = idVal.toString();
+                  return !linkedIds.contains(idStr);
+                }).toList();
+
+                if (available.isEmpty) {
+                  _showSnackBar('No available proposals to link');
+                  return;
+                }
+
+                final selected = await showDialog<Map<String, dynamic>>(
+                  context: dialogContext,
+                  builder: (selectCtx) {
+                    return SimpleDialog(
+                      backgroundColor: const Color(0xFF0E1726),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      title: const Text(
+                        'Link Proposal',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      children: [
+                        ...available.map((p) {
+                          final title =
+                              p['title']?.toString() ?? 'Untitled Proposal';
+                          return SimpleDialogOption(
+                            onPressed: () => Navigator.of(selectCtx).pop(
+                              Map<String, dynamic>.from(p),
+                            ),
+                            child: Text(
+                              title,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    );
+                  },
+                );
+
+                if (selected == null) return;
+
+                final idVal = selected['id'];
+                int? proposalId;
+                if (idVal is int) {
+                  proposalId = idVal;
+                } else {
+                  proposalId = int.tryParse(idVal.toString());
+                }
+
+                if (proposalId == null) {
+                  _showSnackBar('Invalid proposal ID');
+                  return;
+                }
+
+                final success = await ClientService.linkProposal(
+                  token: token,
+                  clientId: resolvedClientId,
+                  proposalId: proposalId,
+                );
+
+                if (!success) {
+                  _showSnackBar('Failed to link proposal');
+                  return;
+                }
+
+                _showSnackBar('Proposal linked successfully', isSuccess: true);
+                await _refreshProposals();
+              }
+
+              Future<void> _unlinkProposal(Map<String, dynamic> proposal) async {
+                final idVal = proposal['id'];
+                int? proposalId;
+                if (idVal is int) {
+                  proposalId = idVal;
+                } else {
+                  proposalId = int.tryParse(idVal.toString());
+                }
+
+                if (proposalId == null) {
+                  _showSnackBar('Invalid proposal ID');
+                  return;
+                }
+
+                final success = await ClientService.unlinkProposal(
+                  token: token,
+                  clientId: resolvedClientId,
+                  proposalId: proposalId,
+                );
+
+                if (!success) {
+                  _showSnackBar('Failed to unlink proposal');
+                  return;
+                }
+
+                _showSnackBar('Proposal unlinked', isSuccess: true);
+                setDialogState(() {
+                  linkedProposals = linkedProposals
+                      .where((p) => p['id'] != proposal['id'])
+                      .toList();
+                });
+              }
+
+              return Dialog(
+                backgroundColor: Colors.transparent,
+                insetPadding: const EdgeInsets.all(24),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      width: 880,
+                      padding: const EdgeInsets.all(24),
+                      decoration: PremiumTheme.glassCard(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  gradient: PremiumTheme.tealGradient,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.business,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      (client['company_name'] ?? 'Client').toString(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        if (client['email'] != null)
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.email_outlined,
+                                                size: 16,
+                                                color: Color(0xFFB0BEC5),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                client['email'].toString(),
+                                                style: const TextStyle(
+                                                  color: Color(0xFFB0BEC5),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        if (client['email'] != null && client['phone'] != null)
+                                          const SizedBox(width: 16),
+                                        if (client['phone'] != null)
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.phone,
+                                                size: 16,
+                                                color: Color(0xFFB0BEC5),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                client['phone'].toString(),
+                                                style: const TextStyle(
+                                                  color: Color(0xFFB0BEC5),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        if (client['industry'] != null)
+                                          Text(
+                                            client['industry'].toString(),
+                                            style: const TextStyle(
+                                              color: Color(0xFF78909C),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        if (client['industry'] != null && client['location'] != null)
+                                          const SizedBox(width: 12),
+                                        if (client['location'] != null)
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.location_on_outlined,
+                                                size: 14,
+                                                color: Color(0xFF78909C),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                client['location'].toString(),
+                                                style: const TextStyle(
+                                                  color: Color(0xFF78909C),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, color: Colors.white70),
+                                onPressed: () => Navigator.of(ctx).pop(),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'Linked Proposals',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: _linkProposal,
+                                          icon: const Icon(
+                                            Icons.add_link,
+                                            size: 16,
+                                            color: PremiumTheme.teal,
+                                          ),
+                                          label: const Text(
+                                            'Link proposal',
+                                            style: TextStyle(
+                                              color: PremiumTheme.teal,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.04),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.white.withValues(alpha: 0.08),
+                                        ),
+                                      ),
+                                      padding: const EdgeInsets.all(12),
+                                      child: linkedProposals.isEmpty
+                                          ? const Text(
+                                              'No proposals linked to this client yet.',
+                                              style: TextStyle(
+                                                color: Color(0xFFB0BEC5),
+                                                fontSize: 12,
+                                              ),
+                                            )
+                                          : Column(
+                                              children: linkedProposals.map((proposal) {
+                                                final title = proposal['title']?.toString() ??
+                                                    'Untitled Proposal';
+                                                final status =
+                                                    proposal['status']?.toString() ?? 'Unknown';
+                                                String? createdAt;
+                                                try {
+                                                  if (proposal['created_at'] != null) {
+                                                    final dt = DateTime.parse(
+                                                        proposal['created_at'].toString());
+                                                    createdAt = DateFormat('MMM dd, yyyy')
+                                                        .format(dt);
+                                                  }
+                                                } catch (_) {
+                                                  createdAt = null;
+                                                }
+
+                                                return Container(
+                                                  margin:
+                                                      const EdgeInsets.only(bottom: 8),
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 10,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black
+                                                        .withValues(alpha: 0.2),
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    border: Border.all(
+                                                      color: Colors.white
+                                                          .withValues(alpha: 0.08),
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.description_outlined,
+                                                        size: 18,
+                                                        color: Color(0xFFB0BEC5),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment.start,
+                                                          children: [
+                                                            Text(
+                                                              title,
+                                                              style: const TextStyle(
+                                                                color: Colors.white,
+                                                                fontSize: 13,
+                                                                fontWeight:
+                                                                    FontWeight.w500,
+                                                              ),
+                                                              overflow:
+                                                                  TextOverflow.ellipsis,
+                                                            ),
+                                                            const SizedBox(height: 2),
+                                                            Row(
+                                                              children: [
+                                                                Container(
+                                                                  padding:
+                                                                      const EdgeInsets
+                                                                          .symmetric(
+                                                                    horizontal: 8,
+                                                                    vertical: 2,
+                                                                  ),
+                                                                  decoration:
+                                                                      BoxDecoration(
+                                                                    color: PremiumTheme
+                                                                        .teal
+                                                                        .withValues(
+                                                                            alpha: 0.15),
+                                                                    borderRadius:
+                                                                        BorderRadius
+                                                                            .circular(
+                                                                                999),
+                                                                  ),
+                                                                  child: Text(
+                                                                    status,
+                                                                    style:
+                                                                        const TextStyle(
+                                                                      color:
+                                                                          PremiumTheme
+                                                                              .teal,
+                                                                      fontSize: 10,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w500,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                                if (createdAt != null) ...[
+                                                                  const SizedBox(
+                                                                      width: 8),
+                                                                  Text(
+                                                                    createdAt,
+                                                                    style:
+                                                                        const TextStyle(
+                                                                      color: Color(
+                                                                          0xFF78909C),
+                                                                      fontSize: 11,
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ],
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      IconButton(
+                                                        icon: const Icon(
+                                                          Icons.link_off,
+                                                          size: 18,
+                                                          color: Color(0xFFE57373),
+                                                        ),
+                                                        tooltip: 'Unlink',
+                                                        onPressed: () =>
+                                                            _unlinkProposal(proposal),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Client Notes',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.04),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.white.withValues(alpha: 0.08),
+                                        ),
+                                      ),
+                                      padding: const EdgeInsets.all(12),
+                                      child: clientNotes.isEmpty
+                                          ? const Text(
+                                              'No notes captured for this client yet.',
+                                              style: TextStyle(
+                                                color: Color(0xFFB0BEC5),
+                                                fontSize: 12,
+                                              ),
+                                            )
+                                          : SizedBox(
+                                              height: 220,
+                                              child: Scrollbar(
+                                                child: ListView.builder(
+                                                  itemCount: clientNotes.length,
+                                                  itemBuilder: (context, index) {
+                                                    final note = clientNotes[index];
+                                                    final text =
+                                                        note['note_text']?.toString() ?? '';
+                                                    final author = note['created_by_name'] ??
+                                                        note['created_by_email'] ??
+                                                        '';
+                                                    String? createdAt;
+                                                    try {
+                                                      if (note['created_at'] != null) {
+                                                        final dt = DateTime.parse(
+                                                            note['created_at'].toString());
+                                                        createdAt =
+                                                            DateFormat('MMM dd, yyyy')
+                                                                .format(dt);
+                                                      }
+                                                    } catch (_) {
+                                                      createdAt = null;
+                                                    }
+
+                                                    return Container(
+                                                      margin: const EdgeInsets.only(
+                                                          bottom: 8),
+                                                      padding:
+                                                          const EdgeInsets.all(10),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withValues(alpha: 0.2),
+                                                        borderRadius:
+                                                            BorderRadius.circular(10),
+                                                        border: Border.all(
+                                                          color: Colors.white
+                                                              .withValues(alpha: 0.08),
+                                                        ),
+                                                      ),
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment.start,
+                                                        children: [
+                                                          Text(
+                                                            text,
+                                                            style: const TextStyle(
+                                                              color: Colors.white,
+                                                              fontSize: 12,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(height: 6),
+                                                          Row(
+                                                            children: [
+                                                              if (author
+                                                                  .toString()
+                                                                  .isNotEmpty)
+                                                                Text(
+                                                                  author.toString(),
+                                                                  style:
+                                                                      const TextStyle(
+                                                                    color: Color(
+                                                                        0xFF78909C),
+                                                                    fontSize: 11,
+                                                                  ),
+                                                                ),
+                                                              if (author
+                                                                      .toString()
+                                                                      .isNotEmpty &&
+                                                                  createdAt != null)
+                                                                const SizedBox(
+                                                                    width: 8),
+                                                              if (createdAt != null)
+                                                                Text(
+                                                                  createdAt,
+                                                                  style:
+                                                                      const TextStyle(
+                                                                    color: Color(
+                                                                        0xFF78909C),
+                                                                    fontSize: 11,
+                                                                  ),
+                                                                ),
+                                                            ],
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    }).catchError((error) {
+      _showSnackBar('Failed to load client details: $error');
+    });
   }
 
   void _showClientMenu(Map<String, dynamic> client) {

@@ -238,8 +238,19 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
         
-        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_governance (
-        proposal_id INTEGER PRIMARY KEY,
+        # Use the same data type as proposals.id for proposal_governance.proposal_id
+        cursor.execute("""
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_name = 'proposals' AND column_name = 'id'
+        """)
+        row = cursor.fetchone()
+        proposal_id_type = 'INTEGER'
+        if row and row[0] and str(row[0]).lower() == 'uuid':
+            proposal_id_type = 'UUID'
+
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS proposal_governance (
+        proposal_id {proposal_id_type} PRIMARY KEY,
         readiness_score INTEGER DEFAULT 0,
         status VARCHAR(50) DEFAULT 'pending',
         issues JSONB,
