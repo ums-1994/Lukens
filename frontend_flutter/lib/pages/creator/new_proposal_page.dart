@@ -153,7 +153,7 @@ class _NewProposalPageState extends State<NewProposalPage> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: _selectedProposalType,
+                        initialValue: _selectedProposalType,
                         decoration: InputDecoration(
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),

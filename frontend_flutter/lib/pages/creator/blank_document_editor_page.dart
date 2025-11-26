@@ -11,6 +11,7 @@ import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
+import 'governance_panel.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -95,6 +96,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   int? _savedProposalId; // Store the actual backend proposal ID
   String? _authToken;
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
+  Map<String, dynamic>?
+      _proposalData; // Store full proposal data for GovernancePanel
 
   @override
   void initState() {
@@ -271,6 +274,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         return;
       }
 
+      // Store full proposal data for GovernancePanel
+      setState(() {
+        _proposalData = Map<String, dynamic>.from(proposal);
+      });
+
       // Parse the content JSON
       if (proposal['content'] != null) {
         try {
@@ -318,7 +326,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           InlineImage.fromJson(img as Map<String, dynamic>))
                       .toList(),
                   tables: (sectionData['tables'] as List<dynamic>?)
-                      ?.map((tableData) {
+                          ?.map((tableData) {
                         try {
                           return tableData is Map<String, dynamic>
                               ? DocumentTable.fromJson(tableData)
@@ -328,8 +336,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           print('⚠️ Error loading table: $e');
                           return DocumentTable();
                         }
-                      })
-                      .toList() ?? [],
+                      }).toList() ??
+                      [],
                 );
                 _sections.add(newSection);
 
@@ -444,10 +452,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       // Flatten threaded structure for display (convert to flat list with replies nested)
       List<Map<String, dynamic>> flatComments = [];
-      
+
       void addCommentWithReplies(Map<String, dynamic> comment) {
         flatComments.add(comment);
-        
+
         // Add replies if they exist
         final replies = comment['replies'] as List<dynamic>? ?? [];
         for (var reply in replies) {
@@ -527,11 +535,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               print('⚠️ Skipping collaborator without email: ${collab['id']}');
               continue;
             }
-            
+
             // Handle timestamp fields: 'invited_at' for pending invitations, 'joined_at' for active collaborators
             final invitedAt = collab['invited_at'] ?? collab['joined_at'];
-            final accessedAt = collab['accessed_at'] ?? collab['last_accessed_at'];
-            
+            final accessedAt =
+                collab['accessed_at'] ?? collab['last_accessed_at'];
+
             _collaborators.add({
               'id': collab['id'],
               'email': email,
@@ -546,7 +555,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         });
         print('✅ Loaded ${_collaborators.length} collaborators');
       } else {
-        print('⚠️ Failed to load collaborators: ${response.statusCode} - ${response.body}');
+        print(
+            '⚠️ Failed to load collaborators: ${response.statusCode} - ${response.body}');
         String errorMsg = 'Failed to load collaborators';
         if (response.statusCode == 401) {
           errorMsg = 'Authentication required to view collaborators';
@@ -556,7 +566,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           errorMsg = 'Proposal not found';
         }
         print('❌ $errorMsg');
-        
+
         // Clear collaborators on error to avoid stale data
         setState(() {
           _collaborators.clear();
@@ -766,21 +776,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
         final currentSection = _sections[_selectedSectionIndex];
         final controller = currentSection.controller;
-        
+
         // Parse content before setState to determine what we're inserting
         String textToInsert = content;
         List<DocumentTable> tablesToInsert = [];
-        
+
         if (!isUrl) {
           // Check if content contains HTML (has HTML tags)
           final hasHtmlTags = RegExp(r'<[^>]+>').hasMatch(content);
-          
+
           if (hasHtmlTags) {
             // Parse HTML content - strip comments, extract tables, strip tags
             final parsedContent = HtmlContentParser.parseContent(content);
             textToInsert = parsedContent.plainText;
             tablesToInsert = parsedContent.tables;
-            
+
             // Remove table placeholders from text if any
             textToInsert = textToInsert.replaceAll(
               RegExp(r'\[TABLE_PLACEHOLDER_\d+\]'),
@@ -791,20 +801,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // If it's a URL (like a document), add it as a reference link
           textToInsert = '[📎 Document: $title]($content)';
         }
-        
+
         setState(() {
           // Insert at cursor position if available, otherwise append
           final text = controller.text;
           final selection = controller.selection;
-          
-          if (selection.isValid && selection.start >= 0 && selection.start <= text.length) {
+
+          if (selection.isValid &&
+              selection.start >= 0 &&
+              selection.start <= text.length) {
             // Insert at cursor position
             final before = text.substring(0, selection.start);
             final after = text.substring(selection.end);
-            final separator = before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
+            final separator =
+                before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
             controller.text = '$before$separator$textToInsert$after';
             // Set cursor after inserted content
-            final newPosition = selection.start + separator.length + textToInsert.length;
+            final newPosition =
+                selection.start + separator.length + textToInsert.length;
             controller.selection = TextSelection.collapsed(offset: newPosition);
           } else {
             // Append to end
@@ -814,18 +828,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               controller.text = '$text\n\n$textToInsert';
             }
           }
-          
+
           // Add tables to the section's tables list
           if (tablesToInsert.isNotEmpty) {
             currentSection.tables.addAll(tablesToInsert);
           }
         });
 
-        final tablesCount = tablesToInsert.isNotEmpty ? ' (${tablesToInsert.length} table${tablesToInsert.length > 1 ? 's' : ''})' : '';
+        final tablesCount = tablesToInsert.isNotEmpty
+            ? ' (${tablesToInsert.length} table${tablesToInsert.length > 1 ? 's' : ''})'
+            : '';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text('Inserted "${isUrl ? 'Document: ' : ''}$title" into section$tablesCount'),
+            content: Text(
+                'Inserted "${isUrl ? 'Document: ' : ''}$title" into section$tablesCount'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -947,15 +963,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     final query = prefix.substring(atIndex + 1);
-    if (query.contains(
-        RegExp('[\\s@#\$%^&*()+\\-=/\\\\{}\\[\\]|;:\'",<>?]'))) {
+    if (query.contains(RegExp('[\\s@#\$%^&*()+\\-=/\\\\{}\\[\\]|;:\'",<>?]'))) {
       _clearMentionState();
       return;
     }
 
     final suffix = text.substring(caretIndex);
-    if (suffix.isNotEmpty &&
-        !RegExp(r'^[A-Za-z0-9_.]*').hasMatch(suffix[0])) {
+    if (suffix.isNotEmpty && !RegExp(r'^[A-Za-z0-9_.]*').hasMatch(suffix[0])) {
       _clearMentionState();
       return;
     }
@@ -1074,8 +1088,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final newText = '$before$mentionText$after';
     _commentController.value = TextEditingValue(
       text: newText,
-      selection:
-          TextSelection.collapsed(offset: start + mentionText.length),
+      selection: TextSelection.collapsed(offset: start + mentionText.length),
     );
 
     setState(() {
@@ -1223,7 +1236,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (savedComment != null) {
         // Reload comments from database to get updated structure
         await _loadCommentsFromDatabase(_savedProposalId!);
-        
+
         // Clear form fields
         setState(() {
           _highlightedText = '';
@@ -1233,9 +1246,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(parentId != null 
-                ? 'Reply added'
-                : 'Comment added by $commenterName'),
+              content: Text(parentId != null
+                  ? 'Reply added'
+                  : 'Comment added by $commenterName'),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 2),
             ),
@@ -1286,7 +1299,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (success) {
         // Reload comments to get updated status
         await _loadCommentsFromDatabase(_savedProposalId!);
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1337,7 +1350,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (success) {
         // Reload comments to get updated status
         await _loadCommentsFromDatabase(_savedProposalId!);
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1926,7 +1939,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'isCoverPage': section.isCoverPage,
                 'inlineImages':
                     section.inlineImages.map((img) => img.toJson()).toList(),
-                'tables': section.tables.map((table) => table.toJson()).toList(),
+                'tables':
+                    section.tables.map((table) => table.toJson()).toList(),
               })
           .toList(),
       'metadata': {
@@ -2070,14 +2084,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         print('🔍 Create proposal result: $result');
 
         if (result != null && result['id'] != null) {
+          final newProposalId = result['id'] is int
+              ? result['id']
+              : int.tryParse(result['id'].toString());
           setState(() {
-            _savedProposalId = result['id'] is int
-                ? result['id']
-                : int.tryParse(result['id'].toString());
+            _savedProposalId = newProposalId;
+            // Store proposal data for GovernancePanel
+            _proposalData = Map<String, dynamic>.from(result);
           });
           print('✅ Proposal created with ID: $_savedProposalId');
           print(
               '💾 Proposal ID saved in state - future saves will UPDATE this proposal');
+          // Reload full proposal data to ensure we have everything
+          if (newProposalId != null) {
+            await _loadProposalFromDatabase(newProposalId);
+          }
         } else {
           print('⚠️ Proposal creation returned null or no ID');
           print('🔍 Full result: $result');
@@ -2100,6 +2121,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
         print('✅ Proposal updated: $_savedProposalId');
         print('🔍 Update result: $result');
+        // Update proposal data if result is available
+        if (result != null) {
+          setState(() {
+            _proposalData = Map<String, dynamic>.from(result);
+          });
+        } else {
+          // Reload proposal data to ensure we have the latest
+          await _loadProposalFromDatabase(_savedProposalId!);
+        }
       }
     } catch (e) {
       print('❌ Error saving to backend: $e');
@@ -2122,7 +2152,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'isCoverPage': section.isCoverPage,
                 'inlineImages':
                     section.inlineImages.map((img) => img.toJson()).toList(),
-                'tables': section.tables.map((table) => table.toJson()).toList(),
+                'tables':
+                    section.tables.map((table) => table.toJson()).toList(),
               })
           .toList(),
       'change_description': changeDescription,
@@ -2191,8 +2222,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
             ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
             .toList(),
-        tables: (sectionData['tables'] as List<dynamic>?)
-            ?.map((tableData) {
+        tables: (sectionData['tables'] as List<dynamic>?)?.map((tableData) {
               try {
                 return tableData is Map<String, dynamic>
                     ? DocumentTable.fromJson(tableData)
@@ -2202,8 +2232,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 print('⚠️ Error loading table: $e');
                 return DocumentTable();
               }
-            })
-            .toList() ?? [],
+            }).toList() ??
+            [],
       );
       _sections.add(newSection);
     }
@@ -2758,7 +2788,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Check if proposal is archived - if so, make it read-only
     final isArchived = _proposalStatus?.toLowerCase() == 'archived';
     final isReadOnly = widget.readOnly || isArchived;
-    
+
     // Show archive banner if archived
     if (isArchived && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2782,7 +2812,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
       });
     }
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
@@ -2793,56 +2823,298 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           if (!isReadOnly && _showSectionsSidebar) _buildSectionsSidebar(),
           // Main content
           Expanded(
-            child: Column(
-              children: [
-                // Top header
-                _buildTopHeader(),
-                // Formatting toolbar (hide in read-only mode)
-                if (!isReadOnly) _buildToolbar(),
-                // Main document area
-                Expanded(
-                  child: Row(
+            child: _currentPage == 'Governance & Risk'
+                ? _buildGovernanceRiskView()
+                : Column(
                     children: [
-                      // Center content
+                      // Top header
+                      _buildTopHeader(),
+                      // Formatting toolbar (hide in read-only mode)
+                      if (!isReadOnly) _buildToolbar(),
+                      // Main document area
                       Expanded(
-                        child: Stack(
+                        child: Row(
                           children: [
-                            SingleChildScrollView(
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 40,
-                                    vertical: 50,
+                            // Center content
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  SingleChildScrollView(
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 40,
+                                          vertical: 50,
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            // Generate A4 pages
+                                            ..._buildA4Pages(),
+                                            // Plus button to add new page
+                                            const SizedBox(height: 24),
+                                            _buildAddPageButton(),
+                                            const SizedBox(height: 40),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  child: Column(
-                                    children: [
-                                      // Generate A4 pages
-                                      ..._buildA4Pages(),
-                                      // Plus button to add new page
-                                      const SizedBox(height: 24),
-                                      _buildAddPageButton(),
-                                      const SizedBox(height: 40),
-                                    ],
-                                  ),
-                                ),
+                                ],
                               ),
                             ),
+                            // Right sidebar (hide in read-only mode)
+                            if (!isReadOnly) _buildRightSidebar(),
+                            // Comments panel (right-side, toggleable)
+                            if (_showCommentsPanel) _buildCommentsPanel(),
                           ],
                         ),
                       ),
-                      // Right sidebar (hide in read-only mode)
-                      if (!isReadOnly) _buildRightSidebar(),
-                      // Comments panel (right-side, toggleable)
-                      if (_showCommentsPanel) _buildCommentsPanel(),
                     ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGovernanceRiskView() {
+    // Build proposal data map for GovernancePanel from current document state
+    // This works even for unsaved proposals (starting from scratch)
+    final proposalDataForAnalysis = <String, dynamic>{
+      // Include ID only if proposal is saved (not 'draft')
+      if (_savedProposalId != null) 'id': _savedProposalId.toString(),
+      'title': _titleController.text.isEmpty
+          ? 'Untitled Document'
+          : _titleController.text,
+      'client_name': _clientNameController.text,
+      'client_email': _clientEmailController.text,
+      'clientName': _clientNameController.text, // Alternative field name
+      'clientEmail': _clientEmailController.text, // Alternative field name
+      'status': _proposalStatus ?? 'draft',
+      // Extract section titles and content for analysis
+      'sections': _sections
+          .map((section) => {
+                'title': section.title,
+                'content': section.content,
+                'sectionType': section.sectionType,
+              })
+          .toList(),
+      // Extract content by section type for easier analysis
+      // This maps section content to fields that the analysis service expects
+      ..._extractContentBySectionType(),
+      // Also check sections array for content (double-check for title-based matching)
+      ..._extractContentFromSectionsArray(),
+      // Add other proposal fields from _proposalData if available
+      ...?_proposalData,
+    };
+
+    return Row(
+      children: [
+        // Main content area with back button
+        Expanded(
+          child: Container(
+            color: const Color(0xFFF5F5F5),
+            child: Column(
+              children: [
+                // Header with back button
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: () {
+                          setState(() => _currentPage = 'Editor');
+                        },
+                        tooltip: 'Back to Editor',
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Governance & Risk Analysis',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // GovernancePanel
+                Expanded(
+                  child: GovernancePanel(
+                    proposalId: _savedProposalId?.toString() ?? 'draft',
+                    proposalData: proposalDataForAnalysis,
+                    onStatusChange: () {
+                      // Refresh proposal data when status changes
+                      if (_savedProposalId != null) {
+                        _loadProposalFromDatabase(_savedProposalId!);
+                      } else {
+                        // For unsaved proposals, just refresh the view
+                        setState(() {});
+                      }
+                    },
                   ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
+  }
+
+  // Helper method to extract content by section type for risk analysis
+  Map<String, dynamic> _extractContentBySectionType() {
+    final contentMap = <String, dynamic>{};
+
+    for (final section in _sections) {
+      final sectionType = section.sectionType.toLowerCase();
+      final content = section.content.trim();
+
+      if (content.isEmpty) continue;
+
+      // Map common section types to analysis fields
+      switch (sectionType) {
+        case 'executive_summary':
+        case 'executive summary':
+          contentMap['executive_summary'] = content;
+          break;
+        case 'scope_deliverables':
+        case 'scope & deliverables':
+        case 'scope':
+          contentMap['scope_deliverables'] = content;
+          contentMap['scope'] = content;
+          break;
+        case 'company_profile':
+        case 'company profile':
+          contentMap['company_profile'] = content;
+          break;
+        case 'terms_conditions':
+        case 'terms & conditions':
+        case 'terms':
+          contentMap['terms_conditions'] = content;
+          break;
+        case 'assumptions':
+        case 'assumptions_risks':
+        case 'assumptions & risks':
+          contentMap['assumptions'] = content;
+          contentMap['assumptions_risks'] = content;
+          break;
+        case 'risks':
+        case 'risk':
+          contentMap['risks'] = content;
+          break;
+        case 'team_bios':
+        case 'team bios':
+        case 'team':
+          contentMap['team_bios'] = content;
+          break;
+        case 'budget':
+        case 'pricing':
+          contentMap['budget'] = content;
+          break;
+        case 'timeline':
+        case 'schedule':
+          contentMap['timeline'] = content;
+          break;
+        case 'delivery_approach':
+        case 'delivery approach':
+        case 'approach':
+          contentMap['delivery_approach'] = content;
+          break;
+        case 'references':
+        case 'reference':
+          contentMap['references'] = content;
+          break;
+        default:
+          // Store by section title as well for flexible matching
+          final title = section.title.toLowerCase();
+          if (title.contains('executive')) {
+            contentMap['executive_summary'] = content;
+          } else if (title.contains('scope') || title.contains('deliverable')) {
+            contentMap['scope_deliverables'] = content;
+            contentMap['scope'] = content;
+          } else if (title.contains('company') || title.contains('profile')) {
+            contentMap['company_profile'] = content;
+          } else if (title.contains('term') || title.contains('condition')) {
+            contentMap['terms_conditions'] = content;
+          } else if (title.contains('assumption')) {
+            contentMap['assumptions'] = content;
+            contentMap['assumptions_risks'] = content;
+          } else if (title.contains('risk')) {
+            contentMap['risks'] = content;
+          } else if (title.contains('team') || title.contains('bio')) {
+            contentMap['team_bios'] = content;
+          } else if (title.contains('budget') || title.contains('pricing')) {
+            contentMap['budget'] = content;
+          } else if (title.contains('timeline') || title.contains('schedule')) {
+            contentMap['timeline'] = content;
+          } else if (title.contains('approach') || title.contains('delivery')) {
+            contentMap['delivery_approach'] = content;
+          } else if (title.contains('reference')) {
+            contentMap['references'] = content;
+          }
+      }
+    }
+
+    return contentMap;
+  }
+
+  // Helper method to extract content from sections array for analysis
+  Map<String, dynamic> _extractContentFromSectionsArray() {
+    final contentMap = <String, dynamic>{};
+
+    // Check sections array for content
+    for (final section in _sections) {
+      final title = section.title.toLowerCase().trim();
+      final content = section.content.trim();
+
+      if (content.isEmpty) continue;
+
+      // Match section titles to expected fields
+      if (title.contains('executive') && title.contains('summary')) {
+        contentMap['executive_summary'] = content;
+      } else if (title.contains('scope') || title.contains('deliverable')) {
+        if (!contentMap.containsKey('scope_deliverables')) {
+          contentMap['scope_deliverables'] = content;
+        }
+        if (!contentMap.containsKey('scope')) {
+          contentMap['scope'] = content;
+        }
+      } else if (title.contains('company') || title.contains('profile')) {
+        contentMap['company_profile'] = content;
+      } else if ((title.contains('term') || title.contains('condition')) &&
+          !title.contains('assumption')) {
+        contentMap['terms_conditions'] = content;
+      } else if (title.contains('assumption')) {
+        contentMap['assumptions'] = content;
+        contentMap['assumptions_risks'] = content;
+      } else if (title.contains('risk') && !title.contains('assumption')) {
+        contentMap['risks'] = content;
+      } else if (title.contains('team') || title.contains('bio')) {
+        contentMap['team_bios'] = content;
+      } else if (title.contains('budget') || title.contains('pricing')) {
+        contentMap['budget'] = content;
+      } else if (title.contains('timeline') || title.contains('schedule')) {
+        contentMap['timeline'] = content;
+      } else if (title.contains('approach') || title.contains('delivery')) {
+        contentMap['delivery_approach'] = content;
+      } else if (title.contains('reference')) {
+        contentMap['references'] = content;
+      }
+    }
+
+    return contentMap;
   }
 
   Widget _buildLeftSidebar() {
@@ -2965,39 +3237,38 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   Widget _buildAdminSidebarItems() {
     final isAdmin = _isAdminUser();
-    
+
     if (isAdmin) {
       // Admin sidebar items
       return Column(
         children: [
           _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
               _currentPage == 'Dashboard'),
-          _buildNavItem('Proposals for Review',
+          _buildNavItem(
+              'Proposals for Review',
               'assets/images/Time Allocation_Approval_Blue.png',
               _currentPage == 'Proposals for Review'),
-          _buildNavItem('Governance & Risk',
+          _buildNavItem(
+              'Governance & Risk',
               'assets/images/Time Allocation_Approval_Blue.png',
               _currentPage == 'Governance & Risk'),
-          _buildNavItem('Template Management',
+          _buildNavItem(
+              'Template Management',
               'assets/images/content_library.png',
               _currentPage == 'Template Management'),
-          _buildNavItem('Content Library',
-              'assets/images/content_library.png',
+          _buildNavItem('Content Library', 'assets/images/content_library.png',
               _currentPage == 'Content Library'),
-          _buildNavItem('Client Management',
-              'assets/images/collaborations.png',
+          _buildNavItem('Client Management', 'assets/images/collaborations.png',
               _currentPage == 'Client Management'),
-          _buildNavItem('User Management',
-              'assets/images/collaborations.png',
+          _buildNavItem('User Management', 'assets/images/collaborations.png',
               _currentPage == 'User Management'),
-          _buildNavItem('Approved Proposals',
+          _buildNavItem(
+              'Approved Proposals',
               'assets/images/Time Allocation_Approval_Blue.png',
               _currentPage == 'Approved Proposals'),
-          _buildNavItem('Audit Logs',
-              'assets/images/analytics.png',
+          _buildNavItem('Audit Logs', 'assets/images/analytics.png',
               _currentPage == 'Audit Logs'),
-          _buildNavItem('Settings',
-              'assets/images/analytics.png',
+          _buildNavItem('Settings', 'assets/images/analytics.png',
               _currentPage == 'Settings'),
         ],
       );
@@ -3011,16 +3282,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               _currentPage == 'My Proposals'),
           _buildNavItem('Templates', 'assets/images/content_library.png',
               _currentPage == 'Templates'),
-          _buildNavItem('Content Library',
-              'assets/images/content_library.png',
+          _buildNavItem('Content Library', 'assets/images/content_library.png',
               _currentPage == 'Content Library'),
-          _buildNavItem('Client Management',
-              'assets/images/collaborations.png',
+          _buildNavItem('Client Management', 'assets/images/collaborations.png',
               _currentPage == 'Client Management'),
-          _buildNavItem('Approved Proposals',
+          _buildNavItem(
+              'Approved Proposals',
               'assets/images/Time Allocation_Approval_Blue.png',
               _currentPage == 'Approved Proposals'),
-          _buildNavItem('Analytics (My Pipeline)',
+          _buildNavItem(
+              'Analytics (My Pipeline)',
               'assets/images/analytics.png',
               _currentPage == 'Analytics (My Pipeline)'),
         ],
@@ -3139,7 +3410,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   void _navigateToPage(String pageName) {
     final isAdmin = _isAdminUser();
-    
+
     switch (pageName) {
       case 'Dashboard':
         if (isAdmin) {
@@ -3152,12 +3423,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Governance & Risk':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Governance & Risk Panel - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        setState(() => _currentPage = 'Governance & Risk');
         break;
       case 'Template Management':
       case 'Content Library':
@@ -3670,14 +3936,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               setState(() {
                 _showCommentsPanel = !_showCommentsPanel;
               });
-              
+
               // Load comments when panel is opened
               if (_showCommentsPanel && _savedProposalId != null) {
                 _loadCommentsFromDatabase(_savedProposalId!);
               }
             },
             icon: const Icon(Icons.comment, size: 16),
-            label: Text('Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
+            label: Text(
+                'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Color(0xFF00BCD4)),
               foregroundColor: const Color(0xFF00BCD4),
@@ -4315,7 +4582,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   children: section.tables.asMap().entries.map((entry) {
                     final tableIndex = entry.key;
                     final table = entry.value;
-                    return _buildInteractiveTable(index, tableIndex, table, key: ValueKey('table_${index}_$tableIndex'));
+                    return _buildInteractiveTable(index, tableIndex, table,
+                        key: ValueKey('table_${index}_$tableIndex'));
                   }).toList(),
                 )
               else
@@ -4541,22 +4809,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         setState(() {
           final tables = _sections[sectionIndex].tables;
           if (draggedIndex < 0 || draggedIndex >= tables.length) return;
-          
+
           // Remove the table being dragged
           final draggedTable = tables.removeAt(draggedIndex);
-          
+
           // Calculate the correct insertion position
           // targetIndex represents where we want to insert (before the table at that index)
           int insertIndex = targetIndex;
-          
+
           // If we removed a table before the target, adjust the index
           if (draggedIndex < targetIndex) {
             insertIndex = targetIndex - 1;
           }
-          
+
           // Ensure valid index
           insertIndex = insertIndex.clamp(0, tables.length);
-          
+
           // Only move if position actually changed
           if (insertIndex != draggedIndex) {
             tables.insert(insertIndex, draggedTable);
@@ -4585,7 +4853,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.drag_handle, color: Color(0xFF00BCD4), size: 20),
+                      Icon(Icons.drag_handle,
+                          color: Color(0xFF00BCD4), size: 20),
                       SizedBox(width: 8),
                       Text(
                         'Drop table here',
@@ -4606,22 +4875,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Build interactive editable table
   Widget _buildInteractiveTable(
-      int sectionIndex, int tableIndex, DocumentTable table, {Key? key}) {
+      int sectionIndex, int tableIndex, DocumentTable table,
+      {Key? key}) {
     // Get currency symbol using the proper method
     final currencySymbol = _getCurrencySymbol();
 
-    return _buildTableContent(sectionIndex, tableIndex, table, currencySymbol, key: key);
+    return _buildTableContent(sectionIndex, tableIndex, table, currencySymbol,
+        key: key);
   }
 
   // Build the actual table content
-  Widget _buildTableContent(
-      int sectionIndex, int tableIndex, DocumentTable table, String currencySymbol, {Key? key}) {
-    return _buildTableContainer(sectionIndex, tableIndex, table, currencySymbol, key: key);
+  Widget _buildTableContent(int sectionIndex, int tableIndex,
+      DocumentTable table, String currencySymbol,
+      {Key? key}) {
+    return _buildTableContainer(sectionIndex, tableIndex, table, currencySymbol,
+        key: key);
   }
 
   // Build the table container
-  Widget _buildTableContainer(
-      int sectionIndex, int tableIndex, DocumentTable table, String currencySymbol, {Key? key}) {
+  Widget _buildTableContainer(int sectionIndex, int tableIndex,
+      DocumentTable table, String currencySymbol,
+      {Key? key}) {
     return Container(
       key: key,
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -6885,8 +7159,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                     focusNode: _commentFocusNode,
                   ),
-                  if (_isSearchingMentions &&
-                      _mentionQuery.isNotEmpty) ...[
+                  if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: const [
@@ -6933,9 +7206,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               radius: 14,
                               backgroundColor: const Color(0xFF00BCD4),
                               child: Text(
-                                name.isNotEmpty
-                                    ? name[0].toUpperCase()
-                                    : '@',
+                                name.isNotEmpty ? name[0].toUpperCase() : '@',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -7026,20 +7297,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   Widget _buildCommentsPanel() {
     // Get root comments (comments without parent_id)
-    final rootComments = _comments.where((c) => c['parent_id'] == null).toList();
+    final rootComments =
+        _comments.where((c) => c['parent_id'] == null).toList();
     final filteredRootComments = _commentFilterStatus == 'all'
         ? rootComments
-        : rootComments.where((c) => c['status'] == _commentFilterStatus).toList();
-    
+        : rootComments
+            .where((c) => c['status'] == _commentFilterStatus)
+            .toList();
+
     // Sort by newest first
     filteredRootComments.sort((a, b) {
-      final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
-      final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final aTime =
+          DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime =
+          DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
       return bTime.compareTo(aTime);
     });
 
-    final openCount = _comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length;
-    final resolvedCount = _comments.where((c) => c['status'] == 'resolved' && c['parent_id'] == null).length;
+    final openCount = _comments
+        .where((c) => c['status'] == 'open' && c['parent_id'] == null)
+        .length;
+    final resolvedCount = _comments
+        .where((c) => c['status'] == 'resolved' && c['parent_id'] == null)
+        .length;
 
     return Container(
       width: 400,
@@ -7068,7 +7348,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 const Spacer(),
                 // Comment count badges
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: openCount > 0 ? Colors.orange : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
@@ -7096,7 +7377,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ],
             ),
           ),
-          
+
           // Filter and controls
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -7111,9 +7392,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     isExpanded: true,
                     underline: const SizedBox(),
                     items: [
-                      DropdownMenuItem(value: 'all', child: Text('All ($openCount open)')),
-                      DropdownMenuItem(value: 'open', child: Text('Open ($openCount)')),
-                      DropdownMenuItem(value: 'resolved', child: Text('Resolved ($resolvedCount)')),
+                      DropdownMenuItem(
+                          value: 'all', child: Text('All ($openCount open)')),
+                      DropdownMenuItem(
+                          value: 'open', child: Text('Open ($openCount)')),
+                      DropdownMenuItem(
+                          value: 'resolved',
+                          child: Text('Resolved ($resolvedCount)')),
                     ],
                     onChanged: (value) {
                       if (value != null) {
@@ -7149,10 +7434,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.comment_outlined, size: 48, color: Colors.grey[400]),
+                        Icon(Icons.comment_outlined,
+                            size: 48, color: Colors.grey[400]),
                         const SizedBox(height: 16),
                         Text(
-                          _comments.isEmpty ? 'No comments yet' : 'No ${_commentFilterStatus == 'all' ? '' : _commentFilterStatus} comments',
+                          _comments.isEmpty
+                              ? 'No comments yet'
+                              : 'No ${_commentFilterStatus == 'all' ? '' : _commentFilterStatus} comments',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.grey[600],
@@ -7160,9 +7448,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _comments.isEmpty 
-                            ? 'Add comments to collaborate with your team'
-                            : 'Change filter to see other comments',
+                          _comments.isEmpty
+                              ? 'Add comments to collaborate with your team'
+                              : 'Change filter to see other comments',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[500],
@@ -7180,7 +7468,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     },
                   ),
           ),
-          
+
           // Add comment form
           Container(
             padding: const EdgeInsets.all(12),
@@ -7188,152 +7476,166 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               border: Border(top: BorderSide(color: Colors.grey[200]!)),
               color: Colors.grey[50],
             ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextField(
-                    controller: _commentController,
-                    focusNode: _commentFocusNode,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: 'Add a comment... (use @ to mention)',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFF00BCD4), width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _commentController,
+                  focusNode: _commentFocusNode,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Add a comment... (use @ to mention)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
                     ),
-                    onChanged: (text) {
-                      // Handle @mentions detection
-                      _handleCommentTextChanged();
-                    },
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide:
+                          const BorderSide(color: Color(0xFF00BCD4), width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
                   ),
-                  // @mentions autocomplete dropdown
-                  if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Searching teammates...',
-                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        ),
-                      ],
-                    ),
-                  ] else if (_mentionSuggestions.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 150),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: _mentionSuggestions.length,
-                        separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey[200]),
-                        itemBuilder: (context, index) {
-                          final user = _mentionSuggestions[index];
-                          final name = user['full_name']?.toString() ??
-                              user['first_name']?.toString() ??
-                              user['email']?.toString() ??
-                              'User';
-                          final email = user['email']?.toString();
-                          final username = user['username']?.toString();
-                          return InkWell(
-                            onTap: () => _insertMention(user),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 14,
-                                    backgroundColor: const Color(0xFF00BCD4),
-                                    child: Text(
-                                      name.isNotEmpty ? name[0].toUpperCase() : '@',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          name,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        if (username != null || email != null)
-                                          Text(
-                                            [
-                                              if (username != null && username.isNotEmpty) '@$username',
-                                              if (email != null && email.isNotEmpty) email,
-                                            ].join(' • '),
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.grey[600],
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  const Icon(Icons.alternate_email, size: 16, color: Color(0xFF00BCD4)),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                  onChanged: (text) {
+                    // Handle @mentions detection
+                    _handleCommentTextChanged();
+                  },
+                ),
+                // @mentions autocomplete dropdown
+                if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(
-                        onPressed: () {
-                          _commentController.clear();
-                          _clearMentionState();
-                        },
-                        child: const Text('Cancel'),
-                      ),
+                      const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
                       const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () async {
-                          await _addComment();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00BCD4),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Post'),
+                      Text(
+                        'Searching teammates...',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
                     ],
                   ),
+                ] else if (_mentionSuggestions.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 150),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _mentionSuggestions.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: Colors.grey[200]),
+                      itemBuilder: (context, index) {
+                        final user = _mentionSuggestions[index];
+                        final name = user['full_name']?.toString() ??
+                            user['first_name']?.toString() ??
+                            user['email']?.toString() ??
+                            'User';
+                        final email = user['email']?.toString();
+                        final username = user['username']?.toString();
+                        return InkWell(
+                          onTap: () => _insertMention(user),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: const Color(0xFF00BCD4),
+                                  child: Text(
+                                    name.isNotEmpty
+                                        ? name[0].toUpperCase()
+                                        : '@',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if (username != null || email != null)
+                                        Text(
+                                          [
+                                            if (username != null &&
+                                                username.isNotEmpty)
+                                              '@$username',
+                                            if (email != null &&
+                                                email.isNotEmpty)
+                                              email,
+                                          ].join(' • '),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey[600],
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.alternate_email,
+                                    size: 16, color: Color(0xFF00BCD4)),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ],
-              ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        _commentController.clear();
+                        _clearMentionState();
+                      },
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await _addComment();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00BCD4),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Post'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -7345,20 +7647,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final hasHighlightedText = comment['highlighted_text'] != null &&
         comment['highlighted_text'].toString().isNotEmpty;
     final isReply = comment['parent_id'] != null;
-    
+
     // Get replies for this comment
-    final replies = _comments.where((c) => c['parent_id'] == comment['id']).toList();
+    final replies =
+        _comments.where((c) => c['parent_id'] == comment['id']).toList();
     replies.sort((a, b) {
-      final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
-      final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final aTime =
+          DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime =
+          DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
       return aTime.compareTo(bTime); // Oldest first for replies
     });
-    
+
     // Determine comment type
     String commentType = 'General';
     if (comment['block_type'] != null) {
       commentType = 'Block';
-    } else if (comment['section_name'] != null || comment['section_index'] != null) {
+    } else if (comment['section_name'] != null ||
+        comment['section_index'] != null) {
       commentType = 'Section';
     }
 
@@ -7415,7 +7721,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         if (isReply) ...[
                           const SizedBox(width: 4),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
                             decoration: BoxDecoration(
                               color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(4),
@@ -7445,7 +7752,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               // Status badge (only for root comments or if resolved)
               if (!isReply || isResolved)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
                     color: isResolved ? Colors.green[100] : Colors.orange[100],
                     borderRadius: BorderRadius.circular(12),
@@ -7455,7 +7763,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
-                      color: isResolved ? Colors.green[700] : Colors.orange[700],
+                      color:
+                          isResolved ? Colors.green[700] : Colors.orange[700],
                     ),
                   ),
                 ),
@@ -7471,7 +7780,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             children: [
               if (commentType != 'General')
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE3F2FD),
                     borderRadius: BorderRadius.circular(4),
@@ -7487,7 +7797,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               if (comment['section_name'] != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.blue[50],
                     borderRadius: BorderRadius.circular(4),
@@ -7551,10 +7862,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 TextButton.icon(
                   onPressed: () => _showReplyDialog(comment),
                   icon: const Icon(Icons.reply, size: 14),
-                  label: Text('Reply${replies.isNotEmpty ? ' (${replies.length})' : ''}'),
+                  label: Text(
+                      'Reply${replies.isNotEmpty ? ' (${replies.length})' : ''}'),
                   style: TextButton.styleFrom(
                     foregroundColor: const Color(0xFF00BCD4),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
@@ -7566,7 +7879,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     label: const Text('Resolve'),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.green[700],
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -7578,7 +7892,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     label: const Text('Reopen'),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.orange[700],
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -8248,8 +8563,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           alignment: Alignment.centerRight,
                           child: ElevatedButton.icon(
                             onPressed: () {
-                              final edited =
-                                  generatedController!.text.trim();
+                              final edited = generatedController!.text.trim();
                               if (edited.isEmpty) {
                                 ScaffoldMessenger.of(rootContext).showSnackBar(
                                   const SnackBar(
@@ -8308,11 +8622,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             children: generatedSectionControllers!.entries
                                 .map((entry) {
                               return Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.only(bottom: 12),
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       entry.key,
@@ -8348,8 +8660,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             onPressed: () {
                               if (generatedSectionControllers == null ||
                                   generatedSectionControllers!.isEmpty) {
-                                ScaffoldMessenger.of(rootContext)
-                                    .showSnackBar(
+                                ScaffoldMessenger.of(rootContext).showSnackBar(
                                   const SnackBar(
                                     content: Text(
                                         'No sections available to insert.'),
@@ -8359,10 +8670,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 return;
                               }
                               final editedSections = <String, String>{};
-                              generatedSectionControllers!.forEach(
-                                  (title, controller) {
-                                editedSections[title] =
-                                    controller.text.trim();
+                              generatedSectionControllers!
+                                  .forEach((title, controller) {
+                                editedSections[title] = controller.text.trim();
                               });
                               resetGeneratedState();
                               Navigator.of(rootContext).pop();
@@ -8466,8 +8776,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                             generationMode = 'section';
                                           });
                                           ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              const SnackBar(
+                                              .showSnackBar(
+                                            const SnackBar(
                                               content: Text(
                                                   'Draft ready. Review and edit below before inserting.'),
                                               backgroundColor:
@@ -8495,7 +8805,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                           final Map<String, dynamic>
                                               generatedSections =
                                               Map<String, dynamic>.from(
-                                              result['sections']
+                                                  result['sections']
                                                       as Map<dynamic, dynamic>);
                                           if (generatedSections.isEmpty) {
                                             throw Exception(
@@ -8516,16 +8826,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                             generatedSections
                                                 .forEach((title, content) {
                                               generatedSectionControllers![
-                                                  title] = TextEditingController(
-                                                  text: (content ?? '')
-                                                      .toString()
-                                                      .trim());
+                                                      title] =
+                                                  TextEditingController(
+                                                      text: (content ?? '')
+                                                          .toString()
+                                                          .trim());
                                             });
                                             generationMode = 'full';
                                           });
                                           ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              SnackBar(
+                                              .showSnackBar(
+                                            SnackBar(
                                               content: Text(
                                                   'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
                                               backgroundColor:
@@ -8611,8 +8922,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                 ),
                                                 backgroundColor:
                                                     const Color(0xFF00BCD4),
-                                                duration: const Duration(
-                                                    seconds: 4),
+                                                duration:
+                                                    const Duration(seconds: 4),
                                               ),
                                             );
                                           } else {
@@ -8636,8 +8947,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         ScaffoldMessenger.of(rootContext)
                                             .showSnackBar(
                                           SnackBar(
-                                            content: Text(
-                                                      'Error: ${e.toString()}'),
+                                            content:
+                                                Text('Error: ${e.toString()}'),
                                             backgroundColor: Colors.red,
                                           ),
                                         );
@@ -8844,9 +9155,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         emailController.clear();
 
                                         if (context.mounted) {
-                                          final emailSent = result['email_sent'] == true;
-                                          final emailError = result['email_error'];
-                                          
+                                          final emailSent =
+                                              result['email_sent'] == true;
+                                          final emailError =
+                                              result['email_error'];
+
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
                                             SnackBar(
@@ -8858,29 +9171,37 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                               backgroundColor: emailSent
                                                   ? Colors.green
                                                   : Colors.orange,
-                                              duration: Duration(seconds: emailSent ? 3 : 5),
+                                              duration: Duration(
+                                                  seconds: emailSent ? 3 : 5),
                                             ),
                                           );
                                         }
                                       } else {
-                                        String errorMessage = 'Failed to send invitation';
+                                        String errorMessage =
+                                            'Failed to send invitation';
                                         try {
-                                          final error = jsonDecode(response.body);
-                                          errorMessage = error['detail'] ?? errorMessage;
+                                          final error =
+                                              jsonDecode(response.body);
+                                          errorMessage =
+                                              error['detail'] ?? errorMessage;
                                         } catch (e) {
-                                          errorMessage = 'Server error: ${response.statusCode}';
+                                          errorMessage =
+                                              'Server error: ${response.statusCode}';
                                         }
                                         throw Exception(errorMessage);
                                       }
                                     } catch (e) {
-                                      print('❌ Error inviting collaborator: $e');
+                                      print(
+                                          '❌ Error inviting collaborator: $e');
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(
-                                            content: Text('Error inviting collaborator: ${e.toString()}'),
+                                            content: Text(
+                                                'Error inviting collaborator: ${e.toString()}'),
                                             backgroundColor: Colors.red,
-                                            duration: const Duration(seconds: 5),
+                                            duration:
+                                                const Duration(seconds: 5),
                                           ),
                                         );
                                       }

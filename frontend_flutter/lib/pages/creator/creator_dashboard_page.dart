@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'package:provider/provider.dart';
@@ -25,6 +26,9 @@ class _DashboardPageState extends State<DashboardPage>
   bool _isRefreshing = false;
   String _statusFilter = 'all'; // all, draft, published, pending, approved
   final ScrollController _scrollController = ScrollController();
+  
+  // AI Risk Gate mock data
+  List<Map<String, dynamic>> _riskItems = [];
 
   @override
   void initState() {
@@ -46,6 +50,7 @@ class _DashboardPageState extends State<DashboardPage>
         app.currentUser = AuthService.currentUser;
       }
       await _refreshData();
+      await _loadRiskData(app);
     });
   }
 
@@ -78,6 +83,9 @@ class _DashboardPageState extends State<DashboardPage>
       ]);
       print(
           'Dashboard data refreshed - ${app.proposals.length} proposals loaded');
+      
+      // Reload risk data after refreshing proposals
+      await _loadRiskData(app);
     } catch (e) {
       print('Error refreshing dashboard: $e');
     } finally {
@@ -85,6 +93,133 @@ class _DashboardPageState extends State<DashboardPage>
         setState(() => _isRefreshing = false);
       }
     }
+  }
+
+  Future<void> _loadRiskData(AppState app) async {
+    if (app.authToken == null) return;
+    
+    final List<Map<String, dynamic>> risks = [];
+    
+    try {
+      // Fetch risks for proposals that need review (draft or pending approval)
+      final proposalsNeedingReview = app.proposals.where((proposal) {
+        final status = (proposal['status'] ?? '').toString().toLowerCase();
+        return status == 'draft' || status == 'pending ceo approval';
+      }).toList();
+      
+      // Analyze risks for each proposal using the AI risk analysis API
+      for (var proposal in proposalsNeedingReview) {
+        final proposalId = proposal['id']?.toString();
+        final title = proposal['title'] ?? 'Untitled Proposal';
+        
+        if (proposalId == null) continue;
+        
+        try {
+          // Call the real AI risk analysis API
+          final riskAnalysis = await _fetchProposalRisks(app.authToken!, proposalId);
+          
+          if (riskAnalysis != null) {
+            final riskScore = riskAnalysis['risk_score'] as int? ?? 0;
+            final issues = riskAnalysis['issues'] as List<dynamic>? ?? [];
+            final overallRiskLevel = riskAnalysis['overall_risk_level'] as String? ?? 'low';
+            
+            // Only show risks if there are issues and risk score is significant
+            if (issues.isNotEmpty && riskScore > 0) {
+              final riskDescriptions = issues
+                  .map((issue) => issue['description']?.toString() ?? '')
+                  .where((desc) => desc.isNotEmpty)
+                  .take(5)
+                  .toList();
+              
+              if (riskDescriptions.isNotEmpty) {
+                risks.add({
+                  'id': 'risk_$proposalId',
+                  'proposalId': proposalId,
+                  'proposalTitle': title,
+                  'riskCount': issues.length,
+                  'risks': riskDescriptions,
+                  'riskScore': riskScore,
+                  'severity': overallRiskLevel == 'critical' || overallRiskLevel == 'high' 
+                      ? 'high' 
+                      : 'medium',
+                  'createdAt': DateTime.now().toIso8601String(),
+                  'isDismissed': false,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          print('Error fetching risks for proposal $proposalId: $e');
+          // Continue to next proposal if one fails
+        }
+      }
+    } catch (e) {
+      print('Error loading risk data: $e');
+    }
+    
+    if (mounted) {
+      setState(() {
+        _riskItems = risks.where((r) => r['isDismissed'] != true).toList();
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>?> _fetchProposalRisks(String token, String proposalId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ai/analyze-risks'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'proposal_id': proposalId}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data as Map<String, dynamic>;
+      } else {
+        print('Risk analysis failed: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Error fetching proposal risks: $e');
+      return null;
+    }
+  }
+
+  void _dismissRisk(String riskId) {
+    setState(() {
+      _riskItems = _riskItems.where((r) => r['id'] != riskId).toList();
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Risk dismissed'),
+        duration: Duration(seconds: 2),
+        backgroundColor: Color(0xFF3498DB),
+      ),
+    );
+  }
+
+  void _navigateToRiskProposal(String? proposalId, String proposalTitle) {
+    if (proposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Proposal ID not available'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    Navigator.of(context).pushNamed(
+      '/blank-document',
+      arguments: {
+        'proposalId': proposalId,
+        'proposalTitle': proposalTitle,
+      },
+    );
   }
 
   List<dynamic> _getFilteredProposals(List<dynamic> proposals) {
@@ -1177,6 +1312,88 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildAISection() {
+    if (_riskItems.isEmpty) {
+      return GlassContainer(
+        borderRadius: 24,
+        gradientStart: PremiumTheme.teal.withOpacity(0.3),
+        gradientEnd: PremiumTheme.info.withOpacity(0.2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.teal.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    color: PremiumTheme.teal,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'AI-Powered Compound Risk Gate',
+                        style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'AI analyzes multiple small deviations and flags combined risks',
+                        style: PremiumTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: PremiumTheme.glassWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: PremiumTheme.glassWhiteBorder,
+                  width: 1,
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.verified_user,
+                      size: 48,
+                      color: PremiumTheme.teal.withOpacity(0.7),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No risks detected',
+                      style: PremiumTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: PremiumTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'All proposals are risk-free',
+                      style: PremiumTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return GlassContainer(
       borderRadius: 24,
       gradientStart: PremiumTheme.orange.withOpacity(0.3),
@@ -1215,56 +1432,137 @@ class _DashboardPageState extends State<DashboardPage>
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: PremiumTheme.glassWhite,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: PremiumTheme.glassWhiteBorder,
-                width: 1,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'GlobalTech Cloud Migration',
-                  style: PremiumTheme.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: PremiumTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '3 risks detected: Missing assumptions, Incomplete bios, Altered clauses',
-                  style: PremiumTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
+              if (_riskItems.isNotEmpty)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: PremiumTheme.orange.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.orange.withOpacity(0.3),
-                      width: 1,
-                    ),
                   ),
                   child: Text(
-                    'Review Needed',
+                    '${_riskItems.length} ${_riskItems.length == 1 ? 'risk' : 'risks'}',
                     style: PremiumTheme.labelMedium.copyWith(
                       color: PremiumTheme.orange,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-              ],
-            ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Risk items list
+          ..._riskItems.map((risk) => _buildRiskItem(risk)).toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiskItem(Map<String, dynamic> risk) {
+    final proposalTitle = risk['proposalTitle'] ?? 'Untitled Proposal';
+    final riskCount = risk['riskCount'] ?? 0;
+    final risks = (risk['risks'] as List<dynamic>?) ?? [];
+    final severity = risk['severity'] ?? 'medium';
+    final proposalId = risk['proposalId'] as String?;
+    final riskId = risk['id'] as String;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: PremiumTheme.glassWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: PremiumTheme.glassWhiteBorder,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: proposalId != null
+                      ? () => _navigateToRiskProposal(proposalId, proposalTitle)
+                      : null,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            proposalTitle,
+                            style: PremiumTheme.bodyLarge.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: PremiumTheme.textPrimary,
+                            ),
+                          ),
+                          if (proposalId != null) ...[
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.open_in_new,
+                              size: 16,
+                              color: PremiumTheme.info,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '$riskCount ${riskCount == 1 ? 'risk' : 'risks'} detected: ${risks.join(', ')}',
+                        style: PremiumTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                color: PremiumTheme.textSecondary,
+                tooltip: 'Dismiss risk',
+                onPressed: () => _dismissRisk(riskId),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: severity == 'high'
+                      ? PremiumTheme.error.withOpacity(0.2)
+                      : PremiumTheme.orange.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: severity == 'high'
+                        ? PremiumTheme.error.withOpacity(0.3)
+                        : PremiumTheme.orange.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  severity == 'high' ? 'High Priority' : 'Review Needed',
+                  style: PremiumTheme.labelMedium.copyWith(
+                    color: severity == 'high'
+                        ? PremiumTheme.error
+                        : PremiumTheme.orange,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (proposalId != null)
+                TextButton.icon(
+                  onPressed: () => _navigateToRiskProposal(proposalId, proposalTitle),
+                  icon: const Icon(Icons.arrow_forward, size: 16),
+                  label: const Text('Review Proposal'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: PremiumTheme.info,
+                  ),
+                ),
+            ],
           ),
         ],
       ),

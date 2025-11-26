@@ -29,15 +29,51 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
   bool _isSubmitting = false;
 
   final List<DynamicField> _defaultDynamicFields = [
-    DynamicField(fieldName: 'Client Name', fieldKey: 'client_name', source: 'proposal', description: 'Client company name'),
-    DynamicField(fieldName: 'Client Contact', fieldKey: 'client_contact', source: 'proposal', description: 'Contact person name'),
-    DynamicField(fieldName: 'Client Email', fieldKey: 'client_email', source: 'proposal', description: 'Client email address'),
-    DynamicField(fieldName: 'Engagement Value', fieldKey: 'engagement_value', source: 'proposal', description: 'Project value'),
-    DynamicField(fieldName: 'Target Date', fieldKey: 'target_completion_date', source: 'proposal', description: 'Completion date'),
-    DynamicField(fieldName: 'Your Name', fieldKey: 'user_name', source: 'user', description: 'Current user\'s full name'),
-    DynamicField(fieldName: 'Your Email', fieldKey: 'user_email', source: 'user', description: 'Current user\'s email'),
-    DynamicField(fieldName: 'Current Date', fieldKey: 'current_date', source: 'custom', description: 'Today\'s date'),
-    DynamicField(fieldName: 'Company Name', fieldKey: 'company_name', source: 'custom', description: 'Your company name'),
+    DynamicField(
+        fieldName: 'Client Name',
+        fieldKey: 'client_name',
+        source: 'proposal',
+        description: 'Client company name'),
+    DynamicField(
+        fieldName: 'Client Contact',
+        fieldKey: 'client_contact',
+        source: 'proposal',
+        description: 'Contact person name'),
+    DynamicField(
+        fieldName: 'Client Email',
+        fieldKey: 'client_email',
+        source: 'proposal',
+        description: 'Client email address'),
+    DynamicField(
+        fieldName: 'Engagement Value',
+        fieldKey: 'engagement_value',
+        source: 'proposal',
+        description: 'Project value'),
+    DynamicField(
+        fieldName: 'Target Date',
+        fieldKey: 'target_completion_date',
+        source: 'proposal',
+        description: 'Completion date'),
+    DynamicField(
+        fieldName: 'Your Name',
+        fieldKey: 'user_name',
+        source: 'user',
+        description: 'Current user\'s full name'),
+    DynamicField(
+        fieldName: 'Your Email',
+        fieldKey: 'user_email',
+        source: 'user',
+        description: 'Current user\'s email'),
+    DynamicField(
+        fieldName: 'Current Date',
+        fieldKey: 'current_date',
+        source: 'custom',
+        description: 'Today\'s date'),
+    DynamicField(
+        fieldName: 'Company Name',
+        fieldKey: 'company_name',
+        source: 'custom',
+        description: 'Your company name'),
   ];
 
   @override
@@ -72,7 +108,8 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
               key: 'section_1',
               title: 'Executive Summary',
               required: true,
-              defaultContent: 'This proposal outlines our approach to delivering exceptional value...',
+              defaultContent:
+                  'This proposal outlines our approach to delivering exceptional value...',
               order: 0,
             ),
             TemplateSection(
@@ -96,7 +133,8 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
         });
       } else {
         setState(() {
-          _templateData = _templateData.copyWith(dynamicFields: _defaultDynamicFields);
+          _templateData =
+              _templateData.copyWith(dynamicFields: _defaultDynamicFields);
         });
       }
     } catch (e) {
@@ -136,7 +174,8 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
   void _deleteSection(int index) {
     setState(() {
       _templateData = _templateData.copyWith(
-        sections: List<TemplateSection>.from(_templateData.sections)..removeAt(index),
+        sections: List<TemplateSection>.from(_templateData.sections)
+          ..removeAt(index),
       );
     });
   }
@@ -203,7 +242,8 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
   }
 
   void _insertDynamicField(int sectionIndex, String fieldKey) {
-    final currentContent = _templateData.sections[sectionIndex].defaultContent ?? '';
+    final currentContent =
+        _templateData.sections[sectionIndex].defaultContent ?? '';
     final newContent = '$currentContent\n\n{{$fieldKey}}';
     _updateSection(sectionIndex, 'defaultContent', newContent);
   }
@@ -265,7 +305,8 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
             children: [
               Text(
                 widget.templateId != null ? 'Edit Template' : 'Create Template',
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               Text(
                 'Design reusable templates with dynamic fields',
@@ -337,16 +378,21 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
                       const Text('Template Type *'),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: _templateData.templateType,
-                        decoration: const InputDecoration(border: OutlineInputBorder()),
+                        initialValue: _templateData.templateType,
+                        decoration:
+                            const InputDecoration(border: OutlineInputBorder()),
                         items: const [
-                          DropdownMenuItem(value: 'proposal', child: Text('Proposal')),
-                          DropdownMenuItem(value: 'sow', child: Text('Statement of Work')),
-                          DropdownMenuItem(value: 'rfi', child: Text('RFI Response')),
+                          DropdownMenuItem(
+                              value: 'proposal', child: Text('Proposal')),
+                          DropdownMenuItem(
+                              value: 'sow', child: Text('Statement of Work')),
+                          DropdownMenuItem(
+                              value: 'rfi', child: Text('RFI Response')),
                         ],
                         onChanged: (value) {
                           setState(() {
-                            _templateData = _templateData.copyWith(templateType: value!);
+                            _templateData =
+                                _templateData.copyWith(templateType: value!);
                           });
                         },
                       ),
@@ -390,7 +436,8 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Make this template public'),
-              subtitle: const Text('Public templates are available to all users in the organization'),
+              subtitle: const Text(
+                  'Public templates are available to all users in the organization'),
               value: _templateData.isPublic,
               onChanged: (value) {
                 setState(() {
@@ -421,9 +468,12 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(field.fieldName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Text('Key: ${field.fieldKey}', style: const TextStyle(fontSize: 11)),
-                    Text('Source: ${field.source}', style: const TextStyle(fontSize: 11)),
+                    Text(field.fieldName,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text('Key: ${field.fieldKey}',
+                        style: const TextStyle(fontSize: 11)),
+                    Text('Source: ${field.source}',
+                        style: const TextStyle(fontSize: 11)),
                   ],
                 ),
               );
@@ -442,7 +492,10 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
                     description: 'Custom dynamic field',
                   );
                   _templateData = _templateData.copyWith(
-                    dynamicFields: [..._templateData.dynamicFields, customField],
+                    dynamicFields: [
+                      ..._templateData.dynamicFields,
+                      customField
+                    ],
                   );
                 });
               },
@@ -501,12 +554,14 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
                                 children: [
                                   Expanded(
                                     child: TextField(
-                                      controller: TextEditingController(text: section.title),
+                                      controller: TextEditingController(
+                                          text: section.title),
                                       decoration: const InputDecoration(
                                         labelText: 'Section Title',
                                         border: OutlineInputBorder(),
                                       ),
-                                      onChanged: (value) => _updateSection(index, 'title', value),
+                                      onChanged: (value) =>
+                                          _updateSection(index, 'title', value),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -514,41 +569,51 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
                                     children: [
                                       Switch(
                                         value: section.required,
-                                        onChanged: (value) => _updateSection(index, 'required', value),
+                                        onChanged: (value) => _updateSection(
+                                            index, 'required', value),
                                       ),
                                       const Text('Required'),
                                     ],
                                   ),
                                   IconButton(
                                     onPressed: () => _deleteSection(index),
-                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    icon: const Icon(Icons.delete,
+                                        color: Colors.red),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 12),
                               TextField(
-                                controller: TextEditingController(text: section.defaultContent ?? ''),
+                                controller: TextEditingController(
+                                    text: section.defaultContent ?? ''),
                                 decoration: const InputDecoration(
                                   labelText: 'Default Content',
                                   border: OutlineInputBorder(),
                                   alignLabelWithHint: true,
                                 ),
                                 maxLines: 6,
-                                onChanged: (value) => _updateSection(index, 'defaultContent', value),
+                                onChanged: (value) => _updateSection(
+                                    index, 'defaultContent', value),
                               ),
                               const SizedBox(height: 12),
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: PopupMenuButton<String>(
-                                  onSelected: (value) => _insertDynamicField(index, value),
+                                  onSelected: (value) =>
+                                      _insertDynamicField(index, value),
                                   itemBuilder: (context) {
-                                    return _templateData.dynamicFields.map((field) {
+                                    return _templateData.dynamicFields
+                                        .map((field) {
                                       return PopupMenuItem(
                                         value: field.fieldKey,
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            Text(field.fieldName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                            Text(field.fieldName,
+                                                style: const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.bold)),
                                             Text('Key: ${field.fieldKey}'),
                                             Text('Source: ${field.source}'),
                                           ],

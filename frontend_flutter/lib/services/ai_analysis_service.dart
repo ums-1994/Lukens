@@ -153,12 +153,19 @@ class AIAnalysisService {
   // Legacy method for backward compatibility
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
-    // If proposal has an ID, use the new risk analysis
-    if (proposalData.containsKey('id')) {
-      return await analyzeProposalRisks(proposalData['id']);
+    // If proposal has an ID and it's not 'draft', use the new risk analysis
+    if (proposalData.containsKey('id') && 
+        proposalData['id'] != null && 
+        proposalData['id'].toString() != 'draft') {
+      try {
+        return await analyzeProposalRisks(proposalData['id'].toString());
+      } catch (e) {
+        print('AI Risk Analysis failed, falling back to basic analysis: $e');
+        // Fall through to basic analysis
+      }
     }
 
-    // Otherwise use mock analysis
+    // For unsaved proposals or when API fails, use basic analysis
     return _getMockAnalysis(proposalData);
   }
 

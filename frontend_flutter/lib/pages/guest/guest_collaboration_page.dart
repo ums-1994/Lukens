@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'dart:async';
-import 'package:flutter/gestures.dart';
 
 class GuestCollaborationPage extends StatefulWidget {
   const GuestCollaborationPage({super.key});
