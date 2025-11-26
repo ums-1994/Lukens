@@ -14,10 +14,10 @@ except ImportError:
 
 def get_docusign_jwt_token():
     """
-    Get DocuSign access token using JWT authentication
+    Get DocuSign access token and account ID using JWT authentication
     
     Returns:
-        str: Access token for DocuSign API
+        dict: Dictionary with 'access_token' and 'account_id' keys
         
     Raises:
         Exception: If SDK not installed, credentials missing, or authentication fails
@@ -81,8 +81,36 @@ def get_docusign_jwt_token():
             if not response or not hasattr(response, 'access_token'):
                 raise Exception("Failed to get access token from DocuSign")
             
-            print(f"✅ DocuSign authentication successful")
-            return response.access_token
+            # FIX: Extract account_id from JWT response
+            # The JWT response includes an 'accounts' array with account information
+            account_id = None
+            if hasattr(response, 'accounts') and response.accounts:
+                # Get the first account (most common case)
+                account_id = response.accounts[0].account_id if hasattr(response.accounts[0], 'account_id') else None
+                account_name = response.accounts[0].account_name if hasattr(response.accounts[0], 'account_name') else 'Unknown'
+                print(f"✅ DocuSign authentication successful")
+                print(f"   Account ID: {account_id}")
+                print(f"   Account Name: {account_name}")
+            else:
+                # Fallback: try to get from environment variable
+                account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+                if account_id:
+                    print(f"✅ DocuSign authentication successful")
+                    print(f"   Account ID: {account_id} (from environment variable)")
+                else:
+                    print(f"⚠️  Warning: Could not extract account_id from JWT response and DOCUSIGN_ACCOUNT_ID not set")
+            
+            if not account_id:
+                raise Exception(
+                    "Could not determine DocuSign Account ID. "
+                    "Either set DOCUSIGN_ACCOUNT_ID in environment variables, "
+                    "or ensure the JWT response includes account information."
+                )
+            
+            return {
+                'access_token': response.access_token,
+                'account_id': account_id
+            }
             
         except Exception as auth_error:
             error_msg = str(auth_error)

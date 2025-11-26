@@ -76,9 +76,12 @@ def test_proposal_signing():
     # Test JWT authentication
     print("\n🔐 Testing JWT Authentication:")
     try:
-        from app import get_docusign_jwt_token
-        token = get_docusign_jwt_token()
+        from api.utils.docusign_utils import get_docusign_jwt_token
+        auth_data = get_docusign_jwt_token()
+        token = auth_data['access_token']
+        account_id = auth_data.get('account_id', 'N/A')
         print(f"  ✅ JWT token obtained: {token[:30]}...")
+        print(f"  ✅ Account ID: {account_id}")
     except Exception as e:
         print(f"  ❌ JWT authentication failed: {e}")
         return False

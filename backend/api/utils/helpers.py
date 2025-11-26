@@ -415,17 +415,16 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         from api.utils.docusign_utils import get_docusign_jwt_token
         from docusign_esign.client.api_exception import ApiException
         
-        # Get access token
-        access_token = get_docusign_jwt_token()
+        # Get access token and account ID from JWT response
+        # FIX: Extract account_id from JWT response instead of .env
+        auth_data = get_docusign_jwt_token()
+        access_token = auth_data['access_token']
+        account_id = auth_data['account_id']
         
-        # Get account ID - must be set in .env
-        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
         if not account_id:
-            raise Exception("DOCUSIGN_ACCOUNT_ID is required. Get it from: https://demo.docusign.net → Settings → My Account Information → Account ID")
+            raise Exception("Could not determine DocuSign Account ID from JWT response")
         
-        # Validate account ID format (should be a GUID)
-        if len(account_id) < 30 or '-' not in account_id:
-            raise Exception(f"Invalid DOCUSIGN_ACCOUNT_ID format: {account_id}. Should be a GUID like: 70784c46-78c0-45af-8207-f4b8e8a43ea")
+        print(f"ℹ️  Using account_id from JWT response: {account_id}")
         
         # Use DOCUSIGN_BASE_PATH (matches working implementation) or fallback to DOCUSIGN_BASE_URL
         base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv('DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi')
