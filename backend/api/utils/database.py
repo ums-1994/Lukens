@@ -286,10 +286,21 @@ def init_pg_schema():
         except Exception as e:
             print(f"[WARN] Could not add contact_person column (may already exist): {e}")
 
+        # Determine proposals.id type so related FKs (versions, comments, collaboration, etc.) match
+        cursor.execute("""
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_name = 'proposals' AND column_name = 'id'
+        """)
+        _proposals_fk_type_row = cursor.fetchone()
+        _proposals_fk_type = 'INTEGER'
+        if _proposals_fk_type_row and _proposals_fk_type_row[0] and str(_proposals_fk_type_row[0]).lower() == 'uuid':
+            _proposals_fk_type = 'UUID'
+
         # Proposal versions table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS proposal_versions (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id {_proposals_fk_type} NOT NULL,
         version_number INTEGER NOT NULL,
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -309,9 +320,9 @@ def init_pg_schema():
             print(f"[WARN] Could not add change_description to proposal_versions: {e}")
 
         # Document comments table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS document_comments (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS document_comments (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id {_proposals_fk_type} NOT NULL,
         comment_text TEXT NOT NULL,
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -349,9 +360,9 @@ def init_pg_schema():
                          ON document_comments(proposal_id, block_type, block_id) WHERE block_id IS NOT NULL''')
 
         # Collaboration invitations table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id {_proposals_fk_type} NOT NULL,
         invited_email VARCHAR(255) NOT NULL,
         invited_by INTEGER NOT NULL,
         access_token VARCHAR(500) UNIQUE NOT NULL,
@@ -365,9 +376,9 @@ def init_pg_schema():
         )''')
 
         # Suggested changes table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS suggested_changes (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS suggested_changes (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id {_proposals_fk_type} NOT NULL,
         section_id VARCHAR(255),
         suggested_by INTEGER NOT NULL,
         suggestion_text TEXT NOT NULL,
@@ -383,9 +394,9 @@ def init_pg_schema():
         )''')
 
         # Section locks table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS section_locks (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS section_locks (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id {_proposals_fk_type} NOT NULL,
         section_id VARCHAR(255) NOT NULL,
         locked_by INTEGER NOT NULL,
         locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -396,9 +407,9 @@ def init_pg_schema():
         )''')
 
         # Activity log table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS activity_log (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS activity_log (
         id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
+        proposal_id {_proposals_fk_type} NOT NULL,
         user_id INTEGER,
         action_type VARCHAR(100) NOT NULL,
         action_description TEXT NOT NULL,
@@ -412,10 +423,10 @@ def init_pg_schema():
                          ON activity_log(proposal_id, created_at DESC)''')
 
         # Notifications table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS notifications (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,
         user_id INTEGER NOT NULL,
-        proposal_id INTEGER,
+        proposal_id {_proposals_fk_type},
         notification_type VARCHAR(100) NOT NULL,
         title VARCHAR(255) NOT NULL,
         message TEXT NOT NULL,
@@ -519,8 +530,19 @@ def init_pg_schema():
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
                          ON proposal_signatures(proposal_id, status, sent_at DESC)''')
 
+        # Determine clients.id type so client-related FKs match existing schema
+        cursor.execute("""
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_name='clients' AND column_name='id'
+        """)
+        _clients_fk_type_row = cursor.fetchone()
+        _clients_fk_type = 'INTEGER'
+        if _clients_fk_type_row and _clients_fk_type_row[0] and str(_clients_fk_type_row[0]).lower() == 'uuid':
+            _clients_fk_type = 'UUID'
+
         # Client onboarding invitations table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS client_onboarding_invitations (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS client_onboarding_invitations (
         id SERIAL PRIMARY KEY,
         access_token VARCHAR(255) UNIQUE NOT NULL,
         invited_email VARCHAR(255) NOT NULL,
@@ -530,7 +552,7 @@ def init_pg_schema():
         invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         completed_at TIMESTAMP,
         expires_at TIMESTAMP,
-        client_id INTEGER,
+        client_id {_clients_fk_type},
         email_verified_at TIMESTAMP,
         verification_code_hash VARCHAR(255),
         code_expires_at TIMESTAMP,
@@ -541,9 +563,9 @@ def init_pg_schema():
         )''')
 
         # Client notes table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS client_notes (
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS client_notes (
         id SERIAL PRIMARY KEY,
-        client_id INTEGER NOT NULL,
+        client_id {_clients_fk_type} NOT NULL,
         note_text TEXT NOT NULL,
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -552,44 +574,19 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
 
-        # Client proposals linkage table (align FK type with proposals.id)
-        try:
-            cursor.execute("""
-                SELECT data_type 
-                FROM information_schema.columns 
-                WHERE table_name='proposals' AND column_name='id'
-            """)
-            _cp_proposals_id_type_row = cursor.fetchone()
-            _cp_proposals_id_type = _cp_proposals_id_type_row[0] if _cp_proposals_id_type_row else 'integer'
-        except Exception:
-            _cp_proposals_id_type = 'integer'
-
-        if _cp_proposals_id_type == 'uuid':
-            cursor.execute('''CREATE TABLE IF NOT EXISTS client_proposals (
-            id SERIAL PRIMARY KEY,
-            client_id INTEGER NOT NULL,
-            proposal_id UUID NOT NULL,
-            relationship_type VARCHAR(50) DEFAULT 'primary',
-            linked_by INTEGER,
-            linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (client_id, proposal_id),
-            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
-            FOREIGN KEY (linked_by) REFERENCES users(id)
-            )''')
-        else:
-            cursor.execute('''CREATE TABLE IF NOT EXISTS client_proposals (
-            id SERIAL PRIMARY KEY,
-            client_id INTEGER NOT NULL,
-            proposal_id INTEGER NOT NULL,
-            relationship_type VARCHAR(50) DEFAULT 'primary',
-            linked_by INTEGER,
-            linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (client_id, proposal_id),
-            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
-            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
-            FOREIGN KEY (linked_by) REFERENCES users(id)
-            )''')
+        # Client proposals linkage table (align FK types with proposals.id and clients.id)
+        cursor.execute(f'''CREATE TABLE IF NOT EXISTS client_proposals (
+        id SERIAL PRIMARY KEY,
+        client_id {_clients_fk_type} NOT NULL,
+        proposal_id {_proposals_fk_type} NOT NULL,
+        relationship_type VARCHAR(50) DEFAULT 'primary',
+        linked_by INTEGER,
+        linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (client_id, proposal_id),
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (linked_by) REFERENCES users(id)
+        )''')
 
         # Email verification events table
         cursor.execute('''CREATE TABLE IF NOT EXISTS email_verification_events (
