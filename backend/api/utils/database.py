@@ -177,6 +177,39 @@ def init_pg_schema():
         FOREIGN KEY (parent_id) REFERENCES content(id)
         )''')
 
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_templates (
+        id SERIAL PRIMARY KEY,
+        template_key VARCHAR(255) UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        template_type VARCHAR(50) DEFAULT 'proposal',
+        category VARCHAR(100) DEFAULT 'Standard',
+        status VARCHAR(50) DEFAULT 'draft',
+        is_public BOOLEAN DEFAULT true,
+        is_approved BOOLEAN DEFAULT false,
+        version INTEGER DEFAULT 1,
+        sections JSONB,
+        dynamic_fields JSONB,
+        usage_count INTEGER DEFAULT 0,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_governance (
+        proposal_id INTEGER PRIMARY KEY,
+        readiness_score INTEGER DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'pending',
+        issues JSONB,
+        missing_sections JSONB,
+        risk_score INTEGER,
+        can_release BOOLEAN DEFAULT false,
+        analysis JSONB,
+        last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
         # Settings table
         cursor.execute('''CREATE TABLE IF NOT EXISTS settings (
         id SERIAL PRIMARY KEY,
@@ -281,6 +314,28 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id),
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
+
+        # Add enhanced comment columns for threading and block-level context
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES document_comments(id) ON DELETE CASCADE''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS block_id VARCHAR(255)''')
+        cursor.execute('''ALTER TABLE document_comments 
+                         ADD COLUMN IF NOT EXISTS section_name VARCHAR(255)''')
+
+        # Create indexes for comment queries (mirrors main app schema)
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_proposal 
+                         ON document_comments(proposal_id)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_parent 
+                         ON document_comments(parent_id) WHERE parent_id IS NOT NULL''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_status 
+                         ON document_comments(status) WHERE status = 'open' ''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_section 
+                         ON document_comments(proposal_id, section_index) WHERE section_index IS NOT NULL''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_block 
+                         ON document_comments(proposal_id, block_type, block_id) WHERE block_id IS NOT NULL''')
 
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
@@ -547,6 +602,23 @@ def init_pg_schema():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )''')
+
+        # Readiness checks table for proposal governance
+        cursor.execute('''CREATE TABLE IF NOT EXISTS readiness_checks (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        check_key VARCHAR(100) NOT NULL,
+        check_name VARCHAR(255) NOT NULL,
+        category VARCHAR(50),
+        status VARCHAR(50) NOT NULL,
+        severity VARCHAR(50) DEFAULT 'medium',
+        message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_readiness_checks_proposal
+                         ON readiness_checks(proposal_id, created_at DESC)''')
 
         conn.commit()
         release_pg_conn(conn)

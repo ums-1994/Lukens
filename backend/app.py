@@ -218,6 +218,39 @@ def init_pg_schema():
         FOREIGN KEY (parent_id) REFERENCES content(id)
         )''')
         
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_templates (
+        id SERIAL PRIMARY KEY,
+        template_key VARCHAR(255) UNIQUE NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        template_type VARCHAR(50) DEFAULT 'proposal',
+        category VARCHAR(100) DEFAULT 'Standard',
+        status VARCHAR(50) DEFAULT 'draft',
+        is_public BOOLEAN DEFAULT true,
+        is_approved BOOLEAN DEFAULT false,
+        version INTEGER DEFAULT 1,
+        sections JSONB,
+        dynamic_fields JSONB,
+        usage_count INTEGER DEFAULT 0,
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_governance (
+        proposal_id INTEGER PRIMARY KEY,
+        readiness_score INTEGER DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'pending',
+        issues JSONB,
+        missing_sections JSONB,
+        risk_score INTEGER,
+        can_release BOOLEAN DEFAULT false,
+        analysis JSONB,
+        last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+        
         cursor.execute('''CREATE TABLE IF NOT EXISTS settings (
         id SERIAL PRIMARY KEY,
         key VARCHAR(255) UNIQUE NOT NULL,
