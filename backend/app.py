@@ -1006,45 +1006,8 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
 # DOCUSIGN HELPER FUNCTIONS
 # ============================================================================
 
-def get_docusign_jwt_token():
-    """
-    Get DocuSign access token using JWT authentication
-    """
-    if not DOCUSIGN_AVAILABLE:
-        raise Exception("DocuSign SDK not installed")
-    
-    try:
-        integration_key = os.getenv('DOCUSIGN_INTEGRATION_KEY')
-        user_id = os.getenv('DOCUSIGN_USER_ID')
-        auth_server = os.getenv('DOCUSIGN_AUTH_SERVER', 'account-d.docusign.com')
-        private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
-        
-        if not all([integration_key, user_id]):
-            raise Exception("DocuSign credentials not configured")
-        
-        # Read private key
-        with open(private_key_path, 'r') as key_file:
-            private_key = key_file.read()
-        
-        # Create API client
-        api_client = ApiClient()
-        api_client.set_base_path(f"https://{auth_server}")
-        
-        # Request JWT token
-        response = api_client.request_jwt_user_token(
-            client_id=integration_key,
-            user_id=user_id,
-            oauth_host_name=auth_server,
-            private_key_bytes=private_key,
-            expires_in=3600,
-            scopes=["signature", "impersonation"]
-        )
-        
-        return response.access_token
-        
-    except Exception as e:
-        print(f"❌ Error getting DocuSign JWT token: {e}")
-        raise
+# Note: get_docusign_jwt_token() is now in api.utils.docusign_utils
+# Import it when needed instead of defining here
 
 def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
     """
@@ -1269,17 +1232,17 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         raise Exception("DocuSign SDK not installed")
     
     try:
-        # Get access token
-        access_token = get_docusign_jwt_token()
+        # FIX: Get access token and account ID from JWT response
+        # Import the updated function from utils
+        from api.utils.docusign_utils import get_docusign_jwt_token
+        auth_data = get_docusign_jwt_token()
+        access_token = auth_data['access_token']
+        account_id = auth_data['account_id']
         
-        # Get account ID - must be set in .env
-        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
         if not account_id:
-            raise Exception("DOCUSIGN_ACCOUNT_ID is required. Get it from: https://demo.docusign.net → Settings → My Account Information → Account ID")
+            raise Exception("Could not determine DocuSign Account ID from JWT response")
         
-        # Validate account ID format (should be a GUID)
-        if len(account_id) < 30 or '-' not in account_id:
-            raise Exception(f"Invalid DOCUSIGN_ACCOUNT_ID format: {account_id}. Should be a GUID like: 70784c46-78c0-45af-8207-f4b8e8a43ea")
+        print(f"ℹ️  Using account_id: {account_id}")
         
         base_path = os.getenv('DOCUSIGN_BASE_PATH', 'https://demo.docusign.net/restapi')
         
