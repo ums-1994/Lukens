@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' show ImageFilter;
-import '../../widgets/footer.dart';
-import 'animated_landing_page.dart';
-import 'animated_landing_page_v2.dart';
 import 'cinematic_sequence_page.dart';
 
 class StartupPage extends StatelessWidget {
