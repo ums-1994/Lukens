@@ -3712,6 +3712,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  Widget _buildCanvasPlaceholder() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: const [
+        Icon(
+          Icons.description_outlined,
+          size: 56,
+          color: Color(0xFF94A3B8),
+        ),
+        SizedBox(height: 12),
+        Text(
+          'Start building your proposal by adding blocks from the left',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14,
+            color: Color(0xFF64748B),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRightSidebar() {
     final collapsedWidth = 60.0;
     final expandedWidth = 320.0;
@@ -3906,6 +3929,114 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  Widget _buildReadinessPanel() {
+    final hasData = _readiness != null && _readinessChecks.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.flag_outlined, size: 18, color: Color(0xFF0EA5E9)),
+              const SizedBox(width: 8),
+              const Text(
+                'Proposal readiness',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const Spacer(),
+              if (_isLoadingReadiness)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_savedProposalId == null)
+            const Text(
+              'Save the proposal to see readiness checks.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF64748B),
+              ),
+            )
+          else if (_isLoadingReadiness)
+            const Text(
+              'Loading readiness...',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF64748B),
+              ),
+            )
+          else if (!hasData)
+            const Text(
+              'No readiness information available yet.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF64748B),
+              ),
+            )
+          else ...[
+            if (_readiness?['status'] != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Status: ${_readiness!['status']}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            ..._readinessChecks.take(3).map(
+              (check) {
+                final ok =
+                    (check['status'] ?? '').toString().toLowerCase() == 'ok';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        ok ? Icons.check_circle : Icons.error_outline,
+                        size: 14,
+                        color:
+                            ok ? const Color(0xFF22C55E) : const Color(0xFFF97316),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          (check['label'] ?? check['message'] ?? '').toString(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSettingDropdown({
     required String label,
     required String value,
@@ -4065,6 +4196,55 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSectionContent(int index) {
+    if (index < 0 || index >= _sections.length) {
+      return const SizedBox.shrink();
+    }
+
+    final section = _sections[index];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: section.titleController,
+          focusNode: section.titleFocus,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF0F172A),
+          ),
+          decoration: const InputDecoration(
+            labelText: 'Section title',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onChanged: (_) => _onContentChanged(),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: section.controller,
+          focusNode: section.contentFocus,
+          maxLines: null,
+          decoration: const InputDecoration(
+            hintText: 'Write your proposal content here...',
+            border: OutlineInputBorder(),
+            alignLabelWithHint: true,
+          ),
+          onChanged: (_) => _onContentChanged(),
+        ),
+        if (section.tables.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children:
+                section.tables.map((table) => _buildReadOnlyTable(table)).toList(),
+          ),
+        ],
+      ],
     );
   }
 
