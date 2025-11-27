@@ -750,6 +750,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  Widget _buildAIAnalysisIcon() {
+    return Tooltip(
+      message: 'AI Analysis (Governance & Risk)',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openAIAnalysis,
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(
+              Icons.analytics_outlined,
+              size: 22,
+              color: Color(0xFF00BCD4),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showInsertSectionMenu(int afterIndex, Offset globalOffset) {
     showMenu<String>(
       context: context,
@@ -4131,275 +4154,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildToolbar() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-      child: Row(
-        children: [
-          // Undo/Redo
-          IconButton(
-            icon: const Icon(Icons.undo),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Undo - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-            tooltip: 'Undo',
-            iconSize: 18,
-            splashRadius: 20,
-          ),
-          IconButton(
-            icon: const Icon(Icons.redo),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Redo - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            },
-            tooltip: 'Redo',
-            iconSize: 18,
-            splashRadius: 20,
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Style dropdown
-          _buildSmallDropdown(_selectedTextStyle, [
-            'Normal Text',
-            'Heading 1',
-            'Heading 2',
-            'Heading 3',
-            'Title'
-          ], (value) {
-            setState(() {
-              _selectedTextStyle = value!;
-            });
-          }),
-          const SizedBox(width: 8),
-          // Font dropdown
-          _buildSmallDropdown(_selectedFont, [
-            'Plus Jakarta Sans',
-            'Arial',
-            'Times New Roman',
-            'Georgia',
-            'Courier New'
-          ], (value) {
-            setState(() {
-              _selectedFont = value!;
-            });
-          }),
-          const SizedBox(width: 8),
-          // Font size dropdown
-          _buildSmallDropdown(_selectedFontSize, [
-            '10px',
-            '12px',
-            '14px',
-            '16px',
-            '18px',
-            '20px',
-            '24px',
-            '28px'
-          ], (value) {
-            setState(() {
-              _selectedFontSize = value!;
-            });
-          }),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Text formatting
-          IconButton(
-            icon: Icon(Icons.format_bold,
-                color: _isBold ? const Color(0xFF00BCD4) : null),
-            onPressed: () {
-              setState(() {
-                _isBold = !_isBold;
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Bold',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_italic,
-                color: _isItalic ? const Color(0xFF00BCD4) : null),
-            onPressed: () {
-              setState(() {
-                _isItalic = !_isItalic;
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Italic',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_underlined,
-                color: _isUnderlined ? const Color(0xFF00BCD4) : null),
-            onPressed: () {
-              setState(() {
-                _isUnderlined = !_isUnderlined;
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Underline',
-          ),
-          IconButton(
-            icon: const Icon(Icons.format_color_text),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Text color picker - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Text Color',
-          ),
-          IconButton(
-            icon: const Icon(Icons.link),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Insert link - Feature coming soon'),
-                  backgroundColor: Color(0xFF00BCD4),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Link',
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Alignment
-          IconButton(
-            icon: Icon(Icons.format_align_left,
-                color: _selectedAlignment == 'left'
-                    ? const Color(0xFF00BCD4)
-                    : null),
-            onPressed: () {
-              setState(() {
-                _selectedAlignment = 'left';
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Align Left',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_align_center,
-                color: _selectedAlignment == 'center'
-                    ? const Color(0xFF00BCD4)
-                    : null),
-            onPressed: () {
-              setState(() {
-                _selectedAlignment = 'center';
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Align Center',
-          ),
-          IconButton(
-            icon: Icon(Icons.format_align_right,
-                color: _selectedAlignment == 'right'
-                    ? const Color(0xFF00BCD4)
-                    : null),
-            onPressed: () {
-              setState(() {
-                _selectedAlignment = 'right';
-              });
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Align Right',
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Lists
-          IconButton(
-            icon: const Icon(Icons.format_list_bulleted),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text =
-                      currentText + '\n• Item 1\n• Item 2\n• Item 3';
-                });
-              }
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Bullet List',
-          ),
-          IconButton(
-            icon: const Icon(Icons.format_list_numbered),
-            onPressed: () {
-              if (_sections.isNotEmpty &&
-                  _selectedSectionIndex < _sections.length) {
-                setState(() {
-                  final section = _sections[_selectedSectionIndex];
-                  final currentText = section.controller.text;
-                  section.controller.text =
-                      currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
-                });
-              }
-            },
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Numbered List',
-          ),
-          const SizedBox(width: 12),
-          Container(width: 1, height: 24, color: Colors.grey[300]),
-          const SizedBox(width: 12),
-          // Insert
-          IconButton(
-            icon: const Icon(Icons.table_chart),
-            onPressed: () => _showTableTypeDialog(),
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Insert Table',
-          ),
-          IconButton(
-            icon: const Icon(Icons.library_add),
-            onPressed: _addFromLibrary,
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'Insert from Content Library',
-          ),
-          IconButton(
-            icon: const Icon(Icons.auto_awesome),
-            onPressed: _showAIAssistantDialog,
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'AI Assistant',
-          ),
-          IconButton(
-            icon: const Icon(Icons.analytics_outlined),
-            onPressed: _openAIAnalysis,
-            iconSize: 18,
-            splashRadius: 20,
-            tooltip: 'AI Analysis (Governance & Risk)',
-          ),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _buildSmallDropdown(
@@ -4588,6 +4343,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _selectedSectionIndex = index;
         });
         _addFromLibrary();
+      },
+      onShowAIAssistant: () {
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+        _showAIAssistantDialog();
       },
       onDuplicate: () => _duplicateSection(index),
       onDelete: () => _deleteSection(index),
@@ -5612,6 +5373,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 _buildPanelTabIcon(
                     Icons.cloud_upload_outlined, 'upload', 'Upload'),
                 _buildPanelTabIcon(Icons.edit_note, 'signature', 'Signature'),
+                _buildAIAnalysisIcon(),
               ],
             ),
           ),
@@ -6219,6 +5981,227 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             _buildBuildItem(Icons.dashboard_customize_outlined, 'Shape'),
           ],
         ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 16),
+        const Text(
+          'Text Settings',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Style dropdown
+        _buildSmallDropdown(_selectedTextStyle, [
+          'Normal Text',
+          'Heading 1',
+          'Heading 2',
+          'Heading 3',
+          'Title'
+        ], (value) {
+          setState(() {
+            _selectedTextStyle = value!;
+          });
+        }),
+        const SizedBox(height: 8),
+        // Font dropdown
+        _buildSmallDropdown(_selectedFont, [
+          'Plus Jakarta Sans',
+          'Arial',
+          'Times New Roman',
+          'Georgia',
+          'Courier New'
+        ], (value) {
+          setState(() {
+            _selectedFont = value!;
+          });
+        }),
+        const SizedBox(height: 8),
+        // Font size dropdown
+        _buildSmallDropdown(_selectedFontSize, [
+          '10px',
+          '12px',
+          '14px',
+          '16px',
+          '18px',
+          '20px',
+          '24px',
+          '28px'
+        ], (value) {
+          setState(() {
+            _selectedFontSize = value!;
+          });
+        }),
+        const SizedBox(height: 12),
+        // Alignment
+        Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            IconButton(
+              icon: Icon(Icons.format_align_left,
+                  color: _selectedAlignment == 'left'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () {
+                setState(() {
+                  _selectedAlignment = 'left';
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Align Left',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_align_center,
+                  color: _selectedAlignment == 'center'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () {
+                setState(() {
+                  _selectedAlignment = 'center';
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Align Center',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_align_right,
+                  color: _selectedAlignment == 'right'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () {
+                setState(() {
+                  _selectedAlignment = 'right';
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Align Right',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Text Formatting',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            IconButton(
+              icon: Icon(Icons.format_bold,
+                  color: _isBold ? const Color(0xFF00BCD4) : null),
+              onPressed: () {
+                setState(() {
+                  _isBold = !_isBold;
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Bold',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_italic,
+                  color: _isItalic ? const Color(0xFF00BCD4) : null),
+              onPressed: () {
+                setState(() {
+                  _isItalic = !_isItalic;
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Italic',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_underlined,
+                  color: _isUnderlined ? const Color(0xFF00BCD4) : null),
+              onPressed: () {
+                setState(() {
+                  _isUnderlined = !_isUnderlined;
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Underline',
+            ),
+            IconButton(
+              icon: const Icon(Icons.format_color_text),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Text color picker - Feature coming soon'),
+                    backgroundColor: Color(0xFF00BCD4),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Text Color',
+            ),
+            IconButton(
+              icon: const Icon(Icons.link),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Insert link - Feature coming soon'),
+                    backgroundColor: Color(0xFF00BCD4),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Link',
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.format_list_bulleted),
+              onPressed: () {
+                if (_sections.isNotEmpty &&
+                    _selectedSectionIndex < _sections.length) {
+                  setState(() {
+                    final section = _sections[_selectedSectionIndex];
+                    final currentText = section.controller.text;
+                    section.controller.text =
+                        currentText + '\n• Item 1\n• Item 2\n• Item 3';
+                  });
+                }
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Bullet List',
+            ),
+            IconButton(
+              icon: const Icon(Icons.format_list_numbered),
+              onPressed: () {
+                if (_sections.isNotEmpty &&
+                    _selectedSectionIndex < _sections.length) {
+                  setState(() {
+                    final section = _sections[_selectedSectionIndex];
+                    final currentText = section.controller.text;
+                    section.controller.text =
+                        currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
+                  });
+                }
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Numbered List',
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -6230,7 +6213,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         onTap: () {
           String contentType = label.toLowerCase();
           if (contentType == 'shape') contentType = 'shape';
-          _insertContentIntoSection(contentType, '');
+          if (contentType == 'table') {
+            _showTableTypeDialog();
+          } else {
+            _insertContentIntoSection(contentType, '');
+          }
         },
         borderRadius: BorderRadius.circular(8),
         child: Container(

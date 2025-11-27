@@ -15,6 +15,7 @@ class SectionWidget extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onInsertBelow;
   final VoidCallback onInsertFromLibrary;
+  final VoidCallback onShowAIAssistant;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
@@ -37,6 +38,7 @@ class SectionWidget extends StatelessWidget {
     required this.onTap,
     required this.onInsertBelow,
     required this.onInsertFromLibrary,
+    required this.onShowAIAssistant,
     required this.onDuplicate,
     required this.onDelete,
     required this.getContentTextStyle,
@@ -70,7 +72,7 @@ class SectionWidget extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (isHovered || isSelected)
+              if (isHovered)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -103,6 +105,16 @@ class SectionWidget extends StatelessWidget {
                             constraints: const BoxConstraints.tightFor(
                                 width: 28, height: 28),
                             onPressed: onInsertBelow,
+                          ),
+                        ),
+                        Tooltip(
+                          message: 'AI Assistant',
+                          child: IconButton(
+                            icon: const Icon(Icons.auto_awesome, size: 16),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                                width: 28, height: 28),
+                            onPressed: onShowAIAssistant,
                           ),
                         ),
                         Tooltip(
