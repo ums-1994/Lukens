@@ -265,21 +265,14 @@ class _ProposalWizardState extends State<ProposalWizard>
   }
 
   bool _canProceed() {
+    // For hackathon/demo: only enforce that a template is selected on step 0.
+    // Later steps (governance, risk, internal/client sign-off) should not block navigation
+    // even if optional metadata fields are incomplete.
     switch (_currentStep) {
       case 0: // Compose - Template Selection
         return _formData['templateId'].toString().isNotEmpty;
-      case 1: // Govern - Client Details
-        return (_formData['proposalTitle'] ?? '').toString().isNotEmpty &&
-            (_formData['clientName'] ?? '').toString().isNotEmpty &&
-            (_formData['opportunityName'] ?? '').toString().isNotEmpty;
-      case 2: // AI Risk Gate - Project Details
-        return (_formData['projectType'] ?? '').toString().isNotEmpty;
-      case 3: // Internal Sign-off - Content Selection
-        return _formData['selectedModules'].isNotEmpty;
-      case 4: // Client Sign-off - Review
-        return true; // review/confirm step
       default:
-        return false;
+        return true;
     }
   }
 
