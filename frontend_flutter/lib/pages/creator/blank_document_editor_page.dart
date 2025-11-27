@@ -12,6 +12,12 @@ import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
 import 'governance_panel.dart';
+// Import models from document_editor
+import '../../document_editor/models/document_section.dart';
+import '../../document_editor/models/inline_image.dart';
+import '../../document_editor/models/document_table.dart';
+// Block-based section widget
+import '../../document_editor/widgets/section_widget.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -40,7 +46,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _clientEmailController;
   bool _isSaving = false;
   DateTime? _lastSaved;
-  List<_DocumentSection> _sections = [];
+  List<DocumentSection> _sections = [];
   int _hoveredSectionIndex = -1;
   String _selectedPanel = 'templates'; // templates, build, upload, signature
   int _selectedSectionIndex =
@@ -122,7 +128,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         widget.aiGeneratedSections!.isNotEmpty) {
       // Populate sections from AI-generated content
       widget.aiGeneratedSections!.forEach((title, content) {
-        final section = _DocumentSection(
+        final section = DocumentSection(
           title: title,
           content: content as String,
         );
@@ -140,7 +146,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _selectedSectionIndex = 0; // Select first section
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
-      final initialSection = _DocumentSection(
+      final initialSection = DocumentSection(
         title: 'Untitled Section',
         content: '',
       );
@@ -310,7 +316,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             final List<dynamic> savedSections = contentData['sections'] ?? [];
             if (savedSections.isNotEmpty) {
               for (var sectionData in savedSections) {
-                final newSection = _DocumentSection(
+                final newSection = DocumentSection(
                   title: sectionData['title'] ?? 'Untitled Section',
                   content: sectionData['content'] ?? '',
                   backgroundColor: sectionData['backgroundColor'] != null
@@ -351,7 +357,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             } else {
               // If no sections, create a default one
-              final defaultSection = _DocumentSection(
+              final defaultSection = DocumentSection(
                 title: 'Untitled Section',
                 content: '',
               );
@@ -672,7 +678,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   void _insertSection(int afterIndex) {
     setState(() {
-      final newSection = _DocumentSection(
+      final newSection = DocumentSection(
         title: 'Untitled Section',
         content: '',
       );
@@ -683,6 +689,42 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       newSection.titleController.addListener(_onContentChanged);
 
       // Add focus listeners for UI updates
+      newSection.contentFocus.addListener(() => setState(() {}));
+      newSection.titleFocus.addListener(() => setState(() {}));
+    });
+  }
+
+  void _duplicateSection(int index) {
+    if (index < 0 || index >= _sections.length) return;
+
+    final original = _sections[index];
+
+    final duplicatedTables = original.tables
+        .map((table) => DocumentTable.fromJson(table.toJson()))
+        .toList();
+
+    final duplicatedImages = original.inlineImages
+        .map((img) => InlineImage.fromJson(img.toJson()))
+        .toList();
+
+    final newSection = DocumentSection(
+      title: '${original.title} (Copy)',
+      content: original.controller.text,
+      backgroundColor: original.backgroundColor,
+      backgroundImageUrl: original.backgroundImageUrl,
+      sectionType: original.sectionType,
+      isCoverPage: original.isCoverPage,
+      inlineImages: duplicatedImages,
+      tables: duplicatedTables,
+    );
+
+    setState(() {
+      _sections.insert(index + 1, newSection);
+      _selectedSectionIndex = index + 1;
+
+      newSection.controller.addListener(_onContentChanged);
+      newSection.titleController.addListener(_onContentChanged);
+
       newSection.contentFocus.addListener(() => setState(() {}));
       newSection.titleFocus.addListener(() => setState(() {}));
     });
@@ -2210,7 +2252,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
     for (var sectionData in savedSections) {
-      final newSection = _DocumentSection(
+      final newSection = DocumentSection(
         title: sectionData['title'] ?? 'Untitled Section',
         content: sectionData['content'] ?? '',
         backgroundColor: sectionData['backgroundColor'] != null
@@ -3493,6 +3535,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  void _openAIAnalysis() {
+    setState(() {
+      _currentPage = 'Governance & Risk';
+    });
+  }
+
   Widget _buildSectionsSidebar() {
     return Container(
       width: 220,
@@ -4342,6 +4390,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             splashRadius: 20,
             tooltip: 'AI Assistant',
           ),
+          IconButton(
+            icon: const Icon(Icons.analytics_outlined),
+            onPressed: _openAIAnalysis,
+            iconSize: 18,
+            splashRadius: 20,
+            tooltip: 'AI Analysis (Governance & Risk)',
+          ),
         ],
       ),
     );
@@ -4456,7 +4511,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         children: [
           InkWell(
             onTap: () {
-              final newSection = _DocumentSection(
+              final newSection = DocumentSection(
                 title: 'Untitled Section',
                 content: '',
               );
@@ -4513,138 +4568,52 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final section = _sections[index];
     final isHovered = _hoveredSectionIndex == index;
     final isSelected = _selectedSectionIndex == index;
-
-    return MouseRegion(
-      onEnter: (_) {
-        setState(() => _hoveredSectionIndex = index);
+    return SectionWidget(
+      section: section,
+      isHovered: isHovered,
+      isSelected: isSelected,
+      readOnly: widget.readOnly,
+      canDelete: _sections.length > 1,
+      onHoverChanged: (hovered) {
+        setState(() {
+          _hoveredSectionIndex = hovered ? index : -1;
+        });
       },
-      onExit: (_) {
-        setState(() => _hoveredSectionIndex = -1);
+      onTap: () {
+        setState(() => _selectedSectionIndex = index);
       },
-      child: GestureDetector(
-        behavior: HitTestBehavior.deferToChild,
-        onTap: () {
-          setState(() => _selectedSectionIndex = index);
-        },
-        child: Container(
-          margin: EdgeInsets.zero,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: isSelected ? const Color(0xFF00BCD4) : Colors.transparent,
-              width: isSelected ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(4),
-            color: isSelected
-                ? const Color(0xFF00BCD4).withValues(alpha: 0.03)
-                : Colors.transparent,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Clean content area - text field for writing
-              TextField(
-                focusNode: section.contentFocus,
-                controller: section.controller,
-                maxLines: null,
-                minLines: 15,
-                enabled: !widget.readOnly, // Disable editing in read-only mode
-                style: _getContentTextStyle(),
-                textAlign: _getTextAlignment(),
-                textAlignVertical: TextAlignVertical.top,
-                decoration: InputDecoration(
-                  hintText: widget.readOnly
-                      ? '' // No hint in read-only mode
-                      : 'Start writing your content here...',
-                  hintStyle: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFFBDC3C7),
-                  ),
-                  border: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.all(8),
-                ),
-              ),
-              // Display tables below text (with drag and drop)
-              if (section.tables.isNotEmpty)
-                ReorderableListView(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  onReorder: (oldIndex, newIndex) {
-                    setState(() {
-                      if (newIndex > oldIndex) {
-                        newIndex -= 1;
-                      }
-                      final table = section.tables.removeAt(oldIndex);
-                      section.tables.insert(newIndex, table);
-                    });
-                  },
-                  children: section.tables.asMap().entries.map((entry) {
-                    final tableIndex = entry.key;
-                    final table = entry.value;
-                    return _buildInteractiveTable(index, tableIndex, table,
-                        key: ValueKey('table_${index}_$tableIndex'));
-                  }).toList(),
-                )
-              else
-                const SizedBox.shrink(),
-              // Display images below tables
-              ...section.inlineImages.asMap().entries.map((entry) {
-                final imageIndex = entry.key;
-                final image = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Container(
-                    width: image.width,
-                    height: image.height,
-                    decoration: BoxDecoration(
-                      border:
-                          Border.all(color: const Color(0xFF00BCD4), width: 2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            image.url,
-                            width: image.width,
-                            height: image.height,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        // Delete button
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: Material(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(12),
-                            child: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _sections[index]
-                                      .inlineImages
-                                      .removeAt(imageIndex);
-                                });
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(Icons.close,
-                                    size: 16, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ],
-          ),
-        ),
+      onInsertBelow: () => _insertSection(index),
+      onInsertFromLibrary: () {
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+        _addFromLibrary();
+      },
+      onDuplicate: () => _duplicateSection(index),
+      onDelete: () => _deleteSection(index),
+      getContentTextStyle: _getContentTextStyle,
+      getTextAlignment: _getTextAlignment,
+      onReorderTables: (int oldIndex, int newIndex) {
+        setState(() {
+          if (newIndex > oldIndex) {
+            newIndex -= 1;
+          }
+          final table = section.tables.removeAt(oldIndex);
+          section.tables.insert(newIndex, table);
+        });
+      },
+      buildInteractiveTable: (int tableIndex, DocumentTable table) =>
+          _buildInteractiveTable(
+        index,
+        tableIndex,
+        table,
+        key: ValueKey('table_${index}_$tableIndex'),
       ),
+      onRemoveInlineImage: (imageIndex) {
+        setState(() {
+          _sections[index].inlineImages.removeAt(imageIndex);
+        });
+      },
     );
   }
 
@@ -4801,11 +4770,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   // Build drag target for tables
   Widget _buildTableDragTarget(int sectionIndex, int targetIndex) {
     return DragTarget<int>(
-      onWillAccept: (data) {
+      onWillAcceptWithDetails: (details) {
+        final data = details.data;
         // Accept if dragging a different table
-        return data != null && data != targetIndex && data != targetIndex - 1;
+        return data != targetIndex && data != targetIndex - 1;
       },
-      onAccept: (draggedIndex) {
+      onAcceptWithDetails: (details) {
+        final draggedIndex = details.data;
         setState(() {
           final tables = _sections[sectionIndex].tables;
           if (draggedIndex < 0 || draggedIndex >= tables.length) return;
@@ -8163,7 +8134,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _sections.clear();
 
           sections.forEach((title, body) {
-            final newSection = _DocumentSection(
+            final newSection = DocumentSection(
               title: title,
               content: body,
             );
@@ -8179,7 +8150,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               'AI drafted proposal inserted. Review and adjust before sending.';
         } else if (content != null) {
           if (_sections.isEmpty) {
-            final newSection = _DocumentSection(
+            final newSection = DocumentSection(
               title: 'Untitled Section',
               content: '',
             );
@@ -9411,162 +9382,4 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       },
     );
   }
-}
-
-class _DocumentSection {
-  String title;
-  String content;
-  final TextEditingController controller;
-  final TextEditingController titleController;
-  final FocusNode contentFocus;
-  final FocusNode titleFocus;
-  Color backgroundColor;
-  String? backgroundImageUrl;
-  String sectionType; // 'cover', 'content', 'appendix', etc.
-  bool isCoverPage;
-  List<InlineImage> inlineImages; // Inline content images (not backgrounds)
-  List<DocumentTable> tables; // Tables in this section
-
-  _DocumentSection({
-    required this.title,
-    required this.content,
-    this.backgroundColor = Colors.white,
-    this.backgroundImageUrl,
-    this.sectionType = 'content',
-    this.isCoverPage = false,
-    List<InlineImage>? inlineImages,
-    List<DocumentTable>? tables,
-  })  : controller = TextEditingController(text: content),
-        titleController = TextEditingController(text: title),
-        contentFocus = FocusNode(),
-        titleFocus = FocusNode(),
-        inlineImages = inlineImages ?? [],
-        tables = tables ?? [];
-}
-
-class InlineImage {
-  String url;
-  double width;
-  double height;
-  double x; // X position
-  double y; // Y position
-
-  InlineImage({
-    required this.url,
-    this.width = 300,
-    this.height = 200,
-    this.x = 0,
-    this.y = 0,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'url': url,
-        'width': width,
-        'height': height,
-        'x': x,
-        'y': y,
-      };
-
-  factory InlineImage.fromJson(Map<String, dynamic> json) => InlineImage(
-        url: json['url'] as String,
-        width: (json['width'] as num?)?.toDouble() ?? 300,
-        height: (json['height'] as num?)?.toDouble() ?? 200,
-        x: (json['x'] as num?)?.toDouble() ?? 0,
-        y: (json['y'] as num?)?.toDouble() ?? 0,
-      );
-}
-
-class DocumentTable {
-  String type; // 'text' or 'price'
-  List<List<String>> cells;
-  double vatRate; // For price tables (default 15%)
-
-  DocumentTable({
-    this.type = 'text',
-    List<List<String>>? cells,
-    this.vatRate = 0.15,
-  }) : cells = cells ??
-            [
-              ['Header 1', 'Header 2', 'Header 3'],
-              ['Row 1 Col 1', 'Row 1 Col 2', 'Row 1 Col 3'],
-              ['Row 2 Col 1', 'Row 2 Col 2', 'Row 2 Col 3'],
-            ];
-
-  factory DocumentTable.priceTable({double vatRate = 0.15}) {
-    return DocumentTable(
-      type: 'price',
-      vatRate: vatRate,
-      cells: [
-        ['Item', 'Description', 'Quantity', 'Unit Price', 'Total'],
-        ['', '', '1', '0.00', '0.00'],
-        ['', '', '1', '0.00', '0.00'],
-      ],
-    );
-  }
-
-  void addRow() {
-    final newRow = List.generate(cells[0].length, (_) => '');
-    cells.add(newRow);
-  }
-
-  void addColumn() {
-    for (var row in cells) {
-      row.add('');
-    }
-  }
-
-  void removeRow(int index) {
-    if (cells.length > 2 && index > 0) {
-      // Keep at least header + 1 row
-      cells.removeAt(index);
-    }
-  }
-
-  void removeColumn(int index) {
-    if (cells[0].length > 2) {
-      // Keep at least 2 columns
-      for (var row in cells) {
-        if (index < row.length) {
-          row.removeAt(index);
-        }
-      }
-    }
-  }
-
-  double getSubtotal() {
-    if (type != 'price' || cells.length < 2) return 0.0;
-
-    double subtotal = 0.0;
-    for (var i = 1; i < cells.length; i++) {
-      final row = cells[i];
-      if (row.length >= 5) {
-        final total = double.tryParse(row[4]) ?? 0.0;
-        subtotal += total;
-      }
-    }
-    return subtotal;
-  }
-
-  double getVAT() {
-    return getSubtotal() * vatRate;
-  }
-
-  double getTotal() {
-    return getSubtotal() + getVAT();
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': type,
-        'cells': cells,
-        'vatRate': vatRate,
-      };
-
-  factory DocumentTable.fromJson(Map<String, dynamic> json) => DocumentTable(
-        type: json['type'] as String? ?? 'text',
-        cells: (json['cells'] as List<dynamic>?)
-            ?.map((row) =>
-                (row as List<dynamic>).map((cell) => cell.toString()).toList())
-            .toList(),
-        vatRate: (json['vatRate'] as num?)?.toDouble() ?? 0.15,
-      );
 }

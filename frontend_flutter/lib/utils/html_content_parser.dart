@@ -1,4 +1,4 @@
-import '../pages/creator/blank_document_editor_page.dart';
+import '../document_editor/models/document_table.dart';
 
 /// Result of parsing HTML content
 class ParsedHtmlContent {
@@ -75,7 +75,7 @@ class HtmlContentParser {
 
     for (final match in matches) {
       final tableHtml = match.group(0) ?? '';
-      
+
       try {
         final table = _htmlTableToDocumentTable(tableHtml);
         if (table != null) {
@@ -140,7 +140,8 @@ class HtmlContentParser {
 
       // Ensure all rows have same number of columns
       if (rows.isNotEmpty) {
-        final maxCols = rows.map((r) => r.length).reduce((a, b) => a > b ? a : b);
+        final maxCols =
+            rows.map((r) => r.length).reduce((a, b) => a > b ? a : b);
         for (var row in rows) {
           while (row.length < maxCols) {
             row.add('');

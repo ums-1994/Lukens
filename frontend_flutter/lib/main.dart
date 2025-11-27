@@ -9,6 +9,7 @@ import 'pages/creator/proposal_wizard.dart';
 import 'pages/creator/new_proposal_page.dart';
 import 'pages/creator/enhanced_compose_page.dart';
 import 'pages/creator/blank_document_editor_page.dart';
+import 'document_editor/pages/start_from_scratch_page.dart';
 import 'pages/admin/govern_page.dart';
 // import 'pages/approver/approvals_page.dart'; // Removed - using ApproverDashboardPage instead
 import 'pages/shared/preview_page.dart';
@@ -152,7 +153,7 @@ class MyApp extends StatelessWidget {
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
             String? token = uri.queryParameters['token'];
-            
+
             // If not found in query params, try extracting from hash fragment or full URL
             if (token == null || token.isEmpty) {
               final hash = web.window.location.hash;
@@ -164,14 +165,16 @@ class MyApp extends StatelessWidget {
               }
               // Try full URL as fallback
               if (token == null || token.isEmpty) {
-                final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                final urlMatch =
+                    RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
                 if (urlMatch != null) {
                   token = urlMatch.group(1);
                 }
               }
             }
-            
-            print('📍 Onboarding token: ${token != null ? "${token.substring(0, 10)}..." : "null"}');
+
+            print(
+                '📍 Onboarding token: ${token != null ? "${token.substring(0, 10)}..." : "null"}');
             if (token != null && token.isNotEmpty) {
               final validToken = token; // Create non-nullable variable
               return MaterialPageRoute(
@@ -197,14 +200,15 @@ class MyApp extends StatelessWidget {
 
           // Handle client proposals route
           if (settings.name == '/client/proposals' ||
-              (settings.name != null && settings.name!.startsWith('/client/proposals'))) {
+              (settings.name != null &&
+                  settings.name!.startsWith('/client/proposals'))) {
             print('🔍 Client proposals route detected: ${settings.name}');
-            
+
             // Extract token from URL
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
             String? token = uri.queryParameters['token'];
-            
+
             if (token != null && token.isNotEmpty) {
               print('✅ Token found for client proposals');
               return MaterialPageRoute(
@@ -257,7 +261,7 @@ class MyApp extends StatelessWidget {
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
             String? token = uri.queryParameters['token'];
-            
+
             // If not found in query params, try extracting from hash fragment or full URL
             if (token == null || token.isEmpty) {
               final hash = web.window.location.hash;
@@ -269,13 +273,14 @@ class MyApp extends StatelessWidget {
               }
               // Try full URL as fallback
               if (token == null || token.isEmpty) {
-                final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                final urlMatch =
+                    RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
                 if (urlMatch != null) {
                   token = urlMatch.group(1);
                 }
               }
             }
-            
+
             return ClientOnboardingPage(token: token ?? '');
           },
           '/verify-email': (context) {
@@ -315,9 +320,9 @@ class MyApp extends StatelessWidget {
           '/blank-document': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
                 as Map<String, dynamic>?;
-            return BlankDocumentEditorPage(
+            return StartFromScratchPage(
               proposalId: args?['proposalId'],
-              proposalTitle: args?['proposalTitle'] ?? 'Untitled Document',
+              initialTitle: args?['proposalTitle'] ?? 'Untitled Document',
               readOnly: args?['readOnly'] ?? false,
             );
           },
@@ -339,7 +344,8 @@ class MyApp extends StatelessWidget {
               const ContentLibraryPage(), // Add missing route
           '/templates': (context) => const TemplatesPage(),
           '/template-builder': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
             return TemplateBuilder(templateId: args?['templateId']);
           },
           '/approvals': (context) => const ApproverDashboardPage(),
@@ -356,7 +362,8 @@ class MyApp extends StatelessWidget {
           '/admin_dashboard': (context) => const ApproverDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
           '/client_management': (context) => const ClientManagementPage(),
-          '/collaboration': (context) => const ClientManagementPage(), // Redirected to Client Management
+          '/collaboration': (context) =>
+              const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) => const AnalyticsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
@@ -404,14 +411,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final uri = Uri.parse(currentUrl);
 
     // Check if this is a client onboarding URL (priority check)
-    final isOnboarding = currentUrl.contains('/onboard') || 
+    final isOnboarding = currentUrl.contains('/onboard') ||
         uri.path.contains('/onboard') ||
         currentUrl.contains('onboard?token=');
-    
+
     String? onboardingToken;
     // Try to get token from query parameters first
     onboardingToken = uri.queryParameters['token'];
-    
+
     // If not found, try to extract from hash fragment or full URL
     if (onboardingToken == null || onboardingToken.isEmpty) {
       final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
@@ -419,9 +426,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
         onboardingToken = hashMatch.group(1);
       }
     }
-    
+
     if (isOnboarding && onboardingToken != null && onboardingToken.isNotEmpty) {
-      print('✅ Detected client onboarding URL in _checkVerificationUrl - token: ${onboardingToken.substring(0, 10)}...');
+      print(
+          '✅ Detected client onboarding URL in _checkVerificationUrl - token: ${onboardingToken.substring(0, 10)}...');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Navigator.pushReplacement(
           context,
@@ -454,13 +462,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
     // Check if this is a client proposals URL (don't redirect to verification)
     final isClientProposals = currentUrl.contains('/client/proposals') ||
         uri.path.contains('/client/proposals');
-    
+
     // Check if this is a collaboration URL (don't redirect to verification)
     final isCollaborationUrl = currentUrl.contains('/collaborate') ||
         uri.path.contains('/collaborate');
-    
+
     // Check if this is a verification URL (but not onboarding, client proposals, or collaboration)
-    if (!isOnboarding && !isClientProposals && !isCollaborationUrl && uri.queryParameters.containsKey('token')) {
+    if (!isOnboarding &&
+        !isClientProposals &&
+        !isCollaborationUrl &&
+        uri.queryParameters.containsKey('token')) {
       final token = uri.queryParameters['token'];
       if (token != null && token.isNotEmpty) {
         // Navigate to verification page
@@ -493,11 +504,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/onboard') ||
         currentUrl.contains('onboard?token=') ||
         search.contains('onboard?token=');
-    
+
     String? onboardingToken;
     // Try to get token from query parameters first
     onboardingToken = uri.queryParameters['token'];
-    
+
     // If not found in query params, try to extract from hash fragment or full URL
     if (onboardingToken == null || onboardingToken.isEmpty) {
       // Try extracting from hash fragment
@@ -515,7 +526,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
       }
     }
-    
+
     if (isOnboarding && onboardingToken != null && onboardingToken.isNotEmpty) {
       print('✅ Detected client onboarding URL - showing ClientOnboardingPage');
       print('📍 Onboarding token: ${onboardingToken.substring(0, 10)}...');
@@ -525,7 +536,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
     // Check for client proposals URL (priority - must be before collaboration check)
     final isClientProposals = currentUrl.contains('/client/proposals') ||
         uri.path.contains('/client/proposals');
-    
+
     if (isClientProposals) {
       final token = uri.queryParameters['token'];
       if (token != null && token.isNotEmpty) {
@@ -556,15 +567,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
     // External URLs like DocuSign should not be processed by Flutter routing
     final currentOrigin = web.window.location.origin;
     if (uri.scheme == 'https' || uri.scheme == 'http') {
-      final urlOrigin = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+      final urlOrigin =
+          '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
       if (urlOrigin != currentOrigin && !currentUrl.contains(currentOrigin)) {
         // This is an external URL - let browser handle it, don't show Flutter UI
-        print('🔍 External URL detected: $urlOrigin (current origin: $currentOrigin)');
+        print(
+            '🔍 External URL detected: $urlOrigin (current origin: $currentOrigin)');
         // Return a minimal widget that won't interfere
         return const SizedBox.shrink();
       }
     }
-    
+
     // Always show landing page first when app starts
     // The landing page will handle navigation to login/dashboard based on auth status
     return const StartupPage();
@@ -608,7 +621,7 @@ class _HomeShellState extends State<HomeShell> {
 
     final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
     final roleService = context.read<RoleService>();
-    
+
     // Initialize role service
     roleService.initializeRoleFromUser(user).then((_) {
       // Navigate based on role
