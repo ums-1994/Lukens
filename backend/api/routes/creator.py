@@ -810,6 +810,105 @@ def get_proposals(username=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.post("/api/proposals/wizard")
+@bp.post("/proposals/wizard")
+@token_required
+def build_proposal_wizard(username=None):
+    try:
+        data = request.get_json() or {}
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
+            client_email = data.get('client_email') or ''
+
+            template_id = data.get('template_id') or data.get('templateId')
+            template_key_value = data.get('template_key') or data.get('templateKey')
+            selected_modules = data.get('selected_modules') or data.get('selectedModules') or []
+            module_contents = _normalize_module_contents(
+                data.get('module_contents') or data.get('moduleContents')
+            )
+
+            template_sections = []
+            if template_id:
+                cursor.execute(
+                    '''SELECT sections, template_key FROM proposal_templates WHERE id = %s''',
+                    (template_id,)
+                )
+                template_row = cursor.fetchone()
+                if template_row:
+                    tpl_sections = template_row[0]
+                    tpl_key = template_row[1]
+                    template_sections = tpl_sections if isinstance(tpl_sections, list) else _parse_sections(tpl_sections)
+                    if tpl_key and not template_key_value:
+                        template_key_value = tpl_key
+            elif template_key_value:
+                cursor.execute(
+                    '''SELECT sections FROM proposal_templates WHERE template_key = %s''',
+                    (template_key_value,)
+                )
+                template_row = cursor.fetchone()
+                if template_row:
+                    tpl_sections = template_row[0]
+                    template_sections = tpl_sections if isinstance(tpl_sections, list) else _parse_sections(tpl_sections)
+
+            sections_payload = _build_sections_payload(template_sections, selected_modules, module_contents)
+
+            basic_info_lines = []
+            if client_name:
+                basic_info_lines.append(f"Client: {client_name}")
+            opportunity_name = data.get('opportunity_name') or data.get('opportunityName')
+            if opportunity_name:
+                basic_info_lines.append(f"Opportunity: {opportunity_name}")
+            project_type = data.get('project_type') or data.get('projectType')
+            if project_type:
+                basic_info_lines.append(f"Project Type: {project_type}")
+            timeline_label = data.get('timeline') or data.get('timelineLabel')
+            if timeline_label:
+                basic_info_lines.append(f"Timeline: {timeline_label}")
+            estimated_value_input = data.get('estimated_value') or data.get('estimatedValue')
+            if estimated_value_input:
+                basic_info_lines.append(f"Estimated Value: {estimated_value_input}")
+            if basic_info_lines:
+                sections_payload.insert(0, {
+                    'key': 'basic_information',
+                    'title': 'Basic Information',
+                    'required': True,
+                    'content': '\n'.join(basic_info_lines),
+                })
+
+            budget_value = data.get('budget')
+            if not budget_value and estimated_value_input:
+                cleaned = re.sub(r'[^0-9.\-]', '', str(estimated_value_input))
+                try:
+                    budget_value = float(cleaned)
+                except ValueError:
+                    budget_value = None
+
+            timeline_days = data.get('timeline_days') or data.get('timelineDays')
+            if not timeline_days and timeline_label:
+                numbers = re.findall(r'\d+', str(timeline_label))
+                if numbers:
+                    try:
+                        timeline_days = int(numbers[0])
+                    except ValueError:
+                        timeline_days = None
+
+            response = {
+                'title': data.get('title', 'Untitled Document'),
+                'client_name': client_name,
+                'client_email': client_email,
+                'sections': sections_payload,
+                'budget': budget_value,
+                'timeline_days': timeline_days,
+                'template_key': template_key_value,
+            }
+            return response, 200
+    except Exception as e:
+        print(f"❌ Error building wizard proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @bp.post("/proposals")
 @token_required
 def create_proposal(username=None):
@@ -1272,7 +1371,41 @@ def send_to_client(username=None, proposal_id=None):
             
             if not sender:
                 return {'detail': 'User not found'}, 404
-            
+
+            # Compound risk gate: block sending to client if governance says cannot release
+            gov_cursor = conn.cursor()
+            gov_cursor.execute(
+                '''SELECT status, readiness_score, risk_score, can_release, issues, last_checked
+                   FROM proposal_governance WHERE proposal_id = %s''',
+                (proposal_id,),
+            )
+            gov_row = gov_cursor.fetchone()
+            governance = None
+            if gov_row:
+                governance = {
+                    'status': gov_row[0],
+                    'readiness_score': gov_row[1],
+                    'risk_score': gov_row[2],
+                    'can_release': gov_row[3],
+                    'issues': _parse_sections(gov_row[4]) if len(gov_row) > 4 else [],
+                    'last_checked': gov_row[5].isoformat() if len(gov_row) > 5 and gov_row[5] else None,
+                }
+            else:
+                payload_cursor = conn.cursor()
+                payload = _load_proposal_payload(payload_cursor, proposal_id)
+                if payload:
+                    governance = _basic_governance_check(payload)
+                    _persist_governance(conn, proposal_id, governance)
+                    _persist_readiness_checks(conn, proposal_id, governance)
+
+            if governance and not governance.get('can_release', False):
+                return {
+                    'detail': 'Compound risk gate blocked sending proposal to client',
+                    'risk_score': governance.get('risk_score'),
+                    'issues': governance.get('issues', []),
+                    'required_actions': governance.get('required_actions', []),
+                }, 400
+
             # Update status
             new_status = 'Sent to Client'
             cursor.execute(
@@ -2461,6 +2594,74 @@ def remove_collaborator(username=None, invitation_id=None):
             
     except Exception as e:
         print(f"❌ Error removing collaborator: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/api/dashboard/summary")
+@bp.get("/dashboard/summary")
+@token_required
+def get_creator_dashboard_summary(username=None):
+    """Get high-level proposal pipeline metrics for the creator (or all, if admin)."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Resolve user and role
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+
+            user_id = user['id']
+            is_admin = user['role'] == 'admin'
+
+            base_query = '''
+                SELECT 
+                    COUNT(*) AS total,
+                    COUNT(CASE WHEN status = 'draft' THEN 1 END) AS draft,
+                    COUNT(CASE WHEN status = 'In Review' THEN 1 END) AS in_review,
+                    COUNT(CASE WHEN status = 'Pending CEO Approval' THEN 1 END) AS pending_ceo,
+                    COUNT(CASE WHEN status = 'Sent to Client' THEN 1 END) AS sent_to_client,
+                    COUNT(CASE WHEN status = 'signed' THEN 1 END) AS signed,
+                    COUNT(CASE WHEN status = 'Archived' THEN 1 END) AS archived
+                FROM proposals
+            '''
+
+            if is_admin:
+                cursor.execute(base_query)
+            else:
+                cursor.execute(base_query + ' WHERE owner_id = %s', (user_id,))
+
+            row = cursor.fetchone() or {}
+
+            # Optional: proposals created in last 30 days
+            if is_admin:
+                cursor.execute(
+                    '''SELECT COUNT(*) AS recent FROM proposals WHERE created_at >= NOW() - INTERVAL '30 days' ''')
+            else:
+                cursor.execute(
+                    '''SELECT COUNT(*) AS recent FROM proposals 
+                       WHERE owner_id = %s AND created_at >= NOW() - INTERVAL '30 days' ''',
+                    (user_id,),
+                )
+            recent_row = cursor.fetchone() or {}
+
+            return {
+                'total': row.get('total', 0),
+                'by_status': {
+                    'draft': row.get('draft', 0),
+                    'in_review': row.get('in_review', 0),
+                    'pending_ceo_approval': row.get('pending_ceo', 0),
+                    'sent_to_client': row.get('sent_to_client', 0),
+                    'signed': row.get('signed', 0),
+                    'archived': row.get('archived', 0),
+                },
+                'last_30_days': recent_row.get('recent', 0),
+                'scope': 'all' if is_admin else 'mine',
+            }, 200
+    except Exception as e:
+        print(f"❌ Error getting creator dashboard summary: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

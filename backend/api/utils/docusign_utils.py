@@ -109,10 +109,48 @@ def get_docusign_jwt_token():
         raise
 
 
+def get_docusign_account_id(access_token: str) -> str:
+    """Resolve the DocuSign account ID to use for envelope calls.
 
+    Preference order:
+    1. Valid DOCUSIGN_ACCOUNT_ID env var (GUID-like string)
+    2. Default account from DocuSign UserInfo API using the provided access token.
+    """
+    if not DOCUSIGN_AVAILABLE:
+        raise Exception("DocuSign SDK not installed. Install with: pip install docusign-esign")
 
+    # First try environment variable
+    env_account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+    if env_account_id and len(env_account_id) >= 30 and '-' in env_account_id:
+        return env_account_id
 
+    auth_server = os.getenv('DOCUSIGN_AUTH_SERVER', 'account-d.docusign.com')
 
+    try:
+        api_client = ApiClient()
+        api_client.set_base_path(f"https://{auth_server}")
 
+        # UserInfo endpoint will give us a list of accounts for this token
+        user_info = api_client.get_user_info(access_token)
+        if not user_info or not getattr(user_info, 'accounts', None):
+            raise Exception("User info did not contain any accounts")
 
+        default_account = None
+        for acct in user_info.accounts:
+            if getattr(acct, 'is_default', False):
+                default_account = acct
+                break
 
+        # Fallback: if no default is flagged, use the first account
+        if default_account is None:
+            default_account = user_info.accounts[0]
+
+        account_id = getattr(default_account, 'account_id', None) or getattr(default_account, 'accountId', None)
+        if not account_id:
+            raise Exception("Could not determine DocuSign account ID from user info")
+
+        return account_id
+    except Exception as e:
+        print(f" Error resolving DocuSign account ID: {e}")
+        traceback.print_exc()
+        raise
