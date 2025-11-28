@@ -31,7 +31,7 @@ const RESOURCES = {"assets/AssetManifest.bin": "480604d69d2fcda3a1efb3cee9b864e7
 "assets/assets/images/web-development-scope-document.jpg": "83a6b925f86440c7c28fde9cbb857a7b",
 "assets/assets/images/YouTube%2520Social_White%2520Badge_Blue.png": "1b6b6ac11f8946fe26c57c8558ddc9f9",
 "assets/FontManifest.json": "7b2a36307916a9721811788013e65289",
-"assets/fonts/MaterialIcons-Regular.otf": "016a98a4512a2d95c46a8db2a486968b",
+"assets/fonts/MaterialIcons-Regular.otf": "39950bf5ac619c3f3a3dd2fbcecb5be4",
 "assets/NOTICES": "2f58904b2babda83aa0d5a5b96e61aa9",
 "assets/shaders/ink_sparkle.frag": "ecc85a2e95f5e9f53123dcaf8cb9b6ce",
 "canvaskit/canvaskit.js": "140ccb7d34d0a55065fbd422b843add6",
@@ -48,10 +48,10 @@ const RESOURCES = {"assets/AssetManifest.bin": "480604d69d2fcda3a1efb3cee9b864e7
 "canvaskit/skwasm_heavy.wasm": "8034ad26ba2485dab2fd49bdd786837b",
 "firebase-config.js": "1da3e82d20ef2b5441d3bd37f62abb3b",
 "flutter.js": "888483df48293866f9f41d3d9274a779",
-"flutter_bootstrap.js": "db8b76fc13010c40d72e6bb06922028f",
+"flutter_bootstrap.js": "760f9d182c663a9bead542db68e7e73a",
 "index.html": "a5a2db2f604be529a60959904b8e40b7",
 "/": "a5a2db2f604be529a60959904b8e40b7",
-"main.dart.js": "13dd8f3ce9ae673bc01e48817529a44a",
+"main.dart.js": "5116a56856e1c37bc1c1836ad63de1d4",
 "verify.html": "2b7fb7e0b3d3fe135889a0aa6f428c80",
 "version.json": "355ce9d696d8875d7e988c91c1915ca9"};
 // The application shell files that are downloaded before a service worker can
