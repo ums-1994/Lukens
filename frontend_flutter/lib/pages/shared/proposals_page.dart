@@ -1174,13 +1174,21 @@ class ProposalItem extends StatelessWidget {
                     final token = AuthService.token;
                     if (token != null && token.isNotEmpty) {
                       final idVal = proposal['id'];
-                      final intId = idVal is int
-                          ? idVal
-                          : int.tryParse(idVal.toString()) ?? 0;
-                      if (intId != 0) {
-                        await ApiService.deleteProposal(
-                            token: token, id: intId);
-                        if (onRefresh != null) onRefresh!();
+                      if (idVal != null) {
+                        final success = await ApiService.deleteProposal(
+                          token: token,
+                          id: idVal,
+                        );
+                        if (success) {
+                          if (onRefresh != null) onRefresh!();
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to delete proposal'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
                       }
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(

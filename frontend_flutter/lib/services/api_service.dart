@@ -179,11 +179,11 @@ class ApiService {
 
   static Future<bool> deleteProposal({
     required String token,
-    required int id,
+    required dynamic id, // Accept int or UUID
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/proposals/$id'),
+        Uri.parse('$baseUrl/proposals/${id.toString()}'),
         headers: _getHeaders(token),
       );
 
