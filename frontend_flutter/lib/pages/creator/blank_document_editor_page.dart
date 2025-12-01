@@ -8187,223 +8187,287 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 width: 600,
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF9C27B0).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.auto_awesome,
-                              color: Color(0xFF9C27B0),
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Text(
-                            'AI Assistant',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
-                            ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Current section indicator
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE3F2FD),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF2196F3)),
-                        ),
-                        child: Row(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header
+                        Row(
                           children: [
-                            const Icon(Icons.description,
-                                color: Color(0xFF2196F3), size: 20),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF9C27B0).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.auto_awesome,
+                                color: Color(0xFF9C27B0),
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              'AI Assistant',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Current section indicator
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE3F2FD),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF2196F3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.description,
+                                  color: Color(0xFF2196F3), size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Writing to: Page ${_selectedSectionIndex + 1} - ${_sections[_selectedSectionIndex].titleController.text.isEmpty ? "Untitled Section" : _sections[_selectedSectionIndex].titleController.text}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF2196F3),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Action selector
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setDialogState(() {
+                                    resetGeneratedState();
+                                    selectedAction = 'generate';
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: selectedAction == 'generate'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: selectedAction == 'generate'
+                                          ? const Color(0xFF9C27B0)
+                                          : Colors.grey[300]!,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.create,
+                                        size: 22,
+                                        color: selectedAction == 'generate'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Section',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: selectedAction == 'generate'
+                                              ? Colors.white
+                                              : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
-                                'Writing to: Page ${_selectedSectionIndex + 1} - ${_sections[_selectedSectionIndex].titleController.text.isEmpty ? "Untitled Section" : _sections[_selectedSectionIndex].titleController.text}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFF2196F3),
+                              child: InkWell(
+                                onTap: () {
+                                  setDialogState(() {
+                                    resetGeneratedState();
+                                    selectedAction = 'full_proposal';
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: selectedAction == 'full_proposal'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: selectedAction == 'full_proposal'
+                                          ? const Color(0xFF9C27B0)
+                                          : Colors.grey[300]!,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.description,
+                                        size: 22,
+                                        color: selectedAction == 'full_proposal'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Full Proposal',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color:
+                                              selectedAction == 'full_proposal'
+                                                  ? Colors.white
+                                                  : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setDialogState(() {
+                                    resetGeneratedState();
+                                    selectedAction = 'improve';
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: selectedAction == 'improve'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: selectedAction == 'improve'
+                                          ? const Color(0xFF9C27B0)
+                                          : Colors.grey[300]!,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.auto_fix_high,
+                                        size: 22,
+                                        color: selectedAction == 'improve'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Improve',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: selectedAction == 'improve'
+                                              ? Colors.white
+                                              : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 16),
 
-                      // Action selector
-                      Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setDialogState(() {
-                                  resetGeneratedState();
-                                  selectedAction = 'generate';
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: selectedAction == 'generate'
-                                      ? const Color(0xFF9C27B0)
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: selectedAction == 'generate'
-                                        ? const Color(0xFF9C27B0)
-                                        : Colors.grey[300]!,
-                                  ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.create,
-                                      size: 22,
-                                      color: selectedAction == 'generate'
-                                          ? Colors.white
-                                          : Colors.grey[700],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Section',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: selectedAction == 'generate'
-                                            ? Colors.white
-                                            : Colors.grey[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                        const SizedBox(height: 20),
+
+                        // Section type selector (only for single section generation)
+                        if (selectedAction == 'generate') ...[
+                          Text(
+                            'Section Type',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setDialogState(() {
-                                  resetGeneratedState();
-                                  selectedAction = 'full_proposal';
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: selectedAction == 'full_proposal'
-                                      ? const Color(0xFF9C27B0)
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: selectedAction == 'full_proposal'
-                                        ? const Color(0xFF9C27B0)
-                                        : Colors.grey[300]!,
-                                  ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.description,
-                                      size: 22,
-                                      color: selectedAction == 'full_proposal'
-                                          ? Colors.white
-                                          : Colors.grey[700],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Full Proposal',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: selectedAction == 'full_proposal'
-                                            ? Colors.white
-                                            : Colors.grey[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedSectionType,
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setDialogState(() {
-                                  resetGeneratedState();
-                                  selectedAction = 'improve';
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: selectedAction == 'improve'
-                                      ? const Color(0xFF9C27B0)
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: selectedAction == 'improve'
-                                        ? const Color(0xFF9C27B0)
-                                        : Colors.grey[300]!,
-                                  ),
+                            items: [
+                              'general',
+                              'executive_summary',
+                              'introduction',
+                              'scope_deliverables',
+                              'solution_overview',
+                              'delivery_approach',
+                              'timeline',
+                              'budget',
+                              'team',
+                              'assumptions',
+                              'risks',
+                              'company_profile',
+                              'conclusion',
+                            ].map((type) {
+                              return DropdownMenuItem(
+                                value: type,
+                                child: Text(
+                                  type
+                                      .split('_')
+                                      .map((word) =>
+                                          word[0].toUpperCase() +
+                                          word.substring(1))
+                                      .join(' '),
+                                  style: const TextStyle(fontSize: 13),
                                 ),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.auto_fix_high,
-                                      size: 22,
-                                      color: selectedAction == 'improve'
-                                          ? Colors.white
-                                          : Colors.grey[700],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Improve',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: selectedAction == 'improve'
-                                            ? Colors.white
-                                            : Colors.grey[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                selectedSectionType = value!;
+                              });
+                            },
                           ),
+                          const SizedBox(height: 16),
                         ],
-                      ),
 
-                      const SizedBox(height: 20),
-
-                      // Section type selector (only for single section generation)
-                      if (selectedAction == 'generate') ...[
+                        // Prompt input
                         Text(
-                          'Section Type',
+                          selectedAction == 'generate'
+                              ? 'What would you like to write?'
+                              : selectedAction == 'full_proposal'
+                                  ? 'Describe your proposal requirements'
+                                  : 'Current section content will be improved',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
@@ -8411,544 +8475,493 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          initialValue: selectedSectionType,
-                          decoration: InputDecoration(
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                          ),
-                          items: [
-                            'general',
-                            'executive_summary',
-                            'introduction',
-                            'scope_deliverables',
-                            'solution_overview',
-                            'delivery_approach',
-                            'timeline',
-                            'budget',
-                            'team',
-                            'assumptions',
-                            'risks',
-                            'company_profile',
-                            'conclusion',
-                          ].map((type) {
-                            return DropdownMenuItem(
-                              value: type,
-                              child: Text(
-                                type
-                                    .split('_')
-                                    .map((word) =>
-                                        word[0].toUpperCase() +
-                                        word.substring(1))
-                                    .join(' '),
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedSectionType = value!;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Prompt input
-                      Text(
-                        selectedAction == 'generate'
-                            ? 'What would you like to write?'
-                            : selectedAction == 'full_proposal'
-                                ? 'Describe your proposal requirements'
-                                : 'Current section content will be improved',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: promptController,
-                        maxLines: selectedAction == 'full_proposal' ? 6 : 4,
-                        decoration: InputDecoration(
-                          hintText: selectedAction == 'generate'
-                              ? 'E.g., "Write an executive summary about implementing a new CRM system for a retail company"'
-                              : selectedAction == 'full_proposal'
-                                  ? 'E.g., "Create a proposal for implementing a cloud-based CRM system for a retail company with 50 employees, including data migration, training, and 6-month support"'
-                                  : 'Optional: Add instructions for improvement',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          contentPadding: const EdgeInsets.all(12),
-                        ),
-                      ),
-
-                      if ((generationMode == 'section' ||
-                              generationMode == 'improve') &&
-                          generatedController != null) ...[
-                        const SizedBox(height: 20),
-                        Text(
-                          generationMode == 'improve'
-                              ? 'Review AI Improvements'
-                              : 'AI Draft Preview',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         TextField(
-                          controller: generatedController,
-                          maxLines: 12,
+                          controller: promptController,
+                          maxLines: selectedAction == 'full_proposal' ? 6 : 4,
                           decoration: InputDecoration(
+                            hintText: selectedAction == 'generate'
+                                ? 'E.g., "Write an executive summary about implementing a new CRM system for a retail company"'
+                                : selectedAction == 'full_proposal'
+                                    ? 'E.g., "Create a proposal for implementing a cloud-based CRM system for a retail company with 50 employees, including data migration, training, and 6-month support"'
+                                    : 'Optional: Add instructions for improvement',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            hintText: generationMode == 'improve'
-                                ? 'Review the improved draft and make any changes before applying.'
-                                : 'Review the AI draft and make changes before inserting.',
+                            contentPadding: const EdgeInsets.all(12),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              final edited = generatedController!.text.trim();
-                              if (edited.isEmpty) {
-                                ScaffoldMessenger.of(rootContext).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                        'Draft cannot be empty. Please provide some content.'),
-                                    backgroundColor: Colors.orange,
-                                  ),
+
+                        if ((generationMode == 'section' ||
+                                generationMode == 'improve') &&
+                            generatedController != null) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            generationMode == 'improve'
+                                ? 'Review AI Improvements'
+                                : 'AI Draft Preview',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: generatedController,
+                            maxLines: 6,
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              hintText: generationMode == 'improve'
+                                  ? 'Review the improved draft and make any changes before applying.'
+                                  : 'Review the AI draft and make changes before inserting.',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                final edited = generatedController!.text.trim();
+                                if (edited.isEmpty) {
+                                  ScaffoldMessenger.of(rootContext)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Draft cannot be empty. Please provide some content.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                resetGeneratedState();
+                                Navigator.of(rootContext).pop();
+                                applyGeneratedResult(
+                                  generationMode == 'improve'
+                                      ? 'improve'
+                                      : 'section',
+                                  content: edited,
                                 );
-                                return;
-                              }
-                              resetGeneratedState();
-                              Navigator.of(rootContext).pop();
-                              applyGeneratedResult(
+                              },
+                              icon: Icon(
                                 generationMode == 'improve'
-                                    ? 'improve'
-                                    : 'section',
-                                content: edited,
-                              );
-                            },
-                            icon: Icon(
-                              generationMode == 'improve'
-                                  ? Icons.auto_fix_high
-                                  : Icons.download_done,
-                              size: 18,
-                            ),
-                            label: Text(
-                              generationMode == 'improve'
-                                  ? 'Apply Improvements'
-                                  : 'Insert Draft',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF27AE60),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      if (generationMode == 'full' &&
-                          generatedSectionControllers != null &&
-                          generatedSectionControllers!.isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        const Text(
-                          'AI Proposal Draft',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 280),
-                          child: ListView(
-                            shrinkWrap: true,
-                            children: generatedSectionControllers!.entries
-                                .map((entry) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      entry.key,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1A3A52),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    TextField(
-                                      controller: entry.value,
-                                      maxLines: 6,
-                                      decoration: InputDecoration(
-                                        border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        hintText:
-                                            'Adjust the draft for this section.',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              if (generatedSectionControllers == null ||
-                                  generatedSectionControllers!.isEmpty) {
-                                ScaffoldMessenger.of(rootContext).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                        'No sections available to insert.'),
-                                    backgroundColor: Colors.orange,
-                                  ),
-                                );
-                                return;
-                              }
-                              final editedSections = <String, String>{};
-                              generatedSectionControllers!
-                                  .forEach((title, controller) {
-                                editedSections[title] = controller.text.trim();
-                              });
-                              resetGeneratedState();
-                              Navigator.of(rootContext).pop();
-                              applyGeneratedResult('full',
-                                  sections: editedSections);
-                            },
-                            icon: const Icon(Icons.download_done, size: 18),
-                            label: const Text('Insert Proposal Draft'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF27AE60),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 24),
-
-                      // Action buttons
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: isGenerating
-                                ? null
-                                : () {
-                                    resetGeneratedState();
-                                    Navigator.pop(context);
-                                  },
-                            child: const Text('Cancel'),
-                          ),
-                          const SizedBox(width: 12),
-                          ElevatedButton.icon(
-                            onPressed: isGenerating
-                                ? null
-                                : () async {
-                                    if ((selectedAction == 'generate' ||
-                                            selectedAction ==
-                                                'full_proposal') &&
-                                        promptController.text.trim().isEmpty) {
-                                      ScaffoldMessenger.of(rootContext)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Please describe what you want to write'),
-                                          backgroundColor: Colors.orange,
-                                        ),
-                                      );
-                                      return;
-                                    }
-
-                                    setDialogState(() {
-                                      isGenerating = true;
-                                      resetGeneratedState();
-                                    });
-
-                                    try {
-                                      final token = await _getAuthToken();
-                                      if (token == null) {
-                                        throw Exception(
-                                            'Not authenticated. Please log in.');
-                                      }
-
-                                      if (selectedAction == 'generate') {
-                                        final result =
-                                            await ApiService.generateAIContent(
-                                          token: token,
-                                          prompt: promptController.text,
-                                          context: {
-                                            'document_title':
-                                                _titleController.text,
-                                            'current_section':
-                                                _selectedSectionIndex,
-                                          },
-                                          sectionType: selectedSectionType,
-                                        );
-
-                                        if (result != null &&
-                                            result['content'] != null) {
-                                          final generatedText =
-                                              (result['content'] as String)
-                                                  .trim();
-                                          if (generatedText.isEmpty) {
-                                            throw Exception(
-                                                'AI returned an empty draft.');
-                                          }
-                                          setDialogState(() {
-                                            generatedController?.dispose();
-                                            generatedController =
-                                                TextEditingController(
-                                                    text: generatedText);
-                                            if (generatedSectionControllers !=
-                                                null) {
-                                              for (final controller
-                                                  in generatedSectionControllers!
-                                                      .values) {
-                                                controller.dispose();
-                                              }
-                                            }
-                                            generatedSectionControllers = null;
-                                            generationMode = 'section';
-                                          });
-                                          ScaffoldMessenger.of(rootContext)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                  'Draft ready. Review and edit below before inserting.'),
-                                              backgroundColor:
-                                                  Color(0xFF00BCD4),
-                                            ),
-                                          );
-                                        } else {
-                                          throw Exception(
-                                              'Failed to generate content.');
-                                        }
-                                      } else if (selectedAction ==
-                                          'full_proposal') {
-                                        final result = await ApiService
-                                            .generateFullProposal(
-                                          token: token,
-                                          prompt: promptController.text,
-                                          context: {
-                                            'document_title':
-                                                _titleController.text,
-                                          },
-                                        );
-
-                                        if (result != null &&
-                                            result['sections'] is Map) {
-                                          final Map<String, dynamic>
-                                              generatedSections =
-                                              Map<String, dynamic>.from(
-                                                  result['sections']
-                                                      as Map<dynamic, dynamic>);
-                                          if (generatedSections.isEmpty) {
-                                            throw Exception(
-                                                'AI did not return any sections.');
-                                          }
-                                          setDialogState(() {
-                                            generatedController?.dispose();
-                                            generatedController = null;
-                                            if (generatedSectionControllers !=
-                                                null) {
-                                              for (final controller
-                                                  in generatedSectionControllers!
-                                                      .values) {
-                                                controller.dispose();
-                                              }
-                                            }
-                                            generatedSectionControllers = {};
-                                            generatedSections
-                                                .forEach((title, content) {
-                                              generatedSectionControllers![
-                                                      title] =
-                                                  TextEditingController(
-                                                      text: (content ?? '')
-                                                          .toString()
-                                                          .trim());
-                                            });
-                                            generationMode = 'full';
-                                          });
-                                          ScaffoldMessenger.of(rootContext)
-                                              .showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                  'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
-                                              backgroundColor:
-                                                  const Color(0xFF00BCD4),
-                                            ),
-                                          );
-                                        } else {
-                                          throw Exception(
-                                              'Failed to generate full proposal.');
-                                        }
-                                      } else {
-                                        if (_selectedSectionIndex >=
-                                            _sections.length) {
-                                          throw Exception(
-                                              'No section selected to improve.');
-                                        }
-
-                                        final currentContent =
-                                            _sections[_selectedSectionIndex]
-                                                .controller
-                                                .text;
-                                        if (currentContent.trim().isEmpty) {
-                                          throw Exception(
-                                              'Current section is empty. Nothing to improve.');
-                                        }
-
-                                        final result =
-                                            await ApiService.improveContent(
-                                          token: token,
-                                          content: currentContent,
-                                          sectionType: selectedSectionType,
-                                        );
-
-                                        if (result != null &&
-                                            result['improved_version'] !=
-                                                null) {
-                                          final improvedText =
-                                              (result['improved_version']
-                                                      as String)
-                                                  .trim();
-                                          if (improvedText.isEmpty) {
-                                            throw Exception(
-                                                'AI returned an empty improvement.');
-                                          }
-
-                                          setDialogState(() {
-                                            generatedController?.dispose();
-                                            generatedController =
-                                                TextEditingController(
-                                                    text: improvedText);
-                                            if (generatedSectionControllers !=
-                                                null) {
-                                              for (final controller
-                                                  in generatedSectionControllers!
-                                                      .values) {
-                                                controller.dispose();
-                                              }
-                                            }
-                                            generatedSectionControllers = null;
-                                            generationMode = 'improve';
-                                          });
-
-                                          if (result['summary'] != null) {
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    const Text(
-                                                      'Improvements ready. Review below.',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                    ),
-                                                    Text(result['summary']
-                                                        as String),
-                                                  ],
-                                                ),
-                                                backgroundColor:
-                                                    const Color(0xFF00BCD4),
-                                                duration:
-                                                    const Duration(seconds: 4),
-                                              ),
-                                            );
-                                          } else {
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                    'Improvements ready. Review and edit below before applying.'),
-                                                backgroundColor:
-                                                    Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          }
-                                        } else {
-                                          throw Exception(
-                                              'Failed to improve content.');
-                                        }
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(rootContext)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content:
-                                                Text('Error: ${e.toString()}'),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                      }
-                                    } finally {
-                                      if (mounted) {
-                                        setDialogState(() {
-                                          isGenerating = false;
-                                        });
-                                      }
-                                    }
-                                  },
-                            icon: isGenerating
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white),
-                                    ),
-                                  )
-                                : const Icon(Icons.auto_awesome, size: 18),
-                            label: Text(isGenerating
-                                ? 'Generating...'
-                                : (selectedAction == 'generate'
-                                    ? 'Generate'
-                                    : selectedAction == 'full_proposal'
-                                        ? 'Generate Proposal'
-                                        : 'Improve')),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF9C27B0),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
+                                    ? Icons.auto_fix_high
+                                    : Icons.download_done,
+                                size: 18,
+                              ),
+                              label: Text(
+                                generationMode == 'improve'
+                                    ? 'Apply Improvements'
+                                    : 'Insert Draft',
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF27AE60),
+                                foregroundColor: Colors.white,
                               ),
                             ),
                           ),
                         ],
-                      ),
-                    ],
+
+                        if (generationMode == 'full' &&
+                            generatedSectionControllers != null &&
+                            generatedSectionControllers!.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          const Text(
+                            'AI Proposal Draft',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 280),
+                            child: ListView(
+                              shrinkWrap: true,
+                              children: generatedSectionControllers!.entries
+                                  .map((entry) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry.key,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF1A3A52),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      TextField(
+                                        controller: entry.value,
+                                        maxLines: 6,
+                                        decoration: InputDecoration(
+                                          border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          hintText:
+                                              'Adjust the draft for this section.',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                if (generatedSectionControllers == null ||
+                                    generatedSectionControllers!.isEmpty) {
+                                  ScaffoldMessenger.of(rootContext)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'No sections available to insert.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final editedSections = <String, String>{};
+                                generatedSectionControllers!
+                                    .forEach((title, controller) {
+                                  editedSections[title] =
+                                      controller.text.trim();
+                                });
+                                resetGeneratedState();
+                                Navigator.of(rootContext).pop();
+                                applyGeneratedResult('full',
+                                    sections: editedSections);
+                              },
+                              icon: const Icon(Icons.download_done, size: 18),
+                              label: const Text('Insert Proposal Draft'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF27AE60),
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 24),
+
+                        // Action buttons
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: isGenerating
+                                  ? null
+                                  : () {
+                                      resetGeneratedState();
+                                      Navigator.pop(context);
+                                    },
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton.icon(
+                              onPressed: isGenerating
+                                  ? null
+                                  : () async {
+                                      if ((selectedAction == 'generate' ||
+                                              selectedAction ==
+                                                  'full_proposal') &&
+                                          promptController.text
+                                              .trim()
+                                              .isEmpty) {
+                                        ScaffoldMessenger.of(rootContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                                'Please describe what you want to write'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      setDialogState(() {
+                                        isGenerating = true;
+                                        resetGeneratedState();
+                                      });
+
+                                      try {
+                                        final token = await _getAuthToken();
+                                        if (token == null) {
+                                          throw Exception(
+                                              'Not authenticated. Please log in.');
+                                        }
+
+                                        if (selectedAction == 'generate') {
+                                          final result = await ApiService
+                                              .generateAIContent(
+                                            token: token,
+                                            prompt: promptController.text,
+                                            context: {
+                                              'document_title':
+                                                  _titleController.text,
+                                              'current_section':
+                                                  _selectedSectionIndex,
+                                            },
+                                            sectionType: selectedSectionType,
+                                          );
+
+                                          if (result != null &&
+                                              result['content'] != null) {
+                                            final generatedText =
+                                                (result['content'] as String)
+                                                    .trim();
+                                            if (generatedText.isEmpty) {
+                                              throw Exception(
+                                                  'AI returned an empty draft.');
+                                            }
+                                            setDialogState(() {
+                                              generatedController?.dispose();
+                                              generatedController =
+                                                  TextEditingController(
+                                                      text: generatedText);
+                                              if (generatedSectionControllers !=
+                                                  null) {
+                                                for (final controller
+                                                    in generatedSectionControllers!
+                                                        .values) {
+                                                  controller.dispose();
+                                                }
+                                              }
+                                              generatedSectionControllers =
+                                                  null;
+                                              generationMode = 'section';
+                                            });
+                                            ScaffoldMessenger.of(rootContext)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                    'Draft ready. Review and edit below before inserting.'),
+                                                backgroundColor:
+                                                    Color(0xFF00BCD4),
+                                              ),
+                                            );
+                                          } else {
+                                            throw Exception(
+                                                'Failed to generate content.');
+                                          }
+                                        } else if (selectedAction ==
+                                            'full_proposal') {
+                                          final result = await ApiService
+                                              .generateFullProposal(
+                                            token: token,
+                                            prompt: promptController.text,
+                                            context: {
+                                              'document_title':
+                                                  _titleController.text,
+                                            },
+                                          );
+
+                                          if (result != null &&
+                                              result['sections'] is Map) {
+                                            final Map<String, dynamic>
+                                                generatedSections =
+                                                Map<String, dynamic>.from(
+                                                    result['sections'] as Map<
+                                                        dynamic, dynamic>);
+                                            if (generatedSections.isEmpty) {
+                                              throw Exception(
+                                                  'AI did not return any sections.');
+                                            }
+                                            setDialogState(() {
+                                              generatedController?.dispose();
+                                              generatedController = null;
+                                              if (generatedSectionControllers !=
+                                                  null) {
+                                                for (final controller
+                                                    in generatedSectionControllers!
+                                                        .values) {
+                                                  controller.dispose();
+                                                }
+                                              }
+                                              generatedSectionControllers = {};
+                                              generatedSections
+                                                  .forEach((title, content) {
+                                                generatedSectionControllers![
+                                                        title] =
+                                                    TextEditingController(
+                                                        text: (content ?? '')
+                                                            .toString()
+                                                            .trim());
+                                              });
+                                              generationMode = 'full';
+                                            });
+                                            ScaffoldMessenger.of(rootContext)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                    'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
+                                                backgroundColor:
+                                                    const Color(0xFF00BCD4),
+                                              ),
+                                            );
+                                          } else {
+                                            throw Exception(
+                                                'Failed to generate full proposal.');
+                                          }
+                                        } else {
+                                          if (_selectedSectionIndex >=
+                                              _sections.length) {
+                                            throw Exception(
+                                                'No section selected to improve.');
+                                          }
+
+                                          final currentContent =
+                                              _sections[_selectedSectionIndex]
+                                                  .controller
+                                                  .text;
+                                          if (currentContent.trim().isEmpty) {
+                                            throw Exception(
+                                                'Current section is empty. Nothing to improve.');
+                                          }
+
+                                          final result =
+                                              await ApiService.improveContent(
+                                            token: token,
+                                            content: currentContent,
+                                            sectionType: selectedSectionType,
+                                          );
+
+                                          if (result != null &&
+                                              result['improved_version'] !=
+                                                  null) {
+                                            final improvedText =
+                                                (result['improved_version']
+                                                        as String)
+                                                    .trim();
+                                            if (improvedText.isEmpty) {
+                                              throw Exception(
+                                                  'AI returned an empty improvement.');
+                                            }
+
+                                            setDialogState(() {
+                                              generatedController?.dispose();
+                                              generatedController =
+                                                  TextEditingController(
+                                                      text: improvedText);
+                                              if (generatedSectionControllers !=
+                                                  null) {
+                                                for (final controller
+                                                    in generatedSectionControllers!
+                                                        .values) {
+                                                  controller.dispose();
+                                                }
+                                              }
+                                              generatedSectionControllers =
+                                                  null;
+                                              generationMode = 'improve';
+                                            });
+
+                                            if (result['summary'] != null) {
+                                              ScaffoldMessenger.of(rootContext)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      const Text(
+                                                        'Improvements ready. Review below.',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                      Text(result['summary']
+                                                          as String),
+                                                    ],
+                                                  ),
+                                                  backgroundColor:
+                                                      const Color(0xFF00BCD4),
+                                                  duration: const Duration(
+                                                      seconds: 4),
+                                                ),
+                                              );
+                                            } else {
+                                              ScaffoldMessenger.of(rootContext)
+                                                  .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                      'Improvements ready. Review and edit below before applying.'),
+                                                  backgroundColor:
+                                                      Color(0xFF00BCD4),
+                                                ),
+                                              );
+                                            }
+                                          } else {
+                                            throw Exception(
+                                                'Failed to improve content.');
+                                          }
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(rootContext)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                  'Error: ${e.toString()}'),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      } finally {
+                                        if (mounted) {
+                                          setDialogState(() {
+                                            isGenerating = false;
+                                          });
+                                        }
+                                      }
+                                    },
+                              icon: isGenerating
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
+                                      ),
+                                    )
+                                  : const Icon(Icons.auto_awesome, size: 18),
+                              label: Text(isGenerating
+                                  ? 'Generating...'
+                                  : (selectedAction == 'generate'
+                                      ? 'Generate'
+                                      : selectedAction == 'full_proposal'
+                                          ? 'Generate Proposal'
+                                          : 'Improve')),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF9C27B0),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
