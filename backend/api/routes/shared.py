@@ -11,7 +11,13 @@ from datetime import datetime
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
-from api.utils.helpers import log_activity, generate_proposal_pdf, create_docusign_envelope, notify_proposal_collaborators
+from api.utils.helpers import (
+    log_activity,
+    generate_proposal_pdf,
+    create_docusign_envelope,
+    notify_proposal_collaborators,
+    get_docusign_envelope_status,
+)
 
 bp = Blueprint('shared', __name__)
 
@@ -506,6 +512,151 @@ def get_proposal_signatures(username=None, proposal_id=None):
             
     except Exception as e:
         print(f"❌ Error getting signatures: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/api/proposals/<proposal_id>/docusign/refresh-status")
+@token_required
+def refresh_docusign_status(username=None, proposal_id=None):
+    """Refresh DocuSign envelope status for a proposal and update local records."""
+    try:
+        if not DOCUSIGN_AVAILABLE:
+            return {'detail': 'DocuSign integration not available'}, 503
+
+        # Load current user, proposal, and latest signature record
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+
+            cursor.execute("""
+                SELECT id, owner_id, status
+                FROM proposals
+                WHERE id = %s OR id::text = %s
+            """, (proposal_id, str(proposal_id)))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            if proposal['owner_id'] != current_user['id']:
+                return {'detail': 'Access denied'}, 403
+
+            cursor.execute("""
+                SELECT id, envelope_id, status, signing_url, sent_at, signed_at, declined_at, decline_reason
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+            """, (proposal_id,))
+            signature = cursor.fetchone()
+
+        if not signature or not signature.get('envelope_id'):
+            return {'detail': 'No DocuSign envelope found for this proposal'}, 404
+
+        envelope_id = signature['envelope_id']
+        local_status = (signature.get('status') or '').lower()
+
+        # If already in a terminal state, nothing to update
+        if local_status in ['signed', 'declined', 'voided']:
+            return {
+                'envelope_id': envelope_id,
+                'envelope_status': local_status,
+                'signature_status': signature.get('status'),
+                'proposal_status': proposal['status'],
+            }, 200
+
+        # Ask DocuSign for the latest envelope status
+        status_info = get_docusign_envelope_status(envelope_id)
+        envelope_status = (status_info.get('status') or '').lower()
+
+        if not envelope_status:
+            return {
+                'envelope_id': envelope_id,
+                'envelope_status': None,
+                'signature_status': signature.get('status'),
+                'proposal_status': proposal['status'],
+            }, 200
+
+        new_sig_status = None
+        new_proposal_status = None
+        set_signed_at = False
+        set_declined_at = False
+
+        if envelope_status == 'completed':
+            new_sig_status = 'signed'
+            new_proposal_status = 'Signed'
+            set_signed_at = True
+        elif envelope_status == 'declined':
+            new_sig_status = 'declined'
+            set_declined_at = True
+        elif envelope_status == 'voided':
+            new_sig_status = 'voided'
+
+        # If nothing changed, return current info
+        if not new_sig_status or new_sig_status == signature.get('status'):
+            return {
+                'envelope_id': envelope_id,
+                'envelope_status': envelope_status,
+                'signature_status': signature.get('status'),
+                'proposal_status': proposal['status'],
+            }, 200
+
+        # Persist updates
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            if set_signed_at:
+                cursor.execute("""
+                    UPDATE proposal_signatures
+                    SET status = %s,
+                        signed_at = NOW()
+                    WHERE id = %s
+                """, (new_sig_status, signature['id']))
+            elif set_declined_at:
+                cursor.execute("""
+                    UPDATE proposal_signatures
+                    SET status = %s,
+                        declined_at = NOW()
+                    WHERE id = %s
+                """, (new_sig_status, signature['id']))
+            else:
+                cursor.execute("""
+                    UPDATE proposal_signatures
+                    SET status = %s
+                    WHERE id = %s
+                """, (new_sig_status, signature['id']))
+
+            if new_proposal_status:
+                cursor.execute("""
+                    UPDATE proposals
+                    SET status = %s,
+                        updated_at = NOW()
+                    WHERE id = %s OR id::text = %s
+                """, (new_proposal_status, proposal_id, str(proposal_id)))
+
+            conn.commit()
+
+            if envelope_status == 'completed':
+                log_activity(
+                    proposal_id,
+                    current_user['id'],
+                    'signature_completed',
+                    f"Proposal signed via DocuSign (envelope: {envelope_id})",
+                    {'envelope_id': envelope_id},
+                )
+
+        return {
+            'envelope_id': envelope_id,
+            'envelope_status': envelope_status,
+            'signature_status': new_sig_status,
+            'proposal_status': new_proposal_status or proposal['status'],
+        }, 200
+
+    except Exception as e:
+        print(f"❌ Error refreshing DocuSign status: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

@@ -511,3 +511,56 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         print(f"❌ Error creating DocuSign envelope: {e}")
         traceback.print_exc()
         raise
+
+
+def get_docusign_envelope_status(envelope_id):
+    """Fetch the current status of a DocuSign envelope.
+
+    Returns a dict with at least 'status' and 'envelope_id'.
+    """
+    if not DOCUSIGN_AVAILABLE:
+        raise Exception("DocuSign SDK not installed")
+
+    try:
+        from api.utils.docusign_utils import (
+            get_docusign_jwt_token,
+            get_docusign_account_id,
+        )
+        from docusign_esign.client.api_exception import ApiException
+
+        access_token = get_docusign_jwt_token()
+        account_id = get_docusign_account_id(access_token)
+
+        base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv(
+            'DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi'
+        )
+
+        api_client = ApiClient()
+        api_client.host = base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        envelopes_api = EnvelopesApi(api_client)
+        envelope = envelopes_api.get_envelope(account_id, envelope_id)
+
+        status = getattr(envelope, 'status', None)
+        completed_dt = getattr(envelope, 'completed_date_time', None)
+        declined_dt = getattr(envelope, 'declined_date_time', None)
+        voided_dt = getattr(envelope, 'voided_date_time', None)
+        voided_reason = getattr(envelope, 'voided_reason', None)
+
+        return {
+            'envelope_id': getattr(envelope, 'envelope_id', None) or envelope_id,
+            'status': status,
+            'completed_date_time': completed_dt,
+            'declined_date_time': declined_dt,
+            'voided_date_time': voided_dt,
+            'voided_reason': voided_reason,
+        }
+
+    except ApiException as e:
+        print(f"❌ DocuSign API error while fetching envelope status: {e}")
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching DocuSign envelope status: {e}")
+        traceback.print_exc()
+        raise

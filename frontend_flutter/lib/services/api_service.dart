@@ -194,6 +194,29 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>?> refreshDocuSignStatus({
+    required String token,
+    required dynamic proposalId, // Accept int or UUID
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+            '$baseUrl/api/proposals/${proposalId.toString()}/docusign/refresh-status'),
+        headers: _getHeaders(token),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      print(
+          'Error refreshing DocuSign status: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error refreshing DocuSign status: $e');
+      return null;
+    }
+  }
+
   // SOWs
   static Future<List<dynamic>> getSows(String token) async {
     try {

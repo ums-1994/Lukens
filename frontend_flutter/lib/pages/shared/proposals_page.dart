@@ -98,6 +98,7 @@ class _ProposalsPageState extends State<ProposalsPage>
             print('Γ£à Loaded ${proposals.length} proposals');
           });
         }
+        await _refreshDocuSignStatusesIfNeeded();
       } else {
         print('ΓÜá∩╕Å No authentication token found');
         if (mounted) {
@@ -117,6 +118,41 @@ class _ProposalsPageState extends State<ProposalsPage>
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _refreshDocuSignStatusesIfNeeded() async {
+    if (!mounted) return;
+    if (_token == null || _token!.isEmpty) return;
+    if (proposals.isEmpty) return;
+
+    final toRefresh = proposals.where((p) {
+      final status = (p['status'] ?? '').toString().toLowerCase();
+      return status.contains('sent for signature');
+    }).toList();
+
+    if (toRefresh.isEmpty) return;
+
+    print('🔄 Refreshing DocuSign status for ${toRefresh.length} proposals...');
+
+    for (final p in toRefresh) {
+      final id = p['id'];
+      if (id == null) continue;
+      try {
+        final result = await ApiService.refreshDocuSignStatus(
+          token: _token!,
+          proposalId: id,
+        );
+        if (result != null && result['proposal_status'] != null) {
+          p['status'] = result['proposal_status'];
+        }
+      } catch (e) {
+        print('Error refreshing DocuSign status for proposal ${p['id']}: $e');
+      }
+    }
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
