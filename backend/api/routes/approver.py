@@ -34,7 +34,16 @@ def get_pending_approvals(username=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(
-                '''SELECT id, title, content, client_name, client_email, user_id, status, created_at, updated_at, budget
+                '''SELECT id,
+                          title,
+                          content,
+                          client_name,
+                          client_email,
+                          owner_id,
+                          status,
+                          created_at,
+                          updated_at,
+                          budget
                    FROM proposals 
                    WHERE status = 'Pending CEO Approval' 
                       OR status = 'In Review' 
@@ -51,7 +60,8 @@ def get_pending_approvals(username=None):
                     'client': row['client_name'] or row.get('client') or 'Unknown',
                     'client_name': row['client_name'],
                     'client_email': row['client_email'],
-                    'owner_id': row['user_id'],
+                    'owner_id': row.get('owner_id'),
+                    'user_id': row.get('owner_id'),
                     'status': row['status'],
                     'budget': float(row['budget']) if row['budget'] else None,
                     'created_at': row['created_at'].isoformat() if row['created_at'] else None,
@@ -59,6 +69,8 @@ def get_pending_approvals(username=None):
                 })
             return {'proposals': proposals}, 200
     except Exception as e:
+        print(f"[ERROR] Error fetching pending approvals: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.post("/api/proposals/<proposal_id>/approve")
@@ -176,8 +188,8 @@ def approve_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/proposals/<int:proposal_id>/reject")
-@bp.post("/proposals/<int:proposal_id>/reject")
+@bp.post("/api/proposals/<proposal_id>/reject")
+@bp.post("/proposals/<proposal_id>/reject")
 @token_required
 def reject_proposal(username=None, proposal_id=None):
     """Reject proposal and send back to draft"""
@@ -189,7 +201,10 @@ def reject_proposal(username=None, proposal_id=None):
             cursor = conn.cursor()
             
             # Get proposal
-            cursor.execute('SELECT id, title, user_id FROM proposals WHERE id = %s', (proposal_id,))
+            cursor.execute(
+                'SELECT id, title, owner_id FROM proposals WHERE id = %s OR id::text = %s',
+                (proposal_id, str(proposal_id))
+            )
             proposal = cursor.fetchone()
             
             if not proposal:
@@ -197,8 +212,9 @@ def reject_proposal(username=None, proposal_id=None):
             
             # Update status to Draft
             cursor.execute(
-                '''UPDATE proposals SET status = 'Draft', updated_at = NOW() WHERE id = %s''',
-                (proposal_id,)
+                '''UPDATE proposals SET status = 'Draft', updated_at = NOW() 
+                   WHERE id = %s OR id::text = %s''',
+                (proposal_id, str(proposal_id))
             )
             conn.commit()
             
