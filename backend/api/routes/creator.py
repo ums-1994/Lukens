@@ -2074,8 +2074,8 @@ def get_user_ai_stats(username=None):
         print(f"❌ Error fetching user AI stats: {e}")
         return {'detail': str(e)}, 500
 
-@bp.get("/api/proposals/<int:proposal_id>/readiness")
-@bp.get("/proposals/<int:proposal_id>/readiness")
+@bp.get("/api/proposals/<proposal_id>/readiness")
+@bp.get("/proposals/<proposal_id>/readiness")
 @token_required
 def get_proposal_readiness(username=None, proposal_id=None):
     """Get readiness status and checks for a proposal"""
