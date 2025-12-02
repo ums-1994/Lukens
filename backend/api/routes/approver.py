@@ -61,8 +61,8 @@ def get_pending_approvals(username=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@bp.post("/api/proposals/<int:proposal_id>/approve")
-@bp.post("/proposals/<int:proposal_id>/approve")
+@bp.post("/api/proposals/<proposal_id>/approve")
+@bp.post("/proposals/<proposal_id>/approve")
 @token_required
 def approve_proposal(username=None, proposal_id=None):
     """Approve proposal and send to client"""
@@ -76,8 +76,8 @@ def approve_proposal(username=None, proposal_id=None):
             # Get proposal details
             cursor.execute(
                 '''SELECT id, title, client_name, client_email, user_id, content 
-                   FROM proposals WHERE id = %s''',
-                (proposal_id,)
+                   FROM proposals WHERE id = %s OR id::text = %s''',
+                (proposal_id, str(proposal_id))
             )
             proposal = cursor.fetchone()
             
@@ -108,8 +108,8 @@ def approve_proposal(username=None, proposal_id=None):
             # Update status to Sent to Client
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() 
-                   WHERE id = %s RETURNING status''',
-                ('Sent to Client', proposal_id)
+                   WHERE id = %s OR id::text = %s RETURNING status''',
+                ('Sent to Client', proposal_id, str(proposal_id))
             )
             status_row = cursor.fetchone()
             conn.commit()
