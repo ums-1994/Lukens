@@ -831,7 +831,15 @@ class AppState extends ChangeNotifier {
         'signer_email': signerEmail,
         if (returnUrl != null) 'return_url': returnUrl,
       };
-      final headers = AuthService.getAuthHeaders();
+      final effectiveToken =
+          (authToken != null && authToken!.isNotEmpty) ? authToken : AuthService.token;
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        if (effectiveToken != null && effectiveToken.isNotEmpty)
+          'Authorization': 'Bearer $effectiveToken',
+      };
+      debugPrint(
+          'DocuSign send - authToken set: ${authToken != null && authToken!.isNotEmpty}, AuthService.token set: ${AuthService.token != null && AuthService.token!.isNotEmpty}');
       debugPrint(
           "DocuSign send headers contain Authorization: ${headers.containsKey('Authorization')}");
       final r = await http.post(
