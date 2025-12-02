@@ -87,7 +87,7 @@ def approve_proposal(username=None, proposal_id=None):
             
             # Get proposal details
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, user_id, content 
+                '''SELECT id, title, client_name, client_email, owner_id, content 
                    FROM proposals WHERE id = %s OR id::text = %s''',
                 (proposal_id, str(proposal_id))
             )
@@ -99,7 +99,7 @@ def approve_proposal(username=None, proposal_id=None):
             title = proposal.get('title')
             client_name = proposal.get('client_name')
             client_email = proposal.get('client_email')
-            creator = proposal.get('user_id')
+            creator = proposal.get('owner_id')
             proposal_content = proposal.get('content')
             display_title = title or f"Proposal {proposal_id}"
             
