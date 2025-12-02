@@ -409,8 +409,8 @@ def send_for_signature(username=None, proposal_id=None):
             cursor.execute("""
                 SELECT id, title, content, client_name, client_email 
                 FROM proposals 
-                WHERE id = %s AND owner_id = %s
-            """, (proposal_id, current_user['id']))
+                WHERE (id = %s OR id::text = %s) AND owner_id = %s
+            """, (proposal_id, str(proposal_id), current_user['id']))
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -459,8 +459,8 @@ def send_for_signature(username=None, proposal_id=None):
             cursor.execute("""
                 UPDATE proposals 
                 SET status = 'Sent for Signature', updated_at = NOW()
-                WHERE id = %s
-            """, (proposal_id,))
+                WHERE id = %s OR id::text = %s
+            """, (proposal_id, str(proposal_id)))
             conn.commit()
             
             return {

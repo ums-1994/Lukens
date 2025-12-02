@@ -818,7 +818,7 @@ class AppState extends ChangeNotifier {
 
   // DocuSign: Send for signature using backend endpoint
   Future<Map<String, dynamic>?> sendProposalForSignature({
-    required int proposalId,
+    required dynamic proposalId, // Accept int or UUID/string IDs
     required String signerName,
     required String signerEmail,
     String? returnUrl,
@@ -830,7 +830,7 @@ class AppState extends ChangeNotifier {
         if (returnUrl != null) 'return_url': returnUrl,
       };
       final r = await http.post(
-        Uri.parse("$baseUrl/api/proposals/$proposalId/docusign/send"),
+        Uri.parse("$baseUrl/api/proposals/${proposalId.toString()}/docusign/send"),
         headers: _headers,
         body: jsonEncode(body),
       );

@@ -169,17 +169,26 @@ class PreviewPage extends StatelessWidget {
                     ),
                   );
                   if (confirmed != true) return;
-                  final id = pm['id'] is int
-                      ? pm['id'] as int
-                      : int.tryParse(pm['id']?.toString() ?? '') ?? 0;
-                  if (id == 0) return;
+
+                  final rawId = pm['id'];
+                  final idAsString = rawId == null ? '' : rawId.toString();
+                  if (idAsString.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Missing proposal ID. Cannot send to DocuSign.'),
+                      ),
+                    );
+                    return;
+                  }
+
                   final appWrite = context.read<AppState>();
                   final result = await appWrite.sendProposalForSignature(
-                    proposalId: id,
+                    proposalId: idAsString,
                     signerName: nameController.text.trim(),
                     signerEmail: emailController.text.trim(),
                     returnUrl:
-                        'http://localhost:8081/#/proposals/$id?signed=true',
+                        'https://lukens-frontend.onrender.com/#/proposals?signed=true',
                   );
                   if (result != null && result['signing_url'] != null) {
                     final url = result['signing_url'].toString();
