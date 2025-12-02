@@ -39,15 +39,17 @@ def get_docusign_jwt_token():
         if not user_id:
             raise Exception("DOCUSIGN_USER_ID not set in environment variables")
         
-        # Check if private key file exists
-        if not os.path.exists(private_key_path):
-            raise Exception(f"DocuSign private key file not found: {private_key_path}. Please set DOCUSIGN_PRIVATE_KEY_PATH environment variable.")
-        
-        # Read private key: prefer env var, fall back to file path
+        # Determine private key source: prefer inline env var, fall back to file path
         if private_key_env:
             # Support both raw PEM and single-line values with escaped newlines
             private_key = private_key_env.replace('\\n', '\n')
         else:
+            # If no inline key provided, require a readable key file
+            if not os.path.exists(private_key_path):
+                raise Exception(
+                    f"DocuSign private key file not found: {private_key_path}. "
+                    "Set DOCUSIGN_PRIVATE_KEY (inline key) or DOCUSIGN_PRIVATE_KEY_PATH (file path)."
+                )
             try:
                 with open(private_key_path, 'r') as key_file:
                     private_key = key_file.read()
