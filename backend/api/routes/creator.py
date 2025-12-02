@@ -1119,12 +1119,15 @@ def update_proposal(username=None, proposal_id=None):
                 updates.append('status = %s')
                 params.append(data['status'])
             if 'client_name' in data or 'client' in data:
-                client_name = data.get('client_name') or data.get('client')
-                updates.append('client_name = %s')
-                params.append(client_name)
-                # Keep legacy client column in sync
-                updates.append('client = %s')
-                params.append(client_name)
+                client_name = data.get('client_name')
+                legacy_client = data.get('client')
+                unified_client = client_name or legacy_client
+                if unified_client is not None and str(unified_client).strip() != '':
+                    updates.append('client_name = %s')
+                    params.append(unified_client)
+                    # Keep legacy client column in sync
+                    updates.append('client = %s')
+                    params.append(unified_client)
             if 'client_email' in data:
                 updates.append('client_email = %s')
                 params.append(data['client_email'])
