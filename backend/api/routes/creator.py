@@ -1194,7 +1194,11 @@ def delete_proposal(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             owner_id = user_row[0]
 
-            cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
+            # Support both integer and UUID-style IDs
+            cursor.execute(
+                'SELECT owner_id FROM proposals WHERE id = %s OR id::text = %s',
+                (proposal_id, str(proposal_id)),
+            )
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
@@ -1202,10 +1206,35 @@ def delete_proposal(username=None, proposal_id=None):
             if proposal[0] != owner_id:
                 return {'detail': 'Access denied'}, 403
             
-            cursor.execute('DELETE FROM proposals WHERE id = %s', (proposal_id,))
+            # Delete dependent records that don't have ON DELETE CASCADE
+            try:
+                cursor.execute(
+                    'DELETE FROM proposal_versions WHERE proposal_id = %s OR proposal_id::text = %s',
+                    (proposal_id, str(proposal_id)),
+                )
+            except Exception:
+                # Best-effort cleanup; log but don't block delete
+                traceback.print_exc()
+
+            try:
+                cursor.execute(
+                    'DELETE FROM document_comments WHERE proposal_id = %s OR proposal_id::text = %s',
+                    (proposal_id, str(proposal_id)),
+                )
+            except Exception:
+                traceback.print_exc()
+
+            # Delete the proposal itself (other tables use ON DELETE CASCADE)
+            cursor.execute(
+                'DELETE FROM proposals WHERE id = %s OR id::text = %s',
+                (proposal_id, str(proposal_id)),
+            )
             conn.commit()
+            print(f"[OK] Deleted proposal {proposal_id} and related data")
             return {'detail': 'Proposal deleted'}, 200
     except Exception as e:
+        print(f"[ERROR] Error deleting proposal {proposal_id}: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.get("/proposals/<proposal_id>")
