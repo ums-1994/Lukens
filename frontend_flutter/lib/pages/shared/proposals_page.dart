@@ -1110,6 +1110,8 @@ class ProposalItem extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.08)
         : statusColor.withValues(alpha: 0.2);
 
+    final bool canRefreshDocuSign = status.contains('sent for signature');
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12.0),
       child: Row(
@@ -1148,6 +1150,56 @@ class ProposalItem extends StatelessWidget {
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         color: statusColor))),
+            if (canRefreshDocuSign) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white54, size: 18),
+                tooltip: 'Refresh DocuSign status',
+                onPressed: () async {
+                  final token = AuthService.token;
+                  if (token == null || token.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Authentication required. Please log in.'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  final idVal = proposal['id'];
+                  if (idVal == null) return;
+
+                  try {
+                    final result = await ApiService.refreshDocuSignStatus(
+                      token: token,
+                      proposalId: idVal,
+                    );
+                    if (result != null && result['proposal_status'] != null) {
+                      proposal['status'] = result['proposal_status'];
+                      if (onRefresh != null) onRefresh!();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content:
+                              Text('No DocuSign status update available.'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  } catch (_) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('Failed to refresh DocuSign status.'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ],
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {

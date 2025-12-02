@@ -42,8 +42,10 @@ class AppState extends ChangeNotifier {
   Map<String, String> get _headers {
     final headers = {"Content-Type": "application/json"};
     // Use authToken (synced from AuthService) for consistency
-    if (authToken != null) {
+    if (authToken != null && authToken!.isNotEmpty) {
       headers["Authorization"] = "Bearer $authToken";
+    } else if (AuthService.token != null && AuthService.token!.isNotEmpty) {
+      headers["Authorization"] = "Bearer ${AuthService.token}";
     }
     return headers;
   }
