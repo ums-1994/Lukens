@@ -92,7 +92,30 @@ class PreviewPage extends StatelessWidget {
       return const Center(child: Text("Select a proposal to preview."));
     }
     final Map<String, dynamic> pm = Map<String, dynamic>.from(p as Map);
-    final sections = Map<String, dynamic>.from(pm["sections"] ?? {});
+    // Normalize sections - support both legacy Map and newer List formats
+    final dynamic rawSections = pm["sections"];
+    final Map<String, dynamic> sections = {};
+
+    if (rawSections is Map) {
+      sections.addAll(Map<String, dynamic>.from(rawSections));
+    } else if (rawSections is List) {
+      for (var i = 0; i < rawSections.length; i++) {
+        final item = rawSections[i];
+        if (item is Map) {
+          final key = (item['title'] ?? item['key'] ?? 'Section ${i + 1}')
+              .toString();
+          final value = item['content'] ?? item['body'] ?? '';
+          sections[key] = value;
+        } else {
+          sections['Section ${i + 1}'] = item.toString();
+        }
+      }
+    }
+
+    // Fallback: if no sections, try to show raw content if available
+    if (sections.isEmpty && pm['content'] != null) {
+      sections['Content'] = pm['content'];
+    }
     return Padding(
       padding: const EdgeInsets.all(16),
       child: ListView(
