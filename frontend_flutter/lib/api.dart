@@ -831,9 +831,12 @@ class AppState extends ChangeNotifier {
         'signer_email': signerEmail,
         if (returnUrl != null) 'return_url': returnUrl,
       };
+      final headers = AuthService.getAuthHeaders();
+      debugPrint(
+          "DocuSign send headers contain Authorization: ${headers.containsKey('Authorization')}");
       final r = await http.post(
         Uri.parse("$baseUrl/api/proposals/${proposalId.toString()}/docusign/send"),
-        headers: _headers,
+        headers: headers,
         body: jsonEncode(body),
       );
       if (r.statusCode == 200) {
