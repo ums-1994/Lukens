@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
+import '../../services/ai_analysis_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -249,7 +250,15 @@ class _ProposalWizardState extends State<ProposalWizard>
     super.dispose();
   }
 
-  void _nextStep() {
+  void _nextStep() async {
+    // Step index 2 is the AI Risk Gate - show strong warning but allow override
+    if (_currentStep == 2) {
+      final proceed = await _handleRiskGateOverride();
+      if (!proceed) {
+        return;
+      }
+    }
+
     if (_currentStep < _totalSteps - 1) {
       setState(() => _currentStep++);
       _pageController.nextPage(
@@ -267,6 +276,104 @@ class _ProposalWizardState extends State<ProposalWizard>
         curve: Curves.easeInOut,
       );
     }
+  }
+
+  Future<bool> _handleRiskGateOverride() async {
+    // Require a risk assessment before leaving the AI Risk Gate step
+    if (_riskAssessment.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Run AI Risk Assessment before proceeding.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return false;
+    }
+
+    final String aiStatus =
+        (_riskAssessment['ai_status'] ?? '').toString().toUpperCase();
+    final String riskLevel =
+        (_riskAssessment['risk_level'] ?? '').toString().toUpperCase();
+
+    final bool isBlocked = aiStatus == 'BLOCKED' || riskLevel == 'HIGH';
+
+    // For low/medium risk we allow progression without extra confirmation
+    if (!isBlocked) {
+      return true;
+    }
+
+    final riskScore = _riskAssessment['risk_score'] ?? 0;
+    final risks = List.from(_riskAssessment['risks'] ?? const []);
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('AI Risk Gate Warning'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI has flagged this proposal as HIGH RISK or BLOCKED.',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Risk Level: ${_riskAssessment['risk_level'] ?? 'High'}',
+                  style: PremiumTheme.bodyMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
+                  style: PremiumTheme.bodyMedium,
+                ),
+                if (risks.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Key risks identified:',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...risks.take(3).map((r) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text('• ${r.toString()}'),
+                      )),
+                ],
+                const SizedBox(height: 16),
+                Text(
+                  'Proceeding may violate internal governance or expose the client to unmanaged risk. Only override if you are confident the issues are understood and accepted.',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: PremiumTheme.error,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Go Back'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: PremiumTheme.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Override and Proceed'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
   }
 
   String _getStepTitle(int step) {
@@ -313,16 +420,19 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   bool _canProceed() {
     switch (_currentStep) {
-      case 0: // Compose - Template Selection
-        return _formData['templateId'].toString().isNotEmpty;
-      case 1: // Govern - Client Details
-        return (_formData['proposalTitle'] ?? '').toString().isNotEmpty &&
-            (_formData['clientName'] ?? '').toString().isNotEmpty &&
-            (_formData['opportunityName'] ?? '').toString().isNotEmpty;
-      case 2: // AI Risk Gate - Project Details
-        return (_formData['projectType'] ?? '').toString().isNotEmpty;
-      case 3: // Internal Sign-off - Content Selection
-        return _formData['selectedModules'].isNotEmpty;
+      case 0: // Compose - require core setup before moving on
+        final hasTemplate =
+            _formData['templateId']?.toString().isNotEmpty ?? false;
+        // For now, only require that a template has been selected on the first screen.
+        // Client details, project details, and modules are collected in later steps
+        // and validated via governance/risk checks.
+        return hasTemplate;
+      case 1: // Govern - require AI governance results
+        return _governanceResults.isNotEmpty;
+      case 2: // AI Risk Gate - require risk assessment to have run
+        return _riskAssessment.isNotEmpty;
+      case 3: // Internal Sign-off - require internal approval flag
+        return _isInternalApproved;
       case 4: // Client Sign-off - Review
         return true; // review/confirm step
       default:
@@ -336,14 +446,42 @@ class _ProposalWizardState extends State<ProposalWizard>
     try {
       final app = context.read<AppState>();
 
-      // Create proposal in backend
-      await app.createProposal(
+      // Create proposal in backend so that downstream flows have a real ID
+      final created = await app.createProposal(
         _formData['opportunityName'],
         _formData['clientName'],
+        templateKey: _formData['templateId']?.toString().isNotEmpty == true
+            ? _formData['templateId'].toString()
+            : null,
       );
 
-      // Generate a temporary proposal ID for the compose page
-      final proposalId = 'temp-${DateTime.now().millisecondsSinceEpoch}';
+      final proposalId = (created != null && created['id'] != null)
+          ? created['id'].toString()
+          : 'draft-${DateTime.now().millisecondsSinceEpoch}';
+
+      _proposalId = proposalId;
+
+      // Build initial proposal data to seed EnhancedCompose
+      final Map<String, String> moduleContents =
+          Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+      final Map<String, dynamic> initialData = {
+        'clientName': _formData['clientName'] ?? '',
+        'clientEmail': _formData['clientEmail'] ?? '',
+        'projectType': _formData['projectType'] ?? '',
+        'estimatedValue': _formData['estimatedValue'] ?? '',
+        'timeline': _formData['timeline'] ?? '',
+        'opportunityName': _formData['opportunityName'] ?? '',
+      };
+
+      moduleContents.forEach((key, value) {
+        initialData[key] = value;
+      });
+
+      final proposalTitle =
+          (_formData['proposalTitle']?.toString().isNotEmpty ?? false)
+              ? _formData['proposalTitle'].toString()
+              : _formData['opportunityName'];
 
       // Navigate to enhanced compose page
       Navigator.pushReplacementNamed(
@@ -351,9 +489,10 @@ class _ProposalWizardState extends State<ProposalWizard>
         '/enhanced-compose',
         arguments: {
           'proposalId': proposalId,
-          'proposalTitle': _formData['opportunityName'],
+          'proposalTitle': proposalTitle,
           'templateType': _formData['templateType'],
           'selectedModules': _formData['selectedModules'],
+          'initialData': initialData,
         },
       );
     } catch (e) {
@@ -535,6 +674,32 @@ class _ProposalWizardState extends State<ProposalWizard>
         ],
       ),
     );
+  }
+
+  String? _mapSectionTitleToModuleId(String title) {
+    switch (title) {
+      case 'Executive Summary':
+        return 'executive_summary';
+      case 'Scope & Deliverables':
+      case 'Scope of Work':
+        return 'scope_deliverables';
+      case 'Company Profile':
+      case 'Appendix – Company Profile':
+        return 'company_profile';
+      case 'Terms & Conditions':
+        return 'terms_conditions';
+      case 'Assumptions & Risks':
+        return 'assumptions_risks';
+      case 'Team & Bios':
+      case 'Team Bios':
+        return 'team_bios';
+      case 'Delivery Approach':
+        return 'delivery_approach';
+      case 'Case Studies':
+        return 'case_studies';
+      default:
+        return null;
+    }
   }
 
   Widget _buildHeader() {
@@ -725,6 +890,65 @@ class _ProposalWizardState extends State<ProposalWizard>
       setState(() {
         _formData['moduleContents'] = contents;
       });
+    }
+  }
+
+  void _ensureModuleSelected(String moduleId) {
+    final modules = List<String>.from(_formData['selectedModules'] ?? []);
+    if (!modules.contains(moduleId)) {
+      modules.add(moduleId);
+      setState(() {
+        _formData['selectedModules'] = modules;
+      });
+    }
+  }
+
+  Future<void> _addModuleWithAI(String moduleId) async {
+    _ensureModuleSelected(moduleId);
+
+    final app = context.read<AppState>();
+    if (app.authToken != null) {
+      AIAnalysisService.setAuthToken(app.authToken!);
+    }
+
+    final contextData = _buildProposalDataForAI();
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final generated = await AIAnalysisService.generateSection(
+        moduleId,
+        contextData,
+      );
+
+      final Map<String, String> contents =
+          Map<String, String>.from(_formData['moduleContents'] ?? {});
+      contents[moduleId] = generated;
+
+      setState(() {
+        _formData['moduleContents'] = contents;
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'AI generated initial content for ${moduleId.replaceAll('_', ' ')}'),
+          backgroundColor: PremiumTheme.teal,
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating AI content: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -1650,12 +1874,12 @@ class _ProposalWizardState extends State<ProposalWizard>
     final status = _governanceResults['status'] ?? 'PENDING';
     final score = _governanceResults['score'] ?? 0;
     final checks = _governanceResults['checks'] ?? [];
-    final issues = _governanceResults['issues'] ?? [];
-    final passed = status == 'PASSED';
+    final issues = List.from(_governanceResults['issues'] ?? const []);
+    final passed = status == 'Ready';
 
     Color statusColor = PremiumTheme.success;
-    if (status == 'FAILED') statusColor = PremiumTheme.error;
-    if (status == 'PENDING') statusColor = Colors.orange;
+    if (status == 'Blocked') statusColor = PremiumTheme.error;
+    if (status == 'At Risk' || status == 'PENDING') statusColor = Colors.orange;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1796,13 +2020,16 @@ class _ProposalWizardState extends State<ProposalWizard>
         if (issues.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
-            'Issues',
+            'Issues & AI Recommendations',
             style: PremiumTheme.bodyMedium.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          ...issues.map<Widget>((issue) => Padding(
+          ...issues.map<Widget>((raw) {
+            // Support both plain-string issues and structured AI issues
+            if (raw is! Map<String, dynamic>) {
+              return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: GlassContainer(
                   borderRadius: 12,
@@ -1819,7 +2046,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          issue.toString(),
+                          raw.toString(),
                           style: PremiumTheme.bodyMedium.copyWith(
                             fontSize: 12,
                           ),
@@ -1828,7 +2055,114 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ],
                   ),
                 ),
-              )),
+              );
+            }
+
+            final issue = raw as Map<String, dynamic>;
+            final title = issue['title']?.toString() ?? 'Issue';
+            final description = issue['description']?.toString() ?? '';
+            final action = issue['action']?.toString();
+            final type = issue['type']?.toString();
+            final sectionId = _mapSectionTitleToModuleId(title);
+
+            final bool canAutoAddModule =
+                type == 'missing_section' && sectionId != null;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: GlassContainer(
+                borderRadius: 12,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: PremiumTheme.info,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: PremiumTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (description.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2.0),
+                                  child: Text(
+                                    description,
+                                    style: PremiumTheme.bodyMedium.copyWith(
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              if (action != null && action.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Text(
+                                    action,
+                                    style: PremiumTheme.bodyMedium.copyWith(
+                                      fontSize: 11,
+                                      color: PremiumTheme.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (canAutoAddModule)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                if (sectionId != null) {
+                                  _ensureModuleSelected(sectionId);
+                                }
+                              },
+                              child: const Text('Add module'),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: PremiumTheme.teal,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                              onPressed: () {
+                                if (sectionId != null) {
+                                  _addModuleWithAI(sectionId);
+                                }
+                              },
+                              icon: const Icon(Icons.auto_awesome, size: 16),
+                              label: const Text('Add with AI'),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
       ],
     );
@@ -2204,21 +2538,54 @@ class _ProposalWizardState extends State<ProposalWizard>
     setState(() => _isLoading = true);
 
     try {
-      // Simulate risk assessment - replace with actual API call
-      await Future.delayed(const Duration(seconds: 2));
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final proposalData = _buildProposalDataForAI();
+
+      final analysis =
+          await AIAnalysisService.analyzeProposalContent(proposalData);
+
+      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
+      String riskLevel;
+      if (rawRiskScore <= 10) {
+        riskLevel = 'Low';
+      } else if (rawRiskScore <= 20) {
+        riskLevel = 'Medium';
+      } else {
+        riskLevel = 'High';
+      }
+
+      final issues = List<Map<String, dynamic>>.from(
+        analysis['issues'] ?? const [],
+      );
+
+      final risks = issues.map((issue) {
+        return issue['title']?.toString() ?? 'Issue';
+      }).toList();
+
+      final recommendations = issues
+          .map((issue) {
+            return issue['action']?.toString() ??
+                issue['description']?.toString() ??
+                '';
+          })
+          .where((r) => r.isNotEmpty)
+          .toList();
+
+      // Convert raw risk points into a 0-100"score" where higher is better
+      final double displayScore = (100 - rawRiskScore).clamp(0, 100).toDouble();
 
       setState(() {
         _riskAssessment = {
-          'risk_level': 'Low',
-          'risk_score': 85.0,
-          'risks': [
-            'Pricing information is complete',
-            'All required sections are present',
-          ],
-          'recommendations': [
-            'Consider adding more detail to the scope section',
-            'Include timeline estimates for better clarity',
-          ],
+          'risk_level': riskLevel,
+          'risk_score': displayScore,
+          'risks': risks,
+          'recommendations': recommendations,
+          'ai_status': analysis['status'] ?? 'Ready',
+          'ai_riskScore': rawRiskScore,
         };
         _isLoading = false;
       });
@@ -2230,102 +2597,76 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
   }
 
+  Map<String, dynamic> _buildProposalDataForAI() {
+    final selectedModules =
+        List<String>.from(_formData['selectedModules'] ?? const []);
+    final moduleContents =
+        Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+    final data = <String, dynamic>{
+      'id': _proposalId ?? 'draft',
+      'title': _formData['proposalTitle']?.toString().isNotEmpty == true
+          ? _formData['proposalTitle'].toString()
+          : _formData['opportunityName']?.toString() ?? '',
+      'clientName': _formData['clientName'] ?? '',
+      'clientEmail': _formData['clientEmail'] ?? '',
+      'projectType': _formData['projectType'] ?? '',
+      'estimatedValue': _formData['estimatedValue'] ?? '',
+      'timeline': _formData['timeline'] ?? '',
+    };
+
+    for (final moduleId in selectedModules) {
+      data[moduleId] = moduleContents[moduleId] ?? '';
+    }
+
+    return data;
+  }
+
   // Run AI Governance Check
   Future<void> _runGovernanceCheck() async {
     setState(() => _isRunningGovernance = true);
 
     try {
-      // Simulate AI governance check - replace with actual API call
-      await Future.delayed(const Duration(seconds: 2));
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
 
-      // Analyze proposal data
-      final hasTemplate =
-          _formData['templateId']?.toString().isNotEmpty ?? false;
-      final hasClientName =
-          _formData['clientName']?.toString().isNotEmpty ?? false;
-      final hasClientEmail =
-          _formData['clientEmail']?.toString().isNotEmpty ?? false;
-      final hasProposalTitle =
-          _formData['proposalTitle']?.toString().isNotEmpty ?? false;
-      final selectedModules =
-          List<String>.from(_formData['selectedModules'] ?? []);
-      final hasModules = selectedModules.isNotEmpty;
+      final proposalData = _buildProposalDataForAI();
 
-      final checks = [
-        {
-          'id': 'required_sections',
-          'label': 'All required sections included',
-          'required': true,
-          'passed': hasModules && selectedModules.length >= 3,
-        },
-        {
-          'id': 'mandatory_fields',
-          'label': 'All mandatory fields completed',
-          'required': true,
-          'passed': hasProposalTitle && hasClientName && hasClientEmail,
-        },
-        {
-          'id': 'pricing_complete',
-          'label': 'Pricing information is complete',
-          'required': true,
-          'passed': _formData['estimatedValue']?.toString().isNotEmpty ?? false,
-        },
-        {
-          'id': 'client_info',
-          'label': 'Client information is accurate',
-          'required': true,
-          'passed': hasClientName && hasClientEmail,
-        },
-        {
-          'id': 'risk_statements',
-          'label': 'Risk statements and disclaimers included',
-          'required': true,
-          'passed': selectedModules.contains('assumptions_risks') ||
-              selectedModules.contains('terms_conditions'),
-        },
-        {
-          'id': 'compliance',
-          'label': 'Compliance requirements met',
-          'required': true,
-          'passed': hasTemplate && hasProposalTitle,
-        },
-        {
-          'id': 'reviewed_content',
-          'label': 'Content reviewed for accuracy',
-          'required': false,
-          'passed': true, // Assume passed for optional
-        },
-        {
-          'id': 'legal_terms',
-          'label': 'Legal terms and conditions included',
-          'required': false,
-          'passed': selectedModules.contains('terms_conditions'),
-        },
-      ];
+      final analysis =
+          await AIAnalysisService.analyzeProposalContent(proposalData);
 
-      final requiredChecks =
-          checks.where((c) => (c['required'] as bool?) ?? false).toList();
-      final passedRequired =
-          requiredChecks.where((c) => (c['passed'] as bool?) ?? false).length;
-      final totalRequired = requiredChecks.length;
-      final score = totalRequired > 0
-          ? (passedRequired / totalRequired * 100).round()
-          : 0;
-      final status = passedRequired == totalRequired ? 'PASSED' : 'FAILED';
+      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
+      // Convert raw risk points into a readiness percentage (higher is better)
+      final int readinessScore = (100 - rawRiskScore).clamp(0, 100).toInt();
 
-      final issues = <String>[];
-      if (!hasTemplate) issues.add('Template not selected');
-      if (!hasProposalTitle) issues.add('Proposal title is missing');
-      if (!hasClientName) issues.add('Client name is missing');
-      if (!hasClientEmail) issues.add('Client email is missing');
-      if (!hasModules) issues.add('No content modules selected');
-      if (selectedModules.length < 3)
-        issues.add('Insufficient content modules (minimum 3 required)');
+      final issues = List<Map<String, dynamic>>.from(
+        analysis['issues'] ?? const [],
+      );
+
+      // Derive simple checklist from AI issues
+      final checks = issues.map((issue) {
+        final priority = issue['priority']?.toString() ?? 'info';
+        final isRequired = priority == 'critical' ||
+            priority == 'high' ||
+            priority == 'warning';
+        final hasPassed =
+            (issue['type']?.toString() ?? '') != 'missing_section' &&
+                (issue['type']?.toString() ?? '') != 'incomplete_content';
+
+        return {
+          'id': issue['type']?.toString() ?? 'ai_issue',
+          'label': issue['title']?.toString() ?? 'Issue',
+          'required': isRequired,
+          'passed': hasPassed,
+        };
+      }).toList();
 
       setState(() {
         _governanceResults = {
-          'status': status,
-          'score': score,
+          'status': analysis['status'] ?? 'PENDING',
+          'score': readinessScore,
           'checks': checks,
           'issues': issues,
         };
@@ -2343,14 +2684,15 @@ class _ProposalWizardState extends State<ProposalWizard>
     setState(() => _isLoading = true);
 
     try {
-      // Check if governance passed
-      final governanceStatus = _governanceResults['status'] as String?;
+      // Check if governance passed (AI Ready status)
+      final governanceStatus =
+          (_governanceResults['status'] as String?) ?? 'PENDING';
 
-      if (governanceStatus != 'PASSED') {
+      if (governanceStatus != 'Ready') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Governance check must pass before submitting for approval'),
+                'Governance check must be Ready before submitting for approval'),
             backgroundColor: Colors.orange,
           ),
         );

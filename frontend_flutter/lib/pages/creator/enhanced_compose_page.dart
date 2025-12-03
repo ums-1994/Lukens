@@ -8,6 +8,7 @@ class EnhancedComposePage extends StatefulWidget {
   final String proposalTitle;
   final String templateType;
   final List<String> selectedModules;
+  final Map<String, dynamic>? initialData;
 
   const EnhancedComposePage({
     super.key,
@@ -15,6 +16,7 @@ class EnhancedComposePage extends StatefulWidget {
     required this.proposalTitle,
     required this.templateType,
     required this.selectedModules,
+    this.initialData,
   });
 
   @override
@@ -49,6 +51,9 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
     setState(() => _isLoading = true);
 
     try {
+      final Map<String, dynamic> initial =
+          Map<String, dynamic>.from(widget.initialData ?? const {});
+
       // Initialize proposal data based on template type and selected modules
       _proposalData.addAll({
         'id': widget.proposalId,
@@ -61,24 +66,34 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
 
       // Initialize content for selected modules
       for (final module in widget.selectedModules) {
-        _proposalData[module] = _getDefaultContent(module);
+        final String initialContent =
+            (initial[module]?.toString().isNotEmpty ?? false)
+                ? initial[module].toString()
+                : _getDefaultContent(module);
+        _proposalData[module] = initialContent;
         _controllers[module] = TextEditingController(
-          text: _getDefaultContent(module),
+          text: initialContent,
         );
       }
 
       // Add common fields
-      _proposalData['clientName'] = '';
-      _proposalData['clientEmail'] = '';
-      _proposalData['projectType'] = '';
-      _proposalData['estimatedValue'] = '';
-      _proposalData['timeline'] = '';
+      _proposalData['clientName'] = initial['clientName']?.toString() ?? '';
+      _proposalData['clientEmail'] = initial['clientEmail']?.toString() ?? '';
+      _proposalData['projectType'] = initial['projectType']?.toString() ?? '';
+      _proposalData['estimatedValue'] =
+          initial['estimatedValue']?.toString() ?? '';
+      _proposalData['timeline'] = initial['timeline']?.toString() ?? '';
 
-      _controllers['clientName'] = TextEditingController();
-      _controllers['clientEmail'] = TextEditingController();
-      _controllers['projectType'] = TextEditingController();
-      _controllers['estimatedValue'] = TextEditingController();
-      _controllers['timeline'] = TextEditingController();
+      _controllers['clientName'] =
+          TextEditingController(text: _proposalData['clientName']);
+      _controllers['clientEmail'] =
+          TextEditingController(text: _proposalData['clientEmail']);
+      _controllers['projectType'] =
+          TextEditingController(text: _proposalData['projectType']);
+      _controllers['estimatedValue'] =
+          TextEditingController(text: _proposalData['estimatedValue']);
+      _controllers['timeline'] =
+          TextEditingController(text: _proposalData['timeline']);
     } finally {
       setState(() => _isLoading = false);
     }

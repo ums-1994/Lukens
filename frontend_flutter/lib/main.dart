@@ -336,6 +336,7 @@ class MyApp extends StatelessWidget {
               templateType: args?['templateType'] ?? 'proposal',
               selectedModules:
                   List<String>.from(args?['selectedModules'] ?? []),
+              initialData: args?['initialData'] as Map<String, dynamic>?,
             );
           },
           '/govern': (context) => const GovernPage(),

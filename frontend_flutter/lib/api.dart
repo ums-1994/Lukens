@@ -339,16 +339,21 @@ class AppState extends ChangeNotifier {
 
   String _normalizeStatus(String? status) {
     if (status == null || status.isEmpty) return 'Draft';
-    
+
     final lowerStatus = status.toLowerCase().trim();
-    
+
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
-    if (lowerStatus.contains('pending') && lowerStatus.contains('ceo')) return 'Pending CEO Approval';
-    if (lowerStatus.contains('sent') && lowerStatus.contains('client')) return 'Sent to Client';
-    if (lowerStatus == 'signed' || lowerStatus == 'approved') return 'Signed';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
+      return 'Pending CEO Approval';
+    if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
+      return 'Sent to Client';
+    if (lowerStatus == 'signed' ||
+        lowerStatus == 'approved' ||
+        lowerStatus == 'client signed' ||
+        lowerStatus == 'client approved') return 'Signed';
     if (lowerStatus.contains('review')) return 'In Review';
-    
+
     // Capitalize first letter of each word for other statuses
     return status.split(' ').map((word) {
       if (word.isEmpty) return word;
