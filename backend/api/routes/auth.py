@@ -472,12 +472,16 @@ def firebase_auth():
                     print(f'⚠️ Unknown role "{requested_role}", defaulting to "manager"')
                 
                 print(f'🔍 Registration: requested_role="{requested_role}", normalized="{normalized_role}", using="{role_to_use}"')
-                
+
+                # For Firebase-only accounts, we don't use a local password.
+                # Just store a deterministic non-null string to satisfy NOT NULL constraint.
+                dummy_password_hash = f"firebase:{uid}:{email}"
+
                 cursor.execute(
-                    '''INSERT INTO users (username, email, full_name, role, is_active, is_email_verified)
-                       VALUES (%s, %s, %s, %s, %s, %s)
+                    '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id, username, email, full_name, role, department, is_active''',
-                    (username, email, name, role_to_use, True, firebase_user.get('email_verified', False))
+                    (username, email, dummy_password_hash, name, role_to_use, True, firebase_user.get('email_verified', False))
                 )
                 user = cursor.fetchone()
                 user_id = user[0]

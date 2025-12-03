@@ -1367,11 +1367,27 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       'Signed',
       'Lost',
     ];
+    
+    // Map declined statuses to "Lost"
+    final normalizedCounts = <String, int>{};
+    int lostCount = 0;
+    for (final entry in statusCounts.entries) {
+      final status = entry.key.toLowerCase();
+      if (status.contains('declined') || status.contains('lost') || status.contains('rejected')) {
+        lostCount += entry.value;
+      } else {
+        normalizedCounts[entry.key] = entry.value;
+      }
+    }
+    if (lostCount > 0) {
+      normalizedCounts['Lost'] = lostCount;
+    }
+    
     final bars = <BarChartGroupData>[];
     int maxCount = 0;
     for (int i = 0; i < statuses.length; i++) {
       final label = statuses[i];
-      final count = statusCounts[label] ?? 0;
+      final count = normalizedCounts[label] ?? 0;
       maxCount = math.max(maxCount, count);
       bars.add(
         BarChartGroupData(

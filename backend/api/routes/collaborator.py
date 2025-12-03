@@ -132,10 +132,10 @@ def add_guest_comment():
             else:
                 # Create guest user
                 cursor.execute("""
-                    INSERT INTO users (username, email, full_name, role, is_active)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO users (username, email, password_hash, full_name, role, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
-                """, (invited_email, invited_email, f'Guest ({invited_email})', 'collaborator', True))
+                """, (invited_email, invited_email, '', f'Guest ({invited_email})', 'collaborator', True))
                 user_id = cursor.fetchone()['id']
             
             # Add comment

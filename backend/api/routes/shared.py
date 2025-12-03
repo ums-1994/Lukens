@@ -8,6 +8,7 @@ import difflib
 import base64
 import psycopg2.extras
 from datetime import datetime
+import xml.etree.ElementTree as ET
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
@@ -800,19 +801,105 @@ def get_section_locks(username=None, proposal_id=None):
 
 @bp.post("/api/docusign/webhook")
 def docusign_webhook():
-    """Handle DocuSign webhook events"""
+    """Handle DocuSign Connect webhook events (supports both XML and JSON formats)"""
     try:
-        data = request.get_json()
-        event = data.get('event')
-        envelope_id = data.get('envelope_id')
+        # Log the raw request for debugging
+        content_type = request.content_type or ''
+        raw_data = request.get_data(as_text=True)
+        print(f"📥 DocuSign webhook received - Content-Type: {content_type}")
+        print(f"📥 Raw data (first 500 chars): {raw_data[:500]}")
         
-        if not event or not envelope_id:
-            return {'detail': 'Missing event or envelope_id'}, 400
+        envelope_id = None
+        status = None
+        event = None
+        decline_reason = None
+        data = {}
         
+        # Handle XML format (DocuSign Connect default)
+        if 'xml' in content_type.lower() or raw_data.strip().startswith('<?xml') or raw_data.strip().startswith('<'):
+            try:
+                root = ET.fromstring(raw_data)
+                # DocuSign Connect XML structure
+                envelope_status = root.find('.//EnvelopeStatus')
+                if envelope_status is not None:
+                    envelope_id_elem = envelope_status.find('EnvelopeID')
+                    if envelope_id_elem is not None:
+                        envelope_id = envelope_id_elem.text
+                    
+                    status_elem = envelope_status.find('Status')
+                    if status_elem is not None:
+                        status = status_elem.text.lower()
+                    
+                    # Map DocuSign status to our event names
+                    if status == 'completed':
+                        event = 'envelope-completed'
+                    elif status == 'declined':
+                        event = 'envelope-declined'
+                        # Get decline reason if declined
+                        decline_reason_elem = envelope_status.find('DeclinedReason')
+                        if decline_reason_elem is not None:
+                            decline_reason = decline_reason_elem.text
+                    elif status == 'voided':
+                        event = 'envelope-voided'
+            except ET.ParseError as e:
+                print(f"⚠️ Failed to parse XML: {e}")
+                return {'detail': 'Invalid XML format'}, 400
+        
+        # Handle JSON format
+        else:
+            try:
+                data = request.get_json(force=True) if raw_data else {}
+                
+                # Try different JSON structures that DocuSign might use
+                if 'data' in data and isinstance(data['data'], dict):
+                    # DocuSign Connect JSON format
+                    envelope_data = data['data']
+                    envelope_id = envelope_data.get('envelopeId') or envelope_data.get('envelope_id')
+                    status = envelope_data.get('status', '').lower()
+                    event = data.get('event') or envelope_data.get('event')
+                elif 'envelopeId' in data or 'envelope_id' in data:
+                    # Direct format
+                    envelope_id = data.get('envelopeId') or data.get('envelope_id')
+                    status = data.get('status', '').lower()
+                    event = data.get('event')
+                else:
+                    # Fallback to original format
+                    event = data.get('event')
+                    envelope_id = data.get('envelope_id')
+                    status = data.get('status', '').lower()
+                
+                # Map status to event if event not provided
+                if not event and status:
+                    if status == 'completed':
+                        event = 'envelope-completed'
+                    elif status == 'declined':
+                        event = 'envelope-declined'
+                    elif status == 'voided':
+                        event = 'envelope-voided'
+                
+                # Get decline reason from JSON if declined
+                if status == 'declined' or event == 'envelope-declined':
+                    decline_reason = data.get('decline_reason') or data.get('declinedReason')
+            except Exception as e:
+                print(f"⚠️ Failed to parse JSON: {e}")
+                return {'detail': 'Invalid JSON format'}, 400
+        
+        # Validate we have required data
+        if not envelope_id:
+            print(f"⚠️ Missing envelope_id. Data received: {raw_data[:200]}")
+            return {'detail': 'Missing envelope_id'}, 400
+        
+        if not event and not status:
+            print(f"⚠️ Missing event/status. Data received: {raw_data[:200]}")
+            return {'detail': 'Missing event or status'}, 400
+        
+        print(f"✅ Parsed webhook - Envelope: {envelope_id}, Event: {event}, Status: {status}")
+        
+        # Process the webhook
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            if event == 'envelope-completed':
+            if event == 'envelope-completed' or status == 'completed':
                 cursor.execute("""
                     UPDATE proposal_signatures 
                     SET status = 'signed',
@@ -836,9 +923,15 @@ def docusign_webhook():
                         f"Proposal signed via DocuSign (envelope: {envelope_id})",
                         {'envelope_id': envelope_id}
                     )
+                    print(f"✅ Updated proposal {signature['proposal_id']} to Signed status")
+                else:
+                    print(f"⚠️ No signature record found for envelope {envelope_id}")
             
-            elif event == 'envelope-declined':
-                decline_reason = data.get('decline_reason', 'No reason provided')
+            elif event == 'envelope-declined' or status == 'declined':
+                # Use decline_reason parsed above, or default
+                if not decline_reason:
+                    decline_reason = 'No reason provided'
+                
                 cursor.execute("""
                     UPDATE proposal_signatures 
                     SET status = 'declined',
@@ -857,13 +950,19 @@ def docusign_webhook():
                         f"Signature declined: {decline_reason}",
                         {'envelope_id': envelope_id}
                     )
+                    print(f"✅ Updated proposal {signature['proposal_id']} to Declined status")
             
-            elif event == 'envelope-voided':
+            elif event == 'envelope-voided' or status == 'voided':
                 cursor.execute("""
                     UPDATE proposal_signatures 
                     SET status = 'voided'
                     WHERE envelope_id = %s
+                    RETURNING proposal_id
                 """, (envelope_id,))
+                
+                signature = cursor.fetchone()
+                if signature:
+                    print(f"✅ Updated proposal signature to Voided status")
             
             conn.commit()
         

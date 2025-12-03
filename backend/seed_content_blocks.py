@@ -675,7 +675,8 @@ def seed_content_blocks():
             SET label = EXCLUDED.label,
                 content = EXCLUDED.content,
                 category = EXCLUDED.category,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                is_deleted = FALSE
             """,
             (
                 block['key'],
