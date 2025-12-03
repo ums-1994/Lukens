@@ -309,6 +309,7 @@ class MyApp extends StatelessWidget {
               return BlankDocumentEditorPage(
                 proposalId: args['id']?.toString(),
                 proposalTitle: args['title']?.toString(),
+                readOnly: args['readOnly'] ?? false,
               );
             }
 

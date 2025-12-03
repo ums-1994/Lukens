@@ -1499,60 +1499,104 @@ def initialize_database():
 # ============================================================================
 try:
     from api.utils.database import init_database
-    from api.routes import creator_bp, client_bp, approver_bp, collaborator_bp, clients_bp, auth_bp, shared_bp
     
     init_database()
     
-    # Register all role-based blueprints
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(creator_bp)
-    app.register_blueprint(client_bp)
-    app.register_blueprint(approver_bp)
-    app.register_blueprint(collaborator_bp)
-    app.register_blueprint(clients_bp)
-    app.register_blueprint(shared_bp)
+    # Import blueprints with individual error handling
+    blueprints = {}
+    blueprint_names = {
+        'auth_bp': 'Auth routes',
+        'creator_bp': 'Creator routes',
+        'client_bp': 'Client routes',
+        'approver_bp': 'Approver routes',
+        'collaborator_bp': 'Collaborator routes',
+        'clients_bp': 'Client management routes',
+        'shared_bp': 'Shared utility routes'
+    }
     
-    print("[OK] Registered all role-based blueprints:")
-    print("  - Auth routes")
-    print("  - Creator routes")
-    print("  - Client routes")
-    print("  - Approver routes")
-    print("  - Collaborator routes")
-    print("  - Client management routes")
-    print("  - Shared utility routes")
-except ImportError as import_error:
-    # Try alternative import method
     try:
-        from api.routes.auth import bp as auth_bp
-        from api.routes.creator import bp as creator_bp
-        from api.routes.client import bp as client_bp
-        from api.routes.approver import bp as approver_bp
-        from api.routes.collaborator import bp as collaborator_bp
-        from api.routes.clients import bp as clients_bp
-        from api.routes.shared import bp as shared_bp
+        from api.routes import creator_bp, client_bp, approver_bp, collaborator_bp, clients_bp, auth_bp, shared_bp
+        blueprints['auth_bp'] = auth_bp
+        blueprints['creator_bp'] = creator_bp
+        blueprints['client_bp'] = client_bp
+        blueprints['approver_bp'] = approver_bp
+        blueprints['collaborator_bp'] = collaborator_bp
+        blueprints['clients_bp'] = clients_bp
+        blueprints['shared_bp'] = shared_bp
+    except ImportError as import_error:
+        print(f"[WARN] Failed to import blueprints from api.routes: {import_error}")
+        # Try alternative import method
+        try:
+            from api.routes.auth import bp as auth_bp
+            from api.routes.creator import bp as creator_bp
+            from api.routes.client import bp as client_bp
+            from api.routes.approver import bp as approver_bp
+            from api.routes.collaborator import bp as collaborator_bp
+            from api.routes.clients import bp as clients_bp
+            from api.routes.shared import bp as shared_bp
+            blueprints['auth_bp'] = auth_bp
+            blueprints['creator_bp'] = creator_bp
+            blueprints['client_bp'] = client_bp
+            blueprints['approver_bp'] = approver_bp
+            blueprints['collaborator_bp'] = collaborator_bp
+            blueprints['clients_bp'] = clients_bp
+            blueprints['shared_bp'] = shared_bp
+            print("[OK] Successfully imported blueprints using alternative method")
+        except Exception as alt_import_error:
+            print(f"[ERROR] Failed to import blueprints using alternative method: {alt_import_error}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    # Register all role-based blueprints with individual error handling
+    registered_count = 0
+    for bp_name, bp_obj in blueprints.items():
+        try:
+            app.register_blueprint(bp_obj)
+            print(f"[OK] Registered {blueprint_names.get(bp_name, bp_name)}")
+            registered_count += 1
+        except Exception as reg_error:
+            print(f"[ERROR] Failed to register {blueprint_names.get(bp_name, bp_name)}: {reg_error}")
+            import traceback
+            traceback.print_exc()
+    
+    print(f"[OK] Successfully registered {registered_count}/{len(blueprints)} blueprints")
+    
+    # Log all registered routes for debugging (focus on auth routes)
+    print("\n[DEBUG] Scanning registered routes...")
+    auth_routes = []
+    firebase_routes = []
+    all_routes_count = 0
+    
+    for rule in app.url_map.iter_rules():
+        all_routes_count += 1
+        route_str = f"  {', '.join(rule.methods)} {rule.rule}"
         
-        app.register_blueprint(auth_bp)
-        app.register_blueprint(creator_bp)
-        app.register_blueprint(client_bp)
-        app.register_blueprint(approver_bp)
-        app.register_blueprint(collaborator_bp)
-        app.register_blueprint(clients_bp)
-        app.register_blueprint(shared_bp)
-        
-        print("[OK] Registered all role-based blueprints (alternative import):")
-        print("  - Auth routes")
-        print("  - Creator routes")
-        print("  - Client routes")
-        print("  - Approver routes")
-        print("  - Collaborator routes")
-        print("  - Client management routes")
-        print("  - Shared utility routes")
-    except Exception as blueprint_error:
-        print(f"[WARN] Could not register blueprints: {blueprint_error}")
-        import traceback
-        traceback.print_exc()
+        if 'firebase' in rule.rule.lower():
+            firebase_routes.append(route_str)
+            auth_routes.append(route_str)
+        elif 'auth' in rule.rule.lower() or '/register' in rule.rule or '/login' in rule.rule:
+            auth_routes.append(route_str)
+    
+    print(f"[DEBUG] Total routes registered: {all_routes_count}")
+    
+    if auth_routes:
+        print(f"\n[DEBUG] Auth-related routes found ({len(auth_routes)}):")
+        for route in auth_routes:
+            print(route)
+    else:
+        print("\n[WARN] No auth-related routes found!")
+    
+    # Specifically check for /firebase route
+    if firebase_routes:
+        print(f"\n[OK] Firebase routes found ({len(firebase_routes)}):")
+        for route in firebase_routes:
+            print(f"  ✓ {route}")
+    else:
+        print("\n[WARN] No Firebase routes found in registered routes!")
+        print("       This indicates the auth blueprint may not be registered correctly.")
 except Exception as blueprint_error:
-    print(f"[WARN] Could not register blueprints: {blueprint_error}")
+    print(f"[ERROR] Could not register blueprints: {blueprint_error}")
     import traceback
     traceback.print_exc()
 

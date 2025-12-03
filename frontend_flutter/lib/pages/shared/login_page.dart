@@ -136,7 +136,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Sending Firebase token to backend...');
       final response = await http.post(
-        Uri.parse('http://localhost:8000/auth/firebase'),
+        Uri.parse('http://localhost:8000/firebase'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'id_token': firebaseIdToken}),
       );
