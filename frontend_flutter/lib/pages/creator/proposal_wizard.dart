@@ -47,6 +47,9 @@ class _ProposalWizardState extends State<ProposalWizard>
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
 
+  // Scroll controllers
+  final ScrollController _governScrollController = ScrollController();
+
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
     {'number': '1', 'label': 'Compose'},
@@ -242,6 +245,7 @@ class _ProposalWizardState extends State<ProposalWizard>
   void dispose() {
     _pageController.dispose();
     _tabController.dispose();
+    _governScrollController.dispose();
     super.dispose();
   }
 
@@ -924,7 +928,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _governScrollController,
             child: SingleChildScrollView(
+              controller: _governScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildGovernanceResults(),
             ),

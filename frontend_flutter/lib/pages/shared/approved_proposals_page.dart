@@ -8,7 +8,6 @@ import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
-import '../../widgets/role_switcher.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -280,18 +279,6 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         ),
         Row(
           children: [
-            const CompactRoleSwitcher(),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: 44,
-              height: 44,
-              child: IconButton(
-                tooltip: 'Refresh',
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                onPressed: _loadData,
-              ),
-            ),
-            const SizedBox(width: 16),
             ClipOval(
               child: Image.asset(
                 'assets/images/User_Profile.png',
