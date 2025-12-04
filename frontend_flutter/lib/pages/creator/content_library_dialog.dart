@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../services/content_library_service.dart';
 import '../../services/auth_service.dart';
 import '../../api.dart';
+import '../../theme/premium_theme.dart';
 
 class ContentLibrarySelectionDialog extends StatefulWidget {
   const ContentLibrarySelectionDialog({super.key});
@@ -18,6 +19,13 @@ class _ContentLibrarySelectionDialogState
   List<Map<String, dynamic>> _modules = [];
   bool _loading = true;
   String _search = '';
+
+  String _cleanPreviewText(String raw) {
+    var text = raw.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '');
+    text = text.replaceAll(RegExp(r'<[^>]+>'), '');
+    text = text.replaceAll(RegExp(r'\s+'), ' ');
+    return text.trim();
+  }
 
   @override
   void initState() {
@@ -82,229 +90,242 @@ class _ContentLibrarySelectionDialogState
         .toList();
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: SizedBox(
-        width: 700,
-        height: 600,
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                color: Color(0xFF1A3A52),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(8),
-                  topRight: Radius.circular(8),
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(24),
+      child: GlassContainer(
+        borderRadius: 24,
+        padding: EdgeInsets.zero,
+        child: SizedBox(
+          width: 900,
+          height: 600,
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.darkBg2,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.library_books,
+                        color: Colors.white, size: 24),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Insert from Content Library',
+                      style: PremiumTheme.titleMedium,
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: _load,
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      tooltip: 'Refresh',
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.library_books,
-                      color: Colors.white, size: 24),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Insert from Content Library',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+
+              // Search bar
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: TextField(
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: PremiumTheme.textPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: PremiumTheme.darkBg3.withValues(alpha: 0.8),
+                    prefixIcon:
+                        const Icon(Icons.search, color: PremiumTheme.teal),
+                    hintText: 'Search library...',
+                    hintStyle: PremiumTheme.bodyMedium,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: PremiumTheme.glassWhiteBorder,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          const BorderSide(color: PremiumTheme.teal, width: 2),
                     ),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: _load,
-                    icon: const Icon(Icons.refresh, color: Colors.white),
-                    tooltip: 'Refresh',
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
-
-            // Search bar
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                decoration: InputDecoration(
-                  prefixIcon:
-                      const Icon(Icons.search, color: Color(0xFF00BCD4)),
-                  hintText: 'Search library...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF00BCD4), width: 2),
-                  ),
+                  onChanged: (v) => setState(() => _search = v),
                 ),
-                onChanged: (v) => setState(() => _search = v),
               ),
-            ),
 
-            // Content
-            Expanded(
-              child: _loading
-                  ? const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                Color(0xFF00BCD4)),
-                          ),
-                          SizedBox(height: 16),
-                          Text('Loading content library...'),
-                        ],
-                      ),
-                    )
-                  : _modules.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.folder_open,
-                                  size: 64, color: Colors.grey[400]),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Content Library is Empty',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Add content from the Content Library page\n(Navigate using the left sidebar)',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : filtered.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.search_off,
-                                      size: 64, color: Colors.grey[400]),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'No results found',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Try a different search term',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.separated(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (context, index) {
-                                final m = filtered[index];
-                                final category = m['category'] ?? 'Unknown';
-                                final content = (m['content'] ?? '').toString();
-                                final subtitle = content.length > 150
-                                    ? '${content.substring(0, 150)}...'
-                                    : content;
-
-                                return ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  leading: Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: _getCategoryColor(category)
-                                          .withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      _getCategoryIcon(category),
-                                      color: _getCategoryColor(category),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    m['label'] ?? 'Untitled',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(height: 4),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _getCategoryColor(category)
-                                              .withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          category,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: _getCategoryColor(category),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      if (subtitle.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          subtitle,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey[600],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  trailing: const Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 16,
-                                    color: Color(0xFF00BCD4),
-                                  ),
-                                  onTap: () => Navigator.of(context).pop(m),
-                                );
-                              },
+              // Content
+              Expanded(
+                child: _loading
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFF00BCD4)),
                             ),
-            ),
-          ],
+                            SizedBox(height: 16),
+                            Text('Loading content library...'),
+                          ],
+                        ),
+                      )
+                    : _modules.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.folder_open,
+                                    size: 64, color: Colors.grey[400]),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Content Library is Empty',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Add content from the Content Library page\n(Navigate using the left sidebar)',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : filtered.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.search_off,
+                                        size: 64, color: Colors.grey[400]),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No results found',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Try a different search term',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.separated(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final m = filtered[index];
+                                  final category = m['category'] ?? 'Unknown';
+                                  final rawContent =
+                                      (m['content'] ?? '').toString();
+                                  final preview = _cleanPreviewText(rawContent);
+                                  final subtitle = preview.length > 150
+                                      ? '${preview.substring(0, 150)}...'
+                                      : preview;
+
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    leading: Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: _getCategoryColor(category)
+                                            .withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        _getCategoryIcon(category),
+                                        color: _getCategoryColor(category),
+                                      ),
+                                    ),
+                                    title: Text(
+                                      m['label'] ?? 'Untitled',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const SizedBox(height: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _getCategoryColor(category)
+                                                .withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            category,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color:
+                                                  _getCategoryColor(category),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        if (subtitle.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            subtitle,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    trailing: const Icon(
+                                      Icons.arrow_forward_ios,
+                                      size: 16,
+                                      color: Color(0xFF00BCD4),
+                                    ),
+                                    onTap: () => Navigator.of(context).pop(m),
+                                  );
+                                },
+                              ),
+              ),
+            ],
+          ),
         ),
       ),
     );

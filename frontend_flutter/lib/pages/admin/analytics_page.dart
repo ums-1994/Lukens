@@ -87,8 +87,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       csvContent.writeln('RECENT PROPOSALS');
       csvContent.writeln('Proposal,Value,Status,Days,Win Probability');
       for (final proposal in analytics.recentProposals) {
-        csvContent.writeln(
-            '"${proposal.title}",'
+        csvContent.writeln('"${proposal.title}",'
             '"${proposal.valueLabel}",'
             '"${proposal.status}",'
             '${proposal.daysOpen},'
@@ -227,7 +226,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0x33FFFFFF), width: 1.5),
+                  border:
+                      Border.all(color: const Color(0x33FFFFFF), width: 1.5),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -235,8 +235,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF06B6D4)
-                            .withValues(alpha: 0.1),
+                        color: const Color(0xFF06B6D4).withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -350,8 +349,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     }
 
     final monthlyPoints = List.generate(6, (index) {
-      final monthDate =
-          DateTime(now.year, now.month - (5 - index), 1);
+      final monthDate = DateTime(now.year, now.month - (5 - index), 1);
       return _MonthlyPoint(monthDate);
     });
 
@@ -405,21 +403,19 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         }
       }
 
-      final updated = _parseDate(
-              proposal['updated_at'] ?? proposal['updatedAt']) ??
-          created;
+      final updated =
+          _parseDate(proposal['updated_at'] ?? proposal['updatedAt']) ??
+              created;
       performanceRows.add(
         _ProposalPerformanceRow(
           title: proposal['title']?.toString().isNotEmpty == true
               ? proposal['title'].toString()
               : 'Untitled',
           value: budget > 0 ? budget : null,
-          valueLabel:
-              budget > 0 ? _formatCurrency(budget) : '—',
+          valueLabel: budget > 0 ? _formatCurrency(budget) : '—',
           status: statusLabel,
-          daysOpen: updated != null
-              ? DateTime.now().difference(updated).inDays
-              : 0,
+          daysOpen:
+              updated != null ? DateTime.now().difference(updated).inDays : 0,
           probability: _probabilityForStatus(statusLower),
           statusColor: _statusColor(statusLower),
           updatedAt: updated,
@@ -543,8 +539,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   double _parseBudget(dynamic value) {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
-    final cleaned =
-        value.toString().replaceAll(RegExp(r'[^\d\.-]'), '');
+    final cleaned = value.toString().replaceAll(RegExp(r'[^\d\.-]'), '');
     return double.tryParse(cleaned) ?? 0;
   }
 
@@ -624,10 +619,20 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         .replaceAll('_', ' ')
         .split(' ')
         .where((part) => part.isNotEmpty)
-        .map((part) =>
-            part[0].toUpperCase() + part.substring(1).toLowerCase())
+        .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
         .toList();
     return parts.isEmpty ? 'Draft' : parts.join(' ');
+  }
+
+  String _getUserName(Map<String, dynamic>? user) {
+    if (user == null) return 'User';
+
+    String? name = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email']?.split('@')[0];
+
+    return name ?? 'User';
   }
 
   @override
@@ -635,6 +640,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final app = context.watch<AppState>();
     final analytics = _calculateAnalytics(app.proposals);
     final metrics = _buildMetricCards(analytics);
+    final userName = _getUserName(app.currentUser);
+    final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : 'U';
     return Scaffold(
       body: Container(
         color: Colors.transparent,
@@ -670,10 +677,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             color: Color(0xFF3498DB),
                             shape: BoxShape.circle,
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Text(
-                              'U',
-                              style: TextStyle(
+                              userInitial,
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -681,10 +688,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const Text('User', style: TextStyle(color: Colors.white)),
+                        Text(
+                          userName,
+                          style: const TextStyle(color: Colors.white),
+                        ),
                         const SizedBox(width: 10),
                         PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, color: Colors.white),
+                          icon:
+                              const Icon(Icons.more_vert, color: Colors.white),
                           onSelected: (value) {
                             if (value == 'logout') {
                               Navigator.pushNamed(context, '/login');
@@ -750,8 +761,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                       ),
                                     Padding(
                                       padding: EdgeInsets.symmetric(
-                                        horizontal:
-                                            _isSidebarCollapsed ? 0 : 8,
+                                        horizontal: _isSidebarCollapsed ? 0 : 8,
                                       ),
                                       child: Icon(
                                         _isSidebarCollapsed
@@ -766,15 +776,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             ),
                           ),
                           const SizedBox(height: 12),
-                        _buildNavItem(
-                            'Dashboard',
+                          _buildNavItem('Dashboard',
                               'assets/images/Dahboard.png', false, context),
-                          _buildNavItem(
-                              'My Proposals',
+                          _buildNavItem('My Proposals',
                               'assets/images/My_Proposals.png', false, context),
                           _buildNavItem(
                               'Templates',
-                              'assets/images/content_library.png', false, context),
+                              'assets/images/content_library.png',
+                              false,
+                              context),
                           _buildNavItem(
                             'Content Library',
                             'assets/images/content_library.png',
@@ -906,8 +916,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   Expanded(
                                     child: _buildGlassChartCard(
                                       'Win Rate',
-                                      _buildWinRatePieChart(
-                                          analytics.winRate, analytics.lossRate),
+                                      _buildWinRatePieChart(analytics.winRate,
+                                          analytics.lossRate),
                                       height: 320,
                                     ),
                                   ),
@@ -970,8 +980,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               ),
               padding: const EdgeInsets.all(6),
               child: ClipOval(
-                child:
-                    AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
               ),
             ),
           ),
@@ -1175,17 +1185,17 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   Icon(
                     isPositive ? Icons.trending_up : Icons.trending_down,
                     size: 16,
-                    color: isPositive
-                        ? PremiumTheme.success
-                        : PremiumTheme.error,
+                    color:
+                        isPositive ? PremiumTheme.success : PremiumTheme.error,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     change,
                     style: TextStyle(
                       fontSize: 14,
-                      color:
-                          isPositive ? PremiumTheme.success : PremiumTheme.error,
+                      color: isPositive
+                          ? PremiumTheme.success
+                          : PremiumTheme.error,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1254,8 +1264,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
       );
     }
-    final maxValue = points.fold<double>(
-        0, (previousValue, element) => math.max(previousValue, element.revenue));
+    final maxValue = points.fold<double>(0,
+        (previousValue, element) => math.max(previousValue, element.revenue));
     final yMax = maxValue == 0 ? 1.0 : maxValue * 1.2;
     final spots = <FlSpot>[
       for (int i = 0; i < points.length; i++)
@@ -1367,13 +1377,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       'Signed',
       'Lost',
     ];
-    
+
     // Map declined statuses to "Lost"
     final normalizedCounts = <String, int>{};
     int lostCount = 0;
     for (final entry in statusCounts.entries) {
       final status = entry.key.toLowerCase();
-      if (status.contains('declined') || status.contains('lost') || status.contains('rejected')) {
+      if (status.contains('declined') ||
+          status.contains('lost') ||
+          status.contains('rejected')) {
         lostCount += entry.value;
       } else {
         normalizedCounts[entry.key] = entry.value;
@@ -1382,7 +1394,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     if (lostCount > 0) {
       normalizedCounts['Lost'] = lostCount;
     }
-    
+
     final bars = <BarChartGroupData>[];
     int maxCount = 0;
     for (int i = 0; i < statuses.length; i++) {
@@ -1668,7 +1680,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             decoration: BoxDecoration(
               color: data.statusColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: data.statusColor.withValues(alpha: 0.4)),
+              border:
+                  Border.all(color: data.statusColor.withValues(alpha: 0.4)),
             ),
             child: Text(
               data.status,
@@ -1683,8 +1696,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-          child:
-              Text(data.daysOpen.toString(), style: PremiumTheme.bodyMedium),
+          child: Text(data.daysOpen.toString(), style: PremiumTheme.bodyMedium),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -1694,8 +1706,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 child: LinearProgressIndicator(
                   value: data.probability.clamp(0, 1),
                   backgroundColor: const Color(0xFF2D3748),
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(data.statusColor),
+                  valueColor: AlwaysStoppedAnimation<Color>(data.statusColor),
                   minHeight: 6,
                   borderRadius: BorderRadius.circular(3),
                 ),
@@ -1832,4 +1843,3 @@ class _MetricCardData {
     required this.subtitle,
   });
 }
-

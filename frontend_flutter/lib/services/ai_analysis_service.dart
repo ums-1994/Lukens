@@ -61,9 +61,12 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/generate-section'),
+        // Use the unified /ai/generate endpoint implemented in the backend
+        Uri.parse('$_baseUrl/ai/generate'),
         headers: headers,
         body: jsonEncode({
+          // Generic prompt; backend mainly relies on section_type + context
+          'prompt': 'Generate proposal section: $sectionType',
           'section_type': sectionType,
           'context': context,
         }),
@@ -71,7 +74,12 @@ class AIAnalysisService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['generated_content'];
+        // New backend returns `content`; keep a fallback for older shape
+        final generated = data['content'] ?? data['generated_content'] ?? '';
+        if (generated is String && generated.isNotEmpty) {
+          return generated;
+        }
+        throw Exception('Empty AI response');
       } else {
         throw Exception('Content generation failed: ${response.statusCode}');
       }
@@ -91,7 +99,8 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/improve-content'),
+        // Use the /ai/improve endpoint implemented in the backend
+        Uri.parse('$_baseUrl/ai/improve'),
         headers: headers,
         body: jsonEncode({
           'content': content,
@@ -101,7 +110,14 @@ class AIAnalysisService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['improvements'];
+        // Backend already returns the full result map from ai_service.improve_content
+        // Keep backward compatibility if a nested "improvements" key exists
+        if (data is Map<String, dynamic>) {
+          return data['improvements'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(data['improvements'])
+              : data;
+        }
+        throw Exception('Unexpected AI improve response shape');
       } else {
         throw Exception('Content improvement failed: ${response.statusCode}');
       }
@@ -154,8 +170,8 @@ class AIAnalysisService {
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
     // If proposal has an ID and it's not 'draft', use the new risk analysis
-    if (proposalData.containsKey('id') && 
-        proposalData['id'] != null && 
+    if (proposalData.containsKey('id') &&
+        proposalData['id'] != null &&
         proposalData['id'].toString() != 'draft') {
       try {
         return await analyzeProposalRisks(proposalData['id'].toString());

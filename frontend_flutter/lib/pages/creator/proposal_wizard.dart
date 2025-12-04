@@ -49,7 +49,9 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isRunningGovernance = false;
 
   // Scroll controllers
+  final ScrollController _composeScrollController = ScrollController();
   final ScrollController _governScrollController = ScrollController();
+  final ScrollController _riskScrollController = ScrollController();
 
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
@@ -140,11 +142,8 @@ class _ProposalWizardState extends State<ProposalWizard>
     _pageController = PageController();
     _tabController = TabController(length: _totalSteps, vsync: this);
     // Pre-select required modules so they are checked by default
-    final required = _contentModules
-        .where((m) => m['required'] == true)
-        .map((m) => m['id'] as String)
-        .toList();
-    _formData['selectedModules'] = List<String>.from(required);
+    final allModuleIds = _contentModules.map((m) => m['id'] as String).toList();
+    _formData['selectedModules'] = List<String>.from(allModuleIds);
     // initialize module contents map
     _formData['moduleContents'] = <String, String>{};
     // Load templates from template library
@@ -246,7 +245,9 @@ class _ProposalWizardState extends State<ProposalWizard>
   void dispose() {
     _pageController.dispose();
     _tabController.dispose();
+    _composeScrollController.dispose();
     _governScrollController.dispose();
+    _riskScrollController.dispose();
     super.dispose();
   }
 
@@ -403,6 +404,10 @@ class _ProposalWizardState extends State<ProposalWizard>
               ),
       );
       _formData['templateType'] = template.templateType;
+      // When a template is selected, make all content modules available
+      final allModuleIds =
+          _contentModules.map((m) => m['id'] as String).toList();
+      _formData['selectedModules'] = allModuleIds;
     });
   }
 
@@ -418,15 +423,74 @@ class _ProposalWizardState extends State<ProposalWizard>
     });
   }
 
+  Map<String, dynamic> _calculateComposeReadiness() {
+    final missing = <String>[];
+    int completed = 0;
+    int total = 0;
+
+    void checkField(String key, String label) {
+      total++;
+      final value = _formData[key]?.toString().trim() ?? '';
+      if (value.isEmpty) {
+        missing.add(label);
+      } else {
+        completed++;
+      }
+    }
+
+    // Template selection
+    checkField('templateId', 'Template');
+
+    // Client details
+    checkField('clientName', 'Client Name');
+    checkField('clientEmail', 'Client Email');
+    checkField('clientHolding', 'Client Holding / Group');
+    checkField('clientAddress', 'Client Address');
+    checkField('clientContactName', 'Client Contact Name');
+    checkField('clientContactEmail', 'Client Contact Email');
+    checkField('clientContactMobile', 'Client Contact Mobile');
+
+    // Engagement details
+    checkField('opportunityName', 'Project / Opportunity Name');
+    checkField('projectType', 'Engagement Type');
+    checkField('estimatedValue', 'Estimated Value');
+    checkField('timeline', 'Timeline');
+
+    // Required content modules must be selected
+    final requiredModules =
+        _contentModules.where((m) => m['required'] == true).toList();
+    final selectedIds =
+        List<String>.from(_formData['selectedModules'] ?? const []);
+    for (final module in requiredModules) {
+      total++;
+      final id = module['id'] as String;
+      final name = (module['name'] as String?) ?? id;
+      if (selectedIds.contains(id)) {
+        completed++;
+      } else {
+        missing.add('Required section: $name');
+      }
+    }
+
+    final int score = total == 0 ? 0 : ((completed / total) * 100).round();
+
+    return {
+      'score': score,
+      'missing': missing,
+    };
+  }
+
+  bool _isComposeStepValid() {
+    final readiness = _calculateComposeReadiness();
+    final List<String> missing =
+        List<String>.from(readiness['missing'] ?? const <String>[]);
+    return missing.isEmpty;
+  }
+
   bool _canProceed() {
     switch (_currentStep) {
       case 0: // Compose - require core setup before moving on
-        final hasTemplate =
-            _formData['templateId']?.toString().isNotEmpty ?? false;
-        // For now, only require that a template has been selected on the first screen.
-        // Client details, project details, and modules are collected in later steps
-        // and validated via governance/risk checks.
-        return hasTemplate;
+        return _isComposeStepValid();
       case 1: // Govern - require AI governance results
         return _governanceResults.isNotEmpty;
       case 2: // AI Risk Gate - require risk assessment to have run
@@ -703,6 +767,19 @@ class _ProposalWizardState extends State<ProposalWizard>
   }
 
   Widget _buildHeader() {
+    final templateType = (_formData['templateType'] as String?) ?? '';
+    String documentLabel;
+    switch (templateType.toLowerCase()) {
+      case 'sow':
+        documentLabel = 'Statement of Work (SOW)';
+        break;
+      case 'rfi':
+        documentLabel = 'Request for Information (RFI)';
+        break;
+      default:
+        documentLabel = 'Proposal';
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -711,7 +788,7 @@ class _ProposalWizardState extends State<ProposalWizard>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'New Proposal',
+              'New $documentLabel',
               style: PremiumTheme.titleLarge,
             ),
             const SizedBox(height: 4),
@@ -886,11 +963,125 @@ class _ProposalWizardState extends State<ProposalWizard>
     if (selected != null) {
       final Map<String, String> contents =
           Map<String, String>.from(_formData['moduleContents'] ?? {});
-      contents[moduleId] = selected['content'] ?? '';
+
+      var raw = (selected['content'] ?? '').toString();
+      raw = raw.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '');
+      raw = raw.replaceAll(RegExp(r'<[^>]+>'), '');
+      raw = raw.replaceAll(RegExp(r'\s+'), ' ');
+
+      contents[moduleId] = raw.trim();
       setState(() {
         _formData['moduleContents'] = contents;
       });
     }
+  }
+
+  Future<void> _showGeneratedContentDialog(
+      String moduleId, String content) async {
+    final module = _contentModules.firstWhere(
+      (m) => m['id'] == moduleId,
+      orElse: () => {
+        'id': moduleId,
+        'name': moduleId.replaceAll('_', ' '),
+      },
+    );
+
+    final title = module['name']?.toString() ?? moduleId.replaceAll('_', ' ');
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController(text: content);
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          child: GlassContainer(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            child: SizedBox(
+              width: 700,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI content for $title',
+                    style: PremiumTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 260,
+                    child: CustomScrollbar(
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: TextFormField(
+                          controller: controller,
+                          maxLines: null,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.textPrimary,
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            hintText:
+                                'Review or refine the AI-generated content before saving...',
+                            hintStyle: PremiumTheme.bodyMedium.copyWith(
+                              color: PremiumTheme.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Close'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          final updated = controller.text;
+                          setState(() {
+                            final Map<String, String> contents =
+                                Map<String, String>.from(
+                                    _formData['moduleContents'] ?? {});
+                            contents[moduleId] = updated;
+                            _formData['moduleContents'] = contents;
+                          });
+                          Navigator.of(dialogContext).pop();
+                        },
+                        child: const Text('Save'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          final updated = controller.text;
+                          setState(() {
+                            final Map<String, String> contents =
+                                Map<String, String>.from(
+                                    _formData['moduleContents'] ?? {});
+                            contents[moduleId] = updated;
+                            _formData['moduleContents'] = contents;
+                            _currentStep = 0;
+                            _pageController.jumpToPage(0);
+                          });
+                          Navigator.of(dialogContext).pop();
+                        },
+                        child: const Text('Save & Edit in Compose'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _ensureModuleSelected(String moduleId) {
@@ -939,6 +1130,15 @@ class _ProposalWizardState extends State<ProposalWizard>
           backgroundColor: PremiumTheme.teal,
         ),
       );
+
+      await _showGeneratedContentDialog(moduleId, generated);
+
+      // If the user is currently on the Govern step, automatically refresh
+      // the governance check so "missing section" issues clear once
+      // content has been added via AI.
+      if (_currentStep == 1) {
+        await _runGovernanceCheck();
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -1123,7 +1323,141 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   // Step 1: Compose - Combines template selection, client details, project details, content selection, and content editor
   Widget _buildComposeStep() {
-    return _buildTemplateSelection(); // For now, start with template selection - we'll make this a multi-tab step
+    final readiness = _calculateComposeReadiness();
+    final int score = (readiness['score'] as int?) ?? 0;
+    final List<String> missing =
+        List<String>.from(readiness['missing'] ?? const <String>[]);
+
+    Color statusColor;
+    String statusLabel;
+    if (score >= 90 && missing.isEmpty) {
+      statusColor = PremiumTheme.success;
+      statusLabel = 'Ready';
+    } else if (score >= 60) {
+      statusColor = Colors.orange;
+      statusLabel = 'Partially ready';
+    } else {
+      statusColor = PremiumTheme.error;
+      statusLabel = 'Not ready';
+    }
+
+    return CustomScrollbar(
+      controller: _composeScrollController,
+      child: SingleChildScrollView(
+        controller: _composeScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Readiness summary for the Compose step
+            GlassContainer(
+              borderRadius: 16,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Compose Readiness',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '$score% • $statusLabel',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: (score.clamp(0, 100)) / 100.0,
+                      backgroundColor: PremiumTheme.glassWhite,
+                      valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                      minHeight: 6,
+                    ),
+                  ),
+                  if (missing.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Missing before you can proceed:',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: PremiumTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: missing.take(6).map((item) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: PremiumTheme.error.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            item,
+                            style: PremiumTheme.labelMedium.copyWith(
+                              color: PremiumTheme.error,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Sub-tabs for Template, Client, Engagement, and Content
+            DefaultTabController(
+              length: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TabBar(
+                    labelColor: Colors.white,
+                    unselectedLabelColor: PremiumTheme.textSecondary,
+                    indicator: BoxDecoration(
+                      color: PremiumTheme.teal,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    tabs: const [
+                      Tab(text: 'Template'),
+                      Tab(text: 'Client Info'),
+                      Tab(text: 'Engagement'),
+                      Tab(text: 'Content'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 500,
+                    child: TabBarView(
+                      children: [
+                        _buildTemplateSelection(),
+                        _buildClientDetails(),
+                        _buildProjectDetails(),
+                        _buildComposeContentStep(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Step 2: Govern - Governance checklist (AI-run)
@@ -1181,7 +1515,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _riskScrollController,
             child: SingleChildScrollView(
+              controller: _riskScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildRiskAssessment(),
             ),
@@ -1258,7 +1594,7 @@ class _ProposalWizardState extends State<ProposalWizard>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Select Template from Library',
+          'Select Template from Library (Wizard v2)',
           style: PremiumTheme.titleMedium,
         ),
         const SizedBox(height: 8),
@@ -1413,6 +1749,16 @@ class _ProposalWizardState extends State<ProposalWizard>
         TextEditingController(text: _formData['clientName']?.toString() ?? '');
     final clientEmailController =
         TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
+    final clientHoldingController = TextEditingController(
+        text: _formData['clientHolding']?.toString() ?? '');
+    final clientAddressController = TextEditingController(
+        text: _formData['clientAddress']?.toString() ?? '');
+    final clientContactNameController = TextEditingController(
+        text: _formData['clientContactName']?.toString() ?? '');
+    final clientContactEmailController = TextEditingController(
+        text: _formData['clientContactEmail']?.toString() ?? '');
+    final clientContactMobileController = TextEditingController(
+        text: _formData['clientContactMobile']?.toString() ?? '');
     final opportunityNameController = TextEditingController(
         text: _formData['opportunityName']?.toString() ?? '');
     final estimatedValueController = TextEditingController(
@@ -1474,6 +1820,61 @@ class _ProposalWizardState extends State<ProposalWizard>
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Client Holding / Group',
+                        'Parent company or group',
+                        (value) =>
+                            setState(() => _formData['clientHolding'] = value),
+                        Icons.account_tree_outlined,
+                        controller: clientHoldingController,
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Client Address',
+                        'Physical or postal address',
+                        (value) =>
+                            setState(() => _formData['clientAddress'] = value),
+                        Icons.location_on_outlined,
+                        controller: clientAddressController,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Contact Name',
+                              'Primary contact person',
+                              (value) => setState(
+                                  () => _formData['clientContactName'] = value),
+                              Icons.person_outline,
+                              controller: clientContactNameController,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Contact Email',
+                              'contact@client.com',
+                              (value) => setState(() =>
+                                  _formData['clientContactEmail'] = value),
+                              Icons.alternate_email,
+                              keyboardType: TextInputType.emailAddress,
+                              controller: clientContactEmailController,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Client Contact Mobile',
+                        'Mobile number',
+                        (value) => setState(
+                            () => _formData['clientContactMobile'] = value),
+                        Icons.phone_iphone,
+                        keyboardType: TextInputType.phone,
+                        controller: clientContactMobileController,
                       ),
                       const SizedBox(height: 20),
                       _buildTextField(
@@ -1556,10 +1957,46 @@ class _ProposalWizardState extends State<ProposalWizard>
                     const SizedBox(height: 20),
                     _buildTextField(
                       'Timeline',
-                      'Enter project timeline',
+                      'Select project timeline',
                       (value) => setState(() => _formData['timeline'] = value),
                       Icons.schedule,
                       controller: timelineController,
+                      readOnly: true,
+                      onTap: () async {
+                        final now = DateTime.now();
+                        DateTime initialDate = now;
+                        final text = timelineController.text.trim();
+                        if (text.isNotEmpty) {
+                          try {
+                            final parts = text.split('/');
+                            if (parts.length == 3) {
+                              final year = int.parse(parts[0]);
+                              final month = int.parse(parts[1]);
+                              final day = int.parse(parts[2]);
+                              initialDate = DateTime(year, month, day);
+                            }
+                          } catch (_) {}
+                        }
+
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: initialDate,
+                          firstDate: DateTime(now.year - 5),
+                          lastDate: DateTime(now.year + 10),
+                        );
+
+                        if (picked != null) {
+                          final y = picked.year.toString().padLeft(4, '0');
+                          final m = picked.month.toString().padLeft(2, '0');
+                          final d = picked.day.toString().padLeft(2, '0');
+                          final formatted = '$y/$m/$d';
+
+                          setState(() {
+                            timelineController.text = formatted;
+                            _formData['timeline'] = formatted;
+                          });
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -1568,6 +2005,22 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildComposeContentStep() {
+    return Row(
+      children: [
+        Expanded(
+          flex: 2,
+          child: _buildContentSelection(),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          flex: 3,
+          child: _buildContentEditor(),
+        ),
+      ],
     );
   }
 
@@ -1692,6 +2145,8 @@ class _ProposalWizardState extends State<ProposalWizard>
     IconData icon, {
     TextInputType keyboardType = TextInputType.text,
     TextEditingController? controller,
+    VoidCallback? onTap,
+    bool readOnly = false,
   }) {
     // Ensure controller text direction is LTR
     if (controller != null && controller.text.isNotEmpty) {
@@ -1709,6 +2164,8 @@ class _ProposalWizardState extends State<ProposalWizard>
       textDirection: TextDirection.ltr,
       child: TextFormField(
         controller: controller,
+        onTap: onTap,
+        readOnly: readOnly,
         textDirection: TextDirection.ltr,
         textAlign: TextAlign.left,
         style: PremiumTheme.bodyMedium.copyWith(
@@ -2130,9 +2587,10 @@ class _ProposalWizardState extends State<ProposalWizard>
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             TextButton(
-                              onPressed: () {
+                              onPressed: () async {
                                 if (sectionId != null) {
                                   _ensureModuleSelected(sectionId);
+                                  await _openContentLibraryAndInsert(sectionId);
                                 }
                               },
                               child: const Text('Add module'),
