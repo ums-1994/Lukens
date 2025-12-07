@@ -62,26 +62,34 @@ def token_required(f):
                     uid = firebase_user['uid']
                     name = firebase_user.get('name') or email.split('@')[0]
                     
-                    # Get username from database using email, or create user if not found
+                    # Get user from database using email, or create user if not found
+                    # Always use email as the primary lookup since it's unique and comes from Firebase
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute('SELECT username FROM users WHERE email = %s', (email,))
+                        # Look up by email (most reliable since it's unique and comes from Firebase)
+                        cursor.execute('SELECT id, username FROM users WHERE email = %s', (email,))
                         result = cursor.fetchone()
                         
                         if result:
-                            username = result[0]
-                            # Also get user_id to avoid lookup in functions
-                            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                            user_id_result = cursor.fetchone()
-                            user_id = user_id_result[0] if user_id_result else None
-                            print(f"[FIREBASE] Token validated for user: {username} (email: {email}, user_id: {user_id})")
-                            # Remove any Firebase-specific kwargs to avoid passing them to functions that don't accept them
-                            # Pass username and user_id so functions don't need to look it up (only if function accepts it)
+                            user_id = result[0]
+                            username = result[1]
+                            print(f"[FIREBASE] Token validated for existing user: {username} (email: {email}, user_id: {user_id})")
+                            
+                            # Verify user_id is actually valid (double-check)
+                            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                            verify = cursor.fetchone()
+                            if not verify:
+                                print(f"[FIREBASE] WARNING: user_id {user_id} not found on verification, this shouldn't happen!")
+                                # This is a serious error, but continue anyway
+                            
+                            # Pass username, user_id, and email to functions
                             import inspect
                             sig = inspect.signature(f)
-                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id']}
-                            if user_id and 'user_id' in sig.parameters:
+                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']}
+                            if 'user_id' in sig.parameters:
                                 clean_kwargs['user_id'] = user_id
+                            if 'email' in sig.parameters:
+                                clean_kwargs['email'] = email
                             return f(username=username, *args, **clean_kwargs)
                         else:
                             # Auto-create user if they have a valid Firebase token but don't exist in database
@@ -178,12 +186,14 @@ def token_required(f):
                                 raise
                             
                             # Store user_id in kwargs so functions can use it without looking it up again
-                            # Only pass user_id if the function accepts it (check function signature)
+                            # Always pass email as well since it's unique and reliable for fallback lookups
                             import inspect
                             sig = inspect.signature(f)
-                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id']}
+                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']}
                             if 'user_id' in sig.parameters:
                                 clean_kwargs['user_id'] = user_id
+                            if 'email' in sig.parameters:
+                                clean_kwargs['email'] = email
                             return f(username=username, *args, **clean_kwargs)
             else:
                 # Firebase token verification failed, but don't log error if it's clearly not a Firebase token

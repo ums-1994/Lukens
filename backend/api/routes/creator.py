@@ -171,32 +171,63 @@ def get_trash(username=None):
 
 @bp.get("/proposals")
 @token_required
-def get_proposals(username=None, user_id=None):
+def get_proposals(username=None, user_id=None, email=None):
     """Get all proposals for the creator"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            print(f"🔍 Looking for proposals for user {username}")
+            print(f"🔍 Looking for proposals for user {username} (user_id: {user_id}, email: {email})")
             
             # Use user_id from decorator if available, but always verify it exists
             if user_id:
-                # Verify the user_id exists in the database
-                cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                user_row = cursor.fetchone()
+                # Verify the user_id exists in the database (with retry for timing issues)
+                user_row = None
+                for attempt in range(3):
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        break
+                    if attempt < 2:
+                        import time
+                        time.sleep(0.1)  # Small delay to allow transaction to be visible
+                
                 if not user_row:
-                    print(f"⚠️ user_id {user_id} from decorator doesn't exist, looking up by username: {username}")
+                    print(f"⚠️ user_id {user_id} from decorator doesn't exist after retries, looking up by email/username")
                     user_id = None
             
             if not user_id:
-                # Look up user by username
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user_row = cursor.fetchone()
-                if not user_row:
-                    print(f"❌ User lookup failed for username: {username}")
+                # Try email first (most reliable since it's unique and comes from Firebase)
+                if email:
+                    print(f"🔍 Looking up user by email: {email}")
+                    for attempt in range(3):
+                        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            user_id = user_row[0]
+                            print(f"✅ Found user_id {user_id} by email: {email}")
+                            break
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.1)
+                
+                # If email lookup failed, try username
+                if not user_id and username:
+                    print(f"🔍 Looking up user by username: {username}")
+                    for attempt in range(3):
+                        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            user_id = user_row[0]
+                            print(f"✅ Found user_id {user_id} by username: {username}")
+                            break
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.1)
+                
+                if not user_id:
+                    print(f"❌ User lookup failed for username: {username}, email: {email}")
                     return {'detail': 'User not found'}, 404
-                user_id = user_row[0]
-                print(f"✅ Found user_id {user_id} for username: {username}")
             else:
                 print(f"✅ Using verified user_id from decorator: {user_id}")
             
@@ -238,11 +269,11 @@ def get_proposals(username=None, user_id=None):
 
 @bp.post("/proposals")
 @token_required
-def create_proposal(username=None, user_id=None):
+def create_proposal(username=None, user_id=None, email=None):
     """Create a new proposal"""
     try:
         data = request.get_json()
-        print(f"📝 Creating proposal for user {username}: {data.get('title', 'Untitled')}")
+        print(f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email}): {data.get('title', 'Untitled')}")
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -283,40 +314,41 @@ def create_proposal(username=None, user_id=None):
                         time.sleep(0.1)  # Small delay to allow transaction to be visible
                 
                 if not user_row:
-                    print(f"⚠️ user_id {user_id} from decorator doesn't exist after retries, looking up by username: {username}")
+                    print(f"⚠️ user_id {user_id} from decorator doesn't exist after retries, looking up by email/username")
                     user_id = None
             
             if not user_id:
-                # Look up user by username (with retry in case user was just created)
-                user_row = None
-                for attempt in range(3):
-                    cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                    user_row = cursor.fetchone()
-                    if user_row:
-                        break
-                    if attempt < 2:
-                        import time
-                        time.sleep(0.1)  # Small delay to allow transaction to be visible
+                # Try email first (most reliable since it's unique and comes from Firebase)
+                if email:
+                    print(f"🔍 Looking up user by email: {email}")
+                    for attempt in range(3):
+                        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            user_id = user_row[0]
+                            print(f"✅ Found user_id {user_id} by email: {email}")
+                            break
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.1)
                 
-                # If username lookup failed, try email (in case username was auto-generated differently)
-                if not user_row:
-                    print(f"⚠️ Username lookup failed, trying email lookup...")
-                    # Try to get email from Firebase token if available
-                    # For now, we'll just try a few more times with username
-                    for attempt in range(2):
+                # If email lookup failed, try username
+                if not user_id and username:
+                    print(f"🔍 Looking up user by username: {username}")
+                    for attempt in range(3):
                         cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                         user_row = cursor.fetchone()
                         if user_row:
+                            user_id = user_row[0]
+                            print(f"✅ Found user_id {user_id} by username: {username}")
                             break
-                        if attempt < 1:
+                        if attempt < 2:
                             import time
-                            time.sleep(0.2)  # Longer delay
+                            time.sleep(0.1)
                 
-                if not user_row:
-                    print(f"❌ User lookup failed for username: {username} after all retries")
+                if not user_id:
+                    print(f"❌ User lookup failed for username: {username}, email: {email} after all retries")
                     return {'detail': 'User not found'}, 404
-                user_id = user_row[0]
-                print(f"✅ Found user_id {user_id} for username: {username}")
             else:
                 print(f"✅ Using verified user_id from decorator: {user_id}")
             
