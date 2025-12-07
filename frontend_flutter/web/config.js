@@ -11,8 +11,8 @@ window.APP_CONFIG = {
     if (window.APP_API_URL) {
       return window.APP_API_URL;
     }
-    // Default to production backend URL (update this to your Render backend URL)
-    return 'https://lukens-backend.onrender.com';
+    // Default to production backend URL
+    return 'https://lukens-wp8w.onrender.com';
   })(),
 };
 

@@ -30,8 +30,8 @@ class ApiService {
     if (kDebugMode) {
       return 'http://localhost:8000';
     }
-    // Production default (update this to your Render backend URL)
-    return 'https://lukens-backend.onrender.com';
+    // Production default
+    return 'https://lukens-wp8w.onrender.com';
   }
 
   // Get headers with Firebase token
