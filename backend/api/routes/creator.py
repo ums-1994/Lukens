@@ -12,7 +12,7 @@ from datetime import datetime
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 
-bp = Blueprint('creator', __name__)
+bp = Blueprint('creator', __name__, url_prefix='')
 
 # ============================================================================
 # CONTENT LIBRARY ROUTES
@@ -533,6 +533,15 @@ def send_to_client(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+            # Run compound risk gate check
+            risk_result = evaluate_compound_risk(dict(proposal))
+            if risk_result.get('blocked'):
+                return {
+                    'detail': 'Proposal blocked by risk gate',
+                    'risk_score': risk_result.get('score'),
+                    'flags': risk_result.get('flags', []),
+                    'message': 'This proposal has too many risk factors. Please address the issues before sending to client.'
+                }, 400                
             
             cursor.execute(
                 "SELECT id, full_name, username, email FROM users WHERE username = %s",
