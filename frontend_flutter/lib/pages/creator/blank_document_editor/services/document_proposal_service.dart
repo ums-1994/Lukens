@@ -5,7 +5,6 @@ import '../../../../services/api_service.dart';
 import '../../../../document_editor/models/document_section.dart';
 import '../../../../document_editor/models/inline_image.dart';
 import '../../../../document_editor/models/document_table.dart';
-import 'package:flutter/material.dart';
 
 /// Service for handling document proposal API operations
 class DocumentProposalService {
@@ -58,20 +57,20 @@ class DocumentProposalService {
             sectionType: sectionData['sectionType'] as String? ?? 'content',
             isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
             inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
-                ?.map((img) =>
-                    InlineImage.fromJson(img as Map<String, dynamic>))
+                ?.map(
+                    (img) => InlineImage.fromJson(img as Map<String, dynamic>))
                 .toList(),
             tables: (sectionData['tables'] as List<dynamic>?)?.map((tableData) {
-              try {
-                return tableData is Map<String, dynamic>
-                    ? DocumentTable.fromJson(tableData)
-                    : DocumentTable.fromJson(
-                        Map<String, dynamic>.from(tableData as Map));
-              } catch (e) {
-                print('⚠️ Error loading table: $e');
-                return DocumentTable();
-              }
-            }).toList() ??
+                  try {
+                    return tableData is Map<String, dynamic>
+                        ? DocumentTable.fromJson(tableData)
+                        : DocumentTable.fromJson(
+                            Map<String, dynamic>.from(tableData as Map));
+                  } catch (e) {
+                    print('⚠️ Error loading table: $e');
+                    return DocumentTable();
+                  }
+                }).toList() ??
                 [],
           );
           sections.add(newSection);
@@ -158,7 +157,7 @@ class DocumentProposalService {
       print('🔄 Loading collaborators for proposal $proposalId...');
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8000/api/proposals/$proposalId/collaborators'),
+            '${ApiService.baseUrl}/api/proposals/$proposalId/collaborators'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -211,7 +210,7 @@ class DocumentProposalService {
   ) async {
     try {
       final response = await http.delete(
-        Uri.parse('http://localhost:8000/api/collaborations/$invitationId'),
+        Uri.parse('${ApiService.baseUrl}/api/collaborations/$invitationId'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -231,7 +230,7 @@ class DocumentProposalService {
   ) async {
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:8000/content?category=Images'),
+        Uri.parse('${ApiService.baseUrl}/content?category=Images'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -405,4 +404,3 @@ class DocumentProposalService {
     }
   }
 }
-

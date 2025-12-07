@@ -46,9 +46,9 @@ class AuthService {
         }
       }
     }
-    // Default to localhost for local development
-    print('🌐 Using localhost API URL: http://localhost:8000');
-    return 'http://localhost:8000';
+    // Default to Render backend (production)
+    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
+    return 'https://lukens-wp8w.onrender.com';
   }
   static String? _token;
   static Map<String, dynamic>? _currentUser;

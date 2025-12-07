@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../../services/api_service.dart';
 
 /// Helper for showing the "Collaborate on Proposal" dialog.
 ///
@@ -160,7 +161,7 @@ class InviteUserDialog {
 
                                       final response = await http.post(
                                         Uri.parse(
-                                          'http://localhost:8000/api/proposals/$savedProposalId/invite',
+                                          '${ApiService.baseUrl}/api/proposals/$savedProposalId/invite',
                                         ),
                                         headers: {
                                           'Authorization': 'Bearer $token',

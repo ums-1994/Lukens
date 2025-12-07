@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'client_proposal_viewer.dart';
+import '../../api.dart';
 
 class ClientDashboardHome extends StatefulWidget {
   const ClientDashboardHome({super.key});
@@ -93,7 +94,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8000/api/client/proposals?token=$_accessToken'),
+            '$baseUrl/api/client/proposals?token=$_accessToken'),
       );
 
       if (response.statusCode == 200) {

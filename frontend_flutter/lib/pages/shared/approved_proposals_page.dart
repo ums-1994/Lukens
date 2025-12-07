@@ -803,7 +803,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       // Create a blob URL for the PDF and open it
       try {
         final response = await http.get(
-          Uri.parse('http://localhost:8000/api/proposals/$id/signed-document'),
+          Uri.parse('$baseUrl/api/proposals/$id/signed-document'),
           headers: {
             'Authorization': 'Bearer $token',
           },
