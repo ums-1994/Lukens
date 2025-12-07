@@ -4,8 +4,8 @@
   # Base directory for the build
   base = "frontend_flutter"
   
-  # Build command - Netlify can build Flutter automatically
-  command = "flutter pub get && flutter build web --release --base-href /"
+  # Build command - Install Flutter first, then build
+  command = "git clone https://github.com/flutter/flutter.git -b stable /tmp/flutter && export PATH=\"$PATH:/tmp/flutter/bin\" && flutter config --enable-web && flutter pub get && flutter build web --release --base-href /"
   
   # Publish directory - where the built files are (relative to base)
   publish = "build/web"
