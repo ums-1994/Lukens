@@ -62,23 +62,18 @@ load_dotenv()
 app = Flask(__name__)
 # Configure CORS to allow requests from frontend
 # Note: When supports_credentials=True, cannot use '*' - must specify exact origins
-def cors_origin_check(origin):
-    """Check if origin is allowed for CORS"""
-    allowed_origins = [
-        'http://localhost:8081',
-        'http://localhost:8080',
-        'http://127.0.0.1:8081',
-        'http://localhost:3000',
-        'https://sowbuilder.netlify.app',
-    ]
-    # Allow all Netlify subdomains
-    if origin and origin.endswith('.netlify.app'):
-        return True
-    return origin in allowed_origins
+# We'll handle Netlify subdomains dynamically in the before_request handler
+allowed_origins_list = [
+    'http://localhost:8081',
+    'http://localhost:8080',
+    'http://127.0.0.1:8081',
+    'http://localhost:3000',
+    'https://sowbuilder.netlify.app',
+]
 
 CORS(app, 
      supports_credentials=True,
-     origins=cors_origin_check,
+     origins=allowed_origins_list,
      methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
      allow_headers=['Content-Type', 'Authorization', 'Collab-Token'],
      expose_headers=['Content-Type', 'Authorization'],
@@ -489,21 +484,20 @@ def init_pg_schema():
                 pass
         raise
 
-# Handle CORS preflight requests globally (must be first before_request)
-@app.before_request
-def handle_preflight():
-    """Handle CORS preflight OPTIONS requests"""
-    if request.method == 'OPTIONS':
-        print(f'[CORS] Handling OPTIONS request for: {request.path}')
-        response = Response()
-        origin = request.headers.get('Origin', '*')
+# Handle CORS for Netlify subdomains (after Flask-CORS processes the request)
+@app.after_request
+def handle_cors_after_request(response):
+    """Add CORS headers for Netlify subdomains that aren't in the static list"""
+    origin = request.headers.get('Origin')
+    
+    if origin and origin.endswith('.netlify.app') and origin not in allowed_origins_list:
+        # Allow this Netlify subdomain
         response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
         response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Max-Age', '3600')
-        print(f'[CORS] OPTIONS response sent with origin: {origin}')
-        return response
+    
+    return response
 
 # Initialize database schema on first request
 @app.before_request
