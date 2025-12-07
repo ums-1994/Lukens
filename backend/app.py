@@ -120,6 +120,15 @@ def get_pg_pool():
                 'password': os.getenv('DB_PASSWORD', ''),
                 'port': int(os.getenv('DB_PORT', '5432'))
             }
+            
+            # Add SSL mode for external connections (like Render)
+            # Check if host contains 'render.com' or SSL is explicitly required
+            ssl_mode = os.getenv('DB_SSLMODE', 'prefer')
+            if 'render.com' in db_config['host'].lower() or os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
+                ssl_mode = 'require'
+                db_config['sslmode'] = ssl_mode
+                print(f"🔒 Using SSL mode: {ssl_mode} for external connection")
+            
             print(f"🔄 Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
                 minconn=1,

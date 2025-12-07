@@ -753,6 +753,7 @@ class _ProposalWizardState extends State<ProposalWizard>
       case 'Terms & Conditions':
         return 'terms_conditions';
       case 'Assumptions & Risks':
+      case 'No Assumptions Section':
         return 'assumptions_risks';
       case 'Team & Bios':
       case 'Team Bios':

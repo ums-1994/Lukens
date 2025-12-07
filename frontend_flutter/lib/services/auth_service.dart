@@ -1,11 +1,40 @@
 import 'dart:convert';
+import 'dart:js' as js;
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
 class AuthService {
-  static const String baseUrl = 'http://localhost:8000';
+  // Get API URL from JavaScript config or use default
+  static String get baseUrl {
+    if (kIsWeb) {
+      try {
+        // Try to get from window.APP_CONFIG.API_URL
+        final config = js.context['APP_CONFIG'];
+        if (config != null) {
+          final configObj = config as js.JsObject;
+          final apiUrl = configObj['API_URL'];
+          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+            return apiUrl.toString().replaceAll('"', '');
+          }
+        }
+        // Fallback: try window.REACT_APP_API_URL
+        final envUrl = js.context['REACT_APP_API_URL'];
+        if (envUrl != null && envUrl.toString().isNotEmpty) {
+          return envUrl.toString().replaceAll('"', '');
+        }
+      } catch (e) {
+        print('⚠️ Could not read API URL from config: $e');
+      }
+    }
+    // Default URLs based on environment
+    if (kDebugMode) {
+      return 'http://localhost:8000';
+    }
+    // Production default (update this to your Render backend URL)
+    return 'https://lukens-backend.onrender.com';
+  }
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 

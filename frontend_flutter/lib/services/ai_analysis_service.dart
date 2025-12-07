@@ -308,14 +308,20 @@ class AIAnalysisService {
     // Pattern-based analysis
     final aiIssues = _performPatternAnalysis(proposalData);
     issues.addAll(aiIssues);
-    riskScore +=
-        aiIssues.fold(0, (sum, issue) => sum + (issue['points'] as int));
+    // Add points from AI-style checks to the overall risk score
+    riskScore += aiIssues.fold(0, (sum, issue) {
+      final points = issue['points'] as int? ?? 0;
+      return sum + points;
+    });
 
-    // Determine status
+    // Determine status based on a 0-100 readiness-style score
+    // where higher is better (100 = no risk).
+    final int readinessScore = (100 - riskScore).clamp(0, 100).toInt();
+
     String status;
-    if (riskScore == 0) {
+    if (readinessScore >= 90) {
       status = 'Ready';
-    } else if (riskScore <= 15) {
+    } else if (readinessScore >= 60) {
       status = 'At Risk';
     } else {
       status = 'Blocked';
@@ -366,11 +372,12 @@ class AIAnalysisService {
       });
     }
 
-    // Check for missing assumptions
+    // Check for missing assumptions: treat as a missing section so the
+    // Governance UI can auto-add the corresponding module.
     if (!_hasContent(proposalData, 'assumptions') &&
         !_hasContent(proposalData, 'assumptions_risks')) {
       issues.add({
-        'type': 'ai_analysis',
+        'type': 'missing_section',
         'title': 'No Assumptions Section',
         'description': 'Project assumptions should be clearly documented',
         'points': 4,

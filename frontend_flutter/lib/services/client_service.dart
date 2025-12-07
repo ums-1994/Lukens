@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class ClientService {
-  static const String baseUrl = ApiService.baseUrl;
+  static String get baseUrl => ApiService.baseUrl;
 
   // Get headers with token
   static Map<String, String> _getHeaders(String? token) {
