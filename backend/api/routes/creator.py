@@ -191,8 +191,8 @@ def get_proposals(username=None, user_id=None):
                 print(f"✅ Using user_id from decorator: {user_id}")
             
             cursor.execute(
-                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
-                          budget, timeline_days, created_at, updated_at
+                '''SELECT id, owner_id, title, content, status, client, 
+                          created_at, updated_at
                    FROM proposals WHERE owner_id = %s
                    ORDER BY created_at DESC''',
                 (user_id,)
@@ -209,14 +209,14 @@ def get_proposals(username=None, user_id=None):
                     'title': row[2],
                     'content': row[3],
                     'status': status,
-                    'client_name': row[5],
-                    'client': row[5],  # For compatibility
-                    'client_email': row[6],
-                    'budget': float(row[7]) if row[7] else None,
-                    'timeline_days': row[8],
-                    'created_at': row[9].isoformat() if row[9] else None,
-                    'updated_at': row[10].isoformat() if row[10] else None,
-                    'updatedAt': row[10].isoformat() if row[10] else None,
+                    'client_name': row[5] if row[5] else 'Unknown Client',  # Map client to client_name for compatibility
+                    'client': row[5] if row[5] else 'Unknown Client',
+                    'client_email': '',  # Not in schema, return empty string
+                    'budget': None,  # Not in schema
+                    'timeline_days': None,  # Not in schema
+                    'created_at': row[6].isoformat() if row[6] else None,
+                    'updated_at': row[7].isoformat() if row[7] else None,
+                    'updatedAt': row[7].isoformat() if row[7] else None,
                 })
             print(f"✅ Found {len(proposals)} proposals for user {username} (user_id: {user_id})")
             # Return list directly (Flask will JSON-encode it)
@@ -237,8 +237,7 @@ def create_proposal(username=None, user_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
-            client_email = data.get('client_email') or ''
+            client = data.get('client_name') or data.get('client') or 'Unknown Client'
             
             # Normalize status - use lowercase to match database constraint
             raw_status = data.get('status', 'draft')
@@ -271,18 +270,15 @@ def create_proposal(username=None, user_id=None):
                 print(f"✅ Using user_id from decorator: {user_id}")
             
             cursor.execute(
-                '''INSERT INTO proposals (owner_id, title, content, status, client_name, client_email, budget, timeline_days)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
-                   RETURNING id, owner_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+                '''INSERT INTO proposals (owner_id, title, content, status, client)
+                   VALUES (%s, %s, %s, %s, %s) 
+                   RETURNING id, owner_id, title, content, status, client, created_at, updated_at''',
                 (
                     user_id,
                     data.get('title', 'Untitled Document'),
                     data.get('content'),
                     normalized_status,
-                    client_name,
-                    client_email,
-                    data.get('budget'),
-                    data.get('timeline_days')
+                    client
                 )
             )
             result = cursor.fetchone()
@@ -295,13 +291,13 @@ def create_proposal(username=None, user_id=None):
                 'title': result[2],
                 'content': result[3],
                 'status': result[4],
-                'client_name': result[5],
-                'client': result[5],
-                'client_email': result[6],
-                'budget': float(result[7]) if result[7] else None,
-                'timeline_days': result[8],
-                'created_at': result[9].isoformat() if result[9] else None,
-                'updated_at': result[10].isoformat() if result[10] else None,
+                'client_name': result[5] if result[5] else 'Unknown Client',  # Map client to client_name for compatibility
+                'client': result[5] if result[5] else 'Unknown Client',
+                'client_email': '',  # Not in schema
+                'budget': None,  # Not in schema
+                'timeline_days': None,  # Not in schema
+                'created_at': result[6].isoformat() if result[6] else None,
+                'updated_at': result[7].isoformat() if result[7] else None,
             }
             
             print(f"✅ Proposal created: {proposal['id']}")

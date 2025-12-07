@@ -75,9 +75,11 @@ def token_required(f):
                             user_id = user_id_result[0] if user_id_result else None
                             print(f"[FIREBASE] Token validated for user: {username} (email: {email}, user_id: {user_id})")
                             # Remove any Firebase-specific kwargs to avoid passing them to functions that don't accept them
-                            # Pass username and user_id so functions don't need to look it up
+                            # Pass username and user_id so functions don't need to look it up (only if function accepts it)
+                            import inspect
+                            sig = inspect.signature(f)
                             clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id']}
-                            if user_id:
+                            if user_id and 'user_id' in sig.parameters:
                                 clean_kwargs['user_id'] = user_id
                             return f(username=username, *args, **clean_kwargs)
                         else:
@@ -128,8 +130,12 @@ def token_required(f):
                             print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
                             
                             # Store user_id in kwargs so functions can use it without looking it up again
+                            # Only pass user_id if the function accepts it (check function signature)
+                            import inspect
+                            sig = inspect.signature(f)
                             clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id']}
-                            clean_kwargs['user_id'] = user_id
+                            if 'user_id' in sig.parameters:
+                                clean_kwargs['user_id'] = user_id
                             return f(username=username, *args, **clean_kwargs)
             else:
                 # Firebase token verification failed, but don't log error if it's clearly not a Firebase token
