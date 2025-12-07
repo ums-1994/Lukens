@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'api_service.dart';
 
 class SmtpAuthService {
-  static const String baseUrl = 'http://localhost:8000';
+  static String get baseUrl => ApiService.baseUrl;
 
   // Register user with SMTP email verification
   static Future<Map<String, dynamic>?> registerUser({

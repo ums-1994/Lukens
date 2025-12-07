@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import '../../../services/api_service.dart';
 
 /// Lightweight API helper for document editor operations.
 ///
@@ -9,7 +10,7 @@ import 'package:http/http.dart' as http;
 class DocumentApiService {
   DocumentApiService._();
 
-  static const String _baseUrl = 'http://localhost:8000';
+  static String get _baseUrl => ApiService.baseUrl;
 
   /// Fetch collaborators for a given proposal.
   static Future<List<Map<String, dynamic>>> fetchCollaborators({

@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'api_service.dart';
 
 class AIAnalysisService {
-  static const String _baseUrl = 'http://localhost:8000';
+  static String get _baseUrl => ApiService.baseUrl;
   static String? _authToken;
 
   // Set authentication token

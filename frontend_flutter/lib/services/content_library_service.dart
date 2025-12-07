@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'api_service.dart';
 
 class ContentLibraryService {
-  static const String baseUrl = 'http://localhost:8000';
+  static String get baseUrl => ApiService.baseUrl;
 
   // Get headers with authentication
   Map<String, String> _getHeaders({String? token}) {
