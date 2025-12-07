@@ -61,9 +61,24 @@ load_dotenv()
 
 app = Flask(__name__)
 # Configure CORS to allow requests from frontend
+# Note: When supports_credentials=True, cannot use '*' - must specify exact origins
+def cors_origin_check(origin):
+    """Check if origin is allowed for CORS"""
+    allowed_origins = [
+        'http://localhost:8081',
+        'http://localhost:8080',
+        'http://127.0.0.1:8081',
+        'http://localhost:3000',
+        'https://sowbuilder.netlify.app',
+    ]
+    # Allow all Netlify subdomains
+    if origin and origin.endswith('.netlify.app'):
+        return True
+    return origin in allowed_origins
+
 CORS(app, 
      supports_credentials=True,
-     origins=['http://localhost:8081', 'http://localhost:8080', 'http://127.0.0.1:8081', '*'],
+     origins=cors_origin_check,
      methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
      allow_headers=['Content-Type', 'Authorization', 'Collab-Token'],
      expose_headers=['Content-Type', 'Authorization'],
