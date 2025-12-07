@@ -171,7 +171,7 @@ def get_trash(username=None):
 
 @bp.get("/proposals")
 @token_required
-def get_proposals(username=None):
+def get_proposals(username=None, user_id=None):
     """Get all proposals for the creator"""
     try:
         with get_db_connection() as conn:
@@ -179,30 +179,16 @@ def get_proposals(username=None):
             
             print(f"🔍 Looking for proposals for user {username}")
             
-            # Get user ID from username (try multiple times in case user was just created)
-            user_row = None
-            for attempt in range(3):
+            # Use user_id from decorator if available, otherwise look it up
+            if not user_id:
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                 user_row = cursor.fetchone()
-                if user_row:
-                    print(f"✅ Found user {username} with ID {user_row[0]} on attempt {attempt + 1}")
-                    break
-                print(f"⚠️ User lookup attempt {attempt + 1} failed for username: {username}")
-                # If user not found, wait a bit before retrying (user might have just been created)
-                if attempt < 2:  # Wait before retrying (except on last attempt)
-                    import time
-                    time.sleep(0.2)  # Small delay to allow transaction to commit
-            
-            if not user_row:
-                print(f"❌ User lookup failed after 3 attempts for username: {username}")
-                # Try to find by email as last resort (in case username doesn't match)
-                print(f"🔍 Trying to find user by email pattern...")
-                cursor.execute("SELECT id, username, email FROM users WHERE email LIKE %s", (f'%{username}%',))
-                all_users = cursor.fetchall()
-                if all_users:
-                    print(f"📋 Found {len(all_users)} users with similar email: {all_users}")
-                return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
+                if not user_row:
+                    print(f"❌ User lookup failed for username: {username}")
+                    return {'detail': 'User not found'}, 404
+                user_id = user_row[0]
+            else:
+                print(f"✅ Using user_id from decorator: {user_id}")
             
             cursor.execute(
                 '''SELECT id, owner_id, title, content, status, client_name, client_email, 
@@ -242,7 +228,7 @@ def get_proposals(username=None):
 
 @bp.post("/proposals")
 @token_required
-def create_proposal(username=None):
+def create_proposal(username=None, user_id=None):
     """Create a new proposal"""
     try:
         data = request.get_json()
@@ -273,22 +259,16 @@ def create_proposal(username=None):
                     # Keep as lowercase for basic statuses, or use exact value if it's a special status
                     normalized_status = status_lower
             
-            # Get user ID from username (try multiple times in case user was just created)
-            user_row = None
-            for attempt in range(3):
+            # Use user_id from decorator if available, otherwise look it up
+            if not user_id:
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                 user_row = cursor.fetchone()
-                if user_row:
-                    break
-                # If user not found and this is the first attempt, wait a bit (user might have just been created)
-                if attempt == 0:
-                    import time
-                    time.sleep(0.1)  # Small delay to allow transaction to commit
-            
-            if not user_row:
-                print(f"❌ User lookup failed after 3 attempts for username: {username}")
-                return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
+                if not user_row:
+                    print(f"❌ User lookup failed for username: {username}")
+                    return {'detail': 'User not found'}, 404
+                user_id = user_row[0]
+            else:
+                print(f"✅ Using user_id from decorator: {user_id}")
             
             cursor.execute(
                 '''INSERT INTO proposals (owner_id, title, content, status, client_name, client_email, budget, timeline_days)

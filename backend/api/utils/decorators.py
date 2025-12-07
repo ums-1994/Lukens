@@ -69,10 +69,16 @@ def token_required(f):
                         
                         if result:
                             username = result[0]
-                            print(f"[FIREBASE] Token validated for user: {username} (email: {email})")
+                            # Also get user_id to avoid lookup in functions
+                            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                            user_id_result = cursor.fetchone()
+                            user_id = user_id_result[0] if user_id_result else None
+                            print(f"[FIREBASE] Token validated for user: {username} (email: {email}, user_id: {user_id})")
                             # Remove any Firebase-specific kwargs to avoid passing them to functions that don't accept them
-                            # Only pass username (functions can access Firebase info via database if needed)
-                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid']}
+                            # Pass username and user_id so functions don't need to look it up
+                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id']}
+                            if user_id:
+                                clean_kwargs['user_id'] = user_id
                             return f(username=username, *args, **clean_kwargs)
                         else:
                             # Auto-create user if they have a valid Firebase token but don't exist in database
@@ -99,10 +105,12 @@ def token_required(f):
                             cursor.execute(
                                 '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
                                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                   RETURNING username''',
+                                   RETURNING id, username''',
                                 (username, email, dummy_password_hash, name, role, True, firebase_user.get('email_verified', False))
                             )
                             new_user = cursor.fetchone()
+                            user_id = new_user[0]
+                            username = new_user[1]
                             
                             # Try to add firebase_uid if column exists (before committing)
                             try:
@@ -117,10 +125,11 @@ def token_required(f):
                             # Commit both INSERT and UPDATE (if UPDATE succeeded)
                             conn.commit()
                             
-                            username = new_user[0]
-                            print(f"[FIREBASE] Auto-created user: {username} (email: {email})")
+                            print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
                             
-                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid']}
+                            # Store user_id in kwargs so functions can use it without looking it up again
+                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id']}
+                            clean_kwargs['user_id'] = user_id
                             return f(username=username, *args, **clean_kwargs)
             else:
                 # Firebase token verification failed, but don't log error if it's clearly not a Firebase token
