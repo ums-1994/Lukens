@@ -67,8 +67,10 @@ class AppState extends ChangeNotifier {
   Map<String, String> get _headers {
     final headers = {"Content-Type": "application/json"};
     // Use authToken (synced from AuthService) for consistency
-    if (authToken != null) {
-      headers["Authorization"] = "Bearer $authToken";
+    // Fallback to AuthService.token if authToken is null (for Firebase auth)
+    final token = authToken ?? AuthService.token;
+    if (token != null) {
+      headers["Authorization"] = "Bearer $token";
     }
     return headers;
   }
@@ -78,8 +80,10 @@ class AppState extends ChangeNotifier {
   Map<String, String> get _multipartHeaders {
     final headers = <String, String>{};
     // Use authToken (synced from AuthService) for consistency
-    if (authToken != null) {
-      headers["Authorization"] = "Bearer $authToken";
+    // Fallback to AuthService.token if authToken is null (for Firebase auth)
+    final token = authToken ?? AuthService.token;
+    if (token != null) {
+      headers["Authorization"] = "Bearer $token";
     }
     return headers;
   }
@@ -91,6 +95,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchContent() async {
     try {
+      // Ensure token is synced from AuthService before making request
+      if (authToken == null && AuthService.token != null) {
+        authToken = AuthService.token;
+        print('🔄 Synced token from AuthService in fetchContent');
+      }
+      
       final r = await http.get(
         Uri.parse("$baseUrl/content"),
         headers: _headers,
