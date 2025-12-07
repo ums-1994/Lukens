@@ -58,11 +58,15 @@ def token_required(f):
                 firebase_user = get_user_from_token(decoded_token)
                 if firebase_user:
                     email = firebase_user['email']
-                    # Get username from database using email
+                    uid = firebase_user['uid']
+                    name = firebase_user.get('name') or email.split('@')[0]
+                    
+                    # Get username from database using email, or create user if not found
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
                         cursor.execute('SELECT username FROM users WHERE email = %s', (email,))
                         result = cursor.fetchone()
+                        
                         if result:
                             username = result[0]
                             print(f"[FIREBASE] Token validated for user: {username} (email: {email})")
@@ -71,8 +75,53 @@ def token_required(f):
                             clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid']}
                             return f(username=username, *args, **clean_kwargs)
                         else:
-                            print(f"[FIREBASE] Valid token but user not found in database: {email}")
-                            return {'detail': 'User not found in database'}, 404
+                            # Auto-create user if they have a valid Firebase token but don't exist in database
+                            print(f"[FIREBASE] Valid token but user not found in database: {email}. Auto-creating user...")
+                            
+                            # Generate unique username from email
+                            username = email.split('@')[0]
+                            base_username = username
+                            counter = 1
+                            while True:
+                                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                                if cursor.fetchone() is None:
+                                    break
+                                username = f"{base_username}{counter}"
+                                counter += 1
+                            
+                            # Default role for auto-created users
+                            role = 'manager'
+                            
+                            # Create dummy password hash for Firebase-only accounts
+                            dummy_password_hash = f"firebase:{uid}:{email}"
+                            
+                            # Insert new user
+                            cursor.execute(
+                                '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                   RETURNING username''',
+                                (username, email, dummy_password_hash, name, role, True, firebase_user.get('email_verified', False))
+                            )
+                            new_user = cursor.fetchone()
+                            
+                            # Try to add firebase_uid if column exists (before committing)
+                            try:
+                                cursor.execute(
+                                    '''UPDATE users SET firebase_uid = %s WHERE email = %s''',
+                                    (uid, email)
+                                )
+                            except Exception:
+                                # Column doesn't exist or update failed, that's okay - continue without it
+                                pass
+                            
+                            # Commit both INSERT and UPDATE (if UPDATE succeeded)
+                            conn.commit()
+                            
+                            username = new_user[0]
+                            print(f"[FIREBASE] Auto-created user: {username} (email: {email})")
+                            
+                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid']}
+                            return f(username=username, *args, **clean_kwargs)
             else:
                 # Firebase token verification failed, but don't log error if it's clearly not a Firebase token
                 # (will fall through to legacy token validation)
