@@ -179,10 +179,28 @@ def get_proposals(username=None):
             
             print(f"🔍 Looking for proposals for user {username}")
             
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    print(f"✅ Found user {username} with ID {user_row[0]} on attempt {attempt + 1}")
+                    break
+                print(f"⚠️ User lookup attempt {attempt + 1} failed for username: {username}")
+                # If user not found, wait a bit before retrying (user might have just been created)
+                if attempt < 2:  # Wait before retrying (except on last attempt)
+                    import time
+                    time.sleep(0.2)  # Small delay to allow transaction to commit
+            
             if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                # Try to find by email as last resort (in case username doesn't match)
+                print(f"🔍 Trying to find user by email pattern...")
+                cursor.execute("SELECT id, username, email FROM users WHERE email LIKE %s", (f'%{username}%',))
+                all_users = cursor.fetchall()
+                if all_users:
+                    print(f"📋 Found {len(all_users)} users with similar email: {all_users}")
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
@@ -214,8 +232,9 @@ def get_proposals(username=None):
                     'updated_at': row[10].isoformat() if row[10] else None,
                     'updatedAt': row[10].isoformat() if row[10] else None,
                 })
-            print(f"✅ Found {len(proposals)} proposals for user {username}")
-            return proposals, 200
+            print(f"✅ Found {len(proposals)} proposals for user {username} (user_id: {user_id})")
+            # Return list directly (Flask will JSON-encode it)
+            return jsonify(proposals), 200
     except Exception as e:
         print(f"❌ Error getting proposals: {e}")
         traceback.print_exc()
@@ -254,10 +273,20 @@ def create_proposal(username=None):
                     # Keep as lowercase for basic statuses, or use exact value if it's a special status
                     normalized_status = status_lower
             
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
             if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
@@ -313,10 +342,20 @@ def update_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
             if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
@@ -401,10 +440,20 @@ def delete_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
             if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
@@ -522,10 +571,20 @@ def send_for_approval(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
             if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
@@ -1318,10 +1377,20 @@ def get_proposal_collaborators(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
             if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
@@ -1388,10 +1457,20 @@ def invite_collaborator(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
             if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
