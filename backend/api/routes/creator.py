@@ -179,16 +179,26 @@ def get_proposals(username=None, user_id=None):
             
             print(f"🔍 Looking for proposals for user {username}")
             
-            # Use user_id from decorator if available, otherwise look it up
+            # Use user_id from decorator if available, but always verify it exists
+            if user_id:
+                # Verify the user_id exists in the database
+                cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                user_row = cursor.fetchone()
+                if not user_row:
+                    print(f"⚠️ user_id {user_id} from decorator doesn't exist, looking up by username: {username}")
+                    user_id = None
+            
             if not user_id:
+                # Look up user by username
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                 user_row = cursor.fetchone()
                 if not user_row:
                     print(f"❌ User lookup failed for username: {username}")
                     return {'detail': 'User not found'}, 404
                 user_id = user_row[0]
+                print(f"✅ Found user_id {user_id} for username: {username}")
             else:
-                print(f"✅ Using user_id from decorator: {user_id}")
+                print(f"✅ Using verified user_id from decorator: {user_id}")
             
             cursor.execute(
                 '''SELECT id, owner_id, title, content, status, client, 
@@ -258,16 +268,50 @@ def create_proposal(username=None, user_id=None):
                     # Keep as lowercase for basic statuses, or use exact value if it's a special status
                     normalized_status = status_lower
             
-            # Use user_id from decorator if available, otherwise look it up
-            if not user_id:
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user_row = cursor.fetchone()
+            # Use user_id from decorator if available, but always verify it exists
+            # Sometimes the user_id from decorator might not be visible yet in a new connection
+            if user_id:
+                # Verify the user_id exists in the database (with retry for timing issues)
+                user_row = None
+                for attempt in range(3):
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        break
+                    if attempt < 2:
+                        import time
+                        time.sleep(0.1)  # Small delay to allow transaction to be visible
+                
                 if not user_row:
-                    print(f"❌ User lookup failed for username: {username}")
+                    print(f"⚠️ user_id {user_id} from decorator doesn't exist after retries, looking up by username: {username}")
+                    user_id = None
+            
+            if not user_id:
+                # Look up user by username (with retry in case user was just created)
+                user_row = None
+                for attempt in range(3):
+                    cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        break
+                    if attempt < 2:
+                        import time
+                        time.sleep(0.1)  # Small delay to allow transaction to be visible
+                
+                if not user_row:
+                    print(f"❌ User lookup failed for username: {username} after retries")
                     return {'detail': 'User not found'}, 404
                 user_id = user_row[0]
+                print(f"✅ Found user_id {user_id} for username: {username}")
             else:
-                print(f"✅ Using user_id from decorator: {user_id}")
+                print(f"✅ Using verified user_id from decorator: {user_id}")
+            
+            # Final verification before inserting proposal
+            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+            final_check = cursor.fetchone()
+            if not final_check:
+                print(f"❌ CRITICAL: user_id {user_id} doesn't exist right before proposal insert!")
+                return {'detail': f'User with ID {user_id} not found in database'}, 404
             
             cursor.execute(
                 '''INSERT INTO proposals (owner_id, title, content, status, client)
