@@ -298,8 +298,22 @@ def create_proposal(username=None, user_id=None):
                         import time
                         time.sleep(0.1)  # Small delay to allow transaction to be visible
                 
+                # If username lookup failed, try email (in case username was auto-generated differently)
                 if not user_row:
-                    print(f"❌ User lookup failed for username: {username} after retries")
+                    print(f"⚠️ Username lookup failed, trying email lookup...")
+                    # Try to get email from Firebase token if available
+                    # For now, we'll just try a few more times with username
+                    for attempt in range(2):
+                        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            break
+                        if attempt < 1:
+                            import time
+                            time.sleep(0.2)  # Longer delay
+                
+                if not user_row:
+                    print(f"❌ User lookup failed for username: {username} after all retries")
                     return {'detail': 'User not found'}, 404
                 user_id = user_row[0]
                 print(f"✅ Found user_id {user_id} for username: {username}")

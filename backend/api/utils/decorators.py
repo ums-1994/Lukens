@@ -3,6 +3,7 @@ Flask decorators for authentication and authorization
 Supports both Firebase tokens and legacy JWT tokens
 """
 import os
+import psycopg2
 from functools import wraps
 from flask import request
 from api.utils.auth import verify_token, get_valid_tokens
@@ -84,50 +85,97 @@ def token_required(f):
                             return f(username=username, *args, **clean_kwargs)
                         else:
                             # Auto-create user if they have a valid Firebase token but don't exist in database
+                            # Use a transaction with proper error handling to avoid race conditions
                             print(f"[FIREBASE] Valid token but user not found in database: {email}. Auto-creating user...")
                             
-                            # Generate unique username from email
-                            username = email.split('@')[0]
-                            base_username = username
-                            counter = 1
-                            while True:
-                                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                                if cursor.fetchone() is None:
-                                    break
-                                username = f"{base_username}{counter}"
-                                counter += 1
-                            
-                            # Default role for auto-created users
-                            role = 'manager'
-                            
-                            # Create dummy password hash for Firebase-only accounts
-                            dummy_password_hash = f"firebase:{uid}:{email}"
-                            
-                            # Insert new user
-                            cursor.execute(
-                                '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
-                                   VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                   RETURNING id, username''',
-                                (username, email, dummy_password_hash, name, role, True, firebase_user.get('email_verified', False))
-                            )
-                            new_user = cursor.fetchone()
-                            user_id = new_user[0]
-                            username = new_user[1]
-                            
-                            # Try to add firebase_uid if column exists (before committing)
                             try:
-                                cursor.execute(
-                                    '''UPDATE users SET firebase_uid = %s WHERE email = %s''',
-                                    (uid, email)
-                                )
-                            except Exception:
-                                # Column doesn't exist or update failed, that's okay - continue without it
-                                pass
-                            
-                            # Commit both INSERT and UPDATE (if UPDATE succeeded)
-                            conn.commit()
-                            
-                            print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
+                                # Generate unique username from email
+                                username = email.split('@')[0]
+                                base_username = username
+                                counter = 1
+                                while True:
+                                    cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                                    if cursor.fetchone() is None:
+                                        break
+                                    username = f"{base_username}{counter}"
+                                    counter += 1
+                                
+                                # Default role for auto-created users
+                                role = 'manager'
+                                
+                                # Create dummy password hash for Firebase-only accounts
+                                dummy_password_hash = f"firebase:{uid}:{email}"
+                                
+                                # Insert new user (with error handling for race conditions)
+                                try:
+                                    cursor.execute(
+                                        '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                                           VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                           RETURNING id, username''',
+                                        (username, email, dummy_password_hash, name, role, True, firebase_user.get('email_verified', False))
+                                    )
+                                    new_user = cursor.fetchone()
+                                    user_id = new_user[0]
+                                    username = new_user[1]
+                                    
+                                    # Try to add firebase_uid if column exists (before committing)
+                                    try:
+                                        cursor.execute(
+                                            '''UPDATE users SET firebase_uid = %s WHERE email = %s''',
+                                            (uid, email)
+                                        )
+                                    except Exception:
+                                        # Column doesn't exist or update failed, that's okay - continue without it
+                                        pass
+                                    
+                                    # Commit both INSERT and UPDATE (if UPDATE succeeded)
+                                    conn.commit()
+                                    
+                                    # Verify the user is visible immediately after commit
+                                    # This ensures the transaction is fully committed and visible to other connections
+                                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                                    verify_user = cursor.fetchone()
+                                    if not verify_user:
+                                        print(f"[FIREBASE] WARNING: User {user_id} not visible immediately after commit!")
+                                        # Small delay to allow transaction to propagate
+                                        import time
+                                        time.sleep(0.05)
+                                        # Try one more time
+                                        cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                                        verify_user = cursor.fetchone()
+                                        if not verify_user:
+                                            print(f"[FIREBASE] ERROR: User {user_id} still not visible after delay!")
+                                    
+                                    print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
+                                except psycopg2.IntegrityError as e:
+                                    # Race condition: another request created the user between our check and insert
+                                    # This happens when multiple requests come in simultaneously
+                                    # Rollback and look up the existing user
+                                    conn.rollback()
+                                    print(f"[FIREBASE] User was created by another request (race condition), looking up existing user...")
+                                    
+                                    # Retry lookup with small delay to ensure transaction is visible
+                                    import time
+                                    for retry_attempt in range(3):
+                                        cursor.execute('SELECT id, username FROM users WHERE email = %s', (email,))
+                                        existing_user = cursor.fetchone()
+                                        if existing_user:
+                                            user_id = existing_user[0]
+                                            username = existing_user[1]
+                                            print(f"[FIREBASE] Found existing user: {username} (email: {email}, user_id: {user_id})")
+                                            break
+                                        if retry_attempt < 2:
+                                            time.sleep(0.1)  # Small delay before retry
+                                    
+                                    if not existing_user:
+                                        # This shouldn't happen, but handle it gracefully
+                                        print(f"[FIREBASE] ERROR: IntegrityError but user still not found after rollback and retries!")
+                                        raise
+                            except Exception as e:
+                                # If anything else goes wrong, rollback and re-raise
+                                conn.rollback()
+                                print(f"[FIREBASE] Error creating user: {e}")
+                                raise
                             
                             # Store user_id in kwargs so functions can use it without looking it up again
                             # Only pass user_id if the function accepts it (check function signature)
