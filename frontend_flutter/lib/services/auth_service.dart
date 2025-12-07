@@ -16,24 +16,35 @@ class AuthService {
           final configObj = config as js.JsObject;
           final apiUrl = configObj['API_URL'];
           if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-            return apiUrl.toString().replaceAll('"', '');
+            final url = apiUrl.toString().replaceAll('"', '').trim();
+            print('🌐 Using API URL from APP_CONFIG: $url');
+            return url;
           }
         }
         // Fallback: try window.REACT_APP_API_URL
         final envUrl = js.context['REACT_APP_API_URL'];
         if (envUrl != null && envUrl.toString().isNotEmpty) {
-          return envUrl.toString().replaceAll('"', '');
+          final url = envUrl.toString().replaceAll('"', '').trim();
+          print('🌐 Using API URL from REACT_APP_API_URL: $url');
+          return url;
         }
       } catch (e) {
         print('⚠️ Could not read API URL from config: $e');
       }
     }
-    // Default URLs based on environment
-    if (kDebugMode) {
-      return 'http://localhost:8000';
+    // Check if we're in production (not localhost)
+    final isProduction = kIsWeb && 
+        (html.window.location.hostname.contains('netlify.app') ||
+         html.window.location.hostname.contains('onrender.com') ||
+         !html.window.location.hostname.contains('localhost'));
+    
+    if (isProduction) {
+      print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
+      return 'https://lukens-wp8w.onrender.com';
     }
-    // Production default
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to localhost for local development
+    print('🌐 Using localhost API URL: http://localhost:8000');
+    return 'http://localhost:8000';
   }
   static String? _token;
   static Map<String, dynamic>? _currentUser;

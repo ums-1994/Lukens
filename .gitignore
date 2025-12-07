@@ -7,6 +7,8 @@ node_modules/
 build/
 dist/
 .dart_tool/
+# Exception: Allow frontend_flutter/build/web for Render deployment
+!frontend_flutter/build/web/
 
 # Environment files
 .env
@@ -38,6 +40,8 @@ Thumbs.db
 .pub-cache/
 .pub/
 build/
+# Exception: Allow frontend_flutter/build/web for Render deployment
+!frontend_flutter/build/web/
 
 # Logs
 *.log

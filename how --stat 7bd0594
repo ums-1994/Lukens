@@ -1,0 +1,38 @@
+[33mcommit 7bd05946191f0a660df2467ea20573a7e56d4755[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mCleaned_Code[m[33m, [m[1;31morigin/Cleaned_Code[m[33m)[m
+Author: Unathi Sibanda <umsibanda.1994@gmail.com>
+Date:   Sun Dec 7 16:14:54 2025 +0200
+
+    Add pre-built files
+
+A	DEPLOYMENT_SUMMARY.md
+A	FLUTTER_BASE_HREF_FIX.md
+A	LOCAL_VS_PRODUCTION.md
+A	QUICK_DB_SETUP.md
+A	RENDER_BUILD_FIX.md
+A	RENDER_DATABASE_SETUP.md
+A	RENDER_DB_ENV_VARS_FIX.md
+A	RENDER_FLUTTER_BUILD_FIX.md
+A	RENDER_FRONTEND_DEPLOY.md
+A	RENDER_PYTHON_VERSION_FIX.md
+A	RENDER_QUICK_START.md
+A	RENDER_START_COMMAND.md
+A	YOUR_RENDER_DB_CONFIG.md
+M	backend/api/utils/database.py
+M	backend/app.py
+A	backend/build.sh
+M	backend/gunicorn_conf.py
+A	backend/runtime.txt
+A	docs/guides/RENDER_DEPLOYMENT.md
+A	frontend_flutter/build.sh
+M	frontend_flutter/lib/api.dart
+M	frontend_flutter/lib/pages/creator/blank_document_editor/REFACTORING_STATUS.md
+M	frontend_flutter/lib/pages/creator/blank_document_editor/utils/editor_utils.dart
+M	frontend_flutter/lib/pages/creator/proposal_wizard.dart
+M	frontend_flutter/lib/services/ai_analysis_service.dart
+M	frontend_flutter/lib/services/api_service.dart
+M	frontend_flutter/lib/services/auth_service.dart
+M	frontend_flutter/lib/services/client_service.dart
+A	frontend_flutter/web/config.js
+M	frontend_flutter/web/index.html
+A	render.yaml
+A	runtime.txt

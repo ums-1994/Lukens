@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 
 class ApiService {
   // Get API URL from JavaScript config or use default
@@ -14,24 +16,36 @@ class ApiService {
           final configObj = config as js.JsObject;
           final apiUrl = configObj['API_URL'];
           if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-            return apiUrl.toString().replaceAll('"', '');
+            final url = apiUrl.toString().replaceAll('"', '').trim();
+            print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
+            return url;
           }
         }
         // Fallback: try window.REACT_APP_API_URL
         final envUrl = js.context['REACT_APP_API_URL'];
         if (envUrl != null && envUrl.toString().isNotEmpty) {
-          return envUrl.toString().replaceAll('"', '');
+          final url = envUrl.toString().replaceAll('"', '').trim();
+          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
+          return url;
         }
       } catch (e) {
-        print('⚠️ Could not read API URL from config: $e');
+        print('⚠️ ApiService: Could not read API URL from config: $e');
       }
     }
-    // Default URLs based on environment
-    if (kDebugMode) {
-      return 'http://localhost:8000';
+    // Check if we're in production (not localhost)
+    if (kIsWeb) {
+      final isProduction = html.window.location.hostname.contains('netlify.app') ||
+          html.window.location.hostname.contains('onrender.com') ||
+          !html.window.location.hostname.contains('localhost');
+      
+      if (isProduction) {
+        print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+        return 'https://lukens-wp8w.onrender.com';
+      }
     }
-    // Production default
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to localhost for local development
+    print('🌐 ApiService: Using localhost API URL: http://localhost:8000');
+    return 'http://localhost:8000';
   }
 
   // Get headers with Firebase token
