@@ -34,13 +34,16 @@ class ApiService {
     }
     // Check if we're in production (not localhost)
     if (kIsWeb) {
-      final isProduction = html.window.location.hostname.contains('netlify.app') ||
-          html.window.location.hostname.contains('onrender.com') ||
-          !html.window.location.hostname.contains('localhost');
-      
-      if (isProduction) {
-        print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
+      final hostname = html.window.location.hostname;
+      if (hostname != null) {
+        final isProduction = hostname.contains('netlify.app') ||
+            hostname.contains('onrender.com') ||
+            !hostname.contains('localhost');
+        
+        if (isProduction) {
+          print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+          return 'https://lukens-wp8w.onrender.com';
+        }
       }
     }
     // Default to localhost for local development

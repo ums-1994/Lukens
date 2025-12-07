@@ -9,6 +9,7 @@ import base64
 import psycopg2.extras
 from datetime import datetime
 import xml.etree.ElementTree as ET
+import sys
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
@@ -1153,6 +1154,51 @@ def docusign_webhook():
         
     except Exception as e:
         print(f"❌ Error processing DocuSign webhook: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/api/admin/seed-content")
+@token_required
+def seed_content_library(username=None):
+    """Seed the content library with default content blocks (Admin only)"""
+    try:
+        # Check if user is admin
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            
+            if not user or user.get('role') != 'admin':
+                return {'detail': 'Admin access required'}, 403
+        
+        # Import and run the seed function
+        try:
+            # Add backend directory to path to import seed script
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if backend_dir not in sys.path:
+                sys.path.insert(0, backend_dir)
+            
+            from seed_content_blocks import seed_content_blocks
+            
+            # Run the seed function
+            seed_content_blocks()
+            
+            return {
+                'message': 'Content library seeded successfully',
+                'status': 'success'
+            }, 200
+            
+        except ImportError as e:
+            print(f"❌ Error importing seed script: {e}")
+            return {'detail': f'Failed to import seed script: {str(e)}'}, 500
+        except Exception as e:
+            print(f"❌ Error seeding content: {e}")
+            traceback.print_exc()
+            return {'detail': f'Failed to seed content: {str(e)}'}, 500
+            
+    except Exception as e:
+        print(f"❌ Error in seed endpoint: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

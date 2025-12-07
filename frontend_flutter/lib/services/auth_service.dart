@@ -33,14 +33,18 @@ class AuthService {
       }
     }
     // Check if we're in production (not localhost)
-    final isProduction = kIsWeb && 
-        (html.window.location.hostname.contains('netlify.app') ||
-         html.window.location.hostname.contains('onrender.com') ||
-         !html.window.location.hostname.contains('localhost'));
-    
-    if (isProduction) {
-      print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
-      return 'https://lukens-wp8w.onrender.com';
+    if (kIsWeb) {
+      final hostname = html.window.location.hostname;
+      if (hostname != null) {
+        final isProduction = hostname.contains('netlify.app') ||
+            hostname.contains('onrender.com') ||
+            !hostname.contains('localhost');
+        
+        if (isProduction) {
+          print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
+          return 'https://lukens-wp8w.onrender.com';
+        }
+      }
     }
     // Default to localhost for local development
     print('🌐 Using localhost API URL: http://localhost:8000');
