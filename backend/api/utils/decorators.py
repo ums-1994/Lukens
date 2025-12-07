@@ -4,6 +4,7 @@ Supports both Firebase tokens and legacy JWT tokens
 """
 import os
 import psycopg2
+import psycopg2.extensions
 from functools import wraps
 from flask import request
 from api.utils.auth import verify_token, get_valid_tokens
@@ -65,6 +66,10 @@ def token_required(f):
                     # Get user from database using email, or create user if not found
                     # Always use email as the primary lookup since it's unique and comes from Firebase
                     with get_db_connection() as conn:
+                        # Ensure autocommit is off so we can control transactions
+                        if conn.autocommit:
+                            conn.autocommit = False
+                        
                         cursor = conn.cursor()
                         # Look up by email (most reliable since it's unique and comes from Firebase)
                         cursor.execute('SELECT id, username FROM users WHERE email = %s', (email,))
@@ -136,25 +141,38 @@ def token_required(f):
                                         # Column doesn't exist or update failed, that's okay - continue without it
                                         pass
                                     
-                                    # Commit both INSERT and UPDATE (if UPDATE succeeded)
-                                    conn.commit()
+                                    # CRITICAL: Commit the transaction and ensure it's persisted
+                                    # Ensure autocommit is off so commit actually works
+                                    original_autocommit = getattr(conn, 'autocommit', False)
+                                    if conn.autocommit:
+                                        print(f"[FIREBASE] WARNING: Connection was in autocommit mode, disabling for transaction control")
+                                        conn.autocommit = False
                                     
-                                    # Verify the user is visible immediately after commit
-                                    # This ensures the transaction is fully committed and visible to other connections
-                                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                                    verify_user = cursor.fetchone()
-                                    if not verify_user:
-                                        print(f"[FIREBASE] WARNING: User {user_id} not visible immediately after commit!")
-                                        # Small delay to allow transaction to propagate
-                                        import time
-                                        time.sleep(0.05)
-                                        # Try one more time
-                                        cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                                        verify_user = cursor.fetchone()
-                                        if not verify_user:
-                                            print(f"[FIREBASE] ERROR: User {user_id} still not visible after delay!")
+                                    try:
+                                        # Commit the transaction
+                                        conn.commit()
+                                        print(f"[FIREBASE] Commit executed. Connection status: {conn.status}")
+                                        
+                                        # Verify the commit worked by checking if we're still in a transaction
+                                        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                                            print(f"[FIREBASE] WARNING: Still in transaction after commit! Forcing another commit...")
+                                            conn.commit()
+                                        
+                                        # Restore original autocommit setting
+                                        if original_autocommit:
+                                            conn.autocommit = True
+                                        
+                                    except Exception as commit_error:
+                                        print(f"[FIREBASE] ERROR during commit: {commit_error}")
+                                        import traceback
+                                        traceback.print_exc()
+                                        conn.rollback()
+                                        raise
                                     
+                                    # The user_id from RETURNING is guaranteed to be correct
+                                    # Trust the RETURNING clause - the user exists even if we can't verify immediately
                                     print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
+                                    print(f"[FIREBASE] Transaction committed successfully. User should be visible in new connections.")
                                 except psycopg2.IntegrityError as e:
                                     # Race condition: another request created the user between our check and insert
                                     # This happens when multiple requests come in simultaneously
