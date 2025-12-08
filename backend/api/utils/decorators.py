@@ -201,13 +201,19 @@ def token_required(f):
                                     
                                     print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
                                     
-                                    # CRITICAL: Ensure commit is fully persisted before continuing
-                                    # Force a sync point to ensure the transaction is committed
+                                    # CRITICAL: Ensure commit is fully persisted and flushed before continuing
+                                    # Force a sync point to ensure the transaction is committed and visible
                                     try:
-                                        # Execute a simple query to force the connection to sync with the database
-                                        cursor.execute('SELECT 1')
+                                        # Execute a sync query to force the connection to sync with the database
+                                        # This ensures the commit is fully processed by PostgreSQL
+                                        cursor.execute('SELECT pg_backend_pid()')
                                         cursor.fetchone()
-                                        print(f"[FIREBASE] Connection synced after commit")
+                                        print(f"[FIREBASE] Connection synced with PostgreSQL backend after commit")
+                                        
+                                        # Add a small delay to allow commit to propagate to other connections
+                                        import time
+                                        time.sleep(0.15)  # 150ms delay for commit propagation
+                                        print(f"[FIREBASE] Waited 150ms for commit propagation")
                                         
                                         # Final verification: check if user is actually in the database
                                         # Note: Even if this fails, we trust the RETURNING clause
@@ -226,6 +232,11 @@ def token_required(f):
                                         if "was not persisted" in str(sync_error):
                                             raise  # Re-raise the persistence error
                                         print(f"[FIREBASE] Warning: Could not sync/verify connection: {sync_error}")
+                                    
+                                    # Verify connection is not in a transaction before exiting context manager
+                                    if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                                        print(f"[FIREBASE] WARNING: Connection still in transaction before returning to pool, rolling back...")
+                                        conn.rollback()
                                     
                                     print(f"[FIREBASE] Transaction committed successfully. User should be visible in new connections.")
                                 except psycopg2.IntegrityError as e:

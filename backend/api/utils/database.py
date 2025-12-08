@@ -77,14 +77,26 @@ def _pg_conn():
 
 
 def release_pg_conn(conn):
-    """Return a connection to the pool, closing it if it's corrupted"""
+    """Return a connection to the pool, resetting its state and closing it if corrupted"""
     try:
         if conn:
-            # Check if connection is still valid before returning to pool
+            # Check if connection is still valid and reset its state before returning to pool
             try:
+                # Check if connection is in a transaction and rollback if needed
+                import psycopg2.extensions
+                if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                    print(f"[DB] Connection in transaction, rolling back before returning to pool")
+                    conn.rollback()
+                
+                # Reset autocommit to default state (False)
+                conn.autocommit = False
+                
+                # Verify connection is still alive
                 cursor = conn.cursor()
                 cursor.execute('SELECT 1')
                 cursor.close()
+                
+                # Connection is clean and valid, return to pool
                 get_pg_pool().putconn(conn)
             except (psycopg2.OperationalError, psycopg2.InterfaceError):
                 # Connection is corrupted, close it instead of returning to pool

@@ -327,8 +327,8 @@ def create_proposal(username=None, user_id=None, email=None):
             if username:
                 lookup_strategies.append(('username', username))
             
-            max_retries = 5
-            retry_delay = 0.1  # Start with 100ms
+            max_retries = 10
+            retry_delay = 0.2  # Start with 200ms
             
             for attempt in range(max_retries):
                 for strategy_type, strategy_value in lookup_strategies:
@@ -362,6 +362,16 @@ def create_proposal(username=None, user_id=None, email=None):
             
             user_id = found_user_id
             print(f"✅ Using verified user_id: {user_id} for proposal creation")
+            
+            # Final verification: Double-check the user exists right before INSERT
+            # This ensures the user is definitely visible before we attempt the foreign key constraint
+            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+            final_check = cursor.fetchone()
+            if not final_check:
+                print(f"❌ CRITICAL: User {user_id} not found in final verification before INSERT!")
+                return {'detail': f'User {user_id} not found in database. The user may not have been committed yet.'}, 404
+            
+            print(f"✅ Final verification passed: User {user_id} exists, proceeding with proposal INSERT")
             
             # Now we can safely insert the proposal - the user definitely exists
             cursor.execute(
