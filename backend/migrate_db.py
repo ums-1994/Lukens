@@ -19,7 +19,14 @@ def run_migration():
     
     try:
         # Import the schema initialization function
-        sys.path.insert(0, os.path.dirname(__file__))
+        # Handle being run from root directory (backend/migrate_db.py) or backend directory (migrate_db.py)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        
+        # Change to backend directory for proper imports
+        os.chdir(script_dir)
+        
         from api.utils.database import init_pg_schema
         
         print("\n📋 Initializing PostgreSQL schema...")
