@@ -311,68 +311,59 @@ def create_proposal(username=None, user_id=None, email=None):
                     # Keep as lowercase for basic statuses, or use exact value if it's a special status
                     normalized_status = status_lower
             
-            # If user_id was provided from decorator, trust it if it was just created
-            # The decorator verifies the user exists in the same connection after commit
+            # CRITICAL: We MUST verify the user exists before inserting the proposal
+            # PostgreSQL will reject the foreign key constraint if the user doesn't exist
+            # Even if the decorator verified it, we need to wait for it to be visible in this connection
             found_user_id = None
-            if user_id:
-                print(f"🔍 Using user_id from decorator: {user_id} (trusting decorator verification)")
-                # Try to verify, but if it fails, still use the user_id since decorator verified it
-                try:
-                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                    user_row = cursor.fetchone()
-                    if user_row:
-                        found_user_id = user_row[0]
-                        print(f"✅ Verified user_id {found_user_id} from decorator")
-                    else:
-                        # User not visible in this connection yet, but decorator verified it exists
-                        # Use the user_id anyway - it was verified in the creation connection
-                        print(f"⚠️ user_id {user_id} not visible in this connection yet, but trusting decorator verification")
-                        found_user_id = user_id
-                except Exception as e:
-                    print(f"⚠️ Error verifying user_id: {e}, but trusting decorator verification")
-                    found_user_id = user_id
+            import time
             
-            # If not found, try email lookup (with retry for transaction visibility)
-            if not found_user_id and email:
-                print(f"🔍 Looking up user by email: {email}")
-                for attempt in range(3):
+            # Strategy: Try user_id first (if provided), then email, then username
+            # With retries and increasing delays to account for transaction visibility
+            lookup_strategies = []
+            if user_id:
+                lookup_strategies.append(('user_id', user_id))
+            if email:
+                lookup_strategies.append(('email', email))
+            if username:
+                lookup_strategies.append(('username', username))
+            
+            max_retries = 5
+            retry_delay = 0.1  # Start with 100ms
+            
+            for attempt in range(max_retries):
+                for strategy_type, strategy_value in lookup_strategies:
                     try:
-                        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                        if strategy_type == 'user_id':
+                            cursor.execute('SELECT id FROM users WHERE id = %s', (strategy_value,))
+                        elif strategy_type == 'email':
+                            cursor.execute('SELECT id FROM users WHERE email = %s', (strategy_value,))
+                        elif strategy_type == 'username':
+                            cursor.execute('SELECT id FROM users WHERE username = %s', (strategy_value,))
+                        
                         user_row = cursor.fetchone()
                         if user_row:
                             found_user_id = user_row[0]
-                            print(f"✅ Found user_id {found_user_id} by email: {email}")
+                            print(f"✅ Found user_id {found_user_id} using {strategy_type}: {strategy_value} (attempt {attempt + 1})")
                             break
-                        if attempt < 2:
-                            import time
-                            time.sleep(0.05)
-                            print(f"⚠️ Email {email} not found yet, retrying... (attempt {attempt + 1}/3)")
                     except Exception as e:
-                        print(f"⚠️ Error looking up by email: {e}, retrying...")
-                        if attempt < 2:
-                            import time
-                            time.sleep(0.05)
+                        print(f"⚠️ Error looking up by {strategy_type}: {e}")
+                
+                if found_user_id:
+                    break
+                
+                if attempt < max_retries - 1:
+                    print(f"⚠️ User not found yet, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5  # Exponential backoff: 0.1s, 0.15s, 0.225s, 0.337s, 0.506s
             
-            # If email lookup failed, try username (same as user profile endpoint)
-            if not found_user_id and username:
-                print(f"🔍 Looking up user by username: {username}")
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user_row = cursor.fetchone()
-                if user_row:
-                    found_user_id = user_row[0]
-                    print(f"✅ Found user_id {found_user_id} by username: {username}")
+            if not found_user_id:
+                print(f"❌ User lookup failed after {max_retries} attempts for username: {username}, email: {email}, user_id: {user_id}")
+                return {'detail': f'User not found after {max_retries} retries. The user may not have been committed yet.'}, 404
             
-            # Use the found user_id
             user_id = found_user_id
+            print(f"✅ Using verified user_id: {user_id} for proposal creation")
             
-            if not user_id:
-                print(f"❌ User lookup failed for username: {username}, email: {email}")
-                return {'detail': 'User not found'}, 404
-            
-            print(f"✅ Using user_id: {user_id} for proposal creation")
-            
-            # Trust the user_id - decorator verified it exists
-            # Even if this connection can't see it yet, the user exists and the INSERT will work
+            # Now we can safely insert the proposal - the user definitely exists
             cursor.execute(
                 '''INSERT INTO proposals (owner_id, title, content, status, client)
                    VALUES (%s, %s, %s, %s, %s) 
