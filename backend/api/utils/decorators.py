@@ -66,9 +66,17 @@ def token_required(f):
                     # Get user from database using email, or create user if not found
                     # Always use email as the primary lookup since it's unique and comes from Firebase
                     with get_db_connection() as conn:
-                        # Ensure autocommit is off so we can control transactions
+                        # CRITICAL: Ensure autocommit is OFF before starting transaction
+                        # This is essential for commits to work properly
+                        original_autocommit = conn.autocommit
                         if conn.autocommit:
+                            print(f"[FIREBASE] Connection was in autocommit mode, disabling for transaction control")
                             conn.autocommit = False
+                        
+                        # Ensure we're not in a transaction already (shouldn't be, but check)
+                        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                            print(f"[FIREBASE] WARNING: Connection already in transaction, committing first...")
+                            conn.commit()
                         
                         cursor = conn.cursor()
                         # Look up by email (most reliable since it's unique and comes from Firebase)
