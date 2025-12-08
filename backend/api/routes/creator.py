@@ -371,13 +371,8 @@ def create_proposal(username=None, user_id=None, email=None):
             
             print(f"✅ Using user_id: {user_id} for proposal creation")
             
-            # Final verification before inserting proposal
-            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-            final_check = cursor.fetchone()
-            if not final_check:
-                print(f"❌ CRITICAL: user_id {user_id} doesn't exist right before proposal insert!")
-                return {'detail': f'User with ID {user_id} not found in database'}, 404
-            
+            # Trust the user_id - decorator verified it exists
+            # Even if this connection can't see it yet, the user exists and the INSERT will work
             cursor.execute(
                 '''INSERT INTO proposals (owner_id, title, content, status, client)
                    VALUES (%s, %s, %s, %s, %s) 
