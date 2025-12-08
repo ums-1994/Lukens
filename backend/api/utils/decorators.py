@@ -150,11 +150,8 @@ def token_required(f):
                                         pass
                                     
                                     # CRITICAL: Commit the transaction and ensure it's persisted
-                                    # Ensure autocommit is off so commit actually works
-                                    original_autocommit = getattr(conn, 'autocommit', False)
-                                    if conn.autocommit:
-                                        print(f"[FIREBASE] WARNING: Connection was in autocommit mode, disabling for transaction control")
-                                        conn.autocommit = False
+                                    # We already set autocommit=False at the start of the with block
+                                    # Don't change it again - it's already in the correct state
                                     
                                     try:
                                         # Commit the transaction
