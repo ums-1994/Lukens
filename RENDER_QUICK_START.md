@@ -92,3 +92,6 @@ See `docs/guides/RENDER_DEPLOYMENT.md` for detailed instructions.
 3. **Auto-Deploy**: Push to Git = automatic deployment
 4. **Free Tier**: Services sleep after 15min inactivity (wake on request)
 
+
+
+
