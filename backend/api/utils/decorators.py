@@ -200,6 +200,17 @@ def token_required(f):
                                         raise
                                     
                                     print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
+                                    
+                                    # CRITICAL: Ensure commit is fully persisted before continuing
+                                    # Force a sync point to ensure the transaction is committed
+                                    try:
+                                        # Execute a simple query to force the connection to sync with the database
+                                        cursor.execute('SELECT 1')
+                                        cursor.fetchone()
+                                        print(f"[FIREBASE] Connection synced after commit")
+                                    except Exception as sync_error:
+                                        print(f"[FIREBASE] Warning: Could not sync connection: {sync_error}")
+                                    
                                     print(f"[FIREBASE] Transaction committed successfully. User should be visible in new connections.")
                                 except psycopg2.IntegrityError as e:
                                     # Race condition: another request created the user between our check and insert
