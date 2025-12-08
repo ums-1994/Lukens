@@ -155,13 +155,18 @@ def token_required(f):
                                     
                                     try:
                                         # Commit the transaction
+                                        print(f"[FIREBASE] 🔄 About to commit transaction. Connection status before: {conn.status}")
+                                        print(f"[FIREBASE] 🔄 Autocommit mode: {conn.autocommit}")
+                                        print(f"[FIREBASE] 🔄 Transaction isolation level: {conn.isolation_level}")
+                                        
                                         conn.commit()
-                                        print(f"[FIREBASE] Commit executed. Connection status: {conn.status}")
+                                        print(f"[FIREBASE] ✅ Commit executed. Connection status after: {conn.status}")
                                         
                                         # Verify the commit worked by checking if we're still in a transaction
                                         if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
-                                            print(f"[FIREBASE] WARNING: Still in transaction after commit! Forcing another commit...")
+                                            print(f"[FIREBASE] ⚠️ WARNING: Still in transaction after commit! Forcing another commit...")
                                             conn.commit()
+                                            print(f"[FIREBASE] ✅ Second commit executed. Connection status: {conn.status}")
                                         
                                         # CRITICAL: Don't restore autocommit until AFTER we verify the commit worked
                                         # Keep autocommit OFF to ensure the commit persists
