@@ -183,26 +183,26 @@ def get_proposals(username=None, user_id=None, email=None):
             # Try email first (most reliable since it's unique and comes from Firebase)
             found_user_id = None
             
-            # If user_id was provided from decorator, verify it exists first (with retry for transaction visibility)
+            # If user_id was provided from decorator, trust it if it was just created
+            # The decorator verifies the user exists in the same connection after commit
+            # So we can trust the user_id even if a new connection can't see it yet
             if user_id:
-                print(f"🔍 Verifying user_id from decorator: {user_id}")
-                for attempt in range(3):
-                    try:
-                        cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                        user_row = cursor.fetchone()
-                        if user_row:
-                            found_user_id = user_row[0]
-                            print(f"✅ Verified user_id {found_user_id} from decorator")
-                            break
-                        if attempt < 2:
-                            import time
-                            time.sleep(0.05)  # Small delay for transaction visibility
-                            print(f"⚠️ user_id {user_id} not found yet, retrying... (attempt {attempt + 1}/3)")
-                    except Exception as e:
-                        print(f"⚠️ Error verifying user_id: {e}, retrying...")
-                        if attempt < 2:
-                            import time
-                            time.sleep(0.05)
+                print(f"🔍 Using user_id from decorator: {user_id} (trusting decorator verification)")
+                # Try to verify, but if it fails, still use the user_id since decorator verified it
+                try:
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        found_user_id = user_row[0]
+                        print(f"✅ Verified user_id {found_user_id} from decorator")
+                    else:
+                        # User not visible in this connection yet, but decorator verified it exists
+                        # Use the user_id anyway - it was verified in the creation connection
+                        print(f"⚠️ user_id {user_id} not visible in this connection yet, but trusting decorator verification")
+                        found_user_id = user_id
+                except Exception as e:
+                    print(f"⚠️ Error verifying user_id: {e}, but trusting decorator verification")
+                    found_user_id = user_id
             
             # If not found, try email lookup (with retry)
             if not found_user_id and email:

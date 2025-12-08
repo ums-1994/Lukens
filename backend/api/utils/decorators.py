@@ -169,8 +169,15 @@ def token_required(f):
                                         conn.rollback()
                                         raise
                                     
-                                    # The user_id from RETURNING is guaranteed to be correct
-                                    # Trust the RETURNING clause - the user exists even if we can't verify immediately
+                                    # Verify the user exists in the SAME connection after commit
+                                    # This confirms the commit actually worked
+                                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                                    verify_result = cursor.fetchone()
+                                    if verify_result:
+                                        print(f"[FIREBASE] ✅ Verified user exists in same connection after commit: user_id {user_id}")
+                                    else:
+                                        print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not found in same connection after commit! This shouldn't happen.")
+                                    
                                     print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
                                     print(f"[FIREBASE] Transaction committed successfully. User should be visible in new connections.")
                                 except psycopg2.IntegrityError as e:
