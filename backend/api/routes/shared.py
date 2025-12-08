@@ -84,19 +84,40 @@ def search_users_for_mentions():
 
 @bp.get("/api/notifications")
 @token_required
-def get_notifications(username=None):
+def get_notifications(username=None, user_id=None, email=None):
     """Get all notifications for the current user"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            if not user:
+            # Use the same simple lookup pattern as the user profile endpoint (which works)
+            # Try email first (most reliable since it's unique and comes from Firebase)
+            found_user_id = None
+            if email:
+                print(f"🔍 Looking up user by email: {email}")
+                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                user = cursor.fetchone()
+                if user:
+                    found_user_id = user['id']
+                    print(f"✅ Found user_id {found_user_id} by email: {email}")
+            
+            # If email lookup failed, try username (same as user profile endpoint)
+            if not found_user_id and username:
+                print(f"🔍 Looking up user by username: {username}")
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user = cursor.fetchone()
+                if user:
+                    found_user_id = user['id']
+                    print(f"✅ Found user_id {found_user_id} by username: {username}")
+            
+            # Use the found user_id
+            user_id = found_user_id
+            
+            if not user_id:
+                print(f"❌ User lookup failed for username: {username}, email: {email}")
                 return {'detail': 'User not found'}, 404
             
-            user_id = user['id']
+            print(f"✅ Using user_id: {user_id} for notifications query")
             
             # Get notifications
             # Handle case where user_id might be VARCHAR in some databases
@@ -123,16 +144,32 @@ def get_notifications(username=None):
 
 @bp.post("/api/notifications/<int:notification_id>/mark-read")
 @token_required
-def mark_notification_read(username=None, notification_id=None):
+def mark_notification_read(username=None, user_id=None, email=None, notification_id=None):
     """Mark a notification as read"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Get user ID
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            if not user:
+            # Use the same simple lookup pattern as the user profile endpoint (which works)
+            # Try email first (most reliable since it's unique and comes from Firebase)
+            found_user_id = None
+            if email:
+                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                user = cursor.fetchone()
+                if user:
+                    found_user_id = user[0]
+            
+            # If email lookup failed, try username (same as user profile endpoint)
+            if not found_user_id and username:
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user = cursor.fetchone()
+                if user:
+                    found_user_id = user[0]
+            
+            # Use the found user_id
+            user_id = found_user_id
+            
+            if not user_id:
                 return {'detail': 'User not found'}, 404
             
             user_id = user[0]
@@ -158,19 +195,33 @@ def mark_notification_read(username=None, notification_id=None):
 
 @bp.post("/api/notifications/mark-all-read")
 @token_required
-def mark_all_notifications_read(username=None):
+def mark_all_notifications_read(username=None, user_id=None, email=None):
     """Mark all notifications as read for the current user"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Get user ID
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            if not user:
-                return {'detail': 'User not found'}, 404
+            # Use the same simple lookup pattern as the user profile endpoint (which works)
+            # Try email first (most reliable since it's unique and comes from Firebase)
+            found_user_id = None
+            if email:
+                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                user = cursor.fetchone()
+                if user:
+                    found_user_id = user[0]
             
-            user_id = user[0]
+            # If email lookup failed, try username (same as user profile endpoint)
+            if not found_user_id and username:
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user = cursor.fetchone()
+                if user:
+                    found_user_id = user[0]
+            
+            # Use the found user_id
+            user_id = found_user_id
+            
+            if not user_id:
+                return {'detail': 'User not found'}, 404
             
             # Update all notifications
             cursor.execute("""
