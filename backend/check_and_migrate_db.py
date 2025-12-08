@@ -108,6 +108,9 @@ def run_migration():
 
 def main():
     """Main function"""
+    # Check if running in non-interactive mode (no TTY)
+    is_interactive = sys.stdin.isatty()
+    
     print("\n" + "=" * 60)
     print("🗄️  DATABASE CHECK AND MIGRATION TOOL")
     print("=" * 60)
@@ -118,6 +121,8 @@ def main():
     print(f"  Host: {os.getenv('DB_HOST', 'localhost')}")
     print(f"  Database: {os.getenv('DB_NAME', 'proposal_sow_builder')}")
     print(f"  User: {os.getenv('DB_USER', 'postgres')}")
+    if not is_interactive:
+        print("\n⚠️  Running in non-interactive mode (auto-running migration)")
     print()
     
     # Check tables
@@ -127,37 +132,42 @@ def main():
         print("\n❌ Failed to connect to database. Please check your .env file.")
         sys.exit(1)
     
-    # If there are missing tables, offer to run migration
+    # If there are missing tables, run migration automatically
     if missing_tables:
         print(f"\n⚠️  Found {len(missing_tables)} missing table(s): {', '.join(missing_tables)}")
-        print("\nWould you like to run the migration? (This will create missing tables)")
-        response = input("Type 'yes' to continue, or anything else to cancel: ").strip().lower()
-        
-        if response == 'yes':
-            if run_migration():
-                print("\n✅ Migration completed! Checking tables again...")
-                existing_tables, missing_tables = check_tables()
-                if missing_tables:
-                    print(f"\n⚠️  Some tables are still missing: {', '.join(missing_tables)}")
-                else:
-                    print("\n🎉 All required tables are now present!")
-            else:
-                print("\n❌ Migration failed. Please check the error messages above.")
-                sys.exit(1)
+        if is_interactive:
+            print("\nWould you like to run the migration? (This will create missing tables)")
+            response = input("Type 'yes' to continue, or anything else to cancel: ").strip().lower()
+            if response != 'yes':
+                print("\n❌ Migration cancelled.")
+                sys.exit(0)
         else:
-            print("\n❌ Migration cancelled.")
-            sys.exit(0)
+            print("\n🔄 Auto-running migration (non-interactive mode)...")
+        
+        if run_migration():
+            print("\n✅ Migration completed! Checking tables again...")
+            existing_tables, missing_tables = check_tables()
+            if missing_tables:
+                print(f"\n⚠️  Some tables are still missing: {', '.join(missing_tables)}")
+            else:
+                print("\n🎉 All required tables are now present!")
+        else:
+            print("\n❌ Migration failed. Please check the error messages above.")
+            sys.exit(1)
     else:
         print("\n✅ All required tables are present!")
-        print("\nWould you like to re-run the migration anyway? (This is safe - uses CREATE TABLE IF NOT EXISTS)")
-        response = input("Type 'yes' to continue, or anything else to skip: ").strip().lower()
-        
-        if response == 'yes':
-            if run_migration():
-                print("\n✅ Migration completed!")
-            else:
-                print("\n❌ Migration failed. Please check the error messages above.")
-                sys.exit(1)
+        if is_interactive:
+            print("\nWould you like to re-run the migration anyway? (This is safe - uses CREATE TABLE IF NOT EXISTS)")
+            response = input("Type 'yes' to continue, or anything else to skip: ").strip().lower()
+            if response == 'yes':
+                if run_migration():
+                    print("\n✅ Migration completed!")
+                else:
+                    print("\n❌ Migration failed. Please check the error messages above.")
+                    sys.exit(1)
+        else:
+            # In non-interactive mode, skip re-running if all tables exist
+            print("\n✅ All tables present - skipping migration (use migrate_db.py to force migration)")
     
     print("\n" + "=" * 60)
     print("✅ DONE")
