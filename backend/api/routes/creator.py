@@ -183,23 +183,47 @@ def get_proposals(username=None, user_id=None, email=None):
             # Try email first (most reliable since it's unique and comes from Firebase)
             found_user_id = None
             
-            # If user_id was provided from decorator, verify it exists first
+            # If user_id was provided from decorator, verify it exists first (with retry for transaction visibility)
             if user_id:
                 print(f"🔍 Verifying user_id from decorator: {user_id}")
-                cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                user_row = cursor.fetchone()
-                if user_row:
-                    found_user_id = user_row[0]
-                    print(f"✅ Verified user_id {found_user_id} from decorator")
+                for attempt in range(3):
+                    try:
+                        cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            found_user_id = user_row[0]
+                            print(f"✅ Verified user_id {found_user_id} from decorator")
+                            break
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.05)  # Small delay for transaction visibility
+                            print(f"⚠️ user_id {user_id} not found yet, retrying... (attempt {attempt + 1}/3)")
+                    except Exception as e:
+                        print(f"⚠️ Error verifying user_id: {e}, retrying...")
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.05)
             
-            # If not found, try email lookup
+            # If not found, try email lookup (with retry)
             if not found_user_id and email:
                 print(f"🔍 Looking up user by email: {email}")
-                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
-                user_row = cursor.fetchone()
-                if user_row:
-                    found_user_id = user_row[0]
-                    print(f"✅ Found user_id {found_user_id} by email: {email}")
+                for attempt in range(3):
+                    try:
+                        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            found_user_id = user_row[0]
+                            print(f"✅ Found user_id {found_user_id} by email: {email}")
+                            break
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.05)
+                            print(f"⚠️ Email {email} not found yet, retrying... (attempt {attempt + 1}/3)")
+                    except Exception as e:
+                        print(f"⚠️ Error looking up by email: {e}, retrying...")
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.05)
             
             # If email lookup failed, try username (same as user profile endpoint)
             if not found_user_id and username:

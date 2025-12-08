@@ -205,6 +205,10 @@ def token_required(f):
                             
                             # Store user_id in kwargs so functions can use it without looking it up again
                             # Always pass email as well since it's unique and reliable for fallback lookups
+                            # IMPORTANT: Add a small delay to ensure transaction is visible to other connections
+                            import time
+                            time.sleep(0.1)  # Small delay to ensure commit is visible
+                            
                             import inspect
                             sig = inspect.signature(f)
                             clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']}
