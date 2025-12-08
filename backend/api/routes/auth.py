@@ -23,7 +23,7 @@ bp = Blueprint('auth', __name__)
 try:
     initialize_firebase()
 except Exception as e:
-    print(f"⚠️ Warning: Firebase initialization failed, but auth blueprint will still work: {e}")
+    print(f"[AUTH] WARNING: Firebase initialization failed, but auth blueprint will still work: {e}")
     print("   Firebase authentication features may not be available until Firebase is properly configured.")
 
 def generate_verification_token(user_id, email):

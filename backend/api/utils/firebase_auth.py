@@ -28,12 +28,12 @@ def initialize_firebase():
             default_path = os.path.join(backend_dir, 'firebase-service-account.json')
             if os.path.exists(default_path):
                 cred_path = default_path
-                print(f"📁 Using default Firebase credentials: {default_path}")
+                print(f"[FIREBASE] Using default Firebase credentials: {default_path}")
         
         if cred_path and os.path.exists(cred_path):
             cred = credentials.Certificate(cred_path)
             _firebase_app = firebase_admin.initialize_app(cred)
-            print(f"✅ Firebase Admin SDK initialized from: {cred_path}")
+            print(f"[FIREBASE] Firebase Admin SDK initialized from: {cred_path}")
         else:
             # Try to use default credentials (for Google Cloud environments)
             # Or use service account JSON from environment variable
@@ -43,18 +43,18 @@ def initialize_firebase():
                 cred_info = json.loads(service_account_json)
                 cred = credentials.Certificate(cred_info)
                 _firebase_app = firebase_admin.initialize_app(cred)
-                print("✅ Firebase Admin SDK initialized from environment variable")
+                print("[FIREBASE] Firebase Admin SDK initialized from environment variable")
             else:
                 # Try default credentials (for local development with gcloud auth)
                 try:
                     _firebase_app = firebase_admin.initialize_app()
-                    print("✅ Firebase Admin SDK initialized with default credentials")
+                    print("[FIREBASE] Firebase Admin SDK initialized with default credentials")
                 except Exception as e:
-                    print(f"⚠️ Firebase Admin SDK not initialized: {e}")
+                    print(f"[FIREBASE] WARNING: Firebase Admin SDK not initialized: {e}")
                     print("   Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON")
                     return None
     except Exception as e:
-        print(f"❌ Error initializing Firebase Admin SDK: {e}")
+        print(f"[FIREBASE] ERROR: Error initializing Firebase Admin SDK: {e}")
         return None
     
     return _firebase_app
@@ -75,12 +75,12 @@ def verify_firebase_token(id_token):
             initialize_firebase()
         
         if _firebase_app is None:
-            print("⚠️ Firebase not initialized, cannot verify token")
+            print("[FIREBASE] WARNING: Firebase not initialized, cannot verify token")
             return None
         
         # Check if token looks like a Firebase ID token (JWT format: three parts separated by dots)
         if not id_token or len(id_token.split('.')) != 3:
-            print(f"⚠️ Token doesn't look like a Firebase ID token (JWT format required)")
+            print(f"[FIREBASE] WARNING: Token doesn't look like a Firebase ID token (JWT format required)")
             return None
         
         # Verify the ID token
@@ -88,17 +88,17 @@ def verify_firebase_token(id_token):
         print(f"✅ Firebase ID token verified successfully")
         return decoded_token
     except auth.InvalidIdTokenError as e:
-        print(f"❌ Invalid Firebase ID token: {str(e)}")
+        print(f"[FIREBASE] ERROR: Invalid Firebase ID token: {str(e)}")
         return None
     except auth.ExpiredIdTokenError as e:
-        print(f"❌ Expired Firebase ID token: {str(e)}")
+        print(f"[FIREBASE] ERROR: Expired Firebase ID token: {str(e)}")
         return None
     except ValueError as e:
         # Token format errors
-        print(f"⚠️ Token format error (likely not a Firebase token): {str(e)}")
+        print(f"[FIREBASE] WARNING: Token format error (likely not a Firebase token): {str(e)}")
         return None
     except Exception as e:
-        print(f"❌ Error verifying Firebase token: {type(e).__name__}: {str(e)}")
+        print(f"[FIREBASE] ERROR: Error verifying Firebase token: {type(e).__name__}: {str(e)}")
         return None
 
 
