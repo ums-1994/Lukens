@@ -77,13 +77,22 @@ def generate_token(username):
 
 def verify_token(token):
     """Verify a token and return the username if valid"""
+    global valid_tokens
     # Dev bypass for testing
     if token == 'dev-bypass-token':
         print("[DEV] Using dev-bypass-token for username: admin")
         return 'admin'
 
+    # First check in-memory tokens
     if token not in valid_tokens:
-        return None
+        # Reload from file to sync tokens across multiple workers/processes
+        try:
+            valid_tokens = load_tokens()
+        except Exception as exc:
+            print(f"[WARN] Could not reload tokens from file: {exc}")
+        if token not in valid_tokens:
+            return None
+
     token_data = valid_tokens[token]
     if datetime.now() > token_data['expires_at']:
         del valid_tokens[token]
