@@ -47,21 +47,60 @@ def get_pg_pool():
 
 
 def _pg_conn():
-    """Get a connection from the pool"""
-    try:
-        return get_pg_pool().getconn()
-    except Exception as exc:
-        print(f"[ERROR] Error getting PostgreSQL connection: {exc}")
-        raise
+    """Get a connection from the pool with retry logic for SSL errors"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            conn = get_pg_pool().getconn()
+            # Test the connection is still alive
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1')
+            cursor.close()
+            return conn
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+            if attempt < max_retries - 1:
+                print(f"[WARN] Connection error (attempt {attempt + 1}/{max_retries}): {exc}. Retrying...")
+                import time
+                time.sleep(0.1)
+                # Try to close the bad connection if we got one
+                try:
+                    if 'conn' in locals():
+                        conn.close()
+                except:
+                    pass
+            else:
+                print(f"[ERROR] Error getting PostgreSQL connection after {max_retries} attempts: {exc}")
+                raise
+        except Exception as exc:
+            print(f"[ERROR] Error getting PostgreSQL connection: {exc}")
+            raise
 
 
 def release_pg_conn(conn):
-    """Return a connection to the pool"""
+    """Return a connection to the pool, closing it if it's corrupted"""
     try:
         if conn:
-            get_pg_pool().putconn(conn)
+            # Check if connection is still valid before returning to pool
+            try:
+                cursor = conn.cursor()
+                cursor.execute('SELECT 1')
+                cursor.close()
+                get_pg_pool().putconn(conn)
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                # Connection is corrupted, close it instead of returning to pool
+                print(f"[WARN] Connection corrupted, closing instead of returning to pool")
+                try:
+                    conn.close()
+                except:
+                    pass
     except Exception as exc:
         print(f"[WARN] Error releasing PostgreSQL connection: {exc}")
+        # Try to close the connection if we can't return it
+        try:
+            if conn:
+                conn.close()
+        except:
+            pass
 
 
 @contextmanager

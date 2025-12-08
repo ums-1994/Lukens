@@ -182,7 +182,18 @@ def get_proposals(username=None, user_id=None, email=None):
             # Use the same simple lookup pattern as the user profile endpoint (which works)
             # Try email first (most reliable since it's unique and comes from Firebase)
             found_user_id = None
-            if email:
+            
+            # If user_id was provided from decorator, verify it exists first
+            if user_id:
+                print(f"🔍 Verifying user_id from decorator: {user_id}")
+                cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    found_user_id = user_row[0]
+                    print(f"✅ Verified user_id {found_user_id} from decorator")
+            
+            # If not found, try email lookup
+            if not found_user_id and email:
                 print(f"🔍 Looking up user by email: {email}")
                 cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
                 user_row = cursor.fetchone()
