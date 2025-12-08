@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+<<<<<<< HEAD
 import '../../widgets/role_switcher.dart';
 import '../../widgets/app_side_nav.dart';
+=======
+>>>>>>> origin/Cleaned_Code
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -94,13 +98,16 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       print('✅ Number of proposals: ${proposals.length}');
 
       // Filter for client-approved/signed proposals
-      final approved = proposals.where((p) {
-        final status = (p['status'] ?? '').toString().toLowerCase();
-        return status == 'signed' ||
-            status == 'client signed' ||
-            status == 'approved' ||
-            status == 'completed';
-      }).map((p) => p as Map<String, dynamic>).toList();
+      final approved = proposals
+          .where((p) {
+            final status = (p['status'] ?? '').toString().toLowerCase();
+            return status == 'signed' ||
+                status == 'client signed' ||
+                status == 'approved' ||
+                status == 'completed';
+          })
+          .map((p) => p as Map<String, dynamic>)
+          .toList();
 
       approved.sort((a, b) {
         final aDate = a['updated_at'] != null
@@ -128,9 +135,10 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             ? DateTime.tryParse(proposal['updated_at'].toString())
             : null;
         if (approvedDate != null) {
-          latestApproved = (latestApproved == null || approvedDate.isAfter(latestApproved))
-              ? approvedDate
-              : latestApproved;
+          latestApproved =
+              (latestApproved == null || approvedDate.isAfter(latestApproved))
+                  ? approvedDate
+                  : latestApproved;
         }
       }
 
@@ -262,7 +270,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     final user = AuthService.currentUser ?? app.currentUser ?? {};
     final email = user['email']?.toString() ?? 'user@example.com';
     final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
-    final displayRole = backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
+    final displayRole =
+        backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -284,18 +293,6 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         ),
         Row(
           children: [
-            const CompactRoleSwitcher(),
-            const SizedBox(width: 16),
-            SizedBox(
-              width: 44,
-              height: 44,
-              child: IconButton(
-                tooltip: 'Refresh',
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                onPressed: _loadData,
-              ),
-            ),
-            const SizedBox(width: 16),
             ClipOval(
               child: Image.asset(
                 'assets/images/User_Profile.png',
@@ -379,7 +376,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               backgroundColor: Colors.white,
               foregroundColor: PremiumTheme.teal,
             ),
-            onPressed: _approvedProposals.isEmpty ? null : _exportApprovedProposals,
+            onPressed:
+                _approvedProposals.isEmpty ? null : _exportApprovedProposals,
           ),
         ],
       ),
@@ -453,8 +451,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                           padding: EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             'Navigation',
-                            style: TextStyle(
-                                color: Colors.white, fontSize: 12),
+                            style: TextStyle(color: Colors.white, fontSize: 12),
                           ),
                         ),
                       Padding(
@@ -473,21 +470,12 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               ),
             ),
             const SizedBox(height: 12),
-            _buildNavItem(
-                'Dashboard',
-                'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard',
-                context),
-            _buildNavItem(
-                'My Proposals',
-                'assets/images/My_Proposals.png',
-                _currentPage == 'My Proposals',
-                context),
-            _buildNavItem(
-                'Templates',
-                'assets/images/content_library.png',
-                _currentPage == 'Templates',
-                context),
+            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+                _currentPage == 'Dashboard', context),
+            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
+                _currentPage == 'My Proposals', context),
+            _buildNavItem('Templates', 'assets/images/content_library.png',
+                _currentPage == 'Templates', context),
             _buildNavItem(
                 'Content Library',
                 'assets/images/content_library.png',
@@ -516,8 +504,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                 color: const Color(0xFF2C3E50),
               ),
             const SizedBox(height: 12),
-            _buildNavItem('Logout', 'assets/images/Logout_KhonoBuzz.png', false,
-                context),
+            _buildNavItem(
+                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
             const SizedBox(height: 20),
           ],
         ),
@@ -525,8 +513,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     );
   }
 
-  Widget _buildNavItem(String label, String assetPath, bool isActive,
-      BuildContext context) {
+  Widget _buildNavItem(
+      String label, String assetPath, bool isActive, BuildContext context) {
     if (_isSidebarCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -582,9 +570,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
           decoration: BoxDecoration(
             color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9))
-                : null,
+            border:
+                isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
           ),
           child: Row(
             children: [
@@ -698,8 +685,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: const [
-            Icon(Icons.check_circle,
-                size: 54, color: PremiumTheme.teal),
+            Icon(Icons.check_circle, size: 54, color: PremiumTheme.teal),
             SizedBox(height: 12),
             Text(
               'No proposals have been approved yet',
@@ -806,17 +792,78 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     );
   }
 
-  void _openProposal(Map<String, dynamic> proposal) {
+  void _openProposal(Map<String, dynamic> proposal) async {
     final id = proposal['id']?.toString();
     if (id == null) return;
-    Navigator.pushNamed(
-      context,
-      '/compose',
-      arguments: {
-        'id': id,
-        'title': proposal['title'],
-      },
-    );
+
+    final status = (proposal['status'] ?? '').toString().toLowerCase();
+    final isSigned = status == 'signed' ||
+        status == 'client signed' ||
+        status == 'completed';
+
+    // If signed, show the signed DocuSign document
+    if (isSigned) {
+      final token = AuthService.token;
+      if (token == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Session expired. Please login again.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Create a blob URL for the PDF and open it
+      try {
+        final response = await http.get(
+          Uri.parse('$baseUrl/api/proposals/$id/signed-document'),
+          headers: {
+            'Authorization': 'Bearer $token',
+          },
+        );
+
+        if (response.statusCode == 200) {
+          // Create blob from PDF bytes
+          final blob = html.Blob([response.bodyBytes], 'application/pdf');
+          final url = html.Url.createObjectUrlFromBlob(blob);
+
+          // Open in new window
+          html.window.open(url, '_blank');
+
+          // Clean up URL after a delay (optional)
+          Future.delayed(const Duration(minutes: 1), () {
+            html.Url.revokeObjectUrl(url);
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Failed to load signed document: ${response.statusCode}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading signed document: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } else {
+      // If not signed yet, open in read-only editor
+      Navigator.pushNamed(
+        context,
+        '/compose',
+        arguments: {
+          'id': id,
+          'title': proposal['title'],
+          'readOnly': true,
+        },
+      );
+    }
   }
 
   void _exportApprovedProposals() {
@@ -832,8 +879,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               .format(DateTime.parse(proposal['updated_at'].toString()))
           : '';
       final owner = proposal['owner_email'] ?? proposal['owner'] ?? '';
-      buffer.writeln(
-          '"$title","$client","$value","$approvedDate","$owner"');
+      buffer.writeln('"$title","$client","$value","$approvedDate","$owner"');
     }
 
     final blob = html.Blob([buffer.toString()]);
@@ -916,4 +962,3 @@ class _SnapshotMetric {
     required this.gradient,
   });
 }
-

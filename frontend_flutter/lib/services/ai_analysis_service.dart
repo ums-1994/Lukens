@@ -1,8 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'api_service.dart';
 
 class AIAnalysisService {
+<<<<<<< HEAD
   static const String _baseUrl = 'https://lukens-backend.onrender.com';
+=======
+  static String get _baseUrl => ApiService.baseUrl;
+>>>>>>> origin/Cleaned_Code
   static String? _authToken;
 
   // Set authentication token
@@ -61,9 +66,12 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/generate-section'),
+        // Use the unified /ai/generate endpoint implemented in the backend
+        Uri.parse('$_baseUrl/ai/generate'),
         headers: headers,
         body: jsonEncode({
+          // Generic prompt; backend mainly relies on section_type + context
+          'prompt': 'Generate proposal section: $sectionType',
           'section_type': sectionType,
           'context': context,
         }),
@@ -71,7 +79,12 @@ class AIAnalysisService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['generated_content'];
+        // New backend returns `content`; keep a fallback for older shape
+        final generated = data['content'] ?? data['generated_content'] ?? '';
+        if (generated is String && generated.isNotEmpty) {
+          return generated;
+        }
+        throw Exception('Empty AI response');
       } else {
         throw Exception('Content generation failed: ${response.statusCode}');
       }
@@ -91,7 +104,8 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/improve-content'),
+        // Use the /ai/improve endpoint implemented in the backend
+        Uri.parse('$_baseUrl/ai/improve'),
         headers: headers,
         body: jsonEncode({
           'content': content,
@@ -101,7 +115,14 @@ class AIAnalysisService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['improvements'];
+        // Backend already returns the full result map from ai_service.improve_content
+        // Keep backward compatibility if a nested "improvements" key exists
+        if (data is Map<String, dynamic>) {
+          return data['improvements'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(data['improvements'])
+              : data;
+        }
+        throw Exception('Unexpected AI improve response shape');
       } else {
         throw Exception('Content improvement failed: ${response.statusCode}');
       }
@@ -153,6 +174,7 @@ class AIAnalysisService {
   // Legacy method for backward compatibility
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
+<<<<<<< HEAD
     // If proposal has an ID, use the new risk analysis
     if (proposalData.containsKey('id')) {
       return await analyzeProposalRisks(proposalData['id'].toString());
@@ -174,9 +196,21 @@ class AIAnalysisService {
       }
     } catch (e) {
       print('AI Analysis Error: $e');
+=======
+    // If proposal has an ID and it's not 'draft', use the new risk analysis
+    if (proposalData.containsKey('id') &&
+        proposalData['id'] != null &&
+        proposalData['id'].toString() != 'draft') {
+      try {
+        return await analyzeProposalRisks(proposalData['id'].toString());
+      } catch (e) {
+        print('AI Risk Analysis failed, falling back to basic analysis: $e');
+        // Fall through to basic analysis
+      }
+>>>>>>> origin/Cleaned_Code
     }
 
-    // Otherwise use mock analysis
+    // For unsaved proposals or when API fails, use basic analysis
     return _getMockAnalysis(proposalData);
   }
 
@@ -303,14 +337,20 @@ class AIAnalysisService {
     // Pattern-based analysis
     final aiIssues = _performPatternAnalysis(proposalData);
     issues.addAll(aiIssues);
-    riskScore +=
-        aiIssues.fold(0, (sum, issue) => sum + (issue['points'] as int));
+    // Add points from AI-style checks to the overall risk score
+    riskScore += aiIssues.fold(0, (sum, issue) {
+      final points = issue['points'] as int? ?? 0;
+      return sum + points;
+    });
 
-    // Determine status
+    // Determine status based on a 0-100 readiness-style score
+    // where higher is better (100 = no risk).
+    final int readinessScore = (100 - riskScore).clamp(0, 100).toInt();
+
     String status;
-    if (riskScore == 0) {
+    if (readinessScore >= 90) {
       status = 'Ready';
-    } else if (riskScore <= 15) {
+    } else if (readinessScore >= 60) {
       status = 'At Risk';
     } else {
       status = 'Blocked';
@@ -361,11 +401,12 @@ class AIAnalysisService {
       });
     }
 
-    // Check for missing assumptions
+    // Check for missing assumptions: treat as a missing section so the
+    // Governance UI can auto-add the corresponding module.
     if (!_hasContent(proposalData, 'assumptions') &&
         !_hasContent(proposalData, 'assumptions_risks')) {
       issues.add({
-        'type': 'ai_analysis',
+        'type': 'missing_section',
         'title': 'No Assumptions Section',
         'description': 'Project assumptions should be clearly documented',
         'points': 4,

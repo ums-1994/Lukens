@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 
 class AnimatedLandingPage extends StatefulWidget {
   const AnimatedLandingPage({super.key});
@@ -226,7 +225,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     flex: 5,
                     child: _buildMainContent(),
                   ),
-                  
+
                   // Right side - 3D Tube
                   Expanded(
                     flex: 5,
@@ -283,10 +282,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
 
   Widget _build3DTube() {
     return Transform.translate(
-      offset: Offset(
-        100 - (_tubeProgress.value * 100), 
-        _floatController.isAnimating ? _floatOffset.value : 0
-      ),
+      offset: Offset(100 - (_tubeProgress.value * 100),
+          _floatController.isAnimating ? _floatOffset.value : 0),
       child: Transform.rotate(
         angle: _tubeRotation.value,
         child: Opacity(
@@ -294,7 +291,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           child: Container(
             decoration: BoxDecoration(
               image: DecorationImage(
-                image: const AssetImage('assets/images/Khonology Landing Page - Frame 6.png'),
+                image: const AssetImage(
+                    'assets/images/Khonology Landing Page - Frame 6.png'),
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
                 opacity: _tubeProgress.value,
@@ -421,7 +419,9 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                       boxShadow: [
                         BoxShadow(
                           color: const Color(0xFFD72638).withOpacity(
-                            _glowController.isAnimating ? _glowIntensity.value : 0.4,
+                            _glowController.isAnimating
+                                ? _glowIntensity.value
+                                : 0.4,
                           ),
                           blurRadius: 30,
                           spreadRadius: 5,
@@ -540,4 +540,3 @@ class RedLinePainter extends CustomPainter {
     return oldDelegate.progress != progress;
   }
 }
-

@@ -1,10 +1,11 @@
 import 'dart:convert';
+import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 import 'services/ai_analysis_service.dart';
 
-const String baseUrl = "https://lukens-backend.onrender.com";
+const String baseUrl = "http://localhost:8000";
 
 class AppState extends ChangeNotifier {
   List<dynamic> templates = [];
@@ -42,10 +43,8 @@ class AppState extends ChangeNotifier {
   Map<String, String> get _headers {
     final headers = {"Content-Type": "application/json"};
     // Use authToken (synced from AuthService) for consistency
-    if (authToken != null && authToken!.isNotEmpty) {
+    if (authToken != null) {
       headers["Authorization"] = "Bearer $authToken";
-    } else if (AuthService.token != null && AuthService.token!.isNotEmpty) {
-      headers["Authorization"] = "Bearer ${AuthService.token}";
     }
     return headers;
   }
@@ -55,8 +54,10 @@ class AppState extends ChangeNotifier {
   Map<String, String> get _multipartHeaders {
     final headers = <String, String>{};
     // Use authToken (synced from AuthService) for consistency
-    if (authToken != null) {
-      headers["Authorization"] = "Bearer $authToken";
+    // Fallback to AuthService.token if authToken is null (for Firebase auth)
+    final token = authToken ?? AuthService.token;
+    if (token != null) {
+      headers["Authorization"] = "Bearer $token";
     }
     return headers;
   }
@@ -82,6 +83,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchContent() async {
     try {
+      // Ensure token is synced from AuthService before making request
+      if (authToken == null && AuthService.token != null) {
+        authToken = AuthService.token;
+        print('🔄 Synced token from AuthService in fetchContent');
+      }
+      
       final r = await http.get(
         Uri.parse("$baseUrl/content"),
         headers: _headers,
@@ -359,16 +366,21 @@ class AppState extends ChangeNotifier {
 
   String _normalizeStatus(String? status) {
     if (status == null || status.isEmpty) return 'Draft';
-    
+
     final lowerStatus = status.toLowerCase().trim();
-    
+
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
-    if (lowerStatus.contains('pending') && lowerStatus.contains('ceo')) return 'Pending CEO Approval';
-    if (lowerStatus.contains('sent') && lowerStatus.contains('client')) return 'Sent to Client';
-    if (lowerStatus == 'signed' || lowerStatus == 'approved') return 'Signed';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
+      return 'Pending CEO Approval';
+    if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
+      return 'Sent to Client';
+    if (lowerStatus == 'signed' ||
+        lowerStatus == 'approved' ||
+        lowerStatus == 'client signed' ||
+        lowerStatus == 'client approved') return 'Signed';
     if (lowerStatus.contains('review')) return 'In Review';
-    
+
     // Capitalize first letter of each word for other statuses
     return status.split(' ').map((word) {
       if (word.isEmpty) return word;

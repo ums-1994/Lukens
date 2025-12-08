@@ -1,9 +1,14 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'api_service.dart';
 
 class ContentLibraryService {
+<<<<<<< HEAD
   static const String baseUrl = 'https://lukens-backend.onrender.com';
+=======
+  static String get baseUrl => ApiService.baseUrl;
+>>>>>>> origin/Cleaned_Code
 
   // Get headers with authentication
   Map<String, String> _getHeaders({String? token}) {

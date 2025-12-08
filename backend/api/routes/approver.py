@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
+from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope
 
 bp = Blueprint('approver', __name__)
 
@@ -147,9 +148,103 @@ def approve_proposal(username=None, proposal_id=None):
                             ON CONFLICT DO NOTHING
                         """, (proposal_id, client_email, approver_user_id, 'view', access_token))
                         conn.commit()
-                        
+
+                        # Create DocuSign envelope so client link already has a signing URL
+                        try:
+                            # Generate PDF for DocuSign
+                            pdf_content = generate_proposal_pdf(
+                                proposal_id=proposal_id,
+                                title=title or display_title,
+                                content=proposal_content or '',
+                                client_name=client_name,
+                                client_email=client_email,
+                            )
+
+                            # Return URL back to client proposals view with same token
+                            return_url = f"{frontend_url}/#/client/proposals?token={access_token}&signed=true"
+
+                            envelope_result = create_docusign_envelope(
+                                proposal_id=proposal_id,
+                                pdf_bytes=pdf_content,
+                                signer_name=client_name or client_email,
+                                signer_email=client_email,
+                                signer_title='',
+                                return_url=return_url,
+                            )
+
+                            signing_url = envelope_result['signing_url']
+                            envelope_id = envelope_result['envelope_id']
+
+                            # Store or update signature record
+                            cursor.execute(
+                                """
+                                SELECT id FROM proposal_signatures WHERE proposal_id = %s
+                                """,
+                                (proposal_id,),
+                            )
+                            existing_sig = cursor.fetchone()
+
+                            if existing_sig:
+                                cursor.execute(
+                                    """
+                                    UPDATE proposal_signatures 
+                                    SET envelope_id = %s,
+                                        signer_name = %s,
+                                        signer_email = %s,
+                                        signer_title = %s,
+                                        signing_url = %s,
+                                        status = %s,
+                                        sent_at = NOW()
+                                    WHERE proposal_id = %s
+                                    """,
+                                    (
+                                        envelope_id,
+                                        client_name or client_email,
+                                        client_email,
+                                        '',
+                                        signing_url,
+                                        'sent',
+                                        proposal_id,
+                                    ),
+                                )
+                            else:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO proposal_signatures 
+                                    (proposal_id, envelope_id, signer_name, signer_email, signer_title, 
+                                     signing_url, status, created_by)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                    """,
+                                    (
+                                        proposal_id,
+                                        envelope_id,
+                                        client_name or client_email,
+                                        client_email,
+                                        '',
+                                        signing_url,
+                                        'sent',
+                                        approver_user_id,
+                                    ),
+                                )
+
+                            # Update proposal status to reflect that it has been sent for signature
+                            cursor.execute(
+                                """
+                                UPDATE proposals 
+                                SET status = 'Sent for Signature', updated_at = NOW()
+                                WHERE id = %s
+                                """,
+                                (proposal_id,),
+                            )
+
+                            conn.commit()
+                            print(f"✅ Created DocuSign envelope for proposal {proposal_id} (client: {client_email})")
+                        except Exception as docusign_error:
+                            print(f"❌ DocuSign error during approver approval: {docusign_error}")
+                            traceback.print_exc()
+
                         client_link = f"{frontend_url}/client/proposals?token={access_token}"
-                        
+
                         email_subject = f"Proposal Ready: {display_title}"
                         email_body = f"""
                         {get_logo_html()}

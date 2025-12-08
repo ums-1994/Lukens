@@ -588,7 +588,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _buildFormGroup(
           'Default Currency',
           DropdownButtonFormField<String>(
-            value: _generalSettings['default_currency'] ?? 'USD',
+            initialValue: _generalSettings['default_currency'] ?? 'USD',
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: ['USD', 'EUR', 'GBP', 'CAD']
                 .map(
@@ -610,7 +610,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _buildFormGroup(
           'Default Timezone',
           DropdownButtonFormField<String>(
-            value: _generalSettings['default_timezone'] ?? 'est',
+            initialValue: _generalSettings['default_timezone'] ?? 'est',
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: const [
               DropdownMenuItem(value: 'est', child: Text('Eastern Time (ET)')),
@@ -690,7 +690,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _buildFormGroup(
           'AI Model',
           DropdownButtonFormField<String>(
-            value: _aiSettings['ai_model'] ?? 'gpt-3.5-turbo',
+            initialValue: _aiSettings['ai_model'] ?? 'gpt-3.5-turbo',
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: const [
               DropdownMenuItem(

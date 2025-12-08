@@ -7,13 +7,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', 5432),
-    'database': os.getenv('DB_NAME', 'khonology'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'postgres'),
-}
+def get_db_config():
+    """Get database configuration with SSL support for Render"""
+    config = {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': int(os.getenv('DB_PORT', 5432)),
+        'database': os.getenv('DB_NAME', 'proposal_sow_builder'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', 'postgres'),
+    }
+    
+    # Add SSL mode for external connections (like Render)
+    db_sslmode = os.getenv('DB_SSLMODE')
+    if db_sslmode:
+        config['sslmode'] = db_sslmode
+    elif 'render.com' in config['host'].lower():
+        config['sslmode'] = 'require'
+    
+    return config
+
+DATABASE_CONFIG = get_db_config()
 
 LEGACY_LABELS_TO_REMOVE = [
     'Risk Management',
@@ -675,7 +688,8 @@ def seed_content_blocks():
             SET label = EXCLUDED.label,
                 content = EXCLUDED.content,
                 category = EXCLUDED.category,
-                updated_at = EXCLUDED.updated_at
+                updated_at = EXCLUDED.updated_at,
+                is_deleted = FALSE
             """,
             (
                 block['key'],

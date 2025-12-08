@@ -16,7 +16,7 @@ from api.utils.database import get_db_connection
 from api.utils.decorators import token_required, admin_required
 from api.data.default_templates import DEFAULT_TEMPLATES
 
-bp = Blueprint('creator', __name__)
+bp = Blueprint('creator', __name__, url_prefix='')
 
 # ============================================================================
 # HELPERS
@@ -749,12 +749,13 @@ def approve_template(username=None, template_id=None):
 
 @bp.get("/proposals")
 @token_required
-def get_proposals(username=None):
+def get_proposals(username=None, user_id=None, email=None):
     """Get all proposals for the creator"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
+<<<<<<< HEAD
             print(f"🔍 Looking for proposals for user {username}")
 
             # Resolve numeric owner_id from username
@@ -775,6 +776,45 @@ def get_proposals(username=None):
                    WHERE p.owner_id = %s
                    ORDER BY p.created_at DESC''',
                 (owner_id,)
+=======
+            print(f"🔍 Looking for proposals for user {username} (user_id: {user_id}, email: {email})")
+            
+            # Use the same simple lookup pattern as the user profile endpoint (which works)
+            # Try email first (most reliable since it's unique and comes from Firebase)
+            found_user_id = None
+            if email:
+                print(f"🔍 Looking up user by email: {email}")
+                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    found_user_id = user_row[0]
+                    print(f"✅ Found user_id {found_user_id} by email: {email}")
+            
+            # If email lookup failed, try username (same as user profile endpoint)
+            if not found_user_id and username:
+                print(f"🔍 Looking up user by username: {username}")
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    found_user_id = user_row[0]
+                    print(f"✅ Found user_id {found_user_id} by username: {username}")
+            
+            # Use the found user_id
+            user_id = found_user_id
+            
+            if not user_id:
+                print(f"❌ User lookup failed for username: {username}, email: {email}")
+                return {'detail': 'User not found'}, 404
+            
+            print(f"✅ Using user_id: {user_id} for proposals query")
+            
+            cursor.execute(
+                '''SELECT id, owner_id, title, content, status, client, 
+                          created_at, updated_at
+                   FROM proposals WHERE owner_id = %s
+                   ORDER BY created_at DESC''',
+                (user_id,)
+>>>>>>> origin/Cleaned_Code
             )
             rows = list_cursor.fetchall()
             proposals = []
@@ -782,6 +822,7 @@ def get_proposals(username=None):
                 # Handle NULL status - default to 'draft' (lowercase to match constraint)
                 status = row.get('status') if row.get('status') is not None else 'draft'
                 proposals.append({
+<<<<<<< HEAD
                     'id': row.get('id'),
                     'user_id': row.get('owner_id'),
                     'owner_id': row.get('owner_id'),  # For compatibility
@@ -802,9 +843,26 @@ def get_proposals(username=None):
                     'readiness_score': row.get('readiness_score'),
                     'risk_score': row.get('risk_score'),
                     'can_release': row.get('can_release'),
+=======
+                    'id': row[0],
+                    'user_id': row[1],  # Keep for backward compatibility
+                    'owner_id': row[1],
+                    'title': row[2],
+                    'content': row[3],
+                    'status': status,
+                    'client_name': row[5] if row[5] else 'Unknown Client',  # Map client to client_name for compatibility
+                    'client': row[5] if row[5] else 'Unknown Client',
+                    'client_email': '',  # Not in schema, return empty string
+                    'budget': None,  # Not in schema
+                    'timeline_days': None,  # Not in schema
+                    'created_at': row[6].isoformat() if row[6] else None,
+                    'updated_at': row[7].isoformat() if row[7] else None,
+                    'updatedAt': row[7].isoformat() if row[7] else None,
+>>>>>>> origin/Cleaned_Code
                 })
-            print(f"✅ Found {len(proposals)} proposals for user {username}")
-            return proposals, 200
+            print(f"✅ Found {len(proposals)} proposals for user {username} (user_id: {user_id})")
+            # Return list directly (Flask will JSON-encode it)
+            return jsonify(proposals), 200
     except Exception as e:
         print(f"❌ Error getting proposals: {e}")
         traceback.print_exc()
@@ -911,14 +969,15 @@ def build_proposal_wizard(username=None):
 
 @bp.post("/proposals")
 @token_required
-def create_proposal(username=None):
+def create_proposal(username=None, user_id=None, email=None):
     """Create a new proposal"""
     try:
         data = request.get_json()
-        print(f"📝 Creating proposal for user {username}: {data.get('title', 'Untitled')}")
+        print(f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email}): {data.get('title', 'Untitled')}")
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+<<<<<<< HEAD
 
             # Resolve numeric owner_id from username
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
@@ -1001,6 +1060,10 @@ def create_proposal(username=None):
                         timeline_days = int(numbers[0])
                     except ValueError:
                         timeline_days = None
+=======
+            
+            client = data.get('client_name') or data.get('client') or 'Unknown Client'
+>>>>>>> origin/Cleaned_Code
             
             # Normalize status - use lowercase to match database constraint
             raw_status = data.get('status', 'draft')
@@ -1020,6 +1083,7 @@ def create_proposal(username=None):
                 else:
                     # Keep as lowercase for basic statuses, or use exact value if it's a special status
                     normalized_status = status_lower
+<<<<<<< HEAD
 
             cursor.execute(
                 '''INSERT INTO proposals (owner_id, title, client, content, sections, status, client_name, client_email, budget, timeline_days, template_key)
@@ -1027,17 +1091,67 @@ def create_proposal(username=None):
                    RETURNING id, owner_id, title, content, sections, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
                 (
                     owner_id,
+=======
+            
+            # Use the same simple lookup pattern as the user profile endpoint (which works)
+            # Try email first (most reliable since it's unique and comes from Firebase)
+            found_user_id = None
+            if email:
+                print(f"🔍 Looking up user by email: {email}")
+                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    found_user_id = user_row[0]
+                    print(f"✅ Found user_id {found_user_id} by email: {email}")
+            
+            # If email lookup failed, try username (same as user profile endpoint)
+            if not found_user_id and username:
+                print(f"🔍 Looking up user by username: {username}")
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    found_user_id = user_row[0]
+                    print(f"✅ Found user_id {found_user_id} by username: {username}")
+            
+            # Use the found user_id
+            user_id = found_user_id
+            
+            if not user_id:
+                print(f"❌ User lookup failed for username: {username}, email: {email}")
+                return {'detail': 'User not found'}, 404
+            
+            print(f"✅ Using user_id: {user_id} for proposal creation")
+            
+            # Final verification before inserting proposal
+            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+            final_check = cursor.fetchone()
+            if not final_check:
+                print(f"❌ CRITICAL: user_id {user_id} doesn't exist right before proposal insert!")
+                return {'detail': f'User with ID {user_id} not found in database'}, 404
+            
+            cursor.execute(
+                '''INSERT INTO proposals (owner_id, title, content, status, client)
+                   VALUES (%s, %s, %s, %s, %s) 
+                   RETURNING id, owner_id, title, content, status, client, created_at, updated_at''',
+                (
+                    user_id,
+>>>>>>> origin/Cleaned_Code
                     data.get('title', 'Untitled Document'),
                     client_value,
                     data.get('content'),
                     sections_json,
                     normalized_status,
+<<<<<<< HEAD
                     client_name,
                     client_email,
                     budget_value,
                     timeline_days,
                     template_key_value,
                 ),
+=======
+                    client
+                )
+>>>>>>> origin/Cleaned_Code
             )
             result = cursor.fetchone()
             conn.commit()
@@ -1049,6 +1163,7 @@ def create_proposal(username=None):
                 'owner_id': result[1],
                 'title': result[2],
                 'content': result[3],
+<<<<<<< HEAD
                 'sections': sections_response,
                 'status': result[5],
                 'client_name': result[6],
@@ -1059,6 +1174,16 @@ def create_proposal(username=None):
                 'created_at': result[10].isoformat() if result[10] else None,
                 'updated_at': result[11].isoformat() if result[11] else None,
                 'template_key': template_key_value,
+=======
+                'status': result[4],
+                'client_name': result[5] if result[5] else 'Unknown Client',  # Map client to client_name for compatibility
+                'client': result[5] if result[5] else 'Unknown Client',
+                'client_email': '',  # Not in schema
+                'budget': None,  # Not in schema
+                'timeline_days': None,  # Not in schema
+                'created_at': result[6].isoformat() if result[6] else None,
+                'updated_at': result[7].isoformat() if result[7] else None,
+>>>>>>> origin/Cleaned_Code
             }
             
             print(f"✅ Proposal created: {proposal['id']}")
@@ -1079,19 +1204,44 @@ def update_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
+            if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+            
             # Verify ownership
+<<<<<<< HEAD
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             user_row = cursor.fetchone()
             if not user_row:
                 return {'detail': 'User not found'}, 404
             owner_id = user_row[0]
 
+=======
+>>>>>>> origin/Cleaned_Code
             cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+<<<<<<< HEAD
 
             if proposal[0] != owner_id:
+=======
+            
+            if proposal[0] != user_id:
+>>>>>>> origin/Cleaned_Code
                 return {'detail': 'Access denied'}, 403
             
             # Build update query
@@ -1187,7 +1337,25 @@ def delete_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
+            if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+            
             # Verify ownership
+<<<<<<< HEAD
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             user_row = cursor.fetchone()
             if not user_row:
@@ -1204,6 +1372,14 @@ def delete_proposal(username=None, proposal_id=None):
                 return {'detail': 'Proposal not found'}, 404
 
             if proposal[0] != owner_id:
+=======
+            cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            if proposal[0] != user_id:
+>>>>>>> origin/Cleaned_Code
                 return {'detail': 'Access denied'}, 403
             
             # Delete dependent records that don't have ON DELETE CASCADE
@@ -1245,8 +1421,13 @@ def get_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
+<<<<<<< HEAD
                 '''SELECT id, owner_id, title, content, sections, status, client_name, client_email, 
                           budget, timeline_days, created_at, updated_at, template_key
+=======
+                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
+                          budget, timeline_days, created_at, updated_at
+>>>>>>> origin/Cleaned_Code
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -1357,6 +1538,27 @@ def send_for_approval(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
 
+<<<<<<< HEAD
+=======
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
+            if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+            
+            # Check if proposal exists and belongs to user
+>>>>>>> origin/Cleaned_Code
             cursor.execute('SELECT id FROM proposals WHERE id = %s AND owner_id = %s', (proposal_id, user_id))
             proposal = cursor.fetchone()
             if not proposal:
@@ -1394,6 +1596,15 @@ def send_to_client(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+            # Run compound risk gate check
+            risk_result = evaluate_compound_risk(dict(proposal))
+            if risk_result.get('blocked'):
+                return {
+                    'detail': 'Proposal blocked by risk gate',
+                    'risk_score': risk_result.get('score'),
+                    'flags': risk_result.get('flags', []),
+                    'message': 'This proposal has too many risk factors. Please address the issues before sending to client.'
+                }, 400                
             
             cursor.execute(
                 "SELECT id, full_name, username, email FROM users WHERE username = %s",
@@ -2411,19 +2622,43 @@ def get_proposal_collaborators(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
+            if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+            
             # Verify ownership
+<<<<<<< HEAD
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             user_row = cursor.fetchone()
             if not user_row:
                 return {'detail': 'User not found'}, 404
             owner_id = user_row['id']
 
+=======
+>>>>>>> origin/Cleaned_Code
             cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
+<<<<<<< HEAD
             if proposal['owner_id'] != owner_id:
+=======
+            if proposal['owner_id'] != user_id:
+>>>>>>> origin/Cleaned_Code
                 return {'detail': 'Access denied'}, 403
             
             # Get active collaborators from collaborators table
@@ -2480,19 +2715,43 @@ def invite_collaborator(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
+            # Get user ID from username (try multiple times in case user was just created)
+            user_row = None
+            for attempt in range(3):
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if user_row:
+                    break
+                # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                if attempt == 0:
+                    import time
+                    time.sleep(0.1)  # Small delay to allow transaction to commit
+            
+            if not user_row:
+                print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+            
             # Verify ownership
+<<<<<<< HEAD
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             user_row = cursor.fetchone()
             if not user_row:
                 return {'detail': 'User not found'}, 404
             owner_id = user_row['id']
 
+=======
+>>>>>>> origin/Cleaned_Code
             cursor.execute('SELECT owner_id, title FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
+<<<<<<< HEAD
             if proposal['owner_id'] != owner_id:
+=======
+            if proposal['owner_id'] != user_id:
+>>>>>>> origin/Cleaned_Code
                 return {'detail': 'Access denied'}, 403
             
             # Check if invitation already exists
@@ -2595,7 +2854,11 @@ def remove_collaborator(username=None, invitation_id=None):
             
             # Get invitation and verify ownership
             cursor.execute("""
+<<<<<<< HEAD
                 SELECT ci.*, p.owner_id AS proposal_owner_id
+=======
+                SELECT ci.*, p.owner_id as proposal_owner
+>>>>>>> origin/Cleaned_Code
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
                 WHERE ci.id = %s
@@ -2712,17 +2975,34 @@ def archive_proposal(username=None, proposal_id=None):
             
             # Get proposal and verify ownership
             cursor.execute("""
+<<<<<<< HEAD
                 SELECT p.id, p.owner_id, u.username, p.title, p.status
                 FROM proposals p
                 JOIN users u ON p.owner_id = u.id
                 WHERE p.id = %s
+=======
+                SELECT id, owner_id, title, status
+                FROM proposals
+                WHERE id = %s
+>>>>>>> origin/Cleaned_Code
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
+<<<<<<< HEAD
             if proposal['username'] != username:
+=======
+            # Get user ID from username for comparison
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+            
+            if proposal['owner_id'] != user_id:
+>>>>>>> origin/Cleaned_Code
                 return {'detail': 'Access denied'}, 403
             
             if proposal['status'] == 'Archived':
@@ -2787,18 +3067,35 @@ def restore_proposal(username=None, proposal_id=None):
             
             # Get proposal
             cursor.execute("""
+<<<<<<< HEAD
                 SELECT p.id, p.owner_id, u.username, p.title, p.status
                 FROM proposals p
                 JOIN users u ON p.owner_id = u.id
                 WHERE p.id = %s
+=======
+                SELECT id, owner_id, title, status
+                FROM proposals
+                WHERE id = %s
+>>>>>>> origin/Cleaned_Code
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
+            # Get user ID from username for comparison
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return {'detail': 'User not found'}, 404
+            user_id = user_row[0]
+            
             # Check permissions (owner or admin)
+<<<<<<< HEAD
             if proposal['username'] != username and not is_admin:
+=======
+            if proposal['owner_id'] != user_id and not is_admin:
+>>>>>>> origin/Cleaned_Code
                 return {'detail': 'Access denied. Only owner or admin can restore proposals.'}, 403
             
             if proposal['status'] != 'Archived':
@@ -2857,21 +3154,40 @@ def get_archived_proposals(username=None):
             if is_admin:
                 # Admin can see all archived proposals
                 cursor.execute("""
+<<<<<<< HEAD
                     SELECT id, owner_id AS user_id, title, content, status, client_name, client_email, 
+=======
+                    SELECT id, owner_id, title, content, status, client_name, client_email, 
+>>>>>>> origin/Cleaned_Code
                            budget, timeline_days, created_at, updated_at
                     FROM proposals
                     WHERE status = 'Archived'
                     ORDER BY updated_at DESC
                 """)
             else:
+                # Get user ID from username
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                if not user_row:
+                    return {'detail': 'User not found'}, 404
+                user_id = user_row[0]
+                
                 # Regular users see only their archived proposals
                 cursor.execute("""
+<<<<<<< HEAD
                     SELECT id, owner_id AS user_id, title, content, status, client_name, client_email, 
+=======
+                    SELECT id, owner_id, title, content, status, client_name, client_email, 
+>>>>>>> origin/Cleaned_Code
                            budget, timeline_days, created_at, updated_at
                     FROM proposals
                     WHERE owner_id = %s AND status = 'Archived'
                     ORDER BY updated_at DESC
+<<<<<<< HEAD
                 """, (user['id'],))
+=======
+                """, (user_id,))
+>>>>>>> origin/Cleaned_Code
             
             rows = cursor.fetchall()
             proposals = []
@@ -2879,8 +3195,8 @@ def get_archived_proposals(username=None):
             for row in rows:
                 proposals.append({
                     'id': row['id'],
-                    'user_id': row['user_id'],
-                    'owner_id': row['user_id'],
+                    'user_id': row['owner_id'],  # Keep for backward compatibility
+                    'owner_id': row['owner_id'],
                     'title': row['title'],
                     'content': row['content'],
                     'status': row['status'] or 'Archived',

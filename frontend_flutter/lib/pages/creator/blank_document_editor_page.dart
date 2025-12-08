@@ -12,6 +12,13 @@ import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
+import 'governance_panel.dart';
+// Import models from document_editor
+import '../../document_editor/models/document_section.dart';
+import '../../document_editor/models/inline_image.dart';
+import '../../document_editor/models/document_table.dart';
+// Block-based section widget
+import '../../document_editor/widgets/section_widget.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -40,7 +47,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _clientEmailController;
   bool _isSaving = false;
   DateTime? _lastSaved;
-  List<_DocumentSection> _sections = [];
+  List<DocumentSection> _sections = [];
   int _hoveredSectionIndex = -1;
   int _selectedSectionIndex =
       0; // Track which section is selected for content insertion
@@ -95,9 +102,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   dynamic _savedProposalId; // Store the actual backend proposal ID (int or UUID)
   String? _authToken;
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
+<<<<<<< HEAD
   Map<String, dynamic>? _readiness;
   List<Map<String, dynamic>> _readinessChecks = [];
   bool _isLoadingReadiness = false;
+=======
+  Map<String, dynamic>?
+      _proposalData; // Store full proposal data for GovernancePanel
+>>>>>>> origin/Cleaned_Code
 
   @override
   void initState() {
@@ -122,7 +134,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         widget.aiGeneratedSections!.isNotEmpty) {
       // Populate sections from AI-generated content
       widget.aiGeneratedSections!.forEach((title, content) {
-        final section = _DocumentSection(
+        final section = DocumentSection(
           title: title,
           content: content as String,
         );
@@ -140,7 +152,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _selectedSectionIndex = 0; // Select first section
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
-      final initialSection = _DocumentSection(
+      final initialSection = DocumentSection(
         title: 'Untitled Section',
         content: '',
       );
@@ -275,6 +287,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         return;
       }
 
+      // Store full proposal data for GovernancePanel
+      setState(() {
+        _proposalData = Map<String, dynamic>.from(proposal);
+      });
+
       // Parse the content JSON
       if (proposal['content'] != null) {
         try {
@@ -306,7 +323,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             final List<dynamic> savedSections = contentData['sections'] ?? [];
             if (savedSections.isNotEmpty) {
               for (var sectionData in savedSections) {
-                final newSection = _DocumentSection(
+                final newSection = DocumentSection(
                   title: sectionData['title'] ?? 'Untitled Section',
                   content: sectionData['content'] ?? '',
                   backgroundColor: sectionData['backgroundColor'] != null
@@ -322,7 +339,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           InlineImage.fromJson(img as Map<String, dynamic>))
                       .toList(),
                   tables: (sectionData['tables'] as List<dynamic>?)
-                      ?.map((tableData) {
+                          ?.map((tableData) {
                         try {
                           return tableData is Map<String, dynamic>
                               ? DocumentTable.fromJson(tableData)
@@ -332,8 +349,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           print('⚠️ Error loading table: $e');
                           return DocumentTable();
                         }
-                      })
-                      .toList() ?? [],
+                      }).toList() ??
+                      [],
                 );
                 _sections.add(newSection);
 
@@ -347,7 +364,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             } else {
               // If no sections, create a default one
-              final defaultSection = _DocumentSection(
+              final defaultSection = DocumentSection(
                 title: 'Untitled Section',
                 content: '',
               );
@@ -448,10 +465,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       // Flatten threaded structure for display (convert to flat list with replies nested)
       List<Map<String, dynamic>> flatComments = [];
-      
+
       void addCommentWithReplies(Map<String, dynamic> comment) {
         flatComments.add(comment);
-        
+
         // Add replies if they exist
         final replies = comment['replies'] as List<dynamic>? ?? [];
         for (var reply in replies) {
@@ -577,11 +594,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               print('⚠️ Skipping collaborator without email: ${collab['id']}');
               continue;
             }
-            
+
             // Handle timestamp fields: 'invited_at' for pending invitations, 'joined_at' for active collaborators
             final invitedAt = collab['invited_at'] ?? collab['joined_at'];
-            final accessedAt = collab['accessed_at'] ?? collab['last_accessed_at'];
-            
+            final accessedAt =
+                collab['accessed_at'] ?? collab['last_accessed_at'];
+
             _collaborators.add({
               'id': collab['id'],
               'email': email,
@@ -596,7 +614,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         });
         print('✅ Loaded ${_collaborators.length} collaborators');
       } else {
-        print('⚠️ Failed to load collaborators: ${response.statusCode} - ${response.body}');
+        print(
+            '⚠️ Failed to load collaborators: ${response.statusCode} - ${response.body}');
         String errorMsg = 'Failed to load collaborators';
         if (response.statusCode == 401) {
           errorMsg = 'Authentication required to view collaborators';
@@ -606,7 +625,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           errorMsg = 'Proposal not found';
         }
         print('❌ $errorMsg');
-        
+
         // Clear collaborators on error to avoid stale data
         setState(() {
           _collaborators.clear();
@@ -712,7 +731,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   void _insertSection(int afterIndex) {
     setState(() {
-      final newSection = _DocumentSection(
+      final newSection = DocumentSection(
         title: 'Untitled Section',
         content: '',
       );
@@ -723,6 +742,42 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       newSection.titleController.addListener(_onContentChanged);
 
       // Add focus listeners for UI updates
+      newSection.contentFocus.addListener(() => setState(() {}));
+      newSection.titleFocus.addListener(() => setState(() {}));
+    });
+  }
+
+  void _duplicateSection(int index) {
+    if (index < 0 || index >= _sections.length) return;
+
+    final original = _sections[index];
+
+    final duplicatedTables = original.tables
+        .map((table) => DocumentTable.fromJson(table.toJson()))
+        .toList();
+
+    final duplicatedImages = original.inlineImages
+        .map((img) => InlineImage.fromJson(img.toJson()))
+        .toList();
+
+    final newSection = DocumentSection(
+      title: '${original.title} (Copy)',
+      content: original.controller.text,
+      backgroundColor: original.backgroundColor,
+      backgroundImageUrl: original.backgroundImageUrl,
+      sectionType: original.sectionType,
+      isCoverPage: original.isCoverPage,
+      inlineImages: duplicatedImages,
+      tables: duplicatedTables,
+    );
+
+    setState(() {
+      _sections.insert(index + 1, newSection);
+      _selectedSectionIndex = index + 1;
+
+      newSection.controller.addListener(_onContentChanged);
+      newSection.titleController.addListener(_onContentChanged);
+
       newSection.contentFocus.addListener(() => setState(() {}));
       newSection.titleFocus.addListener(() => setState(() {}));
     });
@@ -782,6 +837,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         content: Text('Snippet created from "${_sections[index].title}"'),
         backgroundColor: Colors.green,
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildAIAnalysisIcon() {
+    return Tooltip(
+      message: 'AI Analysis (Governance & Risk)',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openAIAnalysis,
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(
+              Icons.analytics_outlined,
+              size: 22,
+              color: Color(0xFF00BCD4),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -854,21 +932,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
         final currentSection = _sections[_selectedSectionIndex];
         final controller = currentSection.controller;
-        
+
         // Parse content before setState to determine what we're inserting
         String textToInsert = content;
         List<DocumentTable> tablesToInsert = [];
-        
+
         if (!isUrl) {
           // Check if content contains HTML (has HTML tags)
           final hasHtmlTags = RegExp(r'<[^>]+>').hasMatch(content);
-          
+
           if (hasHtmlTags) {
             // Parse HTML content - strip comments, extract tables, strip tags
             final parsedContent = HtmlContentParser.parseContent(content);
             textToInsert = parsedContent.plainText;
             tablesToInsert = parsedContent.tables;
-            
+
             // Remove table placeholders from text if any
             textToInsert = textToInsert.replaceAll(
               RegExp(r'\[TABLE_PLACEHOLDER_\d+\]'),
@@ -879,20 +957,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // If it's a URL (like a document), add it as a reference link
           textToInsert = '[📎 Document: $title]($content)';
         }
-        
+
         setState(() {
           // Insert at cursor position if available, otherwise append
           final text = controller.text;
           final selection = controller.selection;
-          
-          if (selection.isValid && selection.start >= 0 && selection.start <= text.length) {
+
+          if (selection.isValid &&
+              selection.start >= 0 &&
+              selection.start <= text.length) {
             // Insert at cursor position
             final before = text.substring(0, selection.start);
             final after = text.substring(selection.end);
-            final separator = before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
+            final separator =
+                before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
             controller.text = '$before$separator$textToInsert$after';
             // Set cursor after inserted content
-            final newPosition = selection.start + separator.length + textToInsert.length;
+            final newPosition =
+                selection.start + separator.length + textToInsert.length;
             controller.selection = TextSelection.collapsed(offset: newPosition);
           } else {
             // Append to end
@@ -902,18 +984,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               controller.text = '$text\n\n$textToInsert';
             }
           }
-          
+
           // Add tables to the section's tables list
           if (tablesToInsert.isNotEmpty) {
             currentSection.tables.addAll(tablesToInsert);
           }
         });
 
-        final tablesCount = tablesToInsert.isNotEmpty ? ' (${tablesToInsert.length} table${tablesToInsert.length > 1 ? 's' : ''})' : '';
+        final tablesCount = tablesToInsert.isNotEmpty
+            ? ' (${tablesToInsert.length} table${tablesToInsert.length > 1 ? 's' : ''})'
+            : '';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text('Inserted "${isUrl ? 'Document: ' : ''}$title" into section$tablesCount'),
+            content: Text(
+                'Inserted "${isUrl ? 'Document: ' : ''}$title" into section$tablesCount'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -1035,15 +1119,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     final query = prefix.substring(atIndex + 1);
-    if (query.contains(
-        RegExp('[\\s@#\$%^&*()+\\-=/\\\\{}\\[\\]|;:\'",<>?]'))) {
+    if (query.contains(RegExp('[\\s@#\$%^&*()+\\-=/\\\\{}\\[\\]|;:\'",<>?]'))) {
       _clearMentionState();
       return;
     }
 
     final suffix = text.substring(caretIndex);
-    if (suffix.isNotEmpty &&
-        !RegExp(r'^[A-Za-z0-9_.]*').hasMatch(suffix[0])) {
+    if (suffix.isNotEmpty && !RegExp(r'^[A-Za-z0-9_.]*').hasMatch(suffix[0])) {
       _clearMentionState();
       return;
     }
@@ -1162,8 +1244,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final newText = '$before$mentionText$after';
     _commentController.value = TextEditingValue(
       text: newText,
-      selection:
-          TextSelection.collapsed(offset: start + mentionText.length),
+      selection: TextSelection.collapsed(offset: start + mentionText.length),
     );
 
     setState(() {
@@ -1311,7 +1392,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (savedComment != null) {
         // Reload comments from database to get updated structure
         await _loadCommentsFromDatabase(_savedProposalId!);
-        
+
         // Clear form fields
         setState(() {
           _highlightedText = '';
@@ -1321,9 +1402,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(parentId != null 
-                ? 'Reply added'
-                : 'Comment added by $commenterName'),
+              content: Text(parentId != null
+                  ? 'Reply added'
+                  : 'Comment added by $commenterName'),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 2),
             ),
@@ -1374,7 +1455,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (success) {
         // Reload comments to get updated status
         await _loadCommentsFromDatabase(_savedProposalId!);
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1425,7 +1506,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (success) {
         // Reload comments to get updated status
         await _loadCommentsFromDatabase(_savedProposalId!);
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -2014,7 +2095,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'isCoverPage': section.isCoverPage,
                 'inlineImages':
                     section.inlineImages.map((img) => img.toJson()).toList(),
-                'tables': section.tables.map((table) => table.toJson()).toList(),
+                'tables':
+                    section.tables.map((table) => table.toJson()).toList(),
               })
           .toList(),
       'metadata': {
@@ -2158,6 +2240,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         print('🔍 Create proposal result: $result');
 
         if (result != null && result['id'] != null) {
+<<<<<<< HEAD
           final rawId = result['id'];
           final idAsString = rawId.toString();
           if (idAsString.isEmpty) {
@@ -2167,11 +2250,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           setState(() {
             // Store the ID exactly as returned (works for both integers and UUIDs)
             _savedProposalId = idAsString;
+=======
+          final newProposalId = result['id'] is int
+              ? result['id']
+              : int.tryParse(result['id'].toString());
+          setState(() {
+            _savedProposalId = newProposalId;
+            // Store proposal data for GovernancePanel
+            _proposalData = Map<String, dynamic>.from(result);
+>>>>>>> origin/Cleaned_Code
           });
           print('✅ Proposal created with ID: $_savedProposalId');
           print(
               '💾 Proposal ID saved in state - future saves will UPDATE this proposal');
+<<<<<<< HEAD
           await _loadProposalReadiness(_savedProposalId);
+=======
+          // Reload full proposal data to ensure we have everything
+          if (newProposalId != null) {
+            await _loadProposalFromDatabase(newProposalId);
+          }
+>>>>>>> origin/Cleaned_Code
         } else {
           print('⚠️ Proposal creation returned null or no ID');
           print('🔍 Full result: $result');
@@ -2195,6 +2294,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
         print('✅ Proposal updated: $_savedProposalId');
         print('🔍 Update result: $result');
+        // Update proposal data if result is available
+        if (result != null) {
+          setState(() {
+            _proposalData = Map<String, dynamic>.from(result);
+          });
+        } else {
+          // Reload proposal data to ensure we have the latest
+          await _loadProposalFromDatabase(_savedProposalId!);
+        }
       }
     } catch (e) {
       print('❌ Error saving to backend: $e');
@@ -2217,7 +2325,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'isCoverPage': section.isCoverPage,
                 'inlineImages':
                     section.inlineImages.map((img) => img.toJson()).toList(),
-                'tables': section.tables.map((table) => table.toJson()).toList(),
+                'tables':
+                    section.tables.map((table) => table.toJson()).toList(),
               })
           .toList(),
       'change_description': changeDescription,
@@ -2274,7 +2383,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
     for (var sectionData in savedSections) {
-      final newSection = _DocumentSection(
+      final newSection = DocumentSection(
         title: sectionData['title'] ?? 'Untitled Section',
         content: sectionData['content'] ?? '',
         backgroundColor: sectionData['backgroundColor'] != null
@@ -2286,8 +2395,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
             ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
             .toList(),
-        tables: (sectionData['tables'] as List<dynamic>?)
-            ?.map((tableData) {
+        tables: (sectionData['tables'] as List<dynamic>?)?.map((tableData) {
               try {
                 return tableData is Map<String, dynamic>
                     ? DocumentTable.fromJson(tableData)
@@ -2297,8 +2405,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 print('⚠️ Error loading table: $e');
                 return DocumentTable();
               }
-            })
-            .toList() ?? [],
+            }).toList() ??
+            [],
       );
       _sections.add(newSection);
     }
@@ -2853,7 +2961,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Check if proposal is archived - if so, make it read-only
     final isArchived = _proposalStatus?.toLowerCase() == 'archived';
     final isReadOnly = widget.readOnly || isArchived;
-    
+
     // Show archive banner if archived
     if (isArchived && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2877,8 +2985,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
       });
     }
-    
+
     return Scaffold(
+<<<<<<< HEAD
       backgroundColor: const Color(0xFFF5F7FA),
       body: SafeArea(
         child: Column(
@@ -2899,7 +3008,309 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ],
         ),
       ),
+=======
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Row(
+        children: [
+          // Left Sidebar (hide in read-only mode)
+          if (!isReadOnly) _buildLeftSidebar(),
+          // Sections Sidebar (conditional, hide in read-only mode)
+          if (!isReadOnly && _showSectionsSidebar) _buildSectionsSidebar(),
+          // Main content
+          Expanded(
+            child: _currentPage == 'Governance & Risk'
+                ? _buildGovernanceRiskView()
+                : Column(
+                    children: [
+                      // Top header
+                      _buildTopHeader(),
+                      // Formatting toolbar (hide in read-only mode)
+                      if (!isReadOnly) _buildToolbar(),
+                      // Main document area
+                      Expanded(
+                        child: Row(
+                          children: [
+                            // Center content
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  SingleChildScrollView(
+                                    child: Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 40,
+                                          vertical: 50,
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            // Generate A4 pages
+                                            ..._buildA4Pages(),
+                                            // Plus button to add new page
+                                            const SizedBox(height: 24),
+                                            _buildAddPageButton(),
+                                            const SizedBox(height: 40),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Right sidebar (hide in read-only mode)
+                            if (!isReadOnly) _buildRightSidebar(),
+                            // Comments panel (right-side, toggleable)
+                            if (_showCommentsPanel) _buildCommentsPanel(),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildGovernanceRiskView() {
+    // Build proposal data map for GovernancePanel from current document state
+    // This works even for unsaved proposals (starting from scratch)
+    final proposalDataForAnalysis = <String, dynamic>{
+      // Include ID only if proposal is saved (not 'draft')
+      if (_savedProposalId != null) 'id': _savedProposalId.toString(),
+      'title': _titleController.text.isEmpty
+          ? 'Untitled Document'
+          : _titleController.text,
+      'client_name': _clientNameController.text,
+      'client_email': _clientEmailController.text,
+      'clientName': _clientNameController.text, // Alternative field name
+      'clientEmail': _clientEmailController.text, // Alternative field name
+      'status': _proposalStatus ?? 'draft',
+      // Extract section titles and content for analysis
+      'sections': _sections
+          .map((section) => {
+                'title': section.title,
+                'content': section.content,
+                'sectionType': section.sectionType,
+              })
+          .toList(),
+      // Extract content by section type for easier analysis
+      // This maps section content to fields that the analysis service expects
+      ..._extractContentBySectionType(),
+      // Also check sections array for content (double-check for title-based matching)
+      ..._extractContentFromSectionsArray(),
+      // Add other proposal fields from _proposalData if available
+      ...?_proposalData,
+    };
+
+    return Row(
+      children: [
+        // Main content area with back button
+        Expanded(
+          child: Container(
+            color: const Color(0xFFF5F5F5),
+            child: Column(
+              children: [
+                // Header with back button
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: () {
+                          setState(() => _currentPage = 'Editor');
+                        },
+                        tooltip: 'Back to Editor',
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Governance & Risk Analysis',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // GovernancePanel
+                Expanded(
+                  child: GovernancePanel(
+                    proposalId: _savedProposalId?.toString() ?? 'draft',
+                    proposalData: proposalDataForAnalysis,
+                    onStatusChange: () {
+                      // Refresh proposal data when status changes
+                      if (_savedProposalId != null) {
+                        _loadProposalFromDatabase(_savedProposalId!);
+                      } else {
+                        // For unsaved proposals, just refresh the view
+                        setState(() {});
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+>>>>>>> origin/Cleaned_Code
+    );
+  }
+
+  // Helper method to extract content by section type for risk analysis
+  Map<String, dynamic> _extractContentBySectionType() {
+    final contentMap = <String, dynamic>{};
+
+    for (final section in _sections) {
+      final sectionType = section.sectionType.toLowerCase();
+      final content = section.content.trim();
+
+      if (content.isEmpty) continue;
+
+      // Map common section types to analysis fields
+      switch (sectionType) {
+        case 'executive_summary':
+        case 'executive summary':
+          contentMap['executive_summary'] = content;
+          break;
+        case 'scope_deliverables':
+        case 'scope & deliverables':
+        case 'scope':
+          contentMap['scope_deliverables'] = content;
+          contentMap['scope'] = content;
+          break;
+        case 'company_profile':
+        case 'company profile':
+          contentMap['company_profile'] = content;
+          break;
+        case 'terms_conditions':
+        case 'terms & conditions':
+        case 'terms':
+          contentMap['terms_conditions'] = content;
+          break;
+        case 'assumptions':
+        case 'assumptions_risks':
+        case 'assumptions & risks':
+          contentMap['assumptions'] = content;
+          contentMap['assumptions_risks'] = content;
+          break;
+        case 'risks':
+        case 'risk':
+          contentMap['risks'] = content;
+          break;
+        case 'team_bios':
+        case 'team bios':
+        case 'team':
+          contentMap['team_bios'] = content;
+          break;
+        case 'budget':
+        case 'pricing':
+          contentMap['budget'] = content;
+          break;
+        case 'timeline':
+        case 'schedule':
+          contentMap['timeline'] = content;
+          break;
+        case 'delivery_approach':
+        case 'delivery approach':
+        case 'approach':
+          contentMap['delivery_approach'] = content;
+          break;
+        case 'references':
+        case 'reference':
+          contentMap['references'] = content;
+          break;
+        default:
+          // Store by section title as well for flexible matching
+          final title = section.title.toLowerCase();
+          if (title.contains('executive')) {
+            contentMap['executive_summary'] = content;
+          } else if (title.contains('scope') || title.contains('deliverable')) {
+            contentMap['scope_deliverables'] = content;
+            contentMap['scope'] = content;
+          } else if (title.contains('company') || title.contains('profile')) {
+            contentMap['company_profile'] = content;
+          } else if (title.contains('term') || title.contains('condition')) {
+            contentMap['terms_conditions'] = content;
+          } else if (title.contains('assumption')) {
+            contentMap['assumptions'] = content;
+            contentMap['assumptions_risks'] = content;
+          } else if (title.contains('risk')) {
+            contentMap['risks'] = content;
+          } else if (title.contains('team') || title.contains('bio')) {
+            contentMap['team_bios'] = content;
+          } else if (title.contains('budget') || title.contains('pricing')) {
+            contentMap['budget'] = content;
+          } else if (title.contains('timeline') || title.contains('schedule')) {
+            contentMap['timeline'] = content;
+          } else if (title.contains('approach') || title.contains('delivery')) {
+            contentMap['delivery_approach'] = content;
+          } else if (title.contains('reference')) {
+            contentMap['references'] = content;
+          }
+      }
+    }
+
+    return contentMap;
+  }
+
+  // Helper method to extract content from sections array for analysis
+  Map<String, dynamic> _extractContentFromSectionsArray() {
+    final contentMap = <String, dynamic>{};
+
+    // Check sections array for content
+    for (final section in _sections) {
+      final title = section.title.toLowerCase().trim();
+      final content = section.content.trim();
+
+      if (content.isEmpty) continue;
+
+      // Match section titles to expected fields
+      if (title.contains('executive') && title.contains('summary')) {
+        contentMap['executive_summary'] = content;
+      } else if (title.contains('scope') || title.contains('deliverable')) {
+        if (!contentMap.containsKey('scope_deliverables')) {
+          contentMap['scope_deliverables'] = content;
+        }
+        if (!contentMap.containsKey('scope')) {
+          contentMap['scope'] = content;
+        }
+      } else if (title.contains('company') || title.contains('profile')) {
+        contentMap['company_profile'] = content;
+      } else if ((title.contains('term') || title.contains('condition')) &&
+          !title.contains('assumption')) {
+        contentMap['terms_conditions'] = content;
+      } else if (title.contains('assumption')) {
+        contentMap['assumptions'] = content;
+        contentMap['assumptions_risks'] = content;
+      } else if (title.contains('risk') && !title.contains('assumption')) {
+        contentMap['risks'] = content;
+      } else if (title.contains('team') || title.contains('bio')) {
+        contentMap['team_bios'] = content;
+      } else if (title.contains('budget') || title.contains('pricing')) {
+        contentMap['budget'] = content;
+      } else if (title.contains('timeline') || title.contains('schedule')) {
+        contentMap['timeline'] = content;
+      } else if (title.contains('approach') || title.contains('delivery')) {
+        contentMap['delivery_approach'] = content;
+      } else if (title.contains('reference')) {
+        contentMap['references'] = content;
+      }
+    }
+
+    return contentMap;
   }
 
   Widget _buildLeftSidebar() {
@@ -3134,15 +3545,200 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
   }
 
+<<<<<<< HEAD
   void _shareDocument() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Share workflow coming soon'),
         duration: Duration(seconds: 2),
+=======
+  bool _isAdminUser() {
+    if (!mounted) return false;
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return false;
+      final role = (user['role']?.toString() ?? '').toLowerCase().trim();
+      return role == 'admin' || role == 'ceo';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Widget _buildAdminSidebarItems() {
+    final isAdmin = _isAdminUser();
+
+    if (isAdmin) {
+      // Admin sidebar items
+      return Column(
+        children: [
+          _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+              _currentPage == 'Dashboard'),
+          _buildNavItem(
+              'Proposals for Review',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Proposals for Review'),
+          _buildNavItem(
+              'Governance & Risk',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Governance & Risk'),
+          _buildNavItem(
+              'Template Management',
+              'assets/images/content_library.png',
+              _currentPage == 'Template Management'),
+          _buildNavItem('Content Library', 'assets/images/content_library.png',
+              _currentPage == 'Content Library'),
+          _buildNavItem('Client Management', 'assets/images/collaborations.png',
+              _currentPage == 'Client Management'),
+          _buildNavItem('User Management', 'assets/images/collaborations.png',
+              _currentPage == 'User Management'),
+          _buildNavItem(
+              'Approved Proposals',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Approved Proposals'),
+          _buildNavItem('Audit Logs', 'assets/images/analytics.png',
+              _currentPage == 'Audit Logs'),
+          _buildNavItem('Settings', 'assets/images/analytics.png',
+              _currentPage == 'Settings'),
+        ],
+      );
+    } else {
+      // Creator sidebar items
+      return Column(
+        children: [
+          _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+              _currentPage == 'Dashboard'),
+          _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
+              _currentPage == 'My Proposals'),
+          _buildNavItem('Templates', 'assets/images/content_library.png',
+              _currentPage == 'Templates'),
+          _buildNavItem('Content Library', 'assets/images/content_library.png',
+              _currentPage == 'Content Library'),
+          _buildNavItem('Client Management', 'assets/images/collaborations.png',
+              _currentPage == 'Client Management'),
+          _buildNavItem(
+              'Approved Proposals',
+              'assets/images/Time Allocation_Approval_Blue.png',
+              _currentPage == 'Approved Proposals'),
+          _buildNavItem(
+              'Analytics (My Pipeline)',
+              'assets/images/analytics.png',
+              _currentPage == 'Analytics (My Pipeline)'),
+        ],
+      );
+    }
+  }
+
+  Widget _buildNavItem(String label, String assetPath, bool isActive) {
+    if (_isSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: InkWell(
+            onTap: () {
+              setState(() => _currentPage = label);
+              _navigateToPage(label);
+            },
+            borderRadius: BorderRadius.circular(30),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isActive
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFFCBD5E1),
+                  width: isActive ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: ClipOval(
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() => _currentPage = label);
+          _navigateToPage(label);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isActive
+                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                : null,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isActive
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFFCBD5E1),
+                    width: isActive ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(6),
+                child: ClipOval(
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (isActive)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
+            ],
+          ),
+        ),
+>>>>>>> origin/Cleaned_Code
       ),
     );
   }
 
+<<<<<<< HEAD
   Widget _buildTopHeader(bool isReadOnly) {
     final minutesSinceSave = _lastSaved == null
         ? null
@@ -3162,6 +3758,100 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       'Indian Rupee (INR)',
     ];
 
+=======
+  void _navigateToPage(String pageName) {
+    final isAdmin = _isAdminUser();
+
+    switch (pageName) {
+      case 'Dashboard':
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
+        break;
+      case 'Proposals for Review':
+        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        break;
+      case 'Governance & Risk':
+        setState(() => _currentPage = 'Governance & Risk');
+        break;
+      case 'Template Management':
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/client_management');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Client Management - Coming soon'),
+              backgroundColor: Color(0xFF00BCD4),
+            ),
+          );
+        }
+        break;
+      case 'User Management':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('User Management - Coming soon'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        break;
+      case 'My Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Templates - Coming soon'),
+            backgroundColor: Color(0xFF00BCD4),
+          ),
+        );
+        break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Audit Logs':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Audit Logs - Coming soon'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        break;
+      case 'Settings':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Admin Settings - Coming soon'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        break;
+      case 'Analytics (My Pipeline)':
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Analytics - Coming soon'),
+            backgroundColor: Color(0xFF00BCD4),
+          ),
+        );
+        break;
+      case 'Logout':
+        Navigator.pushReplacementNamed(context, '/login');
+        break;
+    }
+  }
+
+  void _openAIAnalysis() {
+    setState(() {
+      _currentPage = 'Governance & Risk';
+    });
+  }
+
+  Widget _buildSectionsSidebar() {
+>>>>>>> origin/Cleaned_Code
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
       decoration: BoxDecoration(
@@ -3367,6 +4057,269 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ],
           ),
+<<<<<<< HEAD
+=======
+          const SizedBox(width: 16),
+          // Save status with version info
+          GestureDetector(
+            onTap: _showVersionHistory,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _isSaving
+                    ? Colors.blue.withOpacity(0.1)
+                    : (_hasUnsavedChanges
+                        ? Colors.orange.withOpacity(0.1)
+                        : Colors.green.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: _isSaving
+                      ? Colors.blue
+                      : (_hasUnsavedChanges ? Colors.orange : Colors.green),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_isSaving)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                      ),
+                    )
+                  else
+                    Icon(
+                      _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
+                      size: 14,
+                      color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                    ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isSaving
+                        ? 'Saving...'
+                        : (_hasUnsavedChanges
+                            ? 'Unsaved changes'
+                            : (_lastSaved == null ? 'Not Saved' : 'Saved')),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _isSaving
+                          ? Colors.blue[800]
+                          : (_hasUnsavedChanges
+                              ? Colors.orange[800]
+                              : Colors.green[800]),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Version history button
+          OutlinedButton.icon(
+            onPressed: _showVersionHistory,
+            icon: const Icon(Icons.history, size: 16),
+            label: Text('v$_currentVersionNumber'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF00BCD4)),
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Save and Close button
+          ElevatedButton.icon(
+            onPressed: _saveAndClose,
+            icon: const Icon(Icons.save, size: 16),
+            label: const Text('Save and Close'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00BCD4),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Collaboration button
+          OutlinedButton.icon(
+            onPressed: () => _showCollaborationDialog(),
+            icon: Icon(
+              _isCollaborating ? Icons.people : Icons.person_add,
+              size: 16,
+            ),
+            label: Text(_isCollaborating
+                ? 'Collaborators (${_collaborators.length})'
+                : 'Share'),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: _isCollaborating ? Colors.green : Colors.grey,
+              ),
+              foregroundColor: _isCollaborating ? Colors.green : Colors.black87,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Comments button
+          OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _showCommentsPanel = !_showCommentsPanel;
+              });
+
+              // Load comments when panel is opened
+              if (_showCommentsPanel && _savedProposalId != null) {
+                _loadCommentsFromDatabase(_savedProposalId!);
+              }
+            },
+            icon: const Icon(Icons.comment, size: 16),
+            label: Text(
+                'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF00BCD4)),
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // More Actions menu (Archive, etc.)
+          if (_savedProposalId != null)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 20),
+              onSelected: (value) async {
+                switch (value) {
+                  case 'archive':
+                    await _archiveProposal();
+                    break;
+                  case 'restore':
+                    await _restoreProposal();
+                    break;
+                }
+              },
+              itemBuilder: (context) {
+                final isArchived = _proposalStatus?.toLowerCase() == 'archived';
+                return [
+                  if (!isArchived)
+                    const PopupMenuItem(
+                      value: 'archive',
+                      child: Row(
+                        children: [
+                          Icon(Icons.archive_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Archive Proposal'),
+                        ],
+                      ),
+                    )
+                  else
+                    const PopupMenuItem(
+                      value: 'restore',
+                      child: Row(
+                        children: [
+                          Icon(Icons.unarchive_outlined, size: 18),
+                          SizedBox(width: 8),
+                          Text('Restore Proposal'),
+                        ],
+                      ),
+                    ),
+                ];
+              },
+            ),
+          const SizedBox(width: 12),
+          // Status Badge
+          if (_proposalStatus != null && _proposalStatus != 'draft')
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getStatusColor(_proposalStatus!),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_getStatusIcon(_proposalStatus!),
+                      size: 14, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    _getStatusLabel(_proposalStatus!),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_proposalStatus != null && _proposalStatus != 'draft')
+            const SizedBox(width: 12),
+          // Send for Approval button
+          if (_proposalStatus == null || _proposalStatus == 'draft')
+            ElevatedButton.icon(
+              onPressed: _sendForApproval,
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Send for Approval'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (_proposalStatus == null || _proposalStatus == 'draft')
+            const SizedBox(width: 12),
+          // Action buttons
+          OutlinedButton.icon(
+            onPressed: _showPreview,
+            icon: const Icon(Icons.visibility, size: 16),
+            label: const Text('Preview'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.grey),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // User initials
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Center(
+              child: Text(
+                _getUserInitials(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+>>>>>>> origin/Cleaned_Code
         ],
       ),
     );
@@ -3374,6 +4327,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
 
   Widget _buildToolbar() {
+<<<<<<< HEAD
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -3649,6 +4603,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
       ),
     );
+=======
+    return const SizedBox.shrink();
+>>>>>>> origin/Cleaned_Code
   }
 
   Widget _buildSmallDropdown(
@@ -4254,7 +5211,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         children: [
           InkWell(
             onTap: () {
-              final newSection = _DocumentSection(
+              final newSection = DocumentSection(
                 title: 'Untitled Section',
                 content: '',
               );
@@ -4304,11 +5261,323 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+<<<<<<< HEAD
   Widget _buildReadOnlyTable(DocumentTable table) {
     final isPriceTable = table.type == 'price';
     final headers = table.cells.isNotEmpty ? table.cells.first : [];
     final rows = table.cells.length > 1 ? table.cells.sublist(1) : [];
 
+=======
+  Widget _buildSectionContent(int index) {
+    final section = _sections[index];
+    final isHovered = _hoveredSectionIndex == index;
+    final isSelected = _selectedSectionIndex == index;
+    return SectionWidget(
+      section: section,
+      isHovered: isHovered,
+      isSelected: isSelected,
+      readOnly: widget.readOnly,
+      canDelete: _sections.length > 1,
+      onHoverChanged: (hovered) {
+        setState(() {
+          _hoveredSectionIndex = hovered ? index : -1;
+        });
+      },
+      onTap: () {
+        setState(() => _selectedSectionIndex = index);
+      },
+      onInsertBelow: () => _insertSection(index),
+      onInsertFromLibrary: () {
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+        _addFromLibrary();
+      },
+      onShowAIAssistant: () {
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+        _showAIAssistantDialog();
+      },
+      onDuplicate: () => _duplicateSection(index),
+      onDelete: () => _deleteSection(index),
+      getContentTextStyle: _getContentTextStyle,
+      getTextAlignment: _getTextAlignment,
+      onReorderTables: (int oldIndex, int newIndex) {
+        setState(() {
+          if (newIndex > oldIndex) {
+            newIndex -= 1;
+          }
+          final table = section.tables.removeAt(oldIndex);
+          section.tables.insert(newIndex, table);
+        });
+      },
+      buildInteractiveTable: (int tableIndex, DocumentTable table) =>
+          _buildInteractiveTable(
+        index,
+        tableIndex,
+        table,
+        key: ValueKey('table_${index}_$tableIndex'),
+      ),
+      onRemoveInlineImage: (imageIndex) {
+        setState(() {
+          _sections[index].inlineImages.removeAt(imageIndex);
+        });
+      },
+    );
+  }
+
+  // Build resizable inline image
+  Widget _buildResizableImage(
+      int sectionIndex, int imageIndex, InlineImage image) {
+    return Positioned(
+      left: image.x,
+      top: image.y,
+      child: GestureDetector(
+        // Drag to move the image
+        onPanUpdate: (details) {
+          setState(() {
+            image.x = (image.x + details.delta.dx).clamp(0.0, 700.0);
+            image.y = (image.y + details.delta.dy).clamp(0.0, 1000.0);
+          });
+        },
+        child: Container(
+          width: image.width,
+          height: image.height,
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF00BCD4), width: 2),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // The image itself
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  image.url,
+                  width: image.width,
+                  height: image.height,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.grey[200],
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.broken_image,
+                                size: 48, color: Colors.grey[400]),
+                            const SizedBox(height: 8),
+                            Text('Failed to load image',
+                                style: TextStyle(
+                                    color: Colors.grey[600], fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // Move indicator (top-left)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00BCD4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(Icons.drag_indicator,
+                      size: 16, color: Colors.white),
+                ),
+              ),
+              // Delete button (top-right)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Material(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _sections[sectionIndex]
+                            .inlineImages
+                            .removeAt(imageIndex);
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Image removed'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close, size: 16, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+              // Resize handle (bottom-right corner)
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      // Update width and height based on drag
+                      image.width =
+                          (image.width + details.delta.dx).clamp(100.0, 800.0);
+                      image.height =
+                          (image.height + details.delta.dy).clamp(100.0, 600.0);
+                    });
+                  },
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF00BCD4),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(4),
+                        bottomRight: Radius.circular(6),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.zoom_out_map,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Build drag target for tables
+  Widget _buildTableDragTarget(int sectionIndex, int targetIndex) {
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (details) {
+        final data = details.data;
+        // Accept if dragging a different table
+        return data != targetIndex && data != targetIndex - 1;
+      },
+      onAcceptWithDetails: (details) {
+        final draggedIndex = details.data;
+        setState(() {
+          final tables = _sections[sectionIndex].tables;
+          if (draggedIndex < 0 || draggedIndex >= tables.length) return;
+
+          // Remove the table being dragged
+          final draggedTable = tables.removeAt(draggedIndex);
+
+          // Calculate the correct insertion position
+          // targetIndex represents where we want to insert (before the table at that index)
+          int insertIndex = targetIndex;
+
+          // If we removed a table before the target, adjust the index
+          if (draggedIndex < targetIndex) {
+            insertIndex = targetIndex - 1;
+          }
+
+          // Ensure valid index
+          insertIndex = insertIndex.clamp(0, tables.length);
+
+          // Only move if position actually changed
+          if (insertIndex != draggedIndex) {
+            tables.insert(insertIndex, draggedTable);
+          } else {
+            // Put it back if no change
+            tables.insert(draggedIndex, draggedTable);
+          }
+        });
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isActive = candidateData.isNotEmpty;
+        return Container(
+          height: isActive ? 50 : 8,
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          decoration: BoxDecoration(
+            color: isActive
+                ? const Color(0xFF00BCD4).withOpacity(0.3)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+            border: isActive
+                ? Border.all(color: const Color(0xFF00BCD4), width: 2)
+                : null,
+          ),
+          child: isActive
+              ? const Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.drag_handle,
+                          color: Color(0xFF00BCD4), size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Drop table here',
+                        style: TextStyle(
+                          color: Color(0xFF00BCD4),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink(),
+        );
+      },
+    );
+  }
+
+  // Build interactive editable table
+  Widget _buildInteractiveTable(
+      int sectionIndex, int tableIndex, DocumentTable table,
+      {Key? key}) {
+    // Get currency symbol using the proper method
+    final currencySymbol = _getCurrencySymbol();
+
+    return _buildTableContent(sectionIndex, tableIndex, table, currencySymbol,
+        key: key);
+  }
+
+  // Build the actual table content
+  Widget _buildTableContent(int sectionIndex, int tableIndex,
+      DocumentTable table, String currencySymbol,
+      {Key? key}) {
+    return _buildTableContainer(sectionIndex, tableIndex, table, currencySymbol,
+        key: key);
+  }
+
+  // Build the table container
+  Widget _buildTableContainer(int sectionIndex, int tableIndex,
+      DocumentTable table, String currencySymbol,
+      {Key? key}) {
+>>>>>>> origin/Cleaned_Code
     return Container(
       margin: const EdgeInsets.only(top: 12),
       decoration: BoxDecoration(
@@ -4504,6 +5773,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+<<<<<<< HEAD
   void _handleBlockSelected(String type) {
     switch (type) {
       case 'text':
@@ -4511,6 +5781,103 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       case 'video':
       case 'table':
       case 'shape':
+=======
+  void _insertSignatureIntoSection(String signatureName) {
+    if (_sections.isEmpty) return;
+
+    final section = _sections[_selectedSectionIndex];
+    String newContent = section.controller.text;
+    newContent +=
+        '\n\nSignature ($signatureName): __________________ Date: __________\n';
+
+    setState(() {
+      section.controller.text = newContent;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Signature "$signatureName" added to "${section.title}"'),
+        backgroundColor: const Color(0xFF27AE60),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildRightSidebar() {
+    return Container(
+      width: 300,
+      color: Colors.white,
+      child: Column(
+        children: [
+          // Panel tabs/icons at the top
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildPanelTabIcon(Icons.tune, 'templates', 'Templates'),
+                _buildPanelTabIcon(Icons.add_box_outlined, 'build', 'Build'),
+                _buildPanelTabIcon(
+                    Icons.cloud_upload_outlined, 'upload', 'Upload'),
+                _buildPanelTabIcon(Icons.edit_note, 'signature', 'Signature'),
+                _buildAIAnalysisIcon(),
+              ],
+            ),
+          ),
+          // Panel content
+          Expanded(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: _buildPanelContent(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPanelTabIcon(IconData icon, String panelName, String tooltip) {
+    bool isActive = _selectedPanel == panelName;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _selectedPanel = panelName;
+            });
+          },
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
+              icon,
+              size: 22,
+              color: isActive ? const Color(0xFF00BCD4) : Colors.grey[600],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPanelContent() {
+    switch (_selectedPanel) {
+      case 'templates':
+        return _buildTemplatesPanel();
+      case 'build':
+        return _buildBuildPanel();
+      case 'upload':
+        return _buildUploadPanel();
+>>>>>>> origin/Cleaned_Code
       case 'signature':
       case 'section_header':
       case 'page_break':
@@ -4525,22 +5892,1853 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+<<<<<<< HEAD
+=======
+  Widget _buildTemplatesPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Template Settings',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 20),
+        // Template Style Button
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              _showTemplateStyleDialog();
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Template Style',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1A3A52),
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios,
+                      size: 16, color: const Color(0xFF1A3A52)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Adjust margins, orientation, background, etc.',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Container(height: 1, color: Colors.grey[200]),
+        const SizedBox(height: 24),
+        // Currency Options
+        const Text(
+          'Currency Options',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Template Currency',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              _showCurrencyDropdown();
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _selectedCurrency,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF1A1A1A),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Icon(Icons.expand_more, size: 18, color: Colors.grey[600]),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildColorOption(Color color, String label) {
+    if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
+      return const SizedBox.shrink();
+    }
+    final section = _sections[_selectedSectionIndex];
+    final isSelected = section.backgroundColor == color;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          section.backgroundColor = color;
+          section.backgroundImageUrl =
+              null; // Clear image when color is selected
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Page ${_selectedSectionIndex + 1} background changed to $label'),
+            backgroundColor: const Color(0xFF00BCD4),
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: color,
+              border: Border.all(
+                color: isSelected ? const Color(0xFF00BCD4) : Colors.grey[300]!,
+                width: isSelected ? 3 : 1,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF00BCD4).withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: isSelected
+                ? const Center(
+                    child: Icon(
+                      Icons.check,
+                      color: Color(0xFF00BCD4),
+                      size: 24,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: isSelected ? const Color(0xFF00BCD4) : Colors.grey[600],
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _selectBackgroundImageFromLibrary() async {
+    if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a page first'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final selectedModule = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const ContentLibrarySelectionDialog(),
+    );
+
+    if (selectedModule != null) {
+      final content = selectedModule['content'] ?? '';
+      final title = selectedModule['title'] ?? 'Background';
+
+      // Check if it's an image URL
+      final isUrl =
+          content.startsWith('http://') || content.startsWith('https://');
+
+      if (isUrl) {
+        setState(() {
+          final section = _sections[_selectedSectionIndex];
+          section.backgroundImageUrl = content;
+          section.backgroundColor =
+              Colors.white; // Reset color when image is selected
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Background image "$title" applied to Page ${_selectedSectionIndex + 1}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select an image from the library'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showTemplateStyleDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: SizedBox(
+            width: 400,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Page Style Settings',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00BCD4),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Page ${_selectedSectionIndex + 1}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Orientation',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content:
+                                    Text('Orientation changed to Portrait'),
+                                backgroundColor: Color(0xFF27AE60),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.portrait),
+                          label: const Text('Portrait'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00BCD4),
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content:
+                                    Text('Orientation changed to Landscape'),
+                                backgroundColor: Color(0xFF27AE60),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.landscape),
+                          label: const Text('Landscape'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey[400],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Margins',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Enter margin size (in cm)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Background Color',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _buildColorOption(Colors.white, 'White'),
+                      _buildColorOption(const Color(0xFFF5F5F5), 'Light Gray'),
+                      _buildColorOption(const Color(0xFFFFF8DC), 'Cream'),
+                      _buildColorOption(
+                          const Color(0xFFFFF9E6), 'Light Yellow'),
+                      _buildColorOption(const Color(0xFFE8F5E9), 'Light Green'),
+                      _buildColorOption(const Color(0xFFE3F2FD), 'Light Blue'),
+                      _buildColorOption(const Color(0xFFFCE4EC), 'Light Pink'),
+                      _buildColorOption(
+                          const Color(0xFFF3E5F5), 'Light Purple'),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Background Image',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _selectBackgroundImageFromLibrary(),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey[300]!),
+                          borderRadius: BorderRadius.circular(6),
+                          color: (_sections.isNotEmpty &&
+                                  _selectedSectionIndex < _sections.length &&
+                                  _sections[_selectedSectionIndex]
+                                          .backgroundImageUrl !=
+                                      null)
+                              ? Colors.blue[50]
+                              : Colors.grey[50],
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              (_sections.isNotEmpty &&
+                                      _selectedSectionIndex <
+                                          _sections.length &&
+                                      _sections[_selectedSectionIndex]
+                                              .backgroundImageUrl !=
+                                          null)
+                                  ? Icons.image
+                                  : Icons.add_photo_alternate,
+                              color: const Color(0xFF00BCD4),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                (_sections.isNotEmpty &&
+                                        _selectedSectionIndex <
+                                            _sections.length &&
+                                        _sections[_selectedSectionIndex]
+                                                .backgroundImageUrl !=
+                                            null)
+                                    ? 'Background image selected'
+                                    : 'Select from Content Library',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            if (_sections.isNotEmpty &&
+                                _selectedSectionIndex < _sections.length &&
+                                _sections[_selectedSectionIndex]
+                                        .backgroundImageUrl !=
+                                    null)
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: () {
+                                  setState(() {
+                                    _sections[_selectedSectionIndex]
+                                        .backgroundImageUrl = null;
+                                  });
+                                },
+                                tooltip: 'Remove background',
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Template settings saved'),
+                              backgroundColor: Color(0xFF27AE60),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF27AE60),
+                        ),
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCurrencyDropdown() {
+    showMenu<String>(
+      context: context,
+      position: const RelativeRect.fromLTRB(0, 0, 0, 0),
+      items: [
+        'Rand (ZAR)',
+        'US Dollar (USD)',
+        'Euro (EUR)',
+        'British Pound (GBP)',
+        'Indian Rupee (INR)',
+      ].map((currency) {
+        return PopupMenuItem<String>(
+          value: currency,
+          child: Text(currency),
+        );
+      }).toList(),
+    ).then((value) {
+      if (value != null) {
+        setState(() {
+          _selectedCurrency = value;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Currency changed to $value'),
+            backgroundColor: const Color(0xFF27AE60),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    });
+  }
+
+  Widget _buildBuildPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Build',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 20),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _buildBuildItem(Icons.text_fields, 'Text'),
+            _buildBuildItem(Icons.image_outlined, 'Image'),
+            _buildBuildItem(Icons.video_library_outlined, 'Video'),
+            _buildBuildItem(Icons.table_chart_outlined, 'Table'),
+            _buildBuildItem(Icons.dashboard_customize_outlined, 'Shape'),
+          ],
+        ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 16),
+        const Text(
+          'Text Settings',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Style dropdown
+        _buildSmallDropdown(_selectedTextStyle, [
+          'Normal Text',
+          'Heading 1',
+          'Heading 2',
+          'Heading 3',
+          'Title'
+        ], (value) {
+          setState(() {
+            _selectedTextStyle = value!;
+          });
+        }),
+        const SizedBox(height: 8),
+        // Font dropdown
+        _buildSmallDropdown(_selectedFont, [
+          'Plus Jakarta Sans',
+          'Arial',
+          'Times New Roman',
+          'Georgia',
+          'Courier New'
+        ], (value) {
+          setState(() {
+            _selectedFont = value!;
+          });
+        }),
+        const SizedBox(height: 8),
+        // Font size dropdown
+        _buildSmallDropdown(_selectedFontSize, [
+          '10px',
+          '12px',
+          '14px',
+          '16px',
+          '18px',
+          '20px',
+          '24px',
+          '28px'
+        ], (value) {
+          setState(() {
+            _selectedFontSize = value!;
+          });
+        }),
+        const SizedBox(height: 12),
+        // Alignment
+        Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            IconButton(
+              icon: Icon(Icons.format_align_left,
+                  color: _selectedAlignment == 'left'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () {
+                setState(() {
+                  _selectedAlignment = 'left';
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Align Left',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_align_center,
+                  color: _selectedAlignment == 'center'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () {
+                setState(() {
+                  _selectedAlignment = 'center';
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Align Center',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_align_right,
+                  color: _selectedAlignment == 'right'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () {
+                setState(() {
+                  _selectedAlignment = 'right';
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Align Right',
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Text Formatting',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            IconButton(
+              icon: Icon(Icons.format_bold,
+                  color: _isBold ? const Color(0xFF00BCD4) : null),
+              onPressed: () {
+                setState(() {
+                  _isBold = !_isBold;
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Bold',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_italic,
+                  color: _isItalic ? const Color(0xFF00BCD4) : null),
+              onPressed: () {
+                setState(() {
+                  _isItalic = !_isItalic;
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Italic',
+            ),
+            IconButton(
+              icon: Icon(Icons.format_underlined,
+                  color: _isUnderlined ? const Color(0xFF00BCD4) : null),
+              onPressed: () {
+                setState(() {
+                  _isUnderlined = !_isUnderlined;
+                });
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Underline',
+            ),
+            IconButton(
+              icon: const Icon(Icons.format_color_text),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Text color picker - Feature coming soon'),
+                    backgroundColor: Color(0xFF00BCD4),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Text Color',
+            ),
+            IconButton(
+              icon: const Icon(Icons.link),
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Insert link - Feature coming soon'),
+                    backgroundColor: Color(0xFF00BCD4),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Link',
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.format_list_bulleted),
+              onPressed: () {
+                if (_sections.isNotEmpty &&
+                    _selectedSectionIndex < _sections.length) {
+                  setState(() {
+                    final section = _sections[_selectedSectionIndex];
+                    final currentText = section.controller.text;
+                    section.controller.text =
+                        currentText + '\n• Item 1\n• Item 2\n• Item 3';
+                  });
+                }
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Bullet List',
+            ),
+            IconButton(
+              icon: const Icon(Icons.format_list_numbered),
+              onPressed: () {
+                if (_sections.isNotEmpty &&
+                    _selectedSectionIndex < _sections.length) {
+                  setState(() {
+                    final section = _sections[_selectedSectionIndex];
+                    final currentText = section.controller.text;
+                    section.controller.text =
+                        currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
+                  });
+                }
+              },
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Numbered List',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBuildItem(IconData icon, String label) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          String contentType = label.toLowerCase();
+          if (contentType == 'shape') contentType = 'shape';
+          if (contentType == 'table') {
+            _showTableTypeDialog();
+          } else {
+            _insertContentIntoSection(contentType, '');
+          }
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey[200]!),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey[50],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 32, color: const Color(0xFF1A3A52)),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUploadPanel() {
+    bool hasImages = _uploadedImages.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Uploads',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Tabs
+        Row(
+          children: [
+            Expanded(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _uploadTabSelected = 'this_document';
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      children: [
+                        Text(
+                          'This document',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: _uploadTabSelected == 'this_document'
+                                ? const Color(0xFF1A3A52)
+                                : Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          height: 2,
+                          color: _uploadTabSelected == 'this_document'
+                              ? const Color(0xFF1A3A52)
+                              : Colors.transparent,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _uploadTabSelected = 'library';
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Your library',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: _uploadTabSelected == 'library'
+                                ? const Color(0xFF1A3A52)
+                                : Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          height: 2,
+                          color: _uploadTabSelected == 'library'
+                              ? const Color(0xFF1A3A52)
+                              : Colors.transparent,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        // Show upload for "This document" tab or library for "Your library" tab
+        if (_uploadTabSelected == 'this_document') ...[
+          // Drag & Drop Upload Area
+          DragTarget<Object>(
+            onWillAcceptWithDetails: (details) => true,
+            onAcceptWithDetails: (details) {
+              _handleFileDrop(details.data);
+            },
+            builder: (context, candidateData, rejectedData) {
+              final isDragging = candidateData.isNotEmpty;
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    _addSampleImage();
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isDragging
+                            ? const Color(0xFF00BCD4)
+                            : Colors.grey[300]!,
+                        width: isDragging ? 2 : 1,
+                        style: BorderStyle.solid,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      color: isDragging
+                          ? const Color(0xFF00BCD4).withValues(alpha: 0.05)
+                          : Colors.grey[50],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isDragging
+                              ? Icons.file_download
+                              : Icons.cloud_upload_outlined,
+                          size: 32,
+                          color: isDragging
+                              ? const Color(0xFF00BCD4)
+                              : Colors.grey[600],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          isDragging
+                              ? 'Drop images here'
+                              : 'Click to upload from computer',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: isDragging
+                                ? const Color(0xFF00BCD4)
+                                : Colors.grey[600],
+                          ),
+                        ),
+                        if (!isDragging)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Supports JPG, PNG, WebP, GIF',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+          // Images list or empty state
+          if (!hasImages)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Column(
+                  children: [
+                    Text(
+                      'No images yet',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Images you upload will appear here',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: List.generate(
+                _uploadedImages.length,
+                (index) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    onTap: () {
+                      _addImageToSection(_uploadedImages[index]);
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[200]!),
+                        borderRadius: BorderRadius.circular(6),
+                        color: Colors.grey[50],
+                      ),
+                      child: Row(
+                        children: [
+                          // Actual image thumbnail
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(4),
+                              image: _uploadedImages[index].isNotEmpty
+                                  ? DecorationImage(
+                                      image:
+                                          NetworkImage(_uploadedImages[index]),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
+                            ),
+                            child: _uploadedImages[index].isEmpty
+                                ? const Icon(Icons.image,
+                                    color: Colors.grey, size: 30)
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Image ${index + 1}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF1A1A1A),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Click to insert',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.add_circle_outline,
+                              size: 20, color: Colors.green[600]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ] else if (_uploadTabSelected == 'library') ...[
+          // Library images
+          if (_isLoadingLibraryImages)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else if (_libraryImages.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.image, size: 48, color: Colors.grey[400]),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No Images in Library',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _loadLibraryImages,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Refresh'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: List.generate(
+                _libraryImages.length,
+                (index) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    onTap: () {
+                      _addImageToSection(_libraryImages[index]['content']);
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[200]!),
+                        borderRadius: BorderRadius.circular(6),
+                        color: Colors.grey[50],
+                      ),
+                      child: Row(
+                        children: [
+                          // Image thumbnail
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(4),
+                              image: _libraryImages[index]['content'] != null &&
+                                      _libraryImages[index]['content']
+                                          .toString()
+                                          .isNotEmpty
+                                  ? DecorationImage(
+                                      image: NetworkImage(
+                                          _libraryImages[index]['content']),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
+                            ),
+                            child: _libraryImages[index]['content'] == null ||
+                                    _libraryImages[index]['content']
+                                        .toString()
+                                        .isEmpty
+                                ? const Icon(Icons.image,
+                                    color: Colors.grey, size: 30)
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _libraryImages[index]['label'] ?? 'Untitled',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF1A1A1A),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Click to insert',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.add_circle_outline,
+                              size: 20, color: Colors.green[600]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _addSampleImage() async {
+    try {
+      // Pick image file from computer
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true, // Important for web
+      );
+
+      if (result == null || result.files.isEmpty) {
+        // User cancelled the picker
+        return;
+      }
+
+      final file = result.files.first;
+
+      // Show uploading indicator
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+              ),
+              SizedBox(width: 12),
+              Text('Uploading image...'),
+            ],
+          ),
+          backgroundColor: Color(0xFF00BCD4),
+          duration: Duration(seconds: 30),
+        ),
+      );
+
+      // Upload to Cloudinary
+      final appState = Provider.of<AppState>(context, listen: false);
+      Map<String, dynamic>? uploadResult;
+
+      if (file.bytes != null) {
+        // For web, use bytes
+        uploadResult = await appState.uploadImageToCloudinary(
+          '', // Empty path for web
+          fileBytes: file.bytes!,
+          fileName: file.name,
+        );
+      } else {
+        throw Exception('Could not read file data');
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+
+      if (uploadResult != null && uploadResult['url'] != null) {
+        final imageUrl = uploadResult['url'] as String;
+        setState(() {
+          _uploadedImages.add(imageUrl);
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${file.name} uploaded successfully!'),
+            backgroundColor: const Color(0xFF27AE60),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      } else {
+        throw Exception('Failed to upload image');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _handleFileDrop(Object data) {
+    // Handle file drop - for now, we'll simulate adding an image
+    // In a real implementation, you would process the dropped file
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final imageUrl =
+        'https://via.placeholder.com/300x200?text=Dropped+Image+$timestamp';
+
+    setState(() {
+      _uploadedImages.add(imageUrl);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Image dropped successfully'),
+        backgroundColor: Color(0xFF27AE60),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildSignaturePanel() {
+    List<String> filteredSignatures = _signatures
+        .where((sig) =>
+            sig.toLowerCase().contains(_signatureSearchQuery.toLowerCase()))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Signatures',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Search field
+        TextField(
+          onChanged: (value) {
+            setState(() {
+              _signatureSearchQuery = value;
+            });
+          },
+          decoration: InputDecoration(
+            hintText: 'Start typing',
+            hintStyle: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[400],
+            ),
+            prefixIcon: Icon(Icons.search, color: Colors.grey[600], size: 18),
+            prefixText: 'Signatures for   ',
+            prefixStyle: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: BorderSide(color: Colors.grey[300]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(6),
+              borderSide: const BorderSide(
+                color: Color(0xFF00BCD4),
+              ),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        // Signature items list
+        if (filteredSignatures.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: Text(
+                'No signatures found',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ),
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(
+              filteredSignatures.length,
+              (index) {
+                final signature = filteredSignatures[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        _insertSignatureIntoSection(signature);
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFE0B2), // Light orange/peach
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.edit,
+                              size: 24,
+                              color: const Color(0xFFF57C00),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    signature,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF1A1A1A),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Click to insert',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.arrow_forward_ios,
+                                size: 14, color: Colors.grey[600]),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        const SizedBox(height: 20),
+        // Add new signature button
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              _showAddSignatureDialog();
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(6),
+                color: Colors.grey[50],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.add, size: 18, color: Color(0xFF1A3A52)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Add New Signature',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF1A3A52),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showAddSignatureDialog() {
+    TextEditingController signatureName = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: SizedBox(
+            width: 400,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Add New Signature',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: signatureName,
+                    decoration: InputDecoration(
+                      labelText: 'Signature Name',
+                      hintText: 'e.g., Company Director',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (signatureName.text.isNotEmpty) {
+                            setState(() {
+                              _signatures.add(signatureName.text);
+                            });
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Signature "${signatureName.text}" added'),
+                                backgroundColor: const Color(0xFF27AE60),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF27AE60),
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCommentDialog() {
+    _clearMentionState();
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          child: SizedBox(
+            width: 500,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.comment,
+                          color: Color(0xFF00BCD4), size: 24),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Add Comment',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Section selection
+                  if (_sections.isNotEmpty) ...[
+                    Text(
+                      'Target Section',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      initialValue: _selectedSectionForComment ?? 0,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                      ),
+                      items: _sections.asMap().entries.map((entry) {
+                        return DropdownMenuItem<int>(
+                          value: entry.key,
+                          child: Text(
+                            entry.value.titleController.text.isNotEmpty
+                                ? entry.value.titleController.text
+                                : 'Untitled Section',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSectionForComment = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Highlighted text display
+                  if (_highlightedText.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE3F2FD),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                            color:
+                                const Color(0xFF00BCD4).withValues(alpha: 0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Highlighted Text:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _highlightedText.length > 100
+                                ? '${_highlightedText.substring(0, 100)}...'
+                                : _highlightedText,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Comment input
+                  TextField(
+                    controller: _commentController,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      labelText: 'Comment',
+                      hintText:
+                          'Enter your comment here... use @ to tag teammates',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    focusNode: _commentFocusNode,
+                  ),
+                  if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: const [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Searching teammates...',
+                          style: TextStyle(fontSize: 12),
+                        )
+                      ],
+                    ),
+                  ] else if (_mentionSuggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _mentionSuggestions.length,
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          color: Colors.grey[200],
+                        ),
+                        itemBuilder: (context, index) {
+                          final user = _mentionSuggestions[index];
+                          final name = user['full_name']?.toString() ??
+                              user['first_name']?.toString() ??
+                              user['email']?.toString() ??
+                              'User';
+                          final email = user['email']?.toString();
+                          final username = user['username']?.toString();
+                          return ListTile(
+                            dense: true,
+                            onTap: () => _insertMention(user),
+                            leading: CircleAvatar(
+                              radius: 14,
+                              backgroundColor: const Color(0xFF00BCD4),
+                              child: Text(
+                                name.isNotEmpty ? name[0].toUpperCase() : '@',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              [
+                                if (username != null && username.isNotEmpty)
+                                  '@$username',
+                                if (email != null && email.isNotEmpty) email,
+                              ].join(' • '),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            trailing: const Icon(
+                              Icons.alternate_email,
+                              color: Color(0xFF00BCD4),
+                              size: 18,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ] else if (_mentionQuery.isNotEmpty &&
+                      !_isSearchingMentions) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.search_off,
+                            size: 16, color: Colors.orange),
+                        const SizedBox(width: 6),
+                        Text(
+                          'No teammates found for "$_mentionQuery"',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+
+                  // Action buttons
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          _commentController.clear();
+                          _clearMentionState();
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await _addComment();
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                        ),
+                        child: const Text('Add Comment'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+>>>>>>> origin/Cleaned_Code
   Widget _buildCommentsPanel() {
     // Get root comments (comments without parent_id)
-    final rootComments = _comments.where((c) => c['parent_id'] == null).toList();
+    final rootComments =
+        _comments.where((c) => c['parent_id'] == null).toList();
     final filteredRootComments = _commentFilterStatus == 'all'
         ? rootComments
-        : rootComments.where((c) => c['status'] == _commentFilterStatus).toList();
-    
+        : rootComments
+            .where((c) => c['status'] == _commentFilterStatus)
+            .toList();
+
     // Sort by newest first
     filteredRootComments.sort((a, b) {
-      final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
-      final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final aTime =
+          DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime =
+          DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
       return bTime.compareTo(aTime);
     });
 
-    final openCount = _comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length;
-    final resolvedCount = _comments.where((c) => c['status'] == 'resolved' && c['parent_id'] == null).length;
+    final openCount = _comments
+        .where((c) => c['status'] == 'open' && c['parent_id'] == null)
+        .length;
+    final resolvedCount = _comments
+        .where((c) => c['status'] == 'resolved' && c['parent_id'] == null)
+        .length;
 
     return Container(
       width: 400,
@@ -4569,7 +7767,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 const Spacer(),
                 // Comment count badges
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: openCount > 0 ? Colors.orange : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
@@ -4597,7 +7796,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ],
             ),
           ),
-          
+
           // Filter and controls
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -4612,9 +7811,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     isExpanded: true,
                     underline: const SizedBox(),
                     items: [
-                      DropdownMenuItem(value: 'all', child: Text('All ($openCount open)')),
-                      DropdownMenuItem(value: 'open', child: Text('Open ($openCount)')),
-                      DropdownMenuItem(value: 'resolved', child: Text('Resolved ($resolvedCount)')),
+                      DropdownMenuItem(
+                          value: 'all', child: Text('All ($openCount open)')),
+                      DropdownMenuItem(
+                          value: 'open', child: Text('Open ($openCount)')),
+                      DropdownMenuItem(
+                          value: 'resolved',
+                          child: Text('Resolved ($resolvedCount)')),
                     ],
                     onChanged: (value) {
                       if (value != null) {
@@ -4650,10 +7853,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.comment_outlined, size: 48, color: Colors.grey[400]),
+                        Icon(Icons.comment_outlined,
+                            size: 48, color: Colors.grey[400]),
                         const SizedBox(height: 16),
                         Text(
-                          _comments.isEmpty ? 'No comments yet' : 'No ${_commentFilterStatus == 'all' ? '' : _commentFilterStatus} comments',
+                          _comments.isEmpty
+                              ? 'No comments yet'
+                              : 'No ${_commentFilterStatus == 'all' ? '' : _commentFilterStatus} comments',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.grey[600],
@@ -4661,9 +7867,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _comments.isEmpty 
-                            ? 'Add comments to collaborate with your team'
-                            : 'Change filter to see other comments',
+                          _comments.isEmpty
+                              ? 'Add comments to collaborate with your team'
+                              : 'Change filter to see other comments',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[500],
@@ -4681,7 +7887,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     },
                   ),
           ),
-          
+
           // Add comment form
           Container(
             padding: const EdgeInsets.all(12),
@@ -4689,152 +7895,166 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               border: Border(top: BorderSide(color: Colors.grey[200]!)),
               color: Colors.grey[50],
             ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextField(
-                    controller: _commentController,
-                    focusNode: _commentFocusNode,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: 'Add a comment... (use @ to mention)',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFF00BCD4), width: 2),
-                      ),
-                      contentPadding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _commentController,
+                  focusNode: _commentFocusNode,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Add a comment... (use @ to mention)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
                     ),
-                    onChanged: (text) {
-                      // Handle @mentions detection
-                      _handleCommentTextChanged();
-                    },
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide:
+                          const BorderSide(color: Color(0xFF00BCD4), width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.all(12),
                   ),
-                  // @mentions autocomplete dropdown
-                  if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Searching teammates...',
-                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        ),
-                      ],
-                    ),
-                  ] else if (_mentionSuggestions.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 150),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: _mentionSuggestions.length,
-                        separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey[200]),
-                        itemBuilder: (context, index) {
-                          final user = _mentionSuggestions[index];
-                          final name = user['full_name']?.toString() ??
-                              user['first_name']?.toString() ??
-                              user['email']?.toString() ??
-                              'User';
-                          final email = user['email']?.toString();
-                          final username = user['username']?.toString();
-                          return InkWell(
-                            onTap: () => _insertMention(user),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 14,
-                                    backgroundColor: const Color(0xFF00BCD4),
-                                    child: Text(
-                                      name.isNotEmpty ? name[0].toUpperCase() : '@',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          name,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        if (username != null || email != null)
-                                          Text(
-                                            [
-                                              if (username != null && username.isNotEmpty) '@$username',
-                                              if (email != null && email.isNotEmpty) email,
-                                            ].join(' • '),
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.grey[600],
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  const Icon(Icons.alternate_email, size: 16, color: Color(0xFF00BCD4)),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                  onChanged: (text) {
+                    // Handle @mentions detection
+                    _handleCommentTextChanged();
+                  },
+                ),
+                // @mentions autocomplete dropdown
+                if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(
-                        onPressed: () {
-                          _commentController.clear();
-                          _clearMentionState();
-                        },
-                        child: const Text('Cancel'),
-                      ),
+                      const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
                       const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () async {
-                          await _addComment();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00BCD4),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Post'),
+                      Text(
+                        'Searching teammates...',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
                     ],
                   ),
+                ] else if (_mentionSuggestions.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 150),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _mentionSuggestions.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: Colors.grey[200]),
+                      itemBuilder: (context, index) {
+                        final user = _mentionSuggestions[index];
+                        final name = user['full_name']?.toString() ??
+                            user['first_name']?.toString() ??
+                            user['email']?.toString() ??
+                            'User';
+                        final email = user['email']?.toString();
+                        final username = user['username']?.toString();
+                        return InkWell(
+                          onTap: () => _insertMention(user),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: const Color(0xFF00BCD4),
+                                  child: Text(
+                                    name.isNotEmpty
+                                        ? name[0].toUpperCase()
+                                        : '@',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      if (username != null || email != null)
+                                        Text(
+                                          [
+                                            if (username != null &&
+                                                username.isNotEmpty)
+                                              '@$username',
+                                            if (email != null &&
+                                                email.isNotEmpty)
+                                              email,
+                                          ].join(' • '),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey[600],
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.alternate_email,
+                                    size: 16, color: Color(0xFF00BCD4)),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ],
-              ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        _commentController.clear();
+                        _clearMentionState();
+                      },
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await _addComment();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00BCD4),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Post'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -4846,20 +8066,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final hasHighlightedText = comment['highlighted_text'] != null &&
         comment['highlighted_text'].toString().isNotEmpty;
     final isReply = comment['parent_id'] != null;
-    
+
     // Get replies for this comment
-    final replies = _comments.where((c) => c['parent_id'] == comment['id']).toList();
+    final replies =
+        _comments.where((c) => c['parent_id'] == comment['id']).toList();
     replies.sort((a, b) {
-      final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
-      final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final aTime =
+          DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime =
+          DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
       return aTime.compareTo(bTime); // Oldest first for replies
     });
-    
+
     // Determine comment type
     String commentType = 'General';
     if (comment['block_type'] != null) {
       commentType = 'Block';
-    } else if (comment['section_name'] != null || comment['section_index'] != null) {
+    } else if (comment['section_name'] != null ||
+        comment['section_index'] != null) {
       commentType = 'Section';
     }
 
@@ -4916,7 +8140,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         if (isReply) ...[
                           const SizedBox(width: 4),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
                             decoration: BoxDecoration(
                               color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(4),
@@ -4946,7 +8171,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               // Status badge (only for root comments or if resolved)
               if (!isReply || isResolved)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
                     color: isResolved ? Colors.green[100] : Colors.orange[100],
                     borderRadius: BorderRadius.circular(12),
@@ -4956,7 +8182,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
-                      color: isResolved ? Colors.green[700] : Colors.orange[700],
+                      color:
+                          isResolved ? Colors.green[700] : Colors.orange[700],
                     ),
                   ),
                 ),
@@ -4972,7 +8199,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             children: [
               if (commentType != 'General')
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE3F2FD),
                     borderRadius: BorderRadius.circular(4),
@@ -4988,7 +8216,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               if (comment['section_name'] != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.blue[50],
                     borderRadius: BorderRadius.circular(4),
@@ -5052,10 +8281,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 TextButton.icon(
                   onPressed: () => _showReplyDialog(comment),
                   icon: const Icon(Icons.reply, size: 14),
-                  label: Text('Reply${replies.isNotEmpty ? ' (${replies.length})' : ''}'),
+                  label: Text(
+                      'Reply${replies.isNotEmpty ? ' (${replies.length})' : ''}'),
                   style: TextButton.styleFrom(
                     foregroundColor: const Color(0xFF00BCD4),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
@@ -5067,7 +8298,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     label: const Text('Resolve'),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.green[700],
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -5079,7 +8311,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     label: const Text('Reopen'),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.orange[700],
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -5349,7 +8582,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _sections.clear();
 
           sections.forEach((title, body) {
-            final newSection = _DocumentSection(
+            final newSection = DocumentSection(
               title: title,
               content: body,
             );
@@ -5365,7 +8598,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               'AI drafted proposal inserted. Review and adjust before sending.';
         } else if (content != null) {
           if (_sections.isEmpty) {
-            final newSection = _DocumentSection(
+            final newSection = DocumentSection(
               title: 'Untitled Section',
               content: '',
             );
@@ -5415,223 +8648,287 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 width: 600,
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF9C27B0).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.auto_awesome,
-                              color: Color(0xFF9C27B0),
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Text(
-                            'AI Assistant',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
-                            ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Current section indicator
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE3F2FD),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF2196F3)),
-                        ),
-                        child: Row(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header
+                        Row(
                           children: [
-                            const Icon(Icons.description,
-                                color: Color(0xFF2196F3), size: 20),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF9C27B0).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.auto_awesome,
+                                color: Color(0xFF9C27B0),
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              'AI Assistant',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Current section indicator
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE3F2FD),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF2196F3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.description,
+                                  color: Color(0xFF2196F3), size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Writing to: Page ${_selectedSectionIndex + 1} - ${_sections[_selectedSectionIndex].titleController.text.isEmpty ? "Untitled Section" : _sections[_selectedSectionIndex].titleController.text}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF2196F3),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Action selector
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setDialogState(() {
+                                    resetGeneratedState();
+                                    selectedAction = 'generate';
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: selectedAction == 'generate'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: selectedAction == 'generate'
+                                          ? const Color(0xFF9C27B0)
+                                          : Colors.grey[300]!,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.create,
+                                        size: 22,
+                                        color: selectedAction == 'generate'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Section',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: selectedAction == 'generate'
+                                              ? Colors.white
+                                              : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
-                                'Writing to: Page ${_selectedSectionIndex + 1} - ${_sections[_selectedSectionIndex].titleController.text.isEmpty ? "Untitled Section" : _sections[_selectedSectionIndex].titleController.text}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFF2196F3),
+                              child: InkWell(
+                                onTap: () {
+                                  setDialogState(() {
+                                    resetGeneratedState();
+                                    selectedAction = 'full_proposal';
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: selectedAction == 'full_proposal'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: selectedAction == 'full_proposal'
+                                          ? const Color(0xFF9C27B0)
+                                          : Colors.grey[300]!,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.description,
+                                        size: 22,
+                                        color: selectedAction == 'full_proposal'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Full Proposal',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color:
+                                              selectedAction == 'full_proposal'
+                                                  ? Colors.white
+                                                  : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  setDialogState(() {
+                                    resetGeneratedState();
+                                    selectedAction = 'improve';
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: selectedAction == 'improve'
+                                        ? const Color(0xFF9C27B0)
+                                        : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: selectedAction == 'improve'
+                                          ? const Color(0xFF9C27B0)
+                                          : Colors.grey[300]!,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.auto_fix_high,
+                                        size: 22,
+                                        color: selectedAction == 'improve'
+                                            ? Colors.white
+                                            : Colors.grey[700],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Improve',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: selectedAction == 'improve'
+                                              ? Colors.white
+                                              : Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 16),
 
-                      // Action selector
-                      Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setDialogState(() {
-                                  resetGeneratedState();
-                                  selectedAction = 'generate';
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: selectedAction == 'generate'
-                                      ? const Color(0xFF9C27B0)
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: selectedAction == 'generate'
-                                        ? const Color(0xFF9C27B0)
-                                        : Colors.grey[300]!,
-                                  ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.create,
-                                      size: 22,
-                                      color: selectedAction == 'generate'
-                                          ? Colors.white
-                                          : Colors.grey[700],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Section',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: selectedAction == 'generate'
-                                            ? Colors.white
-                                            : Colors.grey[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                        const SizedBox(height: 20),
+
+                        // Section type selector (only for single section generation)
+                        if (selectedAction == 'generate') ...[
+                          Text(
+                            'Section Type',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setDialogState(() {
-                                  resetGeneratedState();
-                                  selectedAction = 'full_proposal';
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: selectedAction == 'full_proposal'
-                                      ? const Color(0xFF9C27B0)
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: selectedAction == 'full_proposal'
-                                        ? const Color(0xFF9C27B0)
-                                        : Colors.grey[300]!,
-                                  ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.description,
-                                      size: 22,
-                                      color: selectedAction == 'full_proposal'
-                                          ? Colors.white
-                                          : Colors.grey[700],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Full Proposal',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: selectedAction == 'full_proposal'
-                                            ? Colors.white
-                                            : Colors.grey[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedSectionType,
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setDialogState(() {
-                                  resetGeneratedState();
-                                  selectedAction = 'improve';
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: selectedAction == 'improve'
-                                      ? const Color(0xFF9C27B0)
-                                      : Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: selectedAction == 'improve'
-                                        ? const Color(0xFF9C27B0)
-                                        : Colors.grey[300]!,
-                                  ),
+                            items: [
+                              'general',
+                              'executive_summary',
+                              'introduction',
+                              'scope_deliverables',
+                              'solution_overview',
+                              'delivery_approach',
+                              'timeline',
+                              'budget',
+                              'team',
+                              'assumptions',
+                              'risks',
+                              'company_profile',
+                              'conclusion',
+                            ].map((type) {
+                              return DropdownMenuItem(
+                                value: type,
+                                child: Text(
+                                  type
+                                      .split('_')
+                                      .map((word) =>
+                                          word[0].toUpperCase() +
+                                          word.substring(1))
+                                      .join(' '),
+                                  style: const TextStyle(fontSize: 13),
                                 ),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.auto_fix_high,
-                                      size: 22,
-                                      color: selectedAction == 'improve'
-                                          ? Colors.white
-                                          : Colors.grey[700],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Improve',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w500,
-                                        color: selectedAction == 'improve'
-                                            ? Colors.white
-                                            : Colors.grey[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                selectedSectionType = value!;
+                              });
+                            },
                           ),
+                          const SizedBox(height: 16),
                         ],
-                      ),
 
-                      const SizedBox(height: 20),
-
-                      // Section type selector (only for single section generation)
-                      if (selectedAction == 'generate') ...[
+                        // Prompt input
                         Text(
-                          'Section Type',
+                          selectedAction == 'generate'
+                              ? 'What would you like to write?'
+                              : selectedAction == 'full_proposal'
+                                  ? 'Describe your proposal requirements'
+                                  : 'Current section content will be improved',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
@@ -5639,548 +8936,493 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          initialValue: selectedSectionType,
-                          decoration: InputDecoration(
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                          ),
-                          items: [
-                            'general',
-                            'executive_summary',
-                            'introduction',
-                            'scope_deliverables',
-                            'solution_overview',
-                            'delivery_approach',
-                            'timeline',
-                            'budget',
-                            'team',
-                            'assumptions',
-                            'risks',
-                            'company_profile',
-                            'conclusion',
-                          ].map((type) {
-                            return DropdownMenuItem(
-                              value: type,
-                              child: Text(
-                                type
-                                    .split('_')
-                                    .map((word) =>
-                                        word[0].toUpperCase() +
-                                        word.substring(1))
-                                    .join(' '),
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedSectionType = value!;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Prompt input
-                      Text(
-                        selectedAction == 'generate'
-                            ? 'What would you like to write?'
-                            : selectedAction == 'full_proposal'
-                                ? 'Describe your proposal requirements'
-                                : 'Current section content will be improved',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey[700],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: promptController,
-                        maxLines: selectedAction == 'full_proposal' ? 6 : 4,
-                        decoration: InputDecoration(
-                          hintText: selectedAction == 'generate'
-                              ? 'E.g., "Write an executive summary about implementing a new CRM system for a retail company"'
-                              : selectedAction == 'full_proposal'
-                                  ? 'E.g., "Create a proposal for implementing a cloud-based CRM system for a retail company with 50 employees, including data migration, training, and 6-month support"'
-                                  : 'Optional: Add instructions for improvement',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          contentPadding: const EdgeInsets.all(12),
-                        ),
-                      ),
-
-                      if ((generationMode == 'section' ||
-                              generationMode == 'improve') &&
-                          generatedController != null) ...[
-                        const SizedBox(height: 20),
-                        Text(
-                          generationMode == 'improve'
-                              ? 'Review AI Improvements'
-                              : 'AI Draft Preview',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         TextField(
-                          controller: generatedController,
-                          maxLines: 12,
+                          controller: promptController,
+                          maxLines: selectedAction == 'full_proposal' ? 6 : 4,
                           decoration: InputDecoration(
+                            hintText: selectedAction == 'generate'
+                                ? 'E.g., "Write an executive summary about implementing a new CRM system for a retail company"'
+                                : selectedAction == 'full_proposal'
+                                    ? 'E.g., "Create a proposal for implementing a cloud-based CRM system for a retail company with 50 employees, including data migration, training, and 6-month support"'
+                                    : 'Optional: Add instructions for improvement',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            hintText: generationMode == 'improve'
-                                ? 'Review the improved draft and make any changes before applying.'
-                                : 'Review the AI draft and make changes before inserting.',
+                            contentPadding: const EdgeInsets.all(12),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              final edited =
-                                  generatedController!.text.trim();
-                              if (edited.isEmpty) {
-                                ScaffoldMessenger.of(rootContext).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                        'Draft cannot be empty. Please provide some content.'),
-                                    backgroundColor: Colors.orange,
-                                  ),
+
+                        if ((generationMode == 'section' ||
+                                generationMode == 'improve') &&
+                            generatedController != null) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            generationMode == 'improve'
+                                ? 'Review AI Improvements'
+                                : 'AI Draft Preview',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: generatedController,
+                            maxLines: 6,
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              hintText: generationMode == 'improve'
+                                  ? 'Review the improved draft and make any changes before applying.'
+                                  : 'Review the AI draft and make changes before inserting.',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                final edited = generatedController!.text.trim();
+                                if (edited.isEmpty) {
+                                  ScaffoldMessenger.of(rootContext)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Draft cannot be empty. Please provide some content.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                resetGeneratedState();
+                                Navigator.of(rootContext).pop();
+                                applyGeneratedResult(
+                                  generationMode == 'improve'
+                                      ? 'improve'
+                                      : 'section',
+                                  content: edited,
                                 );
-                                return;
-                              }
-                              resetGeneratedState();
-                              Navigator.of(rootContext).pop();
-                              applyGeneratedResult(
+                              },
+                              icon: Icon(
                                 generationMode == 'improve'
-                                    ? 'improve'
-                                    : 'section',
-                                content: edited,
-                              );
-                            },
-                            icon: Icon(
-                              generationMode == 'improve'
-                                  ? Icons.auto_fix_high
-                                  : Icons.download_done,
-                              size: 18,
-                            ),
-                            label: Text(
-                              generationMode == 'improve'
-                                  ? 'Apply Improvements'
-                                  : 'Insert Draft',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF27AE60),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      if (generationMode == 'full' &&
-                          generatedSectionControllers != null &&
-                          generatedSectionControllers!.isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        const Text(
-                          'AI Proposal Draft',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 280),
-                          child: ListView(
-                            shrinkWrap: true,
-                            children: generatedSectionControllers!.entries
-                                .map((entry) {
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: 12),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      entry.key,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF1A3A52),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    TextField(
-                                      controller: entry.value,
-                                      maxLines: 6,
-                                      decoration: InputDecoration(
-                                        border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        hintText:
-                                            'Adjust the draft for this section.',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              if (generatedSectionControllers == null ||
-                                  generatedSectionControllers!.isEmpty) {
-                                ScaffoldMessenger.of(rootContext)
-                                    .showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                        'No sections available to insert.'),
-                                    backgroundColor: Colors.orange,
-                                  ),
-                                );
-                                return;
-                              }
-                              final editedSections = <String, String>{};
-                              generatedSectionControllers!.forEach(
-                                  (title, controller) {
-                                editedSections[title] =
-                                    controller.text.trim();
-                              });
-                              resetGeneratedState();
-                              Navigator.of(rootContext).pop();
-                              applyGeneratedResult('full',
-                                  sections: editedSections);
-                            },
-                            icon: const Icon(Icons.download_done, size: 18),
-                            label: const Text('Insert Proposal Draft'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF27AE60),
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 24),
-
-                      // Action buttons
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: isGenerating
-                                ? null
-                                : () {
-                                    resetGeneratedState();
-                                    Navigator.pop(context);
-                                  },
-                            child: const Text('Cancel'),
-                          ),
-                          const SizedBox(width: 12),
-                          ElevatedButton.icon(
-                            onPressed: isGenerating
-                                ? null
-                                : () async {
-                                    if ((selectedAction == 'generate' ||
-                                            selectedAction ==
-                                                'full_proposal') &&
-                                        promptController.text.trim().isEmpty) {
-                                      ScaffoldMessenger.of(rootContext)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'Please describe what you want to write'),
-                                          backgroundColor: Colors.orange,
-                                        ),
-                                      );
-                                      return;
-                                    }
-
-                                    setDialogState(() {
-                                      isGenerating = true;
-                                      resetGeneratedState();
-                                    });
-
-                                    try {
-                                      final token = await _getAuthToken();
-                                      if (token == null) {
-                                        throw Exception(
-                                            'Not authenticated. Please log in.');
-                                      }
-
-                                      if (selectedAction == 'generate') {
-                                        final result =
-                                            await ApiService.generateAIContent(
-                                          token: token,
-                                          prompt: promptController.text,
-                                          context: {
-                                            'document_title':
-                                                _titleController.text,
-                                            'current_section':
-                                                _selectedSectionIndex,
-                                          },
-                                          sectionType: selectedSectionType,
-                                        );
-
-                                        if (result != null &&
-                                            result['content'] != null) {
-                                          final generatedText =
-                                              (result['content'] as String)
-                                                  .trim();
-                                          if (generatedText.isEmpty) {
-                                            throw Exception(
-                                                'AI returned an empty draft.');
-                                          }
-                                          setDialogState(() {
-                                            generatedController?.dispose();
-                                            generatedController =
-                                                TextEditingController(
-                                                    text: generatedText);
-                                            if (generatedSectionControllers !=
-                                                null) {
-                                              for (final controller
-                                                  in generatedSectionControllers!
-                                                      .values) {
-                                                controller.dispose();
-                                              }
-                                            }
-                                            generatedSectionControllers = null;
-                                            generationMode = 'section';
-                                          });
-                                          ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                              content: Text(
-                                                  'Draft ready. Review and edit below before inserting.'),
-                                              backgroundColor:
-                                                  Color(0xFF00BCD4),
-                                            ),
-                                          );
-                                        } else {
-                                          throw Exception(
-                                              'Failed to generate content.');
-                                        }
-                                      } else if (selectedAction ==
-                                          'full_proposal') {
-                                        final result = await ApiService
-                                            .generateFullProposal(
-                                          token: token,
-                                          prompt: promptController.text,
-                                          context: {
-                                            'document_title':
-                                                _titleController.text,
-                                          },
-                                        );
-
-                                        if (result != null &&
-                                            result['sections'] is Map) {
-                                          final Map<String, dynamic>
-                                              generatedSections =
-                                              Map<String, dynamic>.from(
-                                              result['sections']
-                                                      as Map<dynamic, dynamic>);
-                                          if (generatedSections.isEmpty) {
-                                            throw Exception(
-                                                'AI did not return any sections.');
-                                          }
-                                          setDialogState(() {
-                                            generatedController?.dispose();
-                                            generatedController = null;
-                                            if (generatedSectionControllers !=
-                                                null) {
-                                              for (final controller
-                                                  in generatedSectionControllers!
-                                                      .values) {
-                                                controller.dispose();
-                                              }
-                                            }
-                                            generatedSectionControllers = {};
-                                            generatedSections
-                                                .forEach((title, content) {
-                                              generatedSectionControllers![
-                                                  title] = TextEditingController(
-                                                  text: (content ?? '')
-                                                      .toString()
-                                                      .trim());
-                                            });
-                                            generationMode = 'full';
-                                          });
-                                          ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              SnackBar(
-                                              content: Text(
-                                                  'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
-                                              backgroundColor:
-                                                  const Color(0xFF00BCD4),
-                                            ),
-                                          );
-                                        } else {
-                                          throw Exception(
-                                              'Failed to generate full proposal.');
-                                        }
-                                      } else {
-                                        if (_selectedSectionIndex >=
-                                            _sections.length) {
-                                          throw Exception(
-                                              'No section selected to improve.');
-                                        }
-
-                                        final currentContent =
-                                            _sections[_selectedSectionIndex]
-                                                .controller
-                                                .text;
-                                        if (currentContent.trim().isEmpty) {
-                                          throw Exception(
-                                              'Current section is empty. Nothing to improve.');
-                                        }
-
-                                        final result =
-                                            await ApiService.improveContent(
-                                          token: token,
-                                          content: currentContent,
-                                          sectionType: selectedSectionType,
-                                        );
-
-                                        if (result != null &&
-                                            result['improved_version'] !=
-                                                null) {
-                                          final improvedText =
-                                              (result['improved_version']
-                                                      as String)
-                                                  .trim();
-                                          if (improvedText.isEmpty) {
-                                            throw Exception(
-                                                'AI returned an empty improvement.');
-                                          }
-
-                                          setDialogState(() {
-                                            generatedController?.dispose();
-                                            generatedController =
-                                                TextEditingController(
-                                                    text: improvedText);
-                                            if (generatedSectionControllers !=
-                                                null) {
-                                              for (final controller
-                                                  in generatedSectionControllers!
-                                                      .values) {
-                                                controller.dispose();
-                                              }
-                                            }
-                                            generatedSectionControllers = null;
-                                            generationMode = 'improve';
-                                          });
-
-                                          if (result['summary'] != null) {
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    const Text(
-                                                      'Improvements ready. Review below.',
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                    ),
-                                                    Text(result['summary']
-                                                        as String),
-                                                  ],
-                                                ),
-                                                backgroundColor:
-                                                    const Color(0xFF00BCD4),
-                                                duration: const Duration(
-                                                    seconds: 4),
-                                              ),
-                                            );
-                                          } else {
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                    'Improvements ready. Review and edit below before applying.'),
-                                                backgroundColor:
-                                                    Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          }
-                                        } else {
-                                          throw Exception(
-                                              'Failed to improve content.');
-                                        }
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(rootContext)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                                      'Error: ${e.toString()}'),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                      }
-                                    } finally {
-                                      if (mounted) {
-                                        setDialogState(() {
-                                          isGenerating = false;
-                                        });
-                                      }
-                                    }
-                                  },
-                            icon: isGenerating
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white),
-                                    ),
-                                  )
-                                : const Icon(Icons.auto_awesome, size: 18),
-                            label: Text(isGenerating
-                                ? 'Generating...'
-                                : (selectedAction == 'generate'
-                                    ? 'Generate'
-                                    : selectedAction == 'full_proposal'
-                                        ? 'Generate Proposal'
-                                        : 'Improve')),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF9C27B0),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
+                                    ? Icons.auto_fix_high
+                                    : Icons.download_done,
+                                size: 18,
+                              ),
+                              label: Text(
+                                generationMode == 'improve'
+                                    ? 'Apply Improvements'
+                                    : 'Insert Draft',
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF27AE60),
+                                foregroundColor: Colors.white,
                               ),
                             ),
                           ),
                         ],
-                      ),
-                    ],
+
+                        if (generationMode == 'full' &&
+                            generatedSectionControllers != null &&
+                            generatedSectionControllers!.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          const Text(
+                            'AI Proposal Draft',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 280),
+                            child: ListView(
+                              shrinkWrap: true,
+                              children: generatedSectionControllers!.entries
+                                  .map((entry) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry.key,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF1A3A52),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      TextField(
+                                        controller: entry.value,
+                                        maxLines: 6,
+                                        decoration: InputDecoration(
+                                          border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          hintText:
+                                              'Adjust the draft for this section.',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                if (generatedSectionControllers == null ||
+                                    generatedSectionControllers!.isEmpty) {
+                                  ScaffoldMessenger.of(rootContext)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'No sections available to insert.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final editedSections = <String, String>{};
+                                generatedSectionControllers!
+                                    .forEach((title, controller) {
+                                  editedSections[title] =
+                                      controller.text.trim();
+                                });
+                                resetGeneratedState();
+                                Navigator.of(rootContext).pop();
+                                applyGeneratedResult('full',
+                                    sections: editedSections);
+                              },
+                              icon: const Icon(Icons.download_done, size: 18),
+                              label: const Text('Insert Proposal Draft'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF27AE60),
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 24),
+
+                        // Action buttons
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: isGenerating
+                                  ? null
+                                  : () {
+                                      resetGeneratedState();
+                                      Navigator.pop(context);
+                                    },
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton.icon(
+                              onPressed: isGenerating
+                                  ? null
+                                  : () async {
+                                      if ((selectedAction == 'generate' ||
+                                              selectedAction ==
+                                                  'full_proposal') &&
+                                          promptController.text
+                                              .trim()
+                                              .isEmpty) {
+                                        ScaffoldMessenger.of(rootContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                                'Please describe what you want to write'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      setDialogState(() {
+                                        isGenerating = true;
+                                        resetGeneratedState();
+                                      });
+
+                                      try {
+                                        final token = await _getAuthToken();
+                                        if (token == null) {
+                                          throw Exception(
+                                              'Not authenticated. Please log in.');
+                                        }
+
+                                        if (selectedAction == 'generate') {
+                                          final result = await ApiService
+                                              .generateAIContent(
+                                            token: token,
+                                            prompt: promptController.text,
+                                            context: {
+                                              'document_title':
+                                                  _titleController.text,
+                                              'current_section':
+                                                  _selectedSectionIndex,
+                                            },
+                                            sectionType: selectedSectionType,
+                                          );
+
+                                          if (result != null &&
+                                              result['content'] != null) {
+                                            final generatedText =
+                                                (result['content'] as String)
+                                                    .trim();
+                                            if (generatedText.isEmpty) {
+                                              throw Exception(
+                                                  'AI returned an empty draft.');
+                                            }
+                                            setDialogState(() {
+                                              generatedController?.dispose();
+                                              generatedController =
+                                                  TextEditingController(
+                                                      text: generatedText);
+                                              if (generatedSectionControllers !=
+                                                  null) {
+                                                for (final controller
+                                                    in generatedSectionControllers!
+                                                        .values) {
+                                                  controller.dispose();
+                                                }
+                                              }
+                                              generatedSectionControllers =
+                                                  null;
+                                              generationMode = 'section';
+                                            });
+                                            ScaffoldMessenger.of(rootContext)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                    'Draft ready. Review and edit below before inserting.'),
+                                                backgroundColor:
+                                                    Color(0xFF00BCD4),
+                                              ),
+                                            );
+                                          } else {
+                                            throw Exception(
+                                                'Failed to generate content.');
+                                          }
+                                        } else if (selectedAction ==
+                                            'full_proposal') {
+                                          final result = await ApiService
+                                              .generateFullProposal(
+                                            token: token,
+                                            prompt: promptController.text,
+                                            context: {
+                                              'document_title':
+                                                  _titleController.text,
+                                            },
+                                          );
+
+                                          if (result != null &&
+                                              result['sections'] is Map) {
+                                            final Map<String, dynamic>
+                                                generatedSections =
+                                                Map<String, dynamic>.from(
+                                                    result['sections'] as Map<
+                                                        dynamic, dynamic>);
+                                            if (generatedSections.isEmpty) {
+                                              throw Exception(
+                                                  'AI did not return any sections.');
+                                            }
+                                            setDialogState(() {
+                                              generatedController?.dispose();
+                                              generatedController = null;
+                                              if (generatedSectionControllers !=
+                                                  null) {
+                                                for (final controller
+                                                    in generatedSectionControllers!
+                                                        .values) {
+                                                  controller.dispose();
+                                                }
+                                              }
+                                              generatedSectionControllers = {};
+                                              generatedSections
+                                                  .forEach((title, content) {
+                                                generatedSectionControllers![
+                                                        title] =
+                                                    TextEditingController(
+                                                        text: (content ?? '')
+                                                            .toString()
+                                                            .trim());
+                                              });
+                                              generationMode = 'full';
+                                            });
+                                            ScaffoldMessenger.of(rootContext)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                    'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
+                                                backgroundColor:
+                                                    const Color(0xFF00BCD4),
+                                              ),
+                                            );
+                                          } else {
+                                            throw Exception(
+                                                'Failed to generate full proposal.');
+                                          }
+                                        } else {
+                                          if (_selectedSectionIndex >=
+                                              _sections.length) {
+                                            throw Exception(
+                                                'No section selected to improve.');
+                                          }
+
+                                          final currentContent =
+                                              _sections[_selectedSectionIndex]
+                                                  .controller
+                                                  .text;
+                                          if (currentContent.trim().isEmpty) {
+                                            throw Exception(
+                                                'Current section is empty. Nothing to improve.');
+                                          }
+
+                                          final result =
+                                              await ApiService.improveContent(
+                                            token: token,
+                                            content: currentContent,
+                                            sectionType: selectedSectionType,
+                                          );
+
+                                          if (result != null &&
+                                              result['improved_version'] !=
+                                                  null) {
+                                            final improvedText =
+                                                (result['improved_version']
+                                                        as String)
+                                                    .trim();
+                                            if (improvedText.isEmpty) {
+                                              throw Exception(
+                                                  'AI returned an empty improvement.');
+                                            }
+
+                                            setDialogState(() {
+                                              generatedController?.dispose();
+                                              generatedController =
+                                                  TextEditingController(
+                                                      text: improvedText);
+                                              if (generatedSectionControllers !=
+                                                  null) {
+                                                for (final controller
+                                                    in generatedSectionControllers!
+                                                        .values) {
+                                                  controller.dispose();
+                                                }
+                                              }
+                                              generatedSectionControllers =
+                                                  null;
+                                              generationMode = 'improve';
+                                            });
+
+                                            if (result['summary'] != null) {
+                                              ScaffoldMessenger.of(rootContext)
+                                                  .showSnackBar(
+                                                SnackBar(
+                                                  content: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      const Text(
+                                                        'Improvements ready. Review below.',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                      Text(result['summary']
+                                                          as String),
+                                                    ],
+                                                  ),
+                                                  backgroundColor:
+                                                      const Color(0xFF00BCD4),
+                                                  duration: const Duration(
+                                                      seconds: 4),
+                                                ),
+                                              );
+                                            } else {
+                                              ScaffoldMessenger.of(rootContext)
+                                                  .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                      'Improvements ready. Review and edit below before applying.'),
+                                                  backgroundColor:
+                                                      Color(0xFF00BCD4),
+                                                ),
+                                              );
+                                            }
+                                          } else {
+                                            throw Exception(
+                                                'Failed to improve content.');
+                                          }
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(rootContext)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                  'Error: ${e.toString()}'),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      } finally {
+                                        if (mounted) {
+                                          setDialogState(() {
+                                            isGenerating = false;
+                                          });
+                                        }
+                                      }
+                                    },
+                              icon: isGenerating
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
+                                      ),
+                                    )
+                                  : const Icon(Icons.auto_awesome, size: 18),
+                              label: Text(isGenerating
+                                  ? 'Generating...'
+                                  : (selectedAction == 'generate'
+                                      ? 'Generate'
+                                      : selectedAction == 'full_proposal'
+                                          ? 'Generate Proposal'
+                                          : 'Improve')),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF9C27B0),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -6345,9 +9587,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         emailController.clear();
 
                                         if (context.mounted) {
-                                          final emailSent = result['email_sent'] == true;
-                                          final emailError = result['email_error'];
-                                          
+                                          final emailSent =
+                                              result['email_sent'] == true;
+                                          final emailError =
+                                              result['email_error'];
+
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
                                             SnackBar(
@@ -6359,29 +9603,37 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                               backgroundColor: emailSent
                                                   ? Colors.green
                                                   : Colors.orange,
-                                              duration: Duration(seconds: emailSent ? 3 : 5),
+                                              duration: Duration(
+                                                  seconds: emailSent ? 3 : 5),
                                             ),
                                           );
                                         }
                                       } else {
-                                        String errorMessage = 'Failed to send invitation';
+                                        String errorMessage =
+                                            'Failed to send invitation';
                                         try {
-                                          final error = jsonDecode(response.body);
-                                          errorMessage = error['detail'] ?? errorMessage;
+                                          final error =
+                                              jsonDecode(response.body);
+                                          errorMessage =
+                                              error['detail'] ?? errorMessage;
                                         } catch (e) {
-                                          errorMessage = 'Server error: ${response.statusCode}';
+                                          errorMessage =
+                                              'Server error: ${response.statusCode}';
                                         }
                                         throw Exception(errorMessage);
                                       }
                                     } catch (e) {
-                                      print('❌ Error inviting collaborator: $e');
+                                      print(
+                                          '❌ Error inviting collaborator: $e');
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(
-                                            content: Text('Error inviting collaborator: ${e.toString()}'),
+                                            content: Text(
+                                                'Error inviting collaborator: ${e.toString()}'),
                                             backgroundColor: Colors.red,
-                                            duration: const Duration(seconds: 5),
+                                            duration:
+                                                const Duration(seconds: 5),
                                           ),
                                         );
                                       }
@@ -6591,162 +9843,4 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       },
     );
   }
-}
-
-class _DocumentSection {
-  String title;
-  String content;
-  final TextEditingController controller;
-  final TextEditingController titleController;
-  final FocusNode contentFocus;
-  final FocusNode titleFocus;
-  Color backgroundColor;
-  String? backgroundImageUrl;
-  String sectionType; // 'cover', 'content', 'appendix', etc.
-  bool isCoverPage;
-  List<InlineImage> inlineImages; // Inline content images (not backgrounds)
-  List<DocumentTable> tables; // Tables in this section
-
-  _DocumentSection({
-    required this.title,
-    required this.content,
-    this.backgroundColor = Colors.white,
-    this.backgroundImageUrl,
-    this.sectionType = 'content',
-    this.isCoverPage = false,
-    List<InlineImage>? inlineImages,
-    List<DocumentTable>? tables,
-  })  : controller = TextEditingController(text: content),
-        titleController = TextEditingController(text: title),
-        contentFocus = FocusNode(),
-        titleFocus = FocusNode(),
-        inlineImages = inlineImages ?? [],
-        tables = tables ?? [];
-}
-
-class InlineImage {
-  String url;
-  double width;
-  double height;
-  double x; // X position
-  double y; // Y position
-
-  InlineImage({
-    required this.url,
-    this.width = 300,
-    this.height = 200,
-    this.x = 0,
-    this.y = 0,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'url': url,
-        'width': width,
-        'height': height,
-        'x': x,
-        'y': y,
-      };
-
-  factory InlineImage.fromJson(Map<String, dynamic> json) => InlineImage(
-        url: json['url'] as String,
-        width: (json['width'] as num?)?.toDouble() ?? 300,
-        height: (json['height'] as num?)?.toDouble() ?? 200,
-        x: (json['x'] as num?)?.toDouble() ?? 0,
-        y: (json['y'] as num?)?.toDouble() ?? 0,
-      );
-}
-
-class DocumentTable {
-  String type; // 'text' or 'price'
-  List<List<String>> cells;
-  double vatRate; // For price tables (default 15%)
-
-  DocumentTable({
-    this.type = 'text',
-    List<List<String>>? cells,
-    this.vatRate = 0.15,
-  }) : cells = cells ??
-            [
-              ['Header 1', 'Header 2', 'Header 3'],
-              ['Row 1 Col 1', 'Row 1 Col 2', 'Row 1 Col 3'],
-              ['Row 2 Col 1', 'Row 2 Col 2', 'Row 2 Col 3'],
-            ];
-
-  factory DocumentTable.priceTable({double vatRate = 0.15}) {
-    return DocumentTable(
-      type: 'price',
-      vatRate: vatRate,
-      cells: [
-        ['Item', 'Description', 'Quantity', 'Unit Price', 'Total'],
-        ['', '', '1', '0.00', '0.00'],
-        ['', '', '1', '0.00', '0.00'],
-      ],
-    );
-  }
-
-  void addRow() {
-    final newRow = List.generate(cells[0].length, (_) => '');
-    cells.add(newRow);
-  }
-
-  void addColumn() {
-    for (var row in cells) {
-      row.add('');
-    }
-  }
-
-  void removeRow(int index) {
-    if (cells.length > 2 && index > 0) {
-      // Keep at least header + 1 row
-      cells.removeAt(index);
-    }
-  }
-
-  void removeColumn(int index) {
-    if (cells[0].length > 2) {
-      // Keep at least 2 columns
-      for (var row in cells) {
-        if (index < row.length) {
-          row.removeAt(index);
-        }
-      }
-    }
-  }
-
-  double getSubtotal() {
-    if (type != 'price' || cells.length < 2) return 0.0;
-
-    double subtotal = 0.0;
-    for (var i = 1; i < cells.length; i++) {
-      final row = cells[i];
-      if (row.length >= 5) {
-        final total = double.tryParse(row[4]) ?? 0.0;
-        subtotal += total;
-      }
-    }
-    return subtotal;
-  }
-
-  double getVAT() {
-    return getSubtotal() * vatRate;
-  }
-
-  double getTotal() {
-    return getSubtotal() + getVAT();
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': type,
-        'cells': cells,
-        'vatRate': vatRate,
-      };
-
-  factory DocumentTable.fromJson(Map<String, dynamic> json) => DocumentTable(
-        type: json['type'] as String? ?? 'text',
-        cells: (json['cells'] as List<dynamic>?)
-            ?.map((row) =>
-                (row as List<dynamic>).map((cell) => cell.toString()).toList())
-            .toList(),
-        vatRate: (json['vatRate'] as num?)?.toDouble() ?? 0.15,
-      );
 }

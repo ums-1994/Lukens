@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'dart:async';
+<<<<<<< HEAD
 import 'package:flutter/gestures.dart';
+=======
+>>>>>>> origin/Cleaned_Code
 import '../../api.dart';
 
 class GuestCollaborationPage extends StatefulWidget {
@@ -110,8 +113,12 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         if (_accessToken != null) 'collab_token': _accessToken!,
       }..removeWhere((k, v) => v == null);
 
+<<<<<<< HEAD
       final uri = Uri.parse('$baseUrl/users/search')
           .replace(queryParameters: params);
+=======
+      final uri = Uri.parse('$baseUrl/users/search?${Uri(queryParameters: params).query}');
+>>>>>>> origin/Cleaned_Code
       final resp = await http.get(uri);
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as List<dynamic>;

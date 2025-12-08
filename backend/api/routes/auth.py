@@ -19,8 +19,12 @@ from werkzeug.security import check_password_hash
 
 bp = Blueprint('auth', __name__)
 
-# Initialize Firebase on module load
-initialize_firebase()
+# Initialize Firebase on module load (with error handling to prevent import failures)
+try:
+    initialize_firebase()
+except Exception as e:
+    print(f"⚠️ Warning: Firebase initialization failed, but auth blueprint will still work: {e}")
+    print("   Firebase authentication features may not be available until Firebase is properly configured.")
 
 def generate_verification_token(user_id, email):
     """Generate a verification token for email verification and store in database"""
@@ -352,12 +356,17 @@ def get_user_profile(username=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@bp.route("/auth/firebase", methods=['OPTIONS'])
+@bp.get("/test")
+def test_auth_blueprint():
+    """Test route to verify auth blueprint is registered"""
+    return {'status': 'ok', 'message': 'Auth blueprint is working'}, 200
+
+@bp.route("/firebase", methods=['OPTIONS'])
 def options_firebase_auth():
     """Handle CORS preflight for Firebase auth endpoint"""
     return {}, 200
 
-@bp.post("/auth/firebase")
+@bp.post("/firebase")
 def firebase_auth():
     """
     Authenticate with Firebase ID token
@@ -472,12 +481,20 @@ def firebase_auth():
                     print(f'⚠️ Unknown role "{requested_role}", defaulting to "manager"')
                 
                 print(f'🔍 Registration: requested_role="{requested_role}", normalized="{normalized_role}", using="{role_to_use}"')
-                
+
+                # For Firebase-only accounts, we don't use a local password.
+                # Just store a deterministic non-null string to satisfy NOT NULL constraint.
+                dummy_password_hash = f"firebase:{uid}:{email}"
+
                 cursor.execute(
                     '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id, username, email, full_name, role, department, is_active''',
+<<<<<<< HEAD
                     (username, email, '', name, role_to_use, True, firebase_user.get('email_verified', False))
+=======
+                    (username, email, dummy_password_hash, name, role_to_use, True, firebase_user.get('email_verified', False))
+>>>>>>> origin/Cleaned_Code
                 )
                 user = cursor.fetchone()
                 user_id = user[0]
@@ -514,7 +531,7 @@ def firebase_auth():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/auth/firebase/verify")
+@bp.get("/firebase/verify")
 @firebase_token_required
 def verify_firebase_auth(firebase_user=None, firebase_uid=None, firebase_email=None):
     """

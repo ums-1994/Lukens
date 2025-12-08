@@ -1,11 +1,59 @@
 import 'dart:convert';
+import 'dart:js' as js;
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
 class AuthService {
+<<<<<<< HEAD
   static const String baseUrl = 'https://lukens-backend.onrender.com';
+=======
+  // Get API URL from JavaScript config or use default
+  static String get baseUrl {
+    if (kIsWeb) {
+      try {
+        // Try to get from window.APP_CONFIG.API_URL
+        final config = js.context['APP_CONFIG'];
+        if (config != null) {
+          final configObj = config as js.JsObject;
+          final apiUrl = configObj['API_URL'];
+          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+            final url = apiUrl.toString().replaceAll('"', '').trim();
+            print('🌐 Using API URL from APP_CONFIG: $url');
+            return url;
+          }
+        }
+        // Fallback: try window.REACT_APP_API_URL
+        final envUrl = js.context['REACT_APP_API_URL'];
+        if (envUrl != null && envUrl.toString().isNotEmpty) {
+          final url = envUrl.toString().replaceAll('"', '').trim();
+          print('🌐 Using API URL from REACT_APP_API_URL: $url');
+          return url;
+        }
+      } catch (e) {
+        print('⚠️ Could not read API URL from config: $e');
+      }
+    }
+    // Check if we're in production (not localhost)
+    if (kIsWeb) {
+      final hostname = html.window.location.hostname;
+      if (hostname != null) {
+        final isProduction = hostname.contains('netlify.app') ||
+            hostname.contains('onrender.com') ||
+            !hostname.contains('localhost');
+        
+        if (isProduction) {
+          print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
+          return 'https://lukens-wp8w.onrender.com';
+        }
+      }
+    }
+    // Default to Render backend (production)
+    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
+    return 'https://lukens-wp8w.onrender.com';
+  }
+>>>>>>> origin/Cleaned_Code
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 

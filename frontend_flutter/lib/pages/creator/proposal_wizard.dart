@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
+import '../../services/ai_analysis_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -49,6 +50,11 @@ class _ProposalWizardState extends State<ProposalWizard>
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
   bool _isAnalyzingRisk = false;
+
+  // Scroll controllers
+  final ScrollController _composeScrollController = ScrollController();
+  final ScrollController _governScrollController = ScrollController();
+  final ScrollController _riskScrollController = ScrollController();
 
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
@@ -139,11 +145,8 @@ class _ProposalWizardState extends State<ProposalWizard>
     _pageController = PageController();
     _tabController = TabController(length: _totalSteps, vsync: this);
     // Pre-select required modules so they are checked by default
-    final required = _contentModules
-        .where((m) => m['required'] == true)
-        .map((m) => m['id'] as String)
-        .toList();
-    _formData['selectedModules'] = List<String>.from(required);
+    final allModuleIds = _contentModules.map((m) => m['id'] as String).toList();
+    _formData['selectedModules'] = List<String>.from(allModuleIds);
     // initialize module contents map
     _formData['moduleContents'] = <String, String>{};
     // Load templates from template library
@@ -175,10 +178,21 @@ class _ProposalWizardState extends State<ProposalWizard>
   void dispose() {
     _pageController.dispose();
     _tabController.dispose();
+    _composeScrollController.dispose();
+    _governScrollController.dispose();
+    _riskScrollController.dispose();
     super.dispose();
   }
 
-  void _nextStep() {
+  void _nextStep() async {
+    // Step index 2 is the AI Risk Gate - show strong warning but allow override
+    if (_currentStep == 2) {
+      final proceed = await _handleRiskGateOverride();
+      if (!proceed) {
+        return;
+      }
+    }
+
     if (_currentStep < _totalSteps - 1) {
       setState(() => _currentStep++);
       _pageController.nextPage(
@@ -196,6 +210,104 @@ class _ProposalWizardState extends State<ProposalWizard>
         curve: Curves.easeInOut,
       );
     }
+  }
+
+  Future<bool> _handleRiskGateOverride() async {
+    // Require a risk assessment before leaving the AI Risk Gate step
+    if (_riskAssessment.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Run AI Risk Assessment before proceeding.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return false;
+    }
+
+    final String aiStatus =
+        (_riskAssessment['ai_status'] ?? '').toString().toUpperCase();
+    final String riskLevel =
+        (_riskAssessment['risk_level'] ?? '').toString().toUpperCase();
+
+    final bool isBlocked = aiStatus == 'BLOCKED' || riskLevel == 'HIGH';
+
+    // For low/medium risk we allow progression without extra confirmation
+    if (!isBlocked) {
+      return true;
+    }
+
+    final riskScore = _riskAssessment['risk_score'] ?? 0;
+    final risks = List.from(_riskAssessment['risks'] ?? const []);
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('AI Risk Gate Warning'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI has flagged this proposal as HIGH RISK or BLOCKED.',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Risk Level: ${_riskAssessment['risk_level'] ?? 'High'}',
+                  style: PremiumTheme.bodyMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
+                  style: PremiumTheme.bodyMedium,
+                ),
+                if (risks.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Key risks identified:',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...risks.take(3).map((r) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text('• ${r.toString()}'),
+                      )),
+                ],
+                const SizedBox(height: 16),
+                Text(
+                  'Proceeding may violate internal governance or expose the client to unmanaged risk. Only override if you are confident the issues are understood and accepted.',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: PremiumTheme.error,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Go Back'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: PremiumTheme.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Override and Proceed'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
   }
 
   String _getStepTitle(int step) {
@@ -226,6 +338,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               ),
       );
       _formData['templateType'] = template.templateType;
+<<<<<<< HEAD
       _formData['templateKey'] = template.templateKey ?? template.id;
       _selectedTemplate = template;
 
@@ -249,6 +362,12 @@ class _ProposalWizardState extends State<ProposalWizard>
         }
       }
       _formData['moduleContents'] = contents;
+=======
+      // When a template is selected, make all content modules available
+      final allModuleIds =
+          _contentModules.map((m) => m['id'] as String).toList();
+      _formData['selectedModules'] = allModuleIds;
+>>>>>>> origin/Cleaned_Code
     });
   }
 
@@ -264,13 +383,90 @@ class _ProposalWizardState extends State<ProposalWizard>
     });
   }
 
+  Map<String, dynamic> _calculateComposeReadiness() {
+    final missing = <String>[];
+    int completed = 0;
+    int total = 0;
+
+    void checkField(String key, String label) {
+      total++;
+      final value = _formData[key]?.toString().trim() ?? '';
+      if (value.isEmpty) {
+        missing.add(label);
+      } else {
+        completed++;
+      }
+    }
+
+    // Template selection
+    checkField('templateId', 'Template');
+
+    // Client details
+    checkField('clientName', 'Client Name');
+    checkField('clientEmail', 'Client Email');
+    checkField('clientHolding', 'Client Holding / Group');
+    checkField('clientAddress', 'Client Address');
+    checkField('clientContactName', 'Client Contact Name');
+    checkField('clientContactEmail', 'Client Contact Email');
+    checkField('clientContactMobile', 'Client Contact Mobile');
+
+    // Engagement details
+    checkField('opportunityName', 'Project / Opportunity Name');
+    checkField('projectType', 'Engagement Type');
+    checkField('estimatedValue', 'Estimated Value');
+    checkField('timeline', 'Timeline');
+
+    // Required content modules must be selected
+    final requiredModules =
+        _contentModules.where((m) => m['required'] == true).toList();
+    final selectedIds =
+        List<String>.from(_formData['selectedModules'] ?? const []);
+    for (final module in requiredModules) {
+      total++;
+      final id = module['id'] as String;
+      final name = (module['name'] as String?) ?? id;
+      if (selectedIds.contains(id)) {
+        completed++;
+      } else {
+        missing.add('Required section: $name');
+      }
+    }
+
+    final int score = total == 0 ? 0 : ((completed / total) * 100).round();
+
+    return {
+      'score': score,
+      'missing': missing,
+    };
+  }
+
+  bool _isComposeStepValid() {
+    final readiness = _calculateComposeReadiness();
+    final List<String> missing =
+        List<String>.from(readiness['missing'] ?? const <String>[]);
+    return missing.isEmpty;
+  }
+
   bool _canProceed() {
     // For hackathon/demo: only enforce that a template is selected on step 0.
     // Later steps (governance, risk, internal/client sign-off) should not block navigation
     // even if optional metadata fields are incomplete.
     switch (_currentStep) {
+<<<<<<< HEAD
       case 0: // Compose - Template Selection
         return _formData['templateId'].toString().isNotEmpty;
+=======
+      case 0: // Compose - require core setup before moving on
+        return _isComposeStepValid();
+      case 1: // Govern - require AI governance results
+        return _governanceResults.isNotEmpty;
+      case 2: // AI Risk Gate - require risk assessment to have run
+        return _riskAssessment.isNotEmpty;
+      case 3: // Internal Sign-off - require internal approval flag
+        return _isInternalApproved;
+      case 4: // Client Sign-off - Review
+        return true; // review/confirm step
+>>>>>>> origin/Cleaned_Code
       default:
         return true;
     }
@@ -282,6 +478,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     try {
       final app = context.read<AppState>();
 
+<<<<<<< HEAD
       // Create proposal in backend
       final extraData = {
         'client_name': _formData['clientName'],
@@ -308,16 +505,60 @@ class _ProposalWizardState extends State<ProposalWizard>
       }
 
       _proposalId = created['id']?.toString();
+=======
+      // Create proposal in backend so that downstream flows have a real ID
+      final created = await app.createProposal(
+        _formData['opportunityName'],
+        _formData['clientName'],
+        templateKey: _formData['templateId']?.toString().isNotEmpty == true
+            ? _formData['templateId'].toString()
+            : null,
+      );
+
+      final proposalId = (created != null && created['id'] != null)
+          ? created['id'].toString()
+          : 'draft-${DateTime.now().millisecondsSinceEpoch}';
+
+      _proposalId = proposalId;
+
+      // Build initial proposal data to seed EnhancedCompose
+      final Map<String, String> moduleContents =
+          Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+      final Map<String, dynamic> initialData = {
+        'clientName': _formData['clientName'] ?? '',
+        'clientEmail': _formData['clientEmail'] ?? '',
+        'projectType': _formData['projectType'] ?? '',
+        'estimatedValue': _formData['estimatedValue'] ?? '',
+        'timeline': _formData['timeline'] ?? '',
+        'opportunityName': _formData['opportunityName'] ?? '',
+      };
+
+      moduleContents.forEach((key, value) {
+        initialData[key] = value;
+      });
+
+      final proposalTitle =
+          (_formData['proposalTitle']?.toString().isNotEmpty ?? false)
+              ? _formData['proposalTitle'].toString()
+              : _formData['opportunityName'];
+>>>>>>> origin/Cleaned_Code
 
       // Navigate to enhanced compose page
       Navigator.pushReplacementNamed(
         context,
         '/enhanced-compose',
         arguments: {
+<<<<<<< HEAD
           'proposalId': _proposalId ?? '',
           'proposalTitle': _formData['opportunityName'],
+=======
+          'proposalId': proposalId,
+          'proposalTitle': proposalTitle,
+>>>>>>> origin/Cleaned_Code
           'templateType': _formData['templateType'],
           'selectedModules': _formData['selectedModules'],
+          'initialData': initialData,
         },
       );
     } catch (e) {
@@ -501,7 +742,47 @@ class _ProposalWizardState extends State<ProposalWizard>
     );
   }
 
+  String? _mapSectionTitleToModuleId(String title) {
+    switch (title) {
+      case 'Executive Summary':
+        return 'executive_summary';
+      case 'Scope & Deliverables':
+      case 'Scope of Work':
+        return 'scope_deliverables';
+      case 'Company Profile':
+      case 'Appendix – Company Profile':
+        return 'company_profile';
+      case 'Terms & Conditions':
+        return 'terms_conditions';
+      case 'Assumptions & Risks':
+      case 'No Assumptions Section':
+        return 'assumptions_risks';
+      case 'Team & Bios':
+      case 'Team Bios':
+        return 'team_bios';
+      case 'Delivery Approach':
+        return 'delivery_approach';
+      case 'Case Studies':
+        return 'case_studies';
+      default:
+        return null;
+    }
+  }
+
   Widget _buildHeader() {
+    final templateType = (_formData['templateType'] as String?) ?? '';
+    String documentLabel;
+    switch (templateType.toLowerCase()) {
+      case 'sow':
+        documentLabel = 'Statement of Work (SOW)';
+        break;
+      case 'rfi':
+        documentLabel = 'Request for Information (RFI)';
+        break;
+      default:
+        documentLabel = 'Proposal';
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -510,7 +791,7 @@ class _ProposalWizardState extends State<ProposalWizard>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'New Proposal',
+              'New $documentLabel',
               style: PremiumTheme.titleLarge,
             ),
             const SizedBox(height: 4),
@@ -686,10 +967,192 @@ class _ProposalWizardState extends State<ProposalWizard>
     if (selected != null) {
       final Map<String, String> contents =
           Map<String, String>.from(_formData['moduleContents'] ?? {});
-      contents[moduleId] = selected['content'] ?? '';
+
+      var raw = (selected['content'] ?? '').toString();
+      raw = raw.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '');
+      raw = raw.replaceAll(RegExp(r'<[^>]+>'), '');
+      raw = raw.replaceAll(RegExp(r'\s+'), ' ');
+
+      contents[moduleId] = raw.trim();
       setState(() {
         _formData['moduleContents'] = contents;
       });
+    }
+  }
+
+  Future<void> _showGeneratedContentDialog(
+      String moduleId, String content) async {
+    final module = _contentModules.firstWhere(
+      (m) => m['id'] == moduleId,
+      orElse: () => {
+        'id': moduleId,
+        'name': moduleId.replaceAll('_', ' '),
+      },
+    );
+
+    final title = module['name']?.toString() ?? moduleId.replaceAll('_', ' ');
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController(text: content);
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          child: GlassContainer(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(20),
+            child: SizedBox(
+              width: 700,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI content for $title',
+                    style: PremiumTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 260,
+                    child: CustomScrollbar(
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: TextFormField(
+                          controller: controller,
+                          maxLines: null,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.textPrimary,
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            hintText:
+                                'Review or refine the AI-generated content before saving...',
+                            hintStyle: PremiumTheme.bodyMedium.copyWith(
+                              color: PremiumTheme.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Close'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          final updated = controller.text;
+                          setState(() {
+                            final Map<String, String> contents =
+                                Map<String, String>.from(
+                                    _formData['moduleContents'] ?? {});
+                            contents[moduleId] = updated;
+                            _formData['moduleContents'] = contents;
+                          });
+                          Navigator.of(dialogContext).pop();
+                        },
+                        child: const Text('Save'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          final updated = controller.text;
+                          setState(() {
+                            final Map<String, String> contents =
+                                Map<String, String>.from(
+                                    _formData['moduleContents'] ?? {});
+                            contents[moduleId] = updated;
+                            _formData['moduleContents'] = contents;
+                            _currentStep = 0;
+                            _pageController.jumpToPage(0);
+                          });
+                          Navigator.of(dialogContext).pop();
+                        },
+                        child: const Text('Save & Edit in Compose'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _ensureModuleSelected(String moduleId) {
+    final modules = List<String>.from(_formData['selectedModules'] ?? []);
+    if (!modules.contains(moduleId)) {
+      modules.add(moduleId);
+      setState(() {
+        _formData['selectedModules'] = modules;
+      });
+    }
+  }
+
+  Future<void> _addModuleWithAI(String moduleId) async {
+    _ensureModuleSelected(moduleId);
+
+    final app = context.read<AppState>();
+    if (app.authToken != null) {
+      AIAnalysisService.setAuthToken(app.authToken!);
+    }
+
+    final contextData = _buildProposalDataForAI();
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final generated = await AIAnalysisService.generateSection(
+        moduleId,
+        contextData,
+      );
+
+      final Map<String, String> contents =
+          Map<String, String>.from(_formData['moduleContents'] ?? {});
+      contents[moduleId] = generated;
+
+      setState(() {
+        _formData['moduleContents'] = contents;
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'AI generated initial content for ${moduleId.replaceAll('_', ' ')}'),
+          backgroundColor: PremiumTheme.teal,
+        ),
+      );
+
+      await _showGeneratedContentDialog(moduleId, generated);
+
+      // If the user is currently on the Govern step, automatically refresh
+      // the governance check so "missing section" issues clear once
+      // content has been added via AI.
+      if (_currentStep == 1) {
+        await _runGovernanceCheck();
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating AI content: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -864,7 +1327,141 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   // Step 1: Compose - Combines template selection, client details, project details, content selection, and content editor
   Widget _buildComposeStep() {
-    return _buildTemplateSelection(); // For now, start with template selection - we'll make this a multi-tab step
+    final readiness = _calculateComposeReadiness();
+    final int score = (readiness['score'] as int?) ?? 0;
+    final List<String> missing =
+        List<String>.from(readiness['missing'] ?? const <String>[]);
+
+    Color statusColor;
+    String statusLabel;
+    if (score >= 90 && missing.isEmpty) {
+      statusColor = PremiumTheme.success;
+      statusLabel = 'Ready';
+    } else if (score >= 60) {
+      statusColor = Colors.orange;
+      statusLabel = 'Partially ready';
+    } else {
+      statusColor = PremiumTheme.error;
+      statusLabel = 'Not ready';
+    }
+
+    return CustomScrollbar(
+      controller: _composeScrollController,
+      child: SingleChildScrollView(
+        controller: _composeScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Readiness summary for the Compose step
+            GlassContainer(
+              borderRadius: 16,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Compose Readiness',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '$score% • $statusLabel',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: (score.clamp(0, 100)) / 100.0,
+                      backgroundColor: PremiumTheme.glassWhite,
+                      valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                      minHeight: 6,
+                    ),
+                  ),
+                  if (missing.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Missing before you can proceed:',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: PremiumTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: missing.take(6).map((item) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: PremiumTheme.error.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            item,
+                            style: PremiumTheme.labelMedium.copyWith(
+                              color: PremiumTheme.error,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Sub-tabs for Template, Client, Engagement, and Content
+            DefaultTabController(
+              length: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TabBar(
+                    labelColor: Colors.white,
+                    unselectedLabelColor: PremiumTheme.textSecondary,
+                    indicator: BoxDecoration(
+                      color: PremiumTheme.teal,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    tabs: const [
+                      Tab(text: 'Template'),
+                      Tab(text: 'Client Info'),
+                      Tab(text: 'Engagement'),
+                      Tab(text: 'Content'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 500,
+                    child: TabBarView(
+                      children: [
+                        _buildTemplateSelection(),
+                        _buildClientDetails(),
+                        _buildProjectDetails(),
+                        _buildComposeContentStep(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Step 2: Govern - Governance checklist (AI-run)
@@ -893,7 +1490,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _governScrollController,
             child: SingleChildScrollView(
+              controller: _governScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildGovernanceResults(),
             ),
@@ -920,7 +1519,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _riskScrollController,
             child: SingleChildScrollView(
+              controller: _riskScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildRiskAssessment(),
             ),
@@ -997,7 +1598,7 @@ class _ProposalWizardState extends State<ProposalWizard>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Select Template from Library',
+          'Select Template from Library (Wizard v2)',
           style: PremiumTheme.titleMedium,
         ),
         const SizedBox(height: 8),
@@ -1152,6 +1753,16 @@ class _ProposalWizardState extends State<ProposalWizard>
         TextEditingController(text: _formData['clientName']?.toString() ?? '');
     final clientEmailController =
         TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
+    final clientHoldingController = TextEditingController(
+        text: _formData['clientHolding']?.toString() ?? '');
+    final clientAddressController = TextEditingController(
+        text: _formData['clientAddress']?.toString() ?? '');
+    final clientContactNameController = TextEditingController(
+        text: _formData['clientContactName']?.toString() ?? '');
+    final clientContactEmailController = TextEditingController(
+        text: _formData['clientContactEmail']?.toString() ?? '');
+    final clientContactMobileController = TextEditingController(
+        text: _formData['clientContactMobile']?.toString() ?? '');
     final opportunityNameController = TextEditingController(
         text: _formData['opportunityName']?.toString() ?? '');
     final estimatedValueController = TextEditingController(
@@ -1213,6 +1824,61 @@ class _ProposalWizardState extends State<ProposalWizard>
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Client Holding / Group',
+                        'Parent company or group',
+                        (value) =>
+                            setState(() => _formData['clientHolding'] = value),
+                        Icons.account_tree_outlined,
+                        controller: clientHoldingController,
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Client Address',
+                        'Physical or postal address',
+                        (value) =>
+                            setState(() => _formData['clientAddress'] = value),
+                        Icons.location_on_outlined,
+                        controller: clientAddressController,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Contact Name',
+                              'Primary contact person',
+                              (value) => setState(
+                                  () => _formData['clientContactName'] = value),
+                              Icons.person_outline,
+                              controller: clientContactNameController,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildTextField(
+                              'Client Contact Email',
+                              'contact@client.com',
+                              (value) => setState(() =>
+                                  _formData['clientContactEmail'] = value),
+                              Icons.alternate_email,
+                              keyboardType: TextInputType.emailAddress,
+                              controller: clientContactEmailController,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        'Client Contact Mobile',
+                        'Mobile number',
+                        (value) => setState(
+                            () => _formData['clientContactMobile'] = value),
+                        Icons.phone_iphone,
+                        keyboardType: TextInputType.phone,
+                        controller: clientContactMobileController,
                       ),
                       const SizedBox(height: 20),
                       _buildTextField(
@@ -1295,10 +1961,46 @@ class _ProposalWizardState extends State<ProposalWizard>
                     const SizedBox(height: 20),
                     _buildTextField(
                       'Timeline',
-                      'Enter project timeline',
+                      'Select project timeline',
                       (value) => setState(() => _formData['timeline'] = value),
                       Icons.schedule,
                       controller: timelineController,
+                      readOnly: true,
+                      onTap: () async {
+                        final now = DateTime.now();
+                        DateTime initialDate = now;
+                        final text = timelineController.text.trim();
+                        if (text.isNotEmpty) {
+                          try {
+                            final parts = text.split('/');
+                            if (parts.length == 3) {
+                              final year = int.parse(parts[0]);
+                              final month = int.parse(parts[1]);
+                              final day = int.parse(parts[2]);
+                              initialDate = DateTime(year, month, day);
+                            }
+                          } catch (_) {}
+                        }
+
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: initialDate,
+                          firstDate: DateTime(now.year - 5),
+                          lastDate: DateTime(now.year + 10),
+                        );
+
+                        if (picked != null) {
+                          final y = picked.year.toString().padLeft(4, '0');
+                          final m = picked.month.toString().padLeft(2, '0');
+                          final d = picked.day.toString().padLeft(2, '0');
+                          final formatted = '$y/$m/$d';
+
+                          setState(() {
+                            timelineController.text = formatted;
+                            _formData['timeline'] = formatted;
+                          });
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -1307,6 +2009,22 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildComposeContentStep() {
+    return Row(
+      children: [
+        Expanded(
+          flex: 2,
+          child: _buildContentSelection(),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          flex: 3,
+          child: _buildContentEditor(),
+        ),
+      ],
     );
   }
 
@@ -1431,6 +2149,8 @@ class _ProposalWizardState extends State<ProposalWizard>
     IconData icon, {
     TextInputType keyboardType = TextInputType.text,
     TextEditingController? controller,
+    VoidCallback? onTap,
+    bool readOnly = false,
   }) {
     // Ensure controller text direction is LTR
     if (controller != null && controller.text.isNotEmpty) {
@@ -1448,6 +2168,8 @@ class _ProposalWizardState extends State<ProposalWizard>
       textDirection: TextDirection.ltr,
       child: TextFormField(
         controller: controller,
+        onTap: onTap,
+        readOnly: readOnly,
         textDirection: TextDirection.ltr,
         textAlign: TextAlign.left,
         style: PremiumTheme.bodyMedium.copyWith(
@@ -1611,6 +2333,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
 
     final status = _governanceResults['status'] ?? 'PENDING';
+<<<<<<< HEAD
     final num scoreValue = _governanceResults['score'] is num
         ? _governanceResults['score']
         : 0;
@@ -1626,10 +2349,16 @@ class _ProposalWizardState extends State<ProposalWizard>
             : issue.toString())
         .toList();
     final passed = status == 'PASSED';
+=======
+    final score = _governanceResults['score'] ?? 0;
+    final checks = _governanceResults['checks'] ?? [];
+    final issues = List.from(_governanceResults['issues'] ?? const []);
+    final passed = status == 'Ready';
+>>>>>>> origin/Cleaned_Code
 
     Color statusColor = PremiumTheme.success;
-    if (status == 'FAILED') statusColor = PremiumTheme.error;
-    if (status == 'PENDING') statusColor = Colors.orange;
+    if (status == 'Blocked') statusColor = PremiumTheme.error;
+    if (status == 'At Risk' || status == 'PENDING') statusColor = Colors.orange;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1686,13 +2415,16 @@ class _ProposalWizardState extends State<ProposalWizard>
         if (issues.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
-            'Issues',
+            'Issues & AI Recommendations',
             style: PremiumTheme.bodyMedium.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          ...issues.map<Widget>((issue) => Padding(
+          ...issues.map<Widget>((raw) {
+            // Support both plain-string issues and structured AI issues
+            if (raw is! Map<String, dynamic>) {
+              return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: GlassContainer(
                   borderRadius: 12,
@@ -1709,7 +2441,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          issue.toString(),
+                          raw.toString(),
                           style: PremiumTheme.bodyMedium.copyWith(
                             fontSize: 12,
                           ),
@@ -1718,7 +2450,115 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ],
                   ),
                 ),
-              )),
+              );
+            }
+
+            final issue = raw as Map<String, dynamic>;
+            final title = issue['title']?.toString() ?? 'Issue';
+            final description = issue['description']?.toString() ?? '';
+            final action = issue['action']?.toString();
+            final type = issue['type']?.toString();
+            final sectionId = _mapSectionTitleToModuleId(title);
+
+            final bool canAutoAddModule =
+                type == 'missing_section' && sectionId != null;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: GlassContainer(
+                borderRadius: 12,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          color: PremiumTheme.info,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: PremiumTheme.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (description.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2.0),
+                                  child: Text(
+                                    description,
+                                    style: PremiumTheme.bodyMedium.copyWith(
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              if (action != null && action.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Text(
+                                    action,
+                                    style: PremiumTheme.bodyMedium.copyWith(
+                                      fontSize: 11,
+                                      color: PremiumTheme.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (canAutoAddModule)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () async {
+                                if (sectionId != null) {
+                                  _ensureModuleSelected(sectionId);
+                                  await _openContentLibraryAndInsert(sectionId);
+                                }
+                              },
+                              child: const Text('Add module'),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: PremiumTheme.teal,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                              ),
+                              onPressed: () {
+                                if (sectionId != null) {
+                                  _addModuleWithAI(sectionId);
+                                }
+                              },
+                              icon: const Icon(Icons.auto_awesome, size: 16),
+                              label: const Text('Add with AI'),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
         if (actions.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -2175,6 +3015,7 @@ class _ProposalWizardState extends State<ProposalWizard>
 
     try {
       final app = context.read<AppState>();
+<<<<<<< HEAD
       final payload = _buildAnalysisPayload();
       final result = await app.analyzeProposalAI(payload);
       if (result != null) {
@@ -2185,6 +3026,58 @@ class _ProposalWizardState extends State<ProposalWizard>
               Map<String, dynamic>.from(result['analysis'] ?? {});
         });
       }
+=======
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final proposalData = _buildProposalDataForAI();
+
+      final analysis =
+          await AIAnalysisService.analyzeProposalContent(proposalData);
+
+      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
+      String riskLevel;
+      if (rawRiskScore <= 10) {
+        riskLevel = 'Low';
+      } else if (rawRiskScore <= 20) {
+        riskLevel = 'Medium';
+      } else {
+        riskLevel = 'High';
+      }
+
+      final issues = List<Map<String, dynamic>>.from(
+        analysis['issues'] ?? const [],
+      );
+
+      final risks = issues.map((issue) {
+        return issue['title']?.toString() ?? 'Issue';
+      }).toList();
+
+      final recommendations = issues
+          .map((issue) {
+            return issue['action']?.toString() ??
+                issue['description']?.toString() ??
+                '';
+          })
+          .where((r) => r.isNotEmpty)
+          .toList();
+
+      // Convert raw risk points into a 0-100"score" where higher is better
+      final double displayScore = (100 - rawRiskScore).clamp(0, 100).toDouble();
+
+      setState(() {
+        _riskAssessment = {
+          'risk_level': riskLevel,
+          'risk_score': displayScore,
+          'risks': risks,
+          'recommendations': recommendations,
+          'ai_status': analysis['status'] ?? 'Ready',
+          'ai_riskScore': rawRiskScore,
+        };
+        _isLoading = false;
+      });
+>>>>>>> origin/Cleaned_Code
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Analysis failed: $e')),
@@ -2198,6 +3091,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
   }
 
+<<<<<<< HEAD
   Map<String, dynamic> _buildAnalysisPayload() {
     final modules = List<String>.from(_formData['selectedModules'] ?? []);
     final moduleContents =
@@ -2221,20 +3115,104 @@ class _ProposalWizardState extends State<ProposalWizard>
       'module_contents': moduleContents,
       'sections': sections,
     };
+=======
+  Map<String, dynamic> _buildProposalDataForAI() {
+    final selectedModules =
+        List<String>.from(_formData['selectedModules'] ?? const []);
+    final moduleContents =
+        Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+    final data = <String, dynamic>{
+      'id': _proposalId ?? 'draft',
+      'title': _formData['proposalTitle']?.toString().isNotEmpty == true
+          ? _formData['proposalTitle'].toString()
+          : _formData['opportunityName']?.toString() ?? '',
+      'clientName': _formData['clientName'] ?? '',
+      'clientEmail': _formData['clientEmail'] ?? '',
+      'projectType': _formData['projectType'] ?? '',
+      'estimatedValue': _formData['estimatedValue'] ?? '',
+      'timeline': _formData['timeline'] ?? '',
+    };
+
+    for (final moduleId in selectedModules) {
+      data[moduleId] = moduleContents[moduleId] ?? '';
+    }
+
+    return data;
+  }
+
+  // Run AI Governance Check
+  Future<void> _runGovernanceCheck() async {
+    setState(() => _isRunningGovernance = true);
+
+    try {
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final proposalData = _buildProposalDataForAI();
+
+      final analysis =
+          await AIAnalysisService.analyzeProposalContent(proposalData);
+
+      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
+      // Convert raw risk points into a readiness percentage (higher is better)
+      final int readinessScore = (100 - rawRiskScore).clamp(0, 100).toInt();
+
+      final issues = List<Map<String, dynamic>>.from(
+        analysis['issues'] ?? const [],
+      );
+
+      // Derive simple checklist from AI issues
+      final checks = issues.map((issue) {
+        final priority = issue['priority']?.toString() ?? 'info';
+        final isRequired = priority == 'critical' ||
+            priority == 'high' ||
+            priority == 'warning';
+        final hasPassed =
+            (issue['type']?.toString() ?? '') != 'missing_section' &&
+                (issue['type']?.toString() ?? '') != 'incomplete_content';
+
+        return {
+          'id': issue['type']?.toString() ?? 'ai_issue',
+          'label': issue['title']?.toString() ?? 'Issue',
+          'required': isRequired,
+          'passed': hasPassed,
+        };
+      }).toList();
+
+      setState(() {
+        _governanceResults = {
+          'status': analysis['status'] ?? 'PENDING',
+          'score': readinessScore,
+          'checks': checks,
+          'issues': issues,
+        };
+        _isRunningGovernance = false;
+      });
+    } catch (e) {
+      setState(() => _isRunningGovernance = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error running governance check: $e')),
+      );
+    }
+>>>>>>> origin/Cleaned_Code
   }
 
   Future<void> _submitForInternalApproval() async {
     setState(() => _isLoading = true);
 
     try {
-      // Check if governance passed
-      final governanceStatus = _governanceResults['status'] as String?;
+      // Check if governance passed (AI Ready status)
+      final governanceStatus =
+          (_governanceResults['status'] as String?) ?? 'PENDING';
 
-      if (governanceStatus != 'PASSED') {
+      if (governanceStatus != 'Ready') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Governance check must pass before submitting for approval'),
+                'Governance check must be Ready before submitting for approval'),
             backgroundColor: Colors.orange,
           ),
         );
