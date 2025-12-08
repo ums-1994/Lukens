@@ -208,8 +208,21 @@ def token_required(f):
                                         cursor.execute('SELECT 1')
                                         cursor.fetchone()
                                         print(f"[FIREBASE] Connection synced after commit")
+                                        
+                                        # Final verification: check if user is actually in the database
+                                        cursor.execute('SELECT id, email FROM users WHERE id = %s', (user_id,))
+                                        final_verify = cursor.fetchone()
+                                        if final_verify:
+                                            print(f"[FIREBASE] ✅ Final verification: User {user_id} exists in database")
+                                        else:
+                                            print(f"[FIREBASE] ❌ CRITICAL: User {user_id} NOT in database after commit and sync!")
+                                            # This is a serious error - the commit didn't work
+                                            # Don't trust this user_id - it doesn't exist
+                                            raise Exception(f"User {user_id} was not persisted to database after commit")
                                     except Exception as sync_error:
-                                        print(f"[FIREBASE] Warning: Could not sync connection: {sync_error}")
+                                        if "was not persisted" in str(sync_error):
+                                            raise  # Re-raise the persistence error
+                                        print(f"[FIREBASE] Warning: Could not sync/verify connection: {sync_error}")
                                     
                                     print(f"[FIREBASE] Transaction committed successfully. User should be visible in new connections.")
                                 except psycopg2.IntegrityError as e:
