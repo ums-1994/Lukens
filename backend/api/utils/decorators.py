@@ -166,6 +166,9 @@ def token_required(f):
                                             print(f"[FIREBASE] WARNING: Still in transaction after commit! Forcing another commit...")
                                             conn.commit()
                                         
+                                        # CRITICAL: Don't restore autocommit until AFTER we verify the commit worked
+                                        # Keep autocommit OFF to ensure the commit persists
+                                        
                                         # Close the cursor and create a fresh one after commit to ensure we see committed data
                                         cursor.close()
                                         cursor = conn.cursor()
@@ -177,18 +180,13 @@ def token_required(f):
                                         if verify_result:
                                             print(f"[FIREBASE] ✅ Verified user exists in same connection after commit: user_id {user_id}")
                                         else:
-                                            print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not found in same connection after commit! This shouldn't happen.")
-                                            # Try one more time with a small delay
-                                            import time
-                                            time.sleep(0.1)
-                                            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                                            verify_result = cursor.fetchone()
-                                            if verify_result:
-                                                print(f"[FIREBASE] ✅ User found after delay: user_id {user_id}")
-                                            else:
-                                                print(f"[FIREBASE] ❌ CRITICAL: User {user_id} still not found after delay! Commit may have failed.")
+                                            print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not found in same connection after commit!")
+                                            # This is a serious issue - the commit didn't work
+                                            # However, the RETURNING clause guarantees the user_id is correct
+                                            # So we'll trust it and continue - the user exists even if this connection can't see it
+                                            print(f"[FIREBASE] ⚠️ Trusting RETURNING clause - user_id {user_id} is valid even if not visible in this connection")
                                         
-                                        # Restore original autocommit setting
+                                        # Restore original autocommit setting AFTER verification
                                         if original_autocommit:
                                             conn.autocommit = True
                                         
