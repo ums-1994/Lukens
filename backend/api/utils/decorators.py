@@ -158,6 +158,28 @@ def token_required(f):
                                             print(f"[FIREBASE] WARNING: Still in transaction after commit! Forcing another commit...")
                                             conn.commit()
                                         
+                                        # Close the cursor and create a fresh one after commit to ensure we see committed data
+                                        cursor.close()
+                                        cursor = conn.cursor()
+                                        
+                                        # Verify the user exists in the SAME connection after commit with fresh cursor
+                                        # This confirms the commit actually worked
+                                        cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                                        verify_result = cursor.fetchone()
+                                        if verify_result:
+                                            print(f"[FIREBASE] ✅ Verified user exists in same connection after commit: user_id {user_id}")
+                                        else:
+                                            print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not found in same connection after commit! This shouldn't happen.")
+                                            # Try one more time with a small delay
+                                            import time
+                                            time.sleep(0.1)
+                                            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                                            verify_result = cursor.fetchone()
+                                            if verify_result:
+                                                print(f"[FIREBASE] ✅ User found after delay: user_id {user_id}")
+                                            else:
+                                                print(f"[FIREBASE] ❌ CRITICAL: User {user_id} still not found after delay! Commit may have failed.")
+                                        
                                         # Restore original autocommit setting
                                         if original_autocommit:
                                             conn.autocommit = True
@@ -168,15 +190,6 @@ def token_required(f):
                                         traceback.print_exc()
                                         conn.rollback()
                                         raise
-                                    
-                                    # Verify the user exists in the SAME connection after commit
-                                    # This confirms the commit actually worked
-                                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                                    verify_result = cursor.fetchone()
-                                    if verify_result:
-                                        print(f"[FIREBASE] ✅ Verified user exists in same connection after commit: user_id {user_id}")
-                                    else:
-                                        print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not found in same connection after commit! This shouldn't happen.")
                                     
                                     print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
                                     print(f"[FIREBASE] Transaction committed successfully. User should be visible in new connections.")
