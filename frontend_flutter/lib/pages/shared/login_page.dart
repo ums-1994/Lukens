@@ -96,7 +96,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       // Step 1: Sign in with Firebase
       print('🔥 Signing in with Firebase...');
-      final firebaseCredential = await FirebaseService.signInWithEmailAndPassword(
+      final firebaseCredential =
+          await FirebaseService.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -106,7 +107,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Firebase authentication failed. Please check your credentials.'),
+              content: Text(
+                  'Firebase authentication failed. Please check your credentials.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -117,7 +119,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // Step 2: Get Firebase ID token
       print('🔥 Getting Firebase ID token...');
       final firebaseIdToken = await firebaseCredential.user!.getIdToken();
-      
+
       if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -131,7 +133,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         return;
       }
 
-      print('✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
+      print(
+          '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Sending Firebase token to backend...');
@@ -157,19 +160,21 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       final result = json.decode(response.body);
       final userProfile = result['user'] as Map<String, dynamic>?;
+      final backendToken =
+          result['backend_token'] as String? ?? firebaseIdToken;
 
       if (mounted) {
         setState(() => _isLoading = false);
 
         if (userProfile != null) {
           final appState = context.read<AppState>();
-          
+
           // Use Firebase ID token (not legacy token)
-          appState.authToken = firebaseIdToken;
+          appState.authToken = backendToken;
           appState.currentUser = userProfile;
 
           // IMPORTANT: Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, firebaseIdToken);
+          AuthService.setUserData(userProfile, backendToken);
 
           // Initialize role service with user's role
           final roleService = context.read<RoleService>();
@@ -182,15 +187,18 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           final rawRole = userProfile['role']?.toString() ?? '';
           final userRole = rawRole.toLowerCase().trim();
           String dashboardRoute;
-          
+
           print('🔍 Login: Raw role from backend: "$rawRole"');
           print('🔍 Login: Normalized role: "$userRole"');
           print('🔍 Login: Full userProfile: $userProfile');
-          
+
           // Map all role variations to admin or manager
           final isAdmin = userRole == 'admin' || userRole == 'ceo';
-          final isManager = userRole == 'manager' || userRole == 'financial manager' || userRole == 'creator' || userRole == 'user';
-          
+          final isManager = userRole == 'manager' ||
+              userRole == 'financial manager' ||
+              userRole == 'creator' ||
+              userRole == 'user';
+
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
             print('✅ Routing to Admin Dashboard');
@@ -200,7 +208,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           } else {
             // Default to manager dashboard for unknown roles
             dashboardRoute = '/creator_dashboard';
-            print('⚠️ Unknown role "$userRole", defaulting to Creator Dashboard (Manager)');
+            print(
+                '⚠️ Unknown role "$userRole", defaulting to Creator Dashboard (Manager)');
           }
 
           print('🔀 Redirecting user with role "$userRole" to $dashboardRoute');

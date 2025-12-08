@@ -441,9 +441,14 @@ def firebase_auth():
                 except psycopg2.ProgrammingError:
                     # Column doesn't exist, that's okay
                     conn.rollback()
+
+                # Generate backend auth token for this user using legacy token system
+                backend_token = generate_token(username)
+                save_tokens(get_valid_tokens())
                 
                 return {
                     'token': id_token,  # Return Firebase token for frontend
+                    'backend_token': backend_token,
                     'user': {
                         'id': user[0],
                         'username': user[1],
@@ -506,9 +511,14 @@ def firebase_auth():
                     pass
                 
                 conn.commit()
+
+                # Generate backend auth token for this new user using legacy token system
+                backend_token = generate_token(user[1])
+                save_tokens(get_valid_tokens())
                 
                 return {
                     'token': id_token,  # Return Firebase token for frontend
+                    'backend_token': backend_token,
                     'user': {
                         'id': user[0],
                         'username': user[1],

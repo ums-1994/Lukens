@@ -145,13 +145,14 @@ class _RegisterPageState extends State<RegisterPage>
       final password = _passwordController.text;
       final firstName = _firstNameController.text.trim();
       final lastName = _lastNameController.text.trim();
-      final role = _selectedRole.toLowerCase(); // Convert to lowercase for backend
+      final role =
+          _selectedRole.toLowerCase(); // Convert to lowercase for backend
 
       // Step 1: Create user in Firebase
       print('🔥 Creating user in Firebase...');
       UserCredential? firebaseCredential;
       String? firebaseError;
-      
+
       try {
         firebaseCredential = await FirebaseService.signUpWithEmailAndPassword(
           email: email,
@@ -168,23 +169,28 @@ class _RegisterPageState extends State<RegisterPage>
       if (firebaseCredential == null || firebaseCredential.user == null) {
         if (mounted) {
           setState(() => _isLoading = false);
-          String errorMessage = 'Firebase registration failed. Please try again.';
-          
+          String errorMessage =
+              'Firebase registration failed. Please try again.';
+
           // Provide more specific error messages
           if (firebaseError != null) {
             if (firebaseError.contains('email-already-in-use')) {
-              errorMessage = 'An account with this email already exists. Please login instead.';
+              errorMessage =
+                  'An account with this email already exists. Please login instead.';
             } else if (firebaseError.contains('weak-password')) {
-              errorMessage = 'Password is too weak. Please choose a stronger password.';
+              errorMessage =
+                  'Password is too weak. Please choose a stronger password.';
             } else if (firebaseError.contains('invalid-email')) {
               errorMessage = 'Invalid email address. Please check your email.';
             } else if (firebaseError.contains('network')) {
-              errorMessage = 'Network error. Please check your internet connection.';
+              errorMessage =
+                  'Network error. Please check your internet connection.';
             } else {
-              errorMessage = 'Registration failed: ${firebaseError.length > 100 ? firebaseError.substring(0, 100) + "..." : firebaseError}';
+              errorMessage =
+                  'Registration failed: ${firebaseError.length > 100 ? firebaseError.substring(0, 100) + "..." : firebaseError}';
             }
           }
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(errorMessage),
@@ -199,7 +205,7 @@ class _RegisterPageState extends State<RegisterPage>
       // Step 2: Get Firebase ID token
       print('🔥 Getting Firebase ID token...');
       final firebaseIdToken = await firebaseCredential.user!.getIdToken();
-      
+
       if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -213,7 +219,8 @@ class _RegisterPageState extends State<RegisterPage>
         return;
       }
 
-      print('✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
+      print(
+          '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Syncing user to backend database...');
@@ -242,6 +249,8 @@ class _RegisterPageState extends State<RegisterPage>
 
       final result = json.decode(response.body);
       final userProfile = result['user'] as Map<String, dynamic>?;
+      final backendToken =
+          result['backend_token'] as String? ?? firebaseIdToken;
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -250,16 +259,17 @@ class _RegisterPageState extends State<RegisterPage>
           // Update role in backend if needed
           if (userProfile['role'] != role) {
             // Role might need to be updated in backend
-            print('⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
+            print(
+                '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
           }
 
           // Auto-login after successful registration
           final appState = context.read<AppState>();
-          appState.authToken = firebaseIdToken;
+          appState.authToken = backendToken;
           appState.currentUser = userProfile;
 
           // Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, firebaseIdToken);
+          AuthService.setUserData(userProfile, backendToken);
 
           // Initialize role service
           final roleService = context.read<RoleService>();
@@ -268,12 +278,13 @@ class _RegisterPageState extends State<RegisterPage>
           await appState.init();
 
           // Redirect based on user role
-          final userRole = (userProfile['role']?.toString() ?? '').toLowerCase().trim();
+          final userRole =
+              (userProfile['role']?.toString() ?? '').toLowerCase().trim();
           String dashboardRoute;
-          
+
           print('🔍 User role from backend: "$userRole"');
           print('🔍 Requested role: "$role"');
-          
+
           // Check both the backend role and the requested role
           if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
             dashboardRoute = '/approver_dashboard';
@@ -298,7 +309,8 @@ class _RegisterPageState extends State<RegisterPage>
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Registration successful, but failed to get user profile. Please login.'),
+              content: Text(
+                  'Registration successful, but failed to get user profile. Please login.'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -315,16 +327,18 @@ class _RegisterPageState extends State<RegisterPage>
         setState(() => _isLoading = false);
         print('❌ Registration error: $e');
         String errorMessage = 'Registration failed. Please try again.';
-        
+
         // Parse Firebase errors
         if (e.toString().contains('email-already-in-use')) {
-          errorMessage = 'An account with this email already exists. Please login instead.';
+          errorMessage =
+              'An account with this email already exists. Please login instead.';
         } else if (e.toString().contains('weak-password')) {
-          errorMessage = 'Password is too weak. Please choose a stronger password.';
+          errorMessage =
+              'Password is too weak. Please choose a stronger password.';
         } else if (e.toString().contains('invalid-email')) {
           errorMessage = 'Invalid email address.';
         }
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
