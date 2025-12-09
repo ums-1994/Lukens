@@ -327,7 +327,7 @@ def create_proposal(username=None, user_id=None, email=None):
             if username:
                 lookup_strategies.append(('username', username))
             
-            max_retries = 10
+            max_retries = 30  # Increased from 10 to 30 for Render's eventual consistency
             retry_delay = 0.2  # Start with 200ms
             
             for attempt in range(max_retries):
@@ -354,7 +354,8 @@ def create_proposal(username=None, user_id=None, email=None):
                 if attempt < max_retries - 1:
                     print(f"⚠️ User not found yet, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
                     time.sleep(retry_delay)
-                    retry_delay *= 1.5  # Exponential backoff: 0.1s, 0.15s, 0.225s, 0.337s, 0.506s
+                    # Exponential backoff with cap at 1 second
+                    retry_delay = min(retry_delay * 1.3, 1.0)
             
             if not found_user_id:
                 print(f"❌ User lookup failed after {max_retries} attempts for username: {username}, email: {email}, user_id: {user_id}")

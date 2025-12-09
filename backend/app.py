@@ -1502,6 +1502,27 @@ def health_check():
     
     return pool_info, 200
 
+# Route listing endpoint for debugging (no auth required)
+@app.get("/routes")
+def list_routes():
+    """List all registered routes for debugging"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "path": rule.rule
+        })
+    
+    # Filter for proposals-related routes
+    proposals_routes = [r for r in routes if "proposal" in r["path"].lower()]
+    
+    return {
+        "total_routes": len(routes),
+        "proposals_routes": proposals_routes,
+        "all_routes": routes
+    }, 200
+
 # Initialize database on app startup
 @app.get("/api/init")
 def initialize_database():

@@ -210,10 +210,15 @@ def token_required(f):
                                         cursor.fetchone()
                                         print(f"[FIREBASE] Connection synced with PostgreSQL backend after commit")
                                         
-                                        # Add a small delay to allow commit to propagate to other connections
+                                        # CRITICAL FIX: Increased delay for Render's eventual consistency
+                                        # Render Postgres can take longer to propagate commits
                                         import time
-                                        time.sleep(0.15)  # 150ms delay for commit propagation
-                                        print(f"[FIREBASE] Waited 150ms for commit propagation")
+                                        time.sleep(0.3)  # Increased from 150ms to 300ms for Render
+                                        print(f"[FIREBASE] Waited 300ms for commit propagation (Render eventual consistency)")
+                                        
+                                        # Force a flush by executing a simple query that requires database round-trip
+                                        cursor.execute('SELECT 1')
+                                        cursor.fetchone()
                                         
                                         # Final verification: check if user is actually in the database
                                         # Note: Even if this fails, we trust the RETURNING clause
@@ -271,9 +276,10 @@ def token_required(f):
                             
                             # Store user_id in kwargs so functions can use it without looking it up again
                             # Always pass email as well since it's unique and reliable for fallback lookups
-                            # IMPORTANT: Add a small delay to ensure transaction is visible to other connections
+                            # IMPORTANT: Add a delay to ensure transaction is visible to other connections
+                            # Increased delay for Render's eventual consistency
                             import time
-                            time.sleep(0.1)  # Small delay to ensure commit is visible
+                            time.sleep(0.25)  # Increased from 100ms to 250ms for Render
                             
                             import inspect
                             sig = inspect.signature(f)

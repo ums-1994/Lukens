@@ -648,20 +648,23 @@ class _ProposalsPageState extends State<ProposalsPage>
           flex: 2,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              ElevatedButton.icon(
-                onPressed: _showCreateNewDialog,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('New Proposal'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: PremiumTheme.purple,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              Flexible(
+                child: ElevatedButton.icon(
+                  onPressed: _showCreateNewDialog,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('New Proposal'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.purple,
+                    foregroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
                   ),
-                  elevation: 0,
                 ),
               ),
             ],
