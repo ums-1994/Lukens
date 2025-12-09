@@ -30,7 +30,6 @@ def get_docusign_jwt_token():
         integration_key = os.getenv('DOCUSIGN_INTEGRATION_KEY')
         user_id = os.getenv('DOCUSIGN_USER_ID')
         auth_server = os.getenv('DOCUSIGN_AUTH_SERVER', 'account-d.docusign.com')
-        private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
         
         # Validate required credentials
         if not integration_key:
@@ -38,16 +37,32 @@ def get_docusign_jwt_token():
         if not user_id:
             raise Exception("DOCUSIGN_USER_ID not set in environment variables")
         
-        # Check if private key file exists
-        if not os.path.exists(private_key_path):
-            raise Exception(f"DocuSign private key file not found: {private_key_path}. Please set DOCUSIGN_PRIVATE_KEY_PATH environment variable.")
+        # Try to get private key from environment variable first (for Render/cloud deployments)
+        private_key = os.getenv('DOCUSIGN_PRIVATE_KEY')
         
-        # Read private key
-        try:
-            with open(private_key_path, 'r') as key_file:
-                private_key = key_file.read()
-        except Exception as e:
-            raise Exception(f"Failed to read private key file: {e}")
+        # If not in env var, try to read from file
+        if not private_key:
+            private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
+            
+            # Check if private key file exists
+            if not os.path.exists(private_key_path):
+                raise Exception(
+                    f"DocuSign private key not found. Either:\n"
+                    f"1. Set DOCUSIGN_PRIVATE_KEY environment variable with the key content, OR\n"
+                    f"2. Set DOCUSIGN_PRIVATE_KEY_PATH to a file path (current: {private_key_path})"
+                )
+            
+            # Read private key from file
+            try:
+                with open(private_key_path, 'r') as key_file:
+                    private_key = key_file.read()
+            except Exception as e:
+                raise Exception(f"Failed to read private key file: {e}")
+        
+        # Handle newlines in environment variable (Render may escape them)
+        if private_key:
+            # Replace literal \n with actual newlines
+            private_key = private_key.replace('\\n', '\n')
         
         # Validate private key format
         if not private_key.strip().startswith('-----BEGIN'):

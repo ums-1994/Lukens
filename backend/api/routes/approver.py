@@ -124,12 +124,17 @@ def approve_proposal(username=None, proposal_id=None):
                 
                 # Send email to client
                 email_sent = False
-                if client_email and client_email.strip():
+                # Note: client_email might be empty since the column doesn't exist in schema
+                # We'll still create the envelope if we have a client name
+                if client_name and client_name != 'Unknown':
                     try:
                         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
                         # Generate client access token (you may need to create this in collaboration_invitations)
                         import secrets
                         access_token = secrets.token_urlsafe(32)
+                        
+                        # Use client_name as email if client_email is empty (for DocuSign)
+                        effective_client_email = client_email if client_email and client_email.strip() else f"{client_name.lower().replace(' ', '.')}@example.com"
                         
                         # Store token in collaboration_invitations for client access
                         cursor.execute("""
@@ -137,10 +142,13 @@ def approve_proposal(username=None, proposal_id=None):
                             (proposal_id, invited_email, invited_by, permission_level, access_token, status)
                             VALUES (%s, %s, %s, %s, %s, 'pending')
                             ON CONFLICT DO NOTHING
-                        """, (proposal_id, client_email, approver_user_id, 'view', access_token))
+                        """, (proposal_id, effective_client_email, approver_user_id, 'view', access_token))
                         conn.commit()
 
                         # Create DocuSign envelope so client link already has a signing URL
+                        print(f"🔐 Attempting to create DocuSign envelope for proposal {proposal_id}...")
+                        print(f"   Client: {client_name}")
+                        print(f"   Email: {effective_client_email}")
                         try:
                             # Generate PDF for DocuSign
                             pdf_content = generate_proposal_pdf(
@@ -157,14 +165,18 @@ def approve_proposal(username=None, proposal_id=None):
                             envelope_result = create_docusign_envelope(
                                 proposal_id=proposal_id,
                                 pdf_bytes=pdf_content,
-                                signer_name=client_name or client_email,
-                                signer_email=client_email,
+                                signer_name=client_name or effective_client_email,
+                                signer_email=effective_client_email,
                                 signer_title='',
                                 return_url=return_url,
                             )
 
                             signing_url = envelope_result['signing_url']
                             envelope_id = envelope_result['envelope_id']
+                            
+                            print(f"✅ DocuSign envelope created successfully!")
+                            print(f"   Envelope ID: {envelope_id}")
+                            print(f"   Signing URL: {signing_url[:50]}...")
 
                             # Store or update signature record
                             cursor.execute(
@@ -190,8 +202,8 @@ def approve_proposal(username=None, proposal_id=None):
                                     """,
                                     (
                                         envelope_id,
-                                        client_name or client_email,
-                                        client_email,
+                                        client_name or effective_client_email,
+                                        effective_client_email,
                                         '',
                                         signing_url,
                                         'sent',
@@ -209,8 +221,8 @@ def approve_proposal(username=None, proposal_id=None):
                                     (
                                         proposal_id,
                                         envelope_id,
-                                        client_name or client_email,
-                                        client_email,
+                                        client_name or effective_client_email,
+                                        effective_client_email,
                                         '',
                                         signing_url,
                                         'sent',
@@ -229,10 +241,13 @@ def approve_proposal(username=None, proposal_id=None):
                             )
 
                             conn.commit()
-                            print(f"✅ Created DocuSign envelope for proposal {proposal_id} (client: {client_email})")
+                            print(f"✅ Created DocuSign envelope for proposal {proposal_id} (client: {effective_client_email})")
                         except Exception as docusign_error:
-                            print(f"❌ DocuSign error during approver approval: {docusign_error}")
+                            error_msg = str(docusign_error)
+                            print(f"❌ DocuSign error during approver approval: {error_msg}")
                             traceback.print_exc()
+                            # Don't fail the approval if DocuSign fails - still send email
+                            print(f"⚠️  Continuing with approval despite DocuSign error")
 
                         client_link = f"{frontend_url}/client/proposals?token={access_token}"
 
@@ -252,7 +267,7 @@ def approve_proposal(username=None, proposal_id=None):
                         <p>Best regards,<br>{approver_name}</p>
                         """
                         
-                        email_sent = send_email(client_email, email_subject, email_body)
+                        email_sent = send_email(effective_client_email, email_subject, email_body)
                         if email_sent:
                             print(f"[EMAIL] Proposal email sent to {client_email}")
                         else:
