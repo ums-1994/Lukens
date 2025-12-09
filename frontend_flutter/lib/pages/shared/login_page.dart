@@ -160,8 +160,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       final result = json.decode(response.body);
       final userProfile = result['user'] as Map<String, dynamic>?;
-      final backendToken =
-          result['backend_token'] as String? ?? firebaseIdToken;
+      final String authToken = firebaseIdToken;
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -170,11 +169,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           final appState = context.read<AppState>();
 
           // Use Firebase ID token (not legacy token)
-          appState.authToken = backendToken;
+          appState.authToken = authToken;
           appState.currentUser = userProfile;
 
           // IMPORTANT: Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, backendToken);
+          AuthService.setUserData(userProfile, authToken);
 
           // Initialize role service with user's role
           final roleService = context.read<RoleService>();

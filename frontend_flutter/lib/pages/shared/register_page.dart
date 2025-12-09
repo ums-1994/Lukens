@@ -249,8 +249,7 @@ class _RegisterPageState extends State<RegisterPage>
 
       final result = json.decode(response.body);
       final userProfile = result['user'] as Map<String, dynamic>?;
-      final backendToken =
-          result['backend_token'] as String? ?? firebaseIdToken;
+      final String authToken = firebaseIdToken;
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -265,11 +264,11 @@ class _RegisterPageState extends State<RegisterPage>
 
           // Auto-login after successful registration
           final appState = context.read<AppState>();
-          appState.authToken = backendToken;
+          appState.authToken = authToken;
           appState.currentUser = userProfile;
 
           // Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, backendToken);
+          AuthService.setUserData(userProfile, authToken);
 
           // Initialize role service
           final roleService = context.read<RoleService>();
