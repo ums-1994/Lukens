@@ -465,10 +465,9 @@ def update_proposal(username=None, proposal_id=None):
                 params.append(data['status'])
             if 'client_name' in data or 'client' in data:
                 client_name = data.get('client_name') or data.get('client')
-                updates.append('client_name = %s')
+                updates.append('client = %s')
                 params.append(client_name)
-            if 'client_email' in data:
-                updates.append('client_email = %s')
+            # Note: client_email is not in the schema, so we skip it
                 params.append(data['client_email'])
             if 'budget' in data:
                 updates.append('budget = %s')
@@ -485,7 +484,7 @@ def update_proposal(username=None, proposal_id=None):
             
             cursor.execute(
                 f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s
-                   RETURNING id, user_id, title, content, status, client_name, client_email, budget, timeline_days, created_at, updated_at''',
+                   RETURNING id, owner_id as user_id, title, content, status, client, '' as client_email, NULL as budget, NULL as timeline_days, created_at, updated_at''',
                 params
             )
             result = cursor.fetchone()
@@ -562,8 +561,8 @@ def get_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, owner_id, title, content, status, client_name, client_email, 
-                          budget, timeline_days, created_at, updated_at
+                '''SELECT id, owner_id, title, content, status, client, '' as client_email, 
+                          NULL as budget, NULL as timeline_days, created_at, updated_at
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -699,7 +698,7 @@ def send_to_client(username=None, proposal_id=None):
             
             cursor.execute(
                 """
-                SELECT id, title, client_name, client_email, user_id
+                SELECT id, title, client as client_name, '' as client_email, owner_id as user_id
                 FROM proposals
                 WHERE id = %s
                 """,
@@ -1284,7 +1283,7 @@ def get_proposal_analytics(username=None, proposal_id=None):
             
             # Verify proposal exists and user has access
             cursor.execute("""
-                SELECT id, title, status, client_name, client_email
+                SELECT id, title, status, client, '' as client_email
                 FROM proposals 
                 WHERE id = %s OR id::text = %s
             """, (proposal_id, str(proposal_id)))
@@ -1862,8 +1861,8 @@ def get_archived_proposals(username=None):
             if is_admin:
                 # Admin can see all archived proposals
                 cursor.execute("""
-                    SELECT id, owner_id, title, content, status, client_name, client_email, 
-                           budget, timeline_days, created_at, updated_at
+                    SELECT id, owner_id, title, content, status, client, '' as client_email, 
+                           NULL as budget, NULL as timeline_days, created_at, updated_at
                     FROM proposals
                     WHERE status = 'Archived'
                     ORDER BY updated_at DESC
@@ -1878,8 +1877,8 @@ def get_archived_proposals(username=None):
                 
                 # Regular users see only their archived proposals
                 cursor.execute("""
-                    SELECT id, owner_id, title, content, status, client_name, client_email, 
-                           budget, timeline_days, created_at, updated_at
+                    SELECT id, owner_id, title, content, status, client, '' as client_email, 
+                           NULL as budget, NULL as timeline_days, created_at, updated_at
                     FROM proposals
                     WHERE owner_id = %s AND status = 'Archived'
                     ORDER BY updated_at DESC
