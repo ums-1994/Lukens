@@ -65,11 +65,12 @@ class _ContentLibrarySelectionDialogState
 
       print('✅ Loading content with token (length: ${token.length})');
       final modules = await _svc.getContentModules(token: token);
+      final nonFolderCount = modules.where((m) => m['is_folder'] != true).length;
       setState(() {
         _modules = modules;
         _loading = false;
       });
-      print('✅ Loaded ${modules.length} content modules');
+      print('✅ Loaded ${modules.length} content modules (${nonFolderCount} non-folder items available for insertion)');
     } catch (e) {
       print('❌ Error loading content modules: $e');
       setState(() {
@@ -81,12 +82,26 @@ class _ContentLibrarySelectionDialogState
 
   @override
   Widget build(BuildContext context) {
+    // Filter: exclude folders (only show actual content blocks for insertion)
+    // and apply search filter
     final filtered = _modules
-        .where((m) =>
-            _search.isEmpty ||
-            (m['label'] as String? ?? '')
-                .toLowerCase()
-                .contains(_search.toLowerCase()))
+        .where((m) {
+          // Skip folders - only show content blocks that can be inserted
+          if (m['is_folder'] == true) {
+            return false;
+          }
+          // Apply search filter
+          if (_search.isNotEmpty) {
+            final label = (m['label'] as String? ?? '').toLowerCase();
+            final content = (m['content'] as String? ?? '').toLowerCase();
+            final category = (m['category'] as String? ?? '').toLowerCase();
+            final searchLower = _search.toLowerCase();
+            return label.contains(searchLower) || 
+                   content.contains(searchLower) || 
+                   category.contains(searchLower);
+          }
+          return true;
+        })
         .toList();
 
     return Dialog(

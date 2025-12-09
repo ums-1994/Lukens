@@ -23,10 +23,22 @@ bp = Blueprint('creator', __name__, url_prefix='')
 def get_content(username=None):
     """Get all content items"""
     try:
+        category = request.args.get('category', None)
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''SELECT id, key, label, content, category, is_folder, parent_id, public_id
-                           FROM content WHERE is_deleted = false ORDER BY created_at DESC''')
+            
+            # Build query with optional category filter
+            query = '''SELECT id, key, label, content, category, is_folder, parent_id, public_id
+                       FROM content WHERE is_deleted = false'''
+            params = []
+            
+            if category:
+                query += ' AND category = %s'
+                params.append(category)
+            
+            query += ' ORDER BY created_at DESC'
+            
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             content = []
             for row in rows:
@@ -40,8 +52,13 @@ def get_content(username=None):
                     'parent_id': row[6],
                     'public_id': row[7]
                 })
+            
+            print(f"📚 Content library: Found {len(content)} items" + (f" (category: {category})" if category else ""))
             return {'content': content}, 200
     except Exception as e:
+        print(f"❌ Error fetching content: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.post("/content")

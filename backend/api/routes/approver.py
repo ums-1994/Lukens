@@ -35,7 +35,7 @@ def get_pending_approvals(username=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(
-                '''SELECT id, title, content, client_name, client_email, user_id, status, created_at, updated_at, budget
+                '''SELECT id, title, content, client, '' as client_email, owner_id as user_id, status, created_at, updated_at, NULL as budget
                    FROM proposals 
                    WHERE status = 'Pending CEO Approval' 
                       OR status = 'In Review' 
@@ -49,17 +49,20 @@ def get_pending_approvals(username=None):
                     'id': row['id'],
                     'title': row['title'],
                     'content': row.get('content'),  # Include content field
-                    'client': row['client_name'] or row.get('client') or 'Unknown',
-                    'client_name': row['client_name'],
-                    'client_email': row['client_email'],
-                    'owner_id': row['user_id'],
+                    'client': row.get('client') or 'Unknown',
+                    'client_name': row.get('client') or 'Unknown',  # Map client to client_name for compatibility
+                    'client_email': row.get('client_email') or '',  # Empty string since column doesn't exist
+                    'owner_id': row.get('user_id'),
                     'status': row['status'],
-                    'budget': float(row['budget']) if row['budget'] else None,
+                    'budget': None,  # Budget column doesn't exist in Render schema
                     'created_at': row['created_at'].isoformat() if row['created_at'] else None,
                     'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
                 })
             return {'proposals': proposals}, 200
     except Exception as e:
+        print(f"❌ Error fetching pending approvals: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.post("/api/proposals/<int:proposal_id>/approve")
@@ -76,7 +79,7 @@ def approve_proposal(username=None, proposal_id=None):
             
             # Get proposal details
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, user_id, content 
+                '''SELECT id, title, client, '' as client_email, owner_id as user_id, content 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -86,8 +89,8 @@ def approve_proposal(username=None, proposal_id=None):
                 return {'detail': 'Proposal not found'}, 404
             
             title = proposal.get('title')
-            client_name = proposal.get('client_name')
-            client_email = proposal.get('client_email')
+            client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
+            client_email = proposal.get('client_email') or ''
             creator = proposal.get('user_id')
             proposal_content = proposal.get('content')
             display_title = title or f"Proposal {proposal_id}"
