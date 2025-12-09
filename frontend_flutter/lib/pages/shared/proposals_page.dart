@@ -17,7 +17,7 @@ class ProposalsPage extends StatefulWidget {
 
 class _ProposalsPageState extends State<ProposalsPage>
     with TickerProviderStateMixin {
-  static const Color _navSurface = Color(0xFF1A1F2B);
+  static const Color _navSurface = Color(0xFF1A2F3B);
   static const Color _navBorder = Color(0xFF1F2A3D);
   String _filterStatus = 'All Statuses';
   final TextEditingController _searchController = TextEditingController();
