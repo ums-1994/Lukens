@@ -541,11 +541,14 @@ def send_for_signature(username=None, proposal_id=None):
                 {'envelope_id': envelope_result['envelope_id'], 'signer_email': signer_email}
             )
             
+            # Update proposal status and client_email if it's empty or matches the signer
             cursor.execute("""
                 UPDATE proposals 
-                SET status = 'Sent for Signature', updated_at = NOW()
+                SET status = 'Sent for Signature', 
+                    client_email = COALESCE(NULLIF(client_email, ''), %s),
+                    updated_at = NOW()
                 WHERE id = %s
-            """, (proposal_id,))
+            """, (signer_email, proposal_id,))
             conn.commit()
             
             return {

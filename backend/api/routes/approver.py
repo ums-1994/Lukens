@@ -230,14 +230,16 @@ def approve_proposal(username=None, proposal_id=None):
                                     ),
                                 )
 
-                            # Update proposal status to reflect that it has been sent for signature
+                            # Update proposal status and client_email to reflect that it has been sent for signature
                             cursor.execute(
                                 """
                                 UPDATE proposals 
-                                SET status = 'Sent for Signature', updated_at = NOW()
+                                SET status = 'Sent for Signature', 
+                                    client_email = %s,
+                                    updated_at = NOW()
                                 WHERE id = %s
                                 """,
-                                (proposal_id,),
+                                (effective_client_email, proposal_id,),
                             )
 
                             conn.commit()
