@@ -71,6 +71,12 @@ allowed_origins_list = [
     'https://sowbuilder.netlify.app',
 ]
 
+# Add environment variable origins if specified
+cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS', '')
+if cors_origins_env:
+    env_origins = [origin.strip() for origin in cors_origins_env.split(',')]
+    allowed_origins_list.extend(env_origins)
+
 CORS(app, 
      supports_credentials=True,
      origins=allowed_origins_list,
