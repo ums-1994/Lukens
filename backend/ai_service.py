@@ -1,0 +1,530 @@
+"""
+AI Service for Proposal & SOW Builder
+Integrates with OpenRouter API for AI-powered features:
+- Content generation and improvement
+- Risk analysis and compliance checks
+- Governance validation
+"""
+
+import os
+import json
+import requests
+from typing import Dict, List, Optional, Any
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "ZAR")  # Default to South African Rands
+DEFAULT_CURRENCY_SYMBOL = os.getenv("DEFAULT_CURRENCY_SYMBOL", "R")  # Default to R
+
+
+class AIService:
+    """Service for AI-powered proposal analysis and generation"""
+    
+    def __init__(self):
+        self.api_key = OPENROUTER_API_KEY
+        self.base_url = OPENROUTER_BASE_URL
+        self.model = OPENROUTER_MODEL
+        self.currency = DEFAULT_CURRENCY  # Default: South African Rands
+        self.currency_symbol = DEFAULT_CURRENCY_SYMBOL  # Default: R
+        
+        # Debug: Print key info (first/last few chars only for security)
+        if self.api_key:
+            print(f"[OK] OpenRouter API Key loaded: {self.api_key[:10]}...{self.api_key[-4:]}")
+            print(f"[OK] Using model: {self.model}")
+            print(f"[OK] Currency set to: {self.currency} ({self.currency_symbol})")
+        else:
+            print("[WARN] OPENROUTER_API_KEY not found in environment variables - AI features will be disabled")
+    
+    def is_configured(self) -> bool:
+        """Check if OpenRouter API is properly configured"""
+        return bool(self.api_key)
+    
+    def _make_request(self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 2000) -> str:
+        """Make a request to OpenRouter API"""
+        if not self.api_key:
+            raise Exception("OpenRouter API key not configured. Please set OPENROUTER_API_KEY in your .env file")
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000",  # Required by OpenRouter
+            "X-Title": "Proposal & SOW Builder"
+        }
+        
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if "choices" not in result or len(result["choices"]) == 0:
+                raise Exception("OpenRouter API returned no choices in response")
+            if "message" not in result["choices"][0] or "content" not in result["choices"][0]["message"]:
+                raise Exception("OpenRouter API response missing message content")
+            return result["choices"][0]["message"]["content"]
+        
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"OpenRouter API request failed: {str(e)}")
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            raise Exception(f"OpenRouter API response parsing failed: {str(e)}")
+    
+    def test_connection(self) -> Dict[str, Any]:
+        """Test OpenRouter API connection"""
+        if not self.api_key:
+            return {
+                "configured": False,
+                "status": "error",
+                "message": "OPENROUTER_API_KEY not set in environment variables"
+            }
+        
+        try:
+            # Make a simple test request
+            test_messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Say 'OK' if you can read this."}
+            ]
+            response = self._make_request(test_messages, temperature=0.1, max_tokens=10)
+            
+            return {
+                "configured": True,
+                "status": "connected",
+                "model": self.model,
+                "base_url": self.base_url,
+                "currency": self.currency,
+                "currency_symbol": self.currency_symbol,
+                "message": "OpenRouter API is working correctly"
+            }
+        except Exception as e:
+            return {
+                "configured": True,
+                "status": "error",
+                "model": self.model,
+                "base_url": self.base_url,
+                "message": f"Connection test failed: {str(e)}"
+            }
+    
+    def analyze_proposal_risks(self, proposal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze proposal for compound risks (Wildcard Challenge)
+        Detects missing sections, incomplete content, and compliance issues
+        """
+        proposal_payload = proposal_data.get("proposal") if isinstance(proposal_data, dict) and "proposal" in proposal_data else proposal_data
+        precheck_summary = None
+        if isinstance(proposal_data, dict):
+            precheck_summary = proposal_data.get("precheck") or proposal_data.get("precheck_summary")
+
+        prompt = f"""You are an expert proposal reviewer for Khonology. Analyze this proposal for risks and compliance issues.
+
+Proposal Data:
+{json.dumps(proposal_payload, indent=2)}
+
+Deterministic Precheck Summary:
+{json.dumps(precheck_summary, indent=2) if precheck_summary else "None provided"}
+
+Analyze for:
+1. Missing or incomplete mandatory sections (Executive Summary, Scope & Deliverables, Delivery Approach, Assumptions, Risks, References, Team Bios)
+2. Incomplete client details or engagement metadata
+3. Vague or unclear deliverables
+4. Missing risk assessments or assumptions
+5. Incomplete team bios or references
+6. Compliance issues with branding/standards
+7. Any altered clauses that need review
+
+Provide a JSON response with:
+{{
+  "overall_risk_level": "low|medium|high|critical",
+  "can_release": true/false,
+  "risk_score": 0-100,
+  "issues": [
+    {{
+      "category": "missing_section|incomplete_content|compliance|clarity",
+      "severity": "low|medium|high|critical",
+      "section": "section name",
+      "description": "detailed issue description",
+      "recommendation": "how to fix"
+    }}
+  ],
+  "summary": "brief summary of all issues",
+  "required_actions": ["action 1", "action 2"]
+}}
+
+Be thorough and flag even small deviations that could compound into larger risks."""
+
+        messages = [
+            {"role": "system", "content": "You are an expert proposal risk analyzer. Always respond with valid JSON."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        try:
+            response = self._make_request(messages, temperature=0.3)
+        except Exception as e:
+            # If API request fails, return a structured error response
+            print(f"[WARN] AI risk analysis request failed: {e}")
+            return {
+                "overall_risk_level": "medium",
+                "can_release": False,
+                "risk_score": 50,
+                "issues": [{
+                    "category": "analysis_error",
+                    "severity": "medium",
+                    "section": "AI Analysis",
+                    "description": f"AI service unavailable: {str(e)}",
+                    "recommendation": "Retry analysis or proceed with manual review"
+                }],
+                "summary": "AI analysis service encountered an error",
+                "required_actions": ["Retry AI analysis or proceed with manual review"]
+            }
+        
+        # Parse JSON response
+        try:
+            # Extract JSON from response (in case there's extra text)
+            if not response or not isinstance(response, str):
+                raise ValueError("Empty or invalid response from AI service")
+            
+            start_idx = response.find('{')
+            end_idx = response.rfind('}') + 1
+            
+            if start_idx == -1 or end_idx == 0:
+                raise ValueError("No JSON object found in AI response")
+            
+            json_str = response[start_idx:end_idx]
+            parsed = json.loads(json_str)
+            
+            # Validate required fields
+            if not isinstance(parsed, dict):
+                raise ValueError("AI response is not a JSON object")
+            
+            # Ensure required fields exist with defaults
+            return {
+                "overall_risk_level": parsed.get("overall_risk_level", "medium"),
+                "can_release": parsed.get("can_release", False),
+                "risk_score": parsed.get("risk_score", 50),
+                "issues": parsed.get("issues", []),
+                "summary": parsed.get("summary", "Analysis completed"),
+                "required_actions": parsed.get("required_actions", [])
+            }
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            # Fallback if JSON parsing fails
+            print(f"[WARN] Failed to parse AI risk analysis response: {e}")
+            print(f"[DEBUG] Raw response: {response[:500] if response else 'None'}")
+            return {
+                "overall_risk_level": "medium",
+                "can_release": False,
+                "risk_score": 50,
+                "issues": [{
+                    "category": "analysis_error",
+                    "severity": "medium",
+                    "section": "AI Analysis",
+                    "description": f"Could not parse AI response: {str(e)}",
+                    "recommendation": "Manual review required"
+                }],
+                "summary": "AI analysis completed but response format was unexpected",
+                "required_actions": ["Manual review recommended"]
+            }
+    
+    def generate_proposal_section(self, section_type: str, context: Dict[str, Any]) -> str:
+        """
+        Generate content for a specific proposal section
+        """
+        section_prompts = {
+            "executive_summary": "Write a compelling executive summary that highlights the client's needs, our proposed solution, and key benefits.",
+            "scope_deliverables": "Define clear scope and deliverables based on the project details. Be specific and measurable.",
+            "delivery_approach": "Describe our delivery methodology, timeline, and approach to ensure project success.",
+            "assumptions": "List key assumptions that underpin this proposal, including client responsibilities and prerequisites.",
+            "risks": "Identify potential risks and our mitigation strategies.",
+            "company_profile": "Write a professional company profile highlighting our expertise and capabilities.",
+            "introduction": "Write an engaging introduction that sets the context and purpose of the proposal.",
+            "solution_overview": "Describe the proposed solution and how it addresses the client's needs.",
+            "timeline": "Create a detailed timeline with phases and milestones.",
+            "budget": f"Present the budget breakdown in a clear and professional manner. Use South African Rands (ZAR) with the {self.currency_symbol} symbol for all pricing.",
+            "pricing_budget": f"Create a detailed pricing breakdown. Use South African Rands (ZAR) with the {self.currency_symbol} symbol for all amounts. Include line items, subtotals, and total.",
+            "team": "Describe the team members and their relevant expertise.",
+            "conclusion": "Write a strong closing that reinforces value and encourages action."
+        }
+        
+        section_prompt = section_prompts.get(section_type, "Generate professional content for this section.")
+        
+        prompt = f"""You are writing a proposal section for Khonology, a South African company.
+
+Section Type: {section_type}
+Task: {section_prompt}
+
+Context:
+{json.dumps(context, indent=2)}
+
+IMPORTANT: All monetary amounts must be in South African Rands (ZAR) using the {self.currency_symbol} symbol (e.g., {self.currency_symbol}50,000).
+Do NOT use dollars ($), euros (€), or any other currency.
+
+Write professional, clear, and compelling content. Use proper formatting with paragraphs and bullet points where appropriate.
+Keep it concise but comprehensive (200-400 words)."""
+
+        messages = [
+            {"role": "system", "content": "You are an expert proposal writer for a professional services firm."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        return self._make_request(messages, temperature=0.7, max_tokens=1000)
+    
+    def generate_full_proposal(self, context: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Generate a complete multi-section proposal
+        """
+        prompt = f"""You are writing a complete business proposal for Khonology, a South African company.
+
+Context:
+{json.dumps(context, indent=2)}
+
+Generate a comprehensive proposal with the following sections:
+
+1. Executive Summary
+2. Introduction & Background
+3. Understanding of Requirements
+4. Proposed Solution
+5. Scope & Deliverables
+6. Delivery Approach & Methodology
+7. Timeline & Milestones
+8. Team & Expertise
+9. Budget & Pricing
+10. Assumptions & Dependencies
+11. Risks & Mitigation
+12. Terms & Conditions
+
+IMPORTANT: All monetary amounts MUST be in South African Rands (ZAR) using the {self.currency_symbol} symbol (e.g., {self.currency_symbol}150,000, {self.currency_symbol}2.5 million).
+Do NOT use dollars ($), euros (€), or any other currency.
+
+For each section, write professional, detailed content (150-300 words per section).
+Use proper formatting with headings, paragraphs, and bullet points.
+
+Return a JSON object with section titles as keys and content as values:
+{{
+  "Executive Summary": "content here...",
+  "Introduction & Background": "content here...",
+  ...
+}}"""
+
+        messages = [
+            {"role": "system", "content": "You are an expert proposal writer. Always respond with valid JSON containing all sections."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        response = self._make_request(messages, temperature=0.7, max_tokens=4000)
+        
+        try:
+            # Extract JSON from response
+            start_idx = response.find('{')
+            end_idx = response.rfind('}') + 1
+            json_str = response[start_idx:end_idx]
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            return {
+                "Executive Summary": response[:500] if len(response) > 500 else response,
+                "Content": response[500:] if len(response) > 500 else "Please try again."
+            }
+    
+    def improve_content(self, content: str, section_type: str) -> Dict[str, Any]:
+        """
+        Analyze and suggest improvements for existing content
+        """
+        prompt = f"""You are an expert proposal editor for Khonology, a South African company. Review this content and suggest improvements.
+
+Section Type: {section_type}
+Current Content:
+{content}
+
+IMPORTANT: If the content contains pricing/monetary amounts, ensure they are in South African Rands (ZAR) using the {self.currency_symbol} symbol.
+Convert any dollars ($), euros (€), or other currencies to Rands (e.g., ${self.currency_symbol}150,000).
+
+Analyze for:
+1. Clarity and readability
+2. Professional tone
+3. Completeness
+4. Grammar and style
+5. Persuasiveness
+6. Currency usage (must be ZAR/{self.currency_symbol})
+
+Provide a JSON response with:
+{{
+  "quality_score": 0-100,
+  "strengths": ["strength 1", "strength 2"],
+  "improvements": [
+    {{
+      "issue": "what needs improvement",
+      "suggestion": "how to improve it",
+      "priority": "low|medium|high"
+    }}
+  ],
+  "improved_version": "rewritten content with improvements applied",
+  "summary": "brief summary of changes"
+}}"""
+
+        messages = [
+            {"role": "system", "content": "You are an expert proposal editor. Always respond with valid JSON."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        response = self._make_request(messages, temperature=0.5, max_tokens=2000)
+        
+        try:
+            start_idx = response.find('{')
+            end_idx = response.rfind('}') + 1
+            if start_idx == -1 or end_idx == 0:
+                raise json.JSONDecodeError("No JSON found in response", response, 0)
+            
+            json_str = response[start_idx:end_idx]
+            parsed = json.loads(json_str)
+            
+            # Ensure required fields exist
+            if not isinstance(parsed, dict):
+                raise ValueError("Response is not a JSON object")
+            
+            # Ensure improved_version exists, fallback to original content if missing
+            if 'improved_version' not in parsed or not parsed.get('improved_version'):
+                parsed['improved_version'] = content
+            
+            # Ensure other required fields have defaults
+            parsed.setdefault('quality_score', 70)
+            parsed.setdefault('strengths', [])
+            parsed.setdefault('improvements', [])
+            parsed.setdefault('summary', 'Content improved')
+            
+            return parsed
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            print(f"[WARN] Failed to parse AI improvement response: {e}")
+            print(f"[DEBUG] Response preview: {response[:200] if response else 'None'}")
+            # Return safe fallback with original content
+            return {
+                "quality_score": 70,
+                "strengths": ["Content is present"],
+                "improvements": [{
+                    "issue": "AI parsing error",
+                    "suggestion": "Please review content manually",
+                    "priority": "low"
+                }],
+                "improved_version": content,  # Always return original content as fallback
+                "summary": "Could not parse AI response, returning original content"
+            }
+    
+    def check_compliance(self, proposal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Check proposal compliance with Khonology standards
+        """
+        prompt = f"""You are a compliance checker for Khonology proposals. Review this proposal for compliance.
+
+Proposal Data:
+{json.dumps(proposal_data, indent=2)}
+
+Check for:
+1. All mandatory sections present and complete
+2. Professional tone and branding consistency
+3. Proper formatting and structure
+4. Client details properly filled
+5. Legal and compliance requirements
+6. Completeness of team bios and references
+
+Provide a JSON response with:
+{{
+  "compliant": true/false,
+  "compliance_score": 0-100,
+  "passed_checks": ["check 1", "check 2"],
+  "failed_checks": [
+    {{
+      "check": "check name",
+      "severity": "low|medium|high",
+      "description": "what failed",
+      "fix": "how to fix"
+    }}
+  ],
+  "ready_for_approval": true/false,
+  "summary": "overall compliance status"
+}}"""
+
+        messages = [
+            {"role": "system", "content": "You are a compliance checker. Always respond with valid JSON."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        response = self._make_request(messages, temperature=0.3, max_tokens=1500)
+        
+        try:
+            start_idx = response.find('{')
+            end_idx = response.rfind('}') + 1
+            json_str = response[start_idx:end_idx]
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            return {
+                "compliant": False,
+                "compliance_score": 50,
+                "passed_checks": [],
+                "failed_checks": [],
+                "ready_for_approval": False,
+                "summary": "Could not complete compliance check"
+            }
+    
+    def generate_risk_summary(self, proposal_data: Dict[str, Any]) -> str:
+        """
+        Generate a comprehensive risk summary for dashboard display
+        """
+        prompt = f"""Generate a brief executive summary of risks for this proposal.
+
+Proposal Data:
+{json.dumps(proposal_data, indent=2)}
+
+Write a 2-3 sentence summary highlighting the most critical risks or issues that need attention before release.
+If the proposal looks good, provide positive feedback."""
+
+        messages = [
+            {"role": "system", "content": "You are a proposal risk analyst."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        return self._make_request(messages, temperature=0.5, max_tokens=300)
+    
+    def suggest_next_steps(self, proposal_data: Dict[str, Any], current_stage: str) -> List[str]:
+        """
+        Suggest next steps based on proposal state and current stage
+        """
+        prompt = f"""Based on this proposal's current state and stage, suggest 3-5 actionable next steps.
+
+Current Stage: {current_stage}
+Proposal Data:
+{json.dumps(proposal_data, indent=2)}
+
+Provide a JSON array of specific, actionable next steps:
+["step 1", "step 2", "step 3"]"""
+
+        messages = [
+            {"role": "system", "content": "You are a proposal workflow advisor. Always respond with a JSON array."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        response = self._make_request(messages, temperature=0.6, max_tokens=500)
+        
+        try:
+            start_idx = response.find('[')
+            end_idx = response.rfind(']') + 1
+            json_str = response[start_idx:end_idx]
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            return ["Complete all mandatory sections", "Review for accuracy", "Submit for approval"]
+
+
+# Singleton instance
+ai_service = AIService()
