@@ -1176,8 +1176,14 @@ def ai_analyze_risks(username=None):
             # Import AI service
             from ai_service import ai_service
             
+            # Convert datetime objects to strings for JSON serialization
+            proposal_dict = dict(proposal)
+            for key, value in proposal_dict.items():
+                if hasattr(value, 'isoformat'):  # Check if it's a datetime object
+                    proposal_dict[key] = value.isoformat()
+            
             # Analyze risks
-            risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
+            risk_analysis = ai_service.analyze_proposal_risks(proposal_dict)
             
             return risk_analysis, 200
         
