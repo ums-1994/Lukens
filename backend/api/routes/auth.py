@@ -671,7 +671,7 @@ def verify_email():
 
                     if request.method == 'GET':
                         from api.utils.helpers import get_frontend_url
-        frontend_url = get_frontend_url()
+                        frontend_url = get_frontend_url()
                         html = f"""
                         <!DOCTYPE html>
                         <html>
@@ -761,7 +761,7 @@ def verify_email():
             # Return HTML for GET requests (from email link), JSON for POST
             if request.method == 'GET':
                 from api.utils.helpers import get_frontend_url
-        frontend_url = get_frontend_url()
+                frontend_url = get_frontend_url()
                 html_response = f"""
                 <!DOCTYPE html>
                 <html>
