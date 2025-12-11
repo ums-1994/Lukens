@@ -68,7 +68,7 @@ allowed_origins_list = [
     'http://localhost:8080',
     'http://127.0.0.1:8081',
     'http://localhost:3000',
-    'https://sowbuilder.netlify.app',
+    'https://sowbuilders.netlify.app',  # Fixed typo: was sowbuilder, now sowbuilders
 ]
 
 CORS(app, 
@@ -484,14 +484,32 @@ def init_pg_schema():
                 pass
         raise
 
+# Handle CORS preflight for Netlify subdomains (before request to handle OPTIONS)
+@app.before_request
+def handle_cors_before_request():
+    """Handle CORS preflight for Netlify subdomains"""
+    origin = request.headers.get('Origin')
+    
+    # Handle OPTIONS preflight requests for Netlify subdomains
+    if request.method == 'OPTIONS' and origin:
+        if origin.endswith('.netlify.app') or origin in allowed_origins_list:
+            from flask import Response
+            response = Response()
+            response.headers.add('Access-Control-Allow-Origin', origin)
+            response.headers.add('Access-Control-Allow-Credentials', 'true')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
+            response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+            response.headers.add('Access-Control-Max-Age', '3600')
+            return response
+
 # Handle CORS for Netlify subdomains (after Flask-CORS processes the request)
 @app.after_request
 def handle_cors_after_request(response):
-    """Add CORS headers for Netlify subdomains that aren't in the static list"""
+    """Add CORS headers for Netlify subdomains"""
     origin = request.headers.get('Origin')
     
-    if origin and origin.endswith('.netlify.app') and origin not in allowed_origins_list:
-        # Allow this Netlify subdomain
+    if origin and origin.endswith('.netlify.app'):
+        # Always allow Netlify subdomains (ensure headers are set)
         response.headers.add('Access-Control-Allow-Origin', origin)
         response.headers.add('Access-Control-Allow-Credentials', 'true')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
