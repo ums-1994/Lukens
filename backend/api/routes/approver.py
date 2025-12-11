@@ -110,7 +110,7 @@ def approve_proposal(username=None, proposal_id=None):
                 cursor.execute(
                     '''SELECT signer_email FROM proposal_signatures 
                        WHERE proposal_id = %s 
-                       ORDER BY created_at DESC LIMIT 1''',
+                       ORDER BY sent_at DESC LIMIT 1''',
                     (proposal_id,)
                 )
                 sig_row = cursor.fetchone()
