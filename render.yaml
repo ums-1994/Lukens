@@ -6,7 +6,7 @@ services:
     region: oregon
     plan: starter
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: bash -c "if [ -d backend ]; then cd backend && python migrate_db.py && gunicorn -c gunicorn_conf.py -b 0.0.0.0:$PORT app:app; else python migrate_db.py && gunicorn -c gunicorn_conf.py -b 0.0.0.0:$PORT app:app; fi"
+    startCommand: bash -c "if [ -d backend ]; then cd backend && python migrate_db.py && gunicorn -c gunicorn_conf.py app:app; else python migrate_db.py && gunicorn -c gunicorn_conf.py app:app; fi"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
