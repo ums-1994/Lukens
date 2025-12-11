@@ -25,6 +25,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final String? initialTitle;
   final Map<String, dynamic>? aiGeneratedSections;
   final bool readOnly; // For approver view-only mode
+  final bool isCollaborator; // For collaborator mode - hide navigation, show only editor
 
   const BlankDocumentEditorPage({
     super.key,
@@ -33,6 +34,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.initialTitle,
     this.aiGeneratedSections,
     this.readOnly = false, // Default to editable
+    this.isCollaborator = false, // Default to false
   });
 
   @override
@@ -122,6 +124,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _commentController = TextEditingController();
     _commentController.addListener(_handleCommentTextChanged);
     _commentFocusNode.addListener(_handleCommentFocusChange);
+    
+    // Auto-show comments panel for collaborators
+    if (widget.isCollaborator) {
+      _showCommentsPanel = true;
+    }
 
     // Check if AI-generated sections are provided
     if (widget.aiGeneratedSections != null &&
@@ -2878,14 +2885,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       });
     }
 
+    // In collaborator mode, hide navigation sidebar but allow editing
+    final isCollaboratorMode = widget.isCollaborator;
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
-          // Left Sidebar (hide in read-only mode)
-          if (!isReadOnly) _buildLeftSidebar(),
-          // Sections Sidebar (conditional, hide in read-only mode)
-          if (!isReadOnly && _showSectionsSidebar) _buildSectionsSidebar(),
+          // Left Sidebar (hide in read-only mode AND collaborator mode)
+          if (!isReadOnly && !isCollaboratorMode) _buildLeftSidebar(),
+          // Sections Sidebar (conditional, hide in read-only mode AND collaborator mode)
+          if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar) _buildSectionsSidebar(),
           // Main content
           Expanded(
             child: _currentPage == 'Governance & Risk'
@@ -2927,10 +2937,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 ],
                               ),
                             ),
-                            // Right sidebar (hide in read-only mode)
-                            if (!isReadOnly) _buildRightSidebar(),
-                            // Comments panel (right-side, toggleable)
-                            if (_showCommentsPanel) _buildCommentsPanel(),
+                            // Right sidebar (hide in read-only mode AND collaborator mode)
+                            if (!isReadOnly && !isCollaboratorMode) _buildRightSidebar(),
+                            // Comments panel (right-side, toggleable) - always show for collaborators
+                            if (_showCommentsPanel || isCollaboratorMode) _buildCommentsPanel(),
                           ],
                         ),
                       ),

@@ -793,7 +793,7 @@ def send_to_client(username=None, proposal_id=None):
                         <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
                     </p>
                     <p>Or copy and paste this link into your browser:</p>
-                    <p style="word-break: break-all; color: #666;">{client_link}</p>
+                    <p style="word-break: break-all; color: #666;"><a href="{client_link}" style="color: #0066cc; text-decoration: underline;">{client_link}</a></p>
                     <p>If you have any questions, please don't hesitate to reach out.</p>
                     <p>Best regards,<br>{sender_name}</p>
                     """
@@ -1690,9 +1690,9 @@ def invite_collaborator(username=None, proposal_id=None):
                 <h2>You've been invited to collaborate</h2>
                 <p>You've been invited to collaborate on the proposal: <strong>{proposal['title']}</strong></p>
                 <p>Click the link below to access the proposal:</p>
-                <p><a href="{invite_url}" style="background-color: #27AE60; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Open Proposal</a></p>
+                <p><a href="{invite_url}" style="background-color: #27AE60; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Open Proposal</a></p>
                 <p>Or copy and paste this link:</p>
-                <p style="word-break: break-all; color: #666;">{invite_url}</p>
+                <p style="word-break: break-all; color: #666;"><a href="{invite_url}" style="color: #0066cc; text-decoration: underline;">{invite_url}</a></p>
                 <p>This link will give you full access to edit, comment, and suggest changes.</p>
                 """
                 

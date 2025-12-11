@@ -100,6 +100,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
                   proposalId: proposalData['id']?.toString(),
                   proposalTitle: proposalData['title'] ?? 'Untitled',
                   readOnly: false, // Full edit access
+                  isCollaborator: true, // Hide navigation, show only editor and comments
                 ),
               ),
             );
