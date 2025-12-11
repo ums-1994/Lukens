@@ -64,7 +64,8 @@ def send_client_invitation(username=None):
 
             invitation_id, token, invited_at = result
 
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            from api.utils.helpers import get_frontend_url
+            frontend_url = get_frontend_url()
             # Use query parameter instead of hash for better email client compatibility
             onboarding_url = f"{frontend_url}/onboard?token={token}"
 
@@ -348,7 +349,8 @@ def resend_invitation(username=None, invitation_id=None):
             else:
                 token = invitation['access_token']
 
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            from api.utils.helpers import get_frontend_url
+            frontend_url = get_frontend_url()
             # Use query parameter instead of hash for better email client compatibility
             onboarding_url = f"{frontend_url}/onboard?token={token}"
 

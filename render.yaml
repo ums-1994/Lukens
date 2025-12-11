@@ -31,7 +31,8 @@ services:
           name: lukens-db
           property: password
       # Add your other environment variables in Render dashboard
-      # OPENROUTER_API_KEY, CLOUDINARY_*, SMTP_*, DOCUSIGN_*, FIREBASE_*, etc.
+      # OPENROUTER_API_KEY, CLOUDINARY_*, SENDGRID_*, DOCUSIGN_*, FIREBASE_*, etc.
+      # FRONTEND_URL=https://sowbuilders.netlify.app (set in Render dashboard)
 
   # Frontend Static Site
   - type: web

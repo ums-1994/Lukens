@@ -77,15 +77,12 @@ def approve_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get proposal details - try to get client_email from proposals table or collaboration_invitations
+            # Get proposal details - client_email column may not exist, so get it from collaboration_invitations
             cursor.execute(
                 '''SELECT p.id, p.title, p.client, 
-                          COALESCE(p.client_email, ci.invited_email, '') as client_email,
                           p.owner_id as user_id, p.content 
                    FROM proposals p
-                   LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id AND ci.status = 'pending'
-                   WHERE p.id = %s
-                   LIMIT 1''',
+                   WHERE p.id = %s''',
                 (proposal_id,)
             )
             proposal = cursor.fetchone()
@@ -95,19 +92,32 @@ def approve_proposal(username=None, proposal_id=None):
             
             title = proposal.get('title')
             client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
-            client_email = proposal.get('client_email') or ''
             
-            # If still no email, try to get from collaboration_invitations directly
+            # Get client_email from collaboration_invitations (proposals table doesn't have this column)
+            client_email = ''
+            cursor.execute(
+                '''SELECT invited_email FROM collaboration_invitations 
+                   WHERE proposal_id = %s 
+                   ORDER BY invited_at DESC LIMIT 1''',
+                (proposal_id,)
+            )
+            inv_row = cursor.fetchone()
+            if inv_row:
+                client_email = inv_row.get('invited_email') if isinstance(inv_row, dict) else (inv_row[0] if isinstance(inv_row, (tuple, list)) and len(inv_row) > 0 else '')
+            
+            # Also try to get from proposal_signatures if available
             if not client_email or not client_email.strip():
                 cursor.execute(
-                    '''SELECT invited_email FROM collaboration_invitations 
-                       WHERE proposal_id = %s AND status = 'pending' 
-                       ORDER BY invited_at DESC LIMIT 1''',
+                    '''SELECT signer_email FROM proposal_signatures 
+                       WHERE proposal_id = %s 
+                       ORDER BY created_at DESC LIMIT 1''',
                     (proposal_id,)
                 )
-                inv_row = cursor.fetchone()
-                if inv_row:
-                    client_email = inv_row.get('invited_email') if isinstance(inv_row, dict) else inv_row[0] if inv_row else ''
+                sig_row = cursor.fetchone()
+                if sig_row:
+                    sig_email = sig_row.get('signer_email') if isinstance(sig_row, dict) else (sig_row[0] if isinstance(sig_row, (tuple, list)) and len(sig_row) > 0 else '')
+                    if sig_email and sig_email.strip():
+                        client_email = sig_email
             creator = proposal.get('user_id')
             proposal_content = proposal.get('content')
             display_title = title or f"Proposal {proposal_id}"
@@ -145,7 +155,9 @@ def approve_proposal(username=None, proposal_id=None):
                 # We'll still create the envelope if we have a client name
                 if client_name and client_name != 'Unknown':
                     try:
-                        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                        from api.utils.helpers import get_frontend_url
+                        frontend_url = get_frontend_url()
+                        print(f"🌐 Using frontend URL: {frontend_url}")
                         backend_url = os.getenv('BACKEND_URL') or os.getenv('API_URL') or os.getenv('RENDER_EXTERNAL_URL')
                         
                         # Log webhook URL configuration for debugging

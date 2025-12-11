@@ -128,7 +128,8 @@ def send_email(to_email, subject, html_content):
 # ----------------------------------------------------------
 def send_password_reset_email(email, reset_token):
     """Send password reset email"""
-    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+    from api.utils.helpers import get_frontend_url
+    frontend_url = get_frontend_url()
     reset_link = f"{frontend_url}/verify.html?token={reset_token}"
 
     subject = "Reset Your Password"
@@ -156,7 +157,8 @@ def send_password_reset_email(email, reset_token):
 # ----------------------------------------------------------
 def send_verification_email(email, verification_token, username=None):
     """Send email verification email"""
-    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+    from api.utils.helpers import get_frontend_url
+    frontend_url = get_frontend_url()
     verification_link = f"{frontend_url}/verify-email?token={verification_token}"
 
     subject = "Verify Your Email Address"

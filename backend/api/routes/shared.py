@@ -479,7 +479,8 @@ def send_for_signature(username=None, proposal_id=None):
         signer_name = data.get('signer_name')
         signer_email = data.get('signer_email')
         signer_title = data.get('signer_title', '')
-        return_url = data.get('return_url', 'http://localhost:8081')
+        from api.utils.helpers import get_frontend_url
+        return_url = data.get('return_url') or get_frontend_url()
         
         if not signer_name or not signer_email:
             return {'detail': 'Signer name and email are required'}, 400

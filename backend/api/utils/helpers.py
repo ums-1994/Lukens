@@ -48,6 +48,18 @@ except ImportError as e:
     print("   Install with: pip install docusign-esign")
 
 
+def get_frontend_url():
+    """
+    Get the frontend URL from environment variables with proper fallback.
+    Returns production URL by default, not localhost.
+    """
+    import os
+    frontend_url = os.getenv('FRONTEND_URL') or os.getenv('REACT_APP_API_URL') or 'https://sowbuilders.netlify.app'
+    # Remove trailing slash and ensure it's the base URL (not API URL)
+    frontend_url = frontend_url.rstrip('/').replace('/api', '').replace('/backend', '')
+    return frontend_url
+
+
 def log_activity(proposal_id, user_id, action_type, description, metadata=None):
     """
     Log an activity to the activity timeline

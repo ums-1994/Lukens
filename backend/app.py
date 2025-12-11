@@ -1393,7 +1393,8 @@ def send_email(to_email, subject, html_content):
 
 def send_password_reset_email(email, reset_token):
     """Send password reset email"""
-    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+    frontend_url = os.getenv('FRONTEND_URL') or os.getenv('REACT_APP_API_URL') or 'https://sowbuilders.netlify.app'
+    frontend_url = frontend_url.rstrip('/').replace('/api', '').replace('/backend', '')
     reset_link = f"{frontend_url}/verify.html?token={reset_token}"
     
     subject = "Reset Your Password"

@@ -301,7 +301,8 @@ def client_approve_proposal(proposal_id):
                     # Create DocuSign envelope
                     # Since we're on HTTP, DocuSign will open in a new tab (not embedded)
                     # Use a return URL that points back to the client proposals page
-                    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                    from api.utils.helpers import get_frontend_url
+                    frontend_url = get_frontend_url()
                     # Use hash-based routing to prevent full page reload
                     return_url = f"{frontend_url}/#/client/proposals?token={token}&signed=true"
                     

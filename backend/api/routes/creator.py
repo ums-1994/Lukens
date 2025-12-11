@@ -764,7 +764,8 @@ def send_to_client(username=None, proposal_id=None):
                     from api.utils.email import send_email, get_logo_html
                     import secrets
                     
-                    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                    from api.utils.helpers import get_frontend_url
+                    frontend_url = get_frontend_url()
                     access_token = secrets.token_urlsafe(32)
                     
                     # Store token in collaboration_invitations for client access
@@ -1679,8 +1680,10 @@ def invite_collaborator(username=None, proposal_id=None):
             email_error = None
             try:
                 from api.utils.email import send_email, get_logo_html
-                base_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
-                invite_url = f"{base_url}/collaborate?token={access_token}"
+                from api.utils.helpers import get_frontend_url
+                base_url = get_frontend_url()
+                invite_url = f"{base_url}/#/collaborate?token={access_token}"
+                print(f"🔗 Collaboration invitation URL: {invite_url}")
                 
                 email_body = f"""
                 {get_logo_html()}
