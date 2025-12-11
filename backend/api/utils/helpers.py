@@ -27,9 +27,14 @@ except ImportError:
     pass
 
 try:
-    from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest, Notification, NotificationSettings, EmailNotification
+    from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest, Notification, EmailNotification
     from docusign_esign.client.api_exception import ApiException
     import jwt
+    # NotificationSettings may not be available in all SDK versions - it's optional
+    try:
+        from docusign_esign import NotificationSettings
+    except ImportError:
+        pass  # NotificationSettings is optional
     DOCUSIGN_AVAILABLE = True
     print("✅ DocuSign SDK imported successfully")
 except ImportError as e:
@@ -412,8 +417,15 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
     """
     # Re-check DocuSign availability in case import failed at module load
     try:
-        from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest, Notification, NotificationSettings, EmailNotification
+        from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest, Notification, EmailNotification
         from docusign_esign.client.api_exception import ApiException
+        # Try to import NotificationSettings - may not be available in all SDK versions
+        try:
+            from docusign_esign import NotificationSettings
+            NOTIFICATION_SETTINGS_AVAILABLE = True
+        except ImportError:
+            NOTIFICATION_SETTINGS_AVAILABLE = False
+            print("⚠️ NotificationSettings not available in this DocuSign SDK version - using signer-level notifications only")
     except ImportError as e:
         raise Exception(f"DocuSign SDK not installed. Install with: pip install docusign-esign. Error: {e}")
     
@@ -495,29 +507,36 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         # Create recipients
         recipients = Recipients(signers=[signer])
         
-        # Create envelope-level notification settings
-        # This ensures DocuSign sends emails when envelope status changes
-        envelope_notification = NotificationSettings(
-            reminders=Notification(
-                reminder_enabled='true',
-                reminder_delay='2',
-                reminder_frequency='2'
-            ),
-            expirations=Notification(
-                expiration_enabled='true',
-                expiration_days='30',
-                expiration_warn='7'
-            )
-        )
-        
         # Create envelope
+        # Note: Signer-level notification is already set above, which should be sufficient
         envelope_definition = EnvelopeDefinition(
             email_subject=f'Please sign: Proposal #{proposal_id}',
             documents=[document],
             recipients=recipients,
-            status='sent',  # Send immediately
-            notification=envelope_notification  # Add notification settings to envelope
+            status='sent'  # Send immediately
         )
+        
+        # Add envelope-level notification settings if available (optional)
+        # This provides additional reminders and expiration settings
+        if NOTIFICATION_SETTINGS_AVAILABLE:
+            try:
+                envelope_notification = NotificationSettings(
+                    reminders=Notification(
+                        reminder_enabled='true',
+                        reminder_delay='2',
+                        reminder_frequency='2'
+                    ),
+                    expirations=Notification(
+                        expiration_enabled='true',
+                        expiration_days='30',
+                        expiration_warn='7'
+                    )
+                )
+                envelope_definition.notification = envelope_notification
+                print("✅ Added envelope-level notification settings")
+            except Exception as notif_error:
+                print(f"⚠️ Could not set envelope notification settings: {notif_error}")
+                print("   Continuing without envelope-level notifications (signer notifications are still active)")
         
         # Create envelope via API
         envelopes_api = EnvelopesApi(api_client)
