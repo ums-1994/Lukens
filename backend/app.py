@@ -484,36 +484,23 @@ def init_pg_schema():
                 pass
         raise
 
-# Handle CORS preflight for Netlify subdomains (before request to handle OPTIONS)
-@app.before_request
-def handle_cors_before_request():
-    """Handle CORS preflight for Netlify subdomains"""
-    origin = request.headers.get('Origin')
-    
-    # Handle OPTIONS preflight requests for Netlify subdomains
-    if request.method == 'OPTIONS' and origin:
-        if origin.endswith('.netlify.app') or origin in allowed_origins_list:
-            from flask import Response
-            response = Response()
-            response.headers.add('Access-Control-Allow-Origin', origin)
-            response.headers.add('Access-Control-Allow-Credentials', 'true')
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
-            response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
-            response.headers.add('Access-Control-Max-Age', '3600')
-            return response
-
-# Handle CORS for Netlify subdomains (after Flask-CORS processes the request)
+# Handle CORS for Netlify subdomains not in the allowed_origins_list
+# Flask-CORS already handles origins in allowed_origins_list, so we only handle others
 @app.after_request
 def handle_cors_after_request(response):
-    """Add CORS headers for Netlify subdomains"""
+    """Add CORS headers for Netlify subdomains that aren't in the static allowed_origins_list"""
     origin = request.headers.get('Origin')
     
-    if origin and origin.endswith('.netlify.app'):
-        # Always allow Netlify subdomains (ensure headers are set)
-        response.headers.add('Access-Control-Allow-Origin', origin)
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
-        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+    # Only handle Netlify subdomains that are NOT in the allowed_origins_list
+    # Flask-CORS will handle the ones that are in the list
+    if origin and origin.endswith('.netlify.app') and origin not in allowed_origins_list:
+        # This is a Netlify subdomain not in our list, so we need to add headers
+        # But first check if Flask-CORS already set them (shouldn't happen, but be safe)
+        if 'Access-Control-Allow-Origin' not in response.headers:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Collab-Token'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
     
     return response
 
