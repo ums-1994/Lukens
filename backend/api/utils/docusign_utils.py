@@ -8,8 +8,13 @@ DOCUSIGN_AVAILABLE = False
 try:
     from docusign_esign import ApiClient
     DOCUSIGN_AVAILABLE = True
-except ImportError:
-    pass
+    print("✅ DocuSign SDK imported successfully in docusign_utils")
+except ImportError as e:
+    DOCUSIGN_AVAILABLE = False
+    print(f"⚠️ DocuSign SDK not available in docusign_utils: {e}")
+except Exception as e:
+    DOCUSIGN_AVAILABLE = False
+    print(f"⚠️ DocuSign SDK import error in docusign_utils: {e}")
 
 
 def get_docusign_jwt_token():

@@ -32,6 +32,10 @@ def send_email_via_sendgrid(to_email, subject, html_content):
         sendgrid_from_email = os.getenv('SENDGRID_FROM_EMAIL')
         sendgrid_from_name = os.getenv('SENDGRID_FROM_NAME', 'Khonology')
 
+        # Strip whitespace and newlines from API key (common issue with environment variables)
+        if sendgrid_api_key:
+            sendgrid_api_key = sendgrid_api_key.strip()
+        
         if not sendgrid_api_key:
             print('[ERROR] SENDGRID_API_KEY not set')
             return False

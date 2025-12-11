@@ -31,8 +31,11 @@ try:
     from docusign_esign.client.api_exception import ApiException
     import jwt
     DOCUSIGN_AVAILABLE = True
-except ImportError:
-    pass
+    print("✅ DocuSign SDK imported successfully")
+except ImportError as e:
+    DOCUSIGN_AVAILABLE = False
+    print(f"⚠️ DocuSign SDK not available: {e}")
+    print("   Install with: pip install docusign-esign")
 
 
 def log_activity(proposal_id, user_id, action_type, description, metadata=None):
@@ -407,8 +410,20 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
     Create DocuSign envelope with redirect signing (works on HTTP)
     Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
     """
+    # Re-check DocuSign availability in case import failed at module load
+    try:
+        from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest, Notification, NotificationSettings, EmailNotification
+        from docusign_esign.client.api_exception import ApiException
+    except ImportError as e:
+        raise Exception(f"DocuSign SDK not installed. Install with: pip install docusign-esign. Error: {e}")
+    
     if not DOCUSIGN_AVAILABLE:
-        raise Exception("DocuSign SDK not installed")
+        # Try to import again to see if it's available now
+        try:
+            from docusign_esign import ApiClient
+            print("✅ DocuSign SDK is actually available, but DOCUSIGN_AVAILABLE flag was False")
+        except ImportError:
+            raise Exception("DocuSign SDK not installed. Install with: pip install docusign-esign")
     
     try:
         import base64
