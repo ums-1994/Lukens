@@ -1,13 +1,19 @@
 """
-Email sending utilities
+Email sending utilities - SendGrid only
 """
 import os
-import smtplib
 import traceback
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 import base64
+
+# SendGrid SDK
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail, Email, Content
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    SENDGRID_AVAILABLE = False
+    print("[WARN] SendGrid SDK not installed. Install with: pip install sendgrid")
 
 # Cloudinary for logo hosting
 try:
@@ -19,82 +25,98 @@ except ImportError:
     CLOUDINARY_AVAILABLE = False
 
 
-def send_email(to_email, subject, html_content):
-    """Send email using SMTP"""
+def send_email_via_sendgrid(to_email, subject, html_content):
+    """Send email using SendGrid API"""
     try:
-        print(f"[EMAIL] Attempting to send email to {to_email}")
+        sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
+        sendgrid_from_email = os.getenv('SENDGRID_FROM_EMAIL')
+        sendgrid_from_name = os.getenv('SENDGRID_FROM_NAME', 'Khonology')
 
-        smtp_host = os.getenv('SMTP_HOST')
-        smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        smtp_user = os.getenv('SMTP_USER')
-        smtp_pass = os.getenv('SMTP_PASS')
-        smtp_from_email = os.getenv('SMTP_FROM_EMAIL', smtp_user)
-        smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
-
-        print(f"[EMAIL] SMTP Config - Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
-        print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
-
-        if not all([smtp_host, smtp_user, smtp_pass]):
-            print('[ERROR] SMTP configuration incomplete')
-            print(f"[ERROR] Missing: Host={smtp_host}, User={smtp_user}, Pass={'SET' if smtp_pass else 'NOT SET'}")
+        if not sendgrid_api_key:
+            print('[ERROR] SENDGRID_API_KEY not set')
             return False
 
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
-        msg['To'] = to_email
+        if not sendgrid_from_email:
+            print('[ERROR] SENDGRID_FROM_EMAIL not set')
+            return False
 
-        html_part = MIMEText(html_content, 'html')
-        msg.attach(html_part)
+        print(f"[EMAIL] Using SendGrid to send email to {to_email}")
+        print(f"[EMAIL] From: {sendgrid_from_name} <{sendgrid_from_email}>")
 
-        print('[EMAIL] Connecting to SMTP server...')
+        message = Mail(
+            from_email=Email(sendgrid_from_email, sendgrid_from_name),
+            to_emails=to_email,
+            subject=subject,
+            html_content=html_content
+        )
 
+        sg = SendGridAPIClient(sendgrid_api_key)
+        
         try:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-                print('[EMAIL] Starting TLS...')
-                server.starttls()
-
-                print('[EMAIL] Logging in...')
-                try:
-                    server.login(smtp_user, smtp_pass)
-
-                except smtplib.SMTPAuthenticationError as auth_error:
-                    error_code = getattr(auth_error, 'smtp_code', None)
-                    error_msg = str(auth_error)
-
-                    print(f"[ERROR] SMTP Authentication failed (Code: {error_code})")
-                    print(f"[ERROR] Error: {error_msg}")
-
-                    if 'gmail.com' in smtp_host.lower() or 'google' in smtp_host.lower():
-                        print("[HELP] Gmail authentication troubleshooting:")
-                        print("  1. Enable 2-Step Verification")
-                        print("  2. Generate an App Password")
-                        print("  3. Use the App Password instead of your normal password")
-                    else:
-                        print("[HELP] Check SMTP username, password, host, port")
-
-                    raise
-
-                except (smtplib.SMTPException, OSError, ConnectionError) as smtp_error:
-                    print(f"[ERROR] SMTP connection error: {smtp_error}")
-                    raise
-
-                print('[EMAIL] Sending message...')
-                server.send_message(msg)
-
-            print(f"[SUCCESS] Email sent to {to_email}")
-            return True
-
-        except Exception as smtp_exc:
-            print(f"[ERROR] SMTP error: {smtp_exc}")
+            response = sg.send(message)
+            
+            if response.status_code in [200, 201, 202]:
+                print(f"[SUCCESS] Email sent via SendGrid to {to_email} (Status: {response.status_code})")
+                return True
+            else:
+                # Get detailed error information
+                error_body = response.body.decode('utf-8') if hasattr(response.body, 'decode') else str(response.body)
+                print(f"[ERROR] SendGrid returned status {response.status_code}")
+                print(f"[ERROR] Response: {error_body}")
+                
+                if response.status_code == 401:
+                    print("\n[HELP] SendGrid 401 Unauthorized - Possible causes:")
+                    print("  1. Invalid API key - Check SENDGRID_API_KEY in your .env file")
+                    print("  2. API key doesn't have 'Mail Send' permission")
+                    print("  3. Sender email not verified in SendGrid")
+                    print("     → Go to: https://app.sendgrid.com/settings/sender_auth/senders")
+                    print("     → Verify: " + sendgrid_from_email)
+                    print("  4. API key might be revoked or expired")
+                    print("     → Check: https://app.sendgrid.com/settings/api_keys")
+                
+                return False
+                
+        except Exception as send_error:
+            # Handle SendGrid-specific exceptions
+            error_msg = str(send_error)
+            print(f"[ERROR] SendGrid API error: {error_msg}")
+            
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                print("\n[HELP] SendGrid 401 Unauthorized - Troubleshooting:")
+                print("  1. Verify your API key is correct:")
+                print(f"     → Current key starts with: {sendgrid_api_key[:10]}...")
+                print("  2. Check API key permissions:")
+                print("     → Go to: https://app.sendgrid.com/settings/api_keys")
+                print("     → Ensure it has 'Mail Send' permission")
+                print("  3. Verify sender email is authenticated:")
+                print("     → Go to: https://app.sendgrid.com/settings/sender_auth/senders")
+                print(f"     → Verify: {sendgrid_from_email}")
+                print("  4. If using a new API key, wait a few minutes for it to activate")
+                print("  5. Try creating a new API key if the current one doesn't work")
+            
             traceback.print_exc()
             return False
 
-    except Exception as exc:
-        print(f"[ERROR] Unexpected error while sending email: {exc}")
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in SendGrid email function: {e}")
         traceback.print_exc()
         return False
+
+
+def send_email(to_email, subject, html_content):
+    """
+    Send email using SendGrid API
+    
+    Requires:
+    - SENDGRID_API_KEY: Your SendGrid API key
+    - SENDGRID_FROM_EMAIL: Verified sender email address
+    - SENDGRID_FROM_NAME: Sender name (optional, defaults to 'Khonology')
+    """
+    if not SENDGRID_AVAILABLE:
+        print("[ERROR] SendGrid SDK not installed. Install with: pip install sendgrid")
+        return False
+    
+    return send_email_via_sendgrid(to_email, subject, html_content)
 
 
 # ----------------------------------------------------------

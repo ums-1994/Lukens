@@ -36,3 +36,6 @@ gunicorn>=21.2.0
 
 # Firebase Admin SDK
 firebase-admin>=6.2.0
+
+# SendGrid for email delivery
+sendgrid>=6.11.0

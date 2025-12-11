@@ -129,6 +129,18 @@ def approve_proposal(username=None, proposal_id=None):
                 if client_name and client_name != 'Unknown':
                     try:
                         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                        backend_url = os.getenv('BACKEND_URL') or os.getenv('API_URL') or os.getenv('RENDER_EXTERNAL_URL')
+                        
+                        # Log webhook URL configuration for debugging
+                        if backend_url:
+                            webhook_url = f"{backend_url.rstrip('/')}/api/docusign/webhook"
+                            print(f"🔗 DocuSign Webhook URL (configure in DocuSign Connect): {webhook_url}")
+                        else:
+                            print(f"⚠️  WARNING: Backend URL not configured!")
+                            print(f"   Set BACKEND_URL, API_URL, or RENDER_EXTERNAL_URL environment variable")
+                            print(f"   Webhook URL should be: https://your-backend-url.com/api/docusign/webhook")
+                            print(f"   Configure this in DocuSign: Settings → Connect → Add Configuration")
+                        
                         # Generate client access token (you may need to create this in collaboration_invitations)
                         import secrets
                         access_token = secrets.token_urlsafe(32)
@@ -173,10 +185,21 @@ def approve_proposal(username=None, proposal_id=None):
 
                             signing_url = envelope_result['signing_url']
                             envelope_id = envelope_result['envelope_id']
+                            envelope_status = envelope_result.get('envelope_status', {})
                             
                             print(f"✅ DocuSign envelope created successfully!")
                             print(f"   Envelope ID: {envelope_id}")
                             print(f"   Signing URL: {signing_url[:50]}...")
+                            print(f"   Envelope Status: {envelope_status.get('status', 'unknown')}")
+                            
+                            # Verify envelope was actually created
+                            if not envelope_id:
+                                raise Exception("DocuSign envelope creation returned no envelope ID")
+                            
+                            # Check envelope status
+                            if envelope_status.get('status', '').lower() != 'sent':
+                                print(f"⚠️  WARNING: Envelope status is '{envelope_status.get('status')}' - email may not be sent")
+                                print(f"   Please check DocuSign dashboard for envelope: {envelope_id}")
 
                             # Store or update signature record
                             cursor.execute(
@@ -246,10 +269,46 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"✅ Created DocuSign envelope for proposal {proposal_id} (client: {effective_client_email})")
                         except Exception as docusign_error:
                             error_msg = str(docusign_error)
-                            print(f"❌ DocuSign error during approver approval: {error_msg}")
+                            error_type = type(docusign_error).__name__
+                            
+                            print(f"❌ DocuSign error during approver approval:")
+                            print(f"   Error Type: {error_type}")
+                            print(f"   Error Message: {error_msg}")
+                            
+                            # Try to extract more details from DocuSign API exceptions
+                            if hasattr(docusign_error, 'body'):
+                                try:
+                                    error_body = docusign_error.body
+                                    if isinstance(error_body, bytes):
+                                        error_body = error_body.decode('utf-8')
+                                    print(f"   DocuSign API Response: {error_body}")
+                                except:
+                                    pass
+                            
+                            if hasattr(docusign_error, 'status'):
+                                print(f"   HTTP Status: {docusign_error.status}")
+                            
+                            if hasattr(docusign_error, 'headers'):
+                                print(f"   Response Headers: {docusign_error.headers}")
+                            
+                            # Log full traceback for debugging
+                            print(f"   Full Traceback:")
                             traceback.print_exc()
+                            
+                            # Provide actionable error messages
+                            print(f"\n🔧 Troubleshooting steps:")
+                            print(f"   1. Check DocuSign credentials in environment variables:")
+                            print(f"      - DOCUSIGN_INTEGRATION_KEY")
+                            print(f"      - DOCUSIGN_USER_ID")
+                            print(f"      - DOCUSIGN_ACCOUNT_ID")
+                            print(f"      - DOCUSIGN_PRIVATE_KEY or DOCUSIGN_PRIVATE_KEY_PATH")
+                            print(f"   2. Verify sender email is valid: {effective_client_email}")
+                            print(f"   3. Check DocuSign dashboard for any account issues")
+                            print(f"   4. Verify DocuSign API access token is valid")
+                            
                             # Don't fail the approval if DocuSign fails - still send email
-                            print(f"⚠️  Continuing with approval despite DocuSign error")
+                            print(f"\n⚠️  Continuing with approval despite DocuSign error")
+                            print(f"   Client will receive email with proposal link, but DocuSign signing may not be available")
 
                         client_link = f"{frontend_url}/client/proposals?token={access_token}"
 

@@ -27,7 +27,7 @@ except ImportError:
     pass
 
 try:
-    from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest
+    from docusign_esign import ApiClient, EnvelopesApi, EnvelopeDefinition, Document, Signer, SignHere, Tabs, Recipients, RecipientViewRequest, Notification, NotificationSettings, EmailNotification
     from docusign_esign.client.api_exception import ApiException
     import jwt
     DOCUSIGN_AVAILABLE = True
@@ -453,13 +453,24 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         
         tabs = Tabs(sign_here_tabs=[sign_here])
         
+        # Create email notification settings for the signer
+        # This ensures DocuSign sends email notifications to the signer
+        signer_notification = Notification(
+            email_notifications=EmailNotification(
+                email_subject=f'Please sign: Proposal #{proposal_id}',
+                email_body='Please review and sign the attached proposal document.',
+                supported_language='en'
+            )
+        )
+        
         signer = Signer(
             email=signer_email,
             name=signer_name,
             recipient_id='1',
             routing_order='1',
             # client_user_id is NOT set - this enables redirect mode (works on HTTP)
-            tabs=tabs
+            tabs=tabs,
+            notification=signer_notification  # Add notification settings to signer
         )
         
         # If title provided, add custom field
@@ -469,12 +480,28 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         # Create recipients
         recipients = Recipients(signers=[signer])
         
+        # Create envelope-level notification settings
+        # This ensures DocuSign sends emails when envelope status changes
+        envelope_notification = NotificationSettings(
+            reminders=Notification(
+                reminder_enabled='true',
+                reminder_delay='2',
+                reminder_frequency='2'
+            ),
+            expirations=Notification(
+                expiration_enabled='true',
+                expiration_days='30',
+                expiration_warn='7'
+            )
+        )
+        
         # Create envelope
         envelope_definition = EnvelopeDefinition(
             email_subject=f'Please sign: Proposal #{proposal_id}',
             documents=[document],
             recipients=recipients,
-            status='sent'  # Send immediately
+            status='sent',  # Send immediately
+            notification=envelope_notification  # Add notification settings to envelope
         )
         
         # Create envelope via API
@@ -483,6 +510,21 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         envelope_id = results.envelope_id
         
         print(f"✅ DocuSign envelope created: {envelope_id}")
+        
+        # Verify envelope status after creation to confirm it was sent
+        try:
+            envelope_status = envelopes_api.get_envelope(account_id, envelope_id)
+            actual_status = envelope_status.status
+            print(f"📊 Envelope status after creation: {actual_status}")
+            
+            if actual_status.lower() != 'sent':
+                print(f"⚠️  WARNING: Envelope status is '{actual_status}' but expected 'sent'")
+                print(f"   This may indicate the envelope was not sent successfully")
+            else:
+                print(f"✅ Envelope confirmed as 'sent' - email should be delivered to {signer_email}")
+        except Exception as status_error:
+            print(f"⚠️  Could not verify envelope status: {status_error}")
+            # Don't fail if status check fails, but log it
         
         # Create recipient view (redirect signing URL - works on HTTP)
         # For redirect mode, we don't set client_user_id (that's only for embedded)
@@ -505,9 +547,21 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         
         print(f"✅ Redirect signing URL created (works on HTTP)")
         
+        # Get final envelope status for return value
+        envelope_status_info = {'status': 'unknown'}
+        try:
+            final_status = envelopes_api.get_envelope(account_id, envelope_id)
+            envelope_status_info = {
+                'status': final_status.status,
+                'status_date_time': str(final_status.status_date_time) if hasattr(final_status, 'status_date_time') else None
+            }
+        except Exception:
+            pass  # Status already logged above
+        
         return {
             'envelope_id': envelope_id,
-            'signing_url': signing_url
+            'signing_url': signing_url,
+            'envelope_status': envelope_status_info
         }
         
     except ApiException as e:
