@@ -485,7 +485,9 @@ def update_proposal(username=None, proposal_id=None):
                 updates.append('client = %s')
                 params.append(client_name)
             # Note: client_email is not in the schema, so we skip it
-                params.append(data['client_email'])
+            if 'client_email' in data:
+                # client_email column doesn't exist in proposals table, skip it
+                pass
             if 'budget' in data:
                 updates.append('budget = %s')
                 params.append(data['budget'])
@@ -892,15 +894,14 @@ def create_version(username=None, proposal_id=None):
             
             cursor.execute(
                 '''INSERT INTO proposal_versions 
-                   (proposal_id, version_number, content, created_by, change_description)
-                   VALUES (%s, %s, %s, %s, %s)
-                   RETURNING id, proposal_id, version_number, content, created_by, created_at, change_description''',
+                   (proposal_id, version_number, content, created_by)
+                   VALUES (%s, %s, %s, %s)
+                   RETURNING id, proposal_id, version_number, content, created_by, created_at''',
                 (
                     proposal_id,
                     data.get('version_number', 1),
                     data.get('content', ''),
-                    user_id,
-                    data.get('change_description', 'Version created')
+                    user_id
                 )
             )
             result = cursor.fetchone()
@@ -912,8 +913,7 @@ def create_version(username=None, proposal_id=None):
                 'version_number': result[2],
                 'content': result[3],
                 'created_by': result[4],
-                'created_at': result[5].isoformat() if result[5] else None,
-                'change_description': result[6]
+                'created_at': result[5].isoformat() if result[5] else None
             }
             
             print(f"✅ Version {result[2]} created for proposal {proposal_id}")
@@ -931,7 +931,7 @@ def get_versions(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
+                '''SELECT id, proposal_id, version_number, content, created_by, created_at
                    FROM proposal_versions
                    WHERE proposal_id = %s
                    ORDER BY version_number DESC''',
@@ -947,8 +947,7 @@ def get_versions(username=None, proposal_id=None):
                     'version_number': row[2],
                     'content': row[3],
                     'created_by': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None,
-                    'change_description': row[6]
+                    'created_at': row[5].isoformat() if row[5] else None
                 })
             
             print(f"✅ Found {len(versions)} versions for proposal {proposal_id}")
@@ -1315,7 +1314,8 @@ def get_proposal_analytics(username=None, proposal_id=None):
             cursor.execute("""
                 SELECT 
                     pca.id, pca.event_type, pca.metadata, pca.created_at,
-                    c.name as client_name, c.email as client_email
+                    COALESCE(c.name, c.company_name, 'Unknown Client') as client_name, 
+                    COALESCE(c.email, '') as client_email
                 FROM proposal_client_activity pca
                 LEFT JOIN clients c ON pca.client_id = c.id
                 WHERE pca.proposal_id = %s
@@ -1328,7 +1328,8 @@ def get_proposal_analytics(username=None, proposal_id=None):
             cursor.execute("""
                 SELECT 
                     pcs.id, pcs.session_start, pcs.session_end, pcs.total_seconds,
-                    c.name as client_name, c.email as client_email
+                    COALESCE(c.name, c.company_name, 'Unknown Client') as client_name, 
+                    COALESCE(c.email, '') as client_email
                 FROM proposal_client_session pcs
                 LEFT JOIN clients c ON pcs.client_id = c.id
                 WHERE pcs.proposal_id = %s
