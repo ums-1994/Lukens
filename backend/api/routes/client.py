@@ -12,6 +12,40 @@ from api.utils.decorators import token_required
 
 bp = Blueprint('client', __name__)
 
+
+def _get_proposal_column_info(cursor):
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'proposals'
+        """
+    )
+    rows = cursor.fetchall()
+    column_names = set()
+    for row in rows:
+        if isinstance(row, dict):
+            name = row.get('column_name')
+        else:
+            name = row[0] if row else None
+        if name:
+            column_names.add(name)
+    if 'client_name' in column_names:
+        client_name_expr = 'p.client_name'
+    elif 'client' in column_names:
+        client_name_expr = 'p.client'
+    else:
+        client_name_expr = "'Client'::text"
+    if 'client_email' in column_names:
+        client_email_expr = 'p.client_email'
+    else:
+        client_email_expr = 'ci.invited_email'
+    return {
+        'columns': column_names,
+        'client_name_expr': client_name_expr,
+        'client_email_expr': client_email_expr,
+    }
+
 # ============================================================================
 # CLIENT PROPOSAL ROUTES (using token-based access)
 # ============================================================================
@@ -44,17 +78,19 @@ def get_client_proposals():
             
             client_email = invitation['invited_email']
             
-            # Get all proposals for this client email
-            # Match by client_email OR by collaboration_invitation token (for backward compatibility)
-            cursor.execute("""
+            column_info = _get_proposal_column_info(cursor)
+            client_name_expr = column_info['client_name_expr']
+            client_email_expr = column_info['client_email_expr']
+
+            query = f"""
                 SELECT DISTINCT
-                    p.id, 
-                    p.title, 
-                    p.status, 
-                    p.created_at, 
-                    p.updated_at, 
-                    p.client_name, 
-                    p.client_email,
+                    p.id,
+                    p.title,
+                    p.status,
+                    p.created_at,
+                    p.updated_at,
+                    {client_name_expr} AS client_name,
+                    {client_email_expr} AS client_email,
                     ps.signing_url,
                     ps.status AS signature_status,
                     ps.envelope_id
@@ -67,9 +103,11 @@ def get_client_proposals():
                     LIMIT 1
                 ) ps ON TRUE
                 LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id
-                WHERE (p.client_email = %s OR ci.access_token = %s)
+                WHERE (ci.invited_email = %s OR ci.access_token = %s)
                 ORDER BY p.updated_at DESC
-            """, (client_email, token))
+            """
+
+            cursor.execute(query, (client_email, token))
             
             proposals = cursor.fetchall()
             
@@ -108,16 +146,35 @@ def get_client_proposal_details(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Get proposal details - match by client_email OR collaboration_invitation token
-            cursor.execute("""
-                SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client_name, p.client_email, p.user_id,
-                       u.full_name as owner_name, u.email as owner_email
+            column_info = _get_proposal_column_info(cursor)
+            client_name_expr = column_info['client_name_expr']
+            client_email_expr = column_info['client_email_expr']
+            columns = column_info['columns']
+
+            if 'user_id' in columns:
+                owner_select_expr = 'p.user_id'
+                user_join_clause = 'LEFT JOIN users u ON p.user_id = u.username'
+            elif 'owner_id' in columns:
+                owner_select_expr = 'p.owner_id'
+                user_join_clause = 'LEFT JOIN users u ON p.owner_id = u.id'
+            else:
+                owner_select_expr = 'NULL'
+                user_join_clause = 'LEFT JOIN users u ON 1 = 0'
+
+            query = f"""
+                SELECT 
+                    p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
+                    {client_name_expr} AS client_name,
+                    {client_email_expr} AS client_email,
+                    {owner_select_expr} AS user_id,
+                    u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
-                LEFT JOIN users u ON p.user_id = u.username
+                {user_join_clause}
                 LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id AND ci.access_token = %s
-                WHERE p.id = %s AND (p.client_email = %s OR ci.access_token = %s)
-            """, (token, proposal_id, invitation['invited_email'], token))
+                WHERE p.id = %s AND (ci.invited_email = %s OR ci.access_token = %s)
+            """
+
+            cursor.execute(query, (token, proposal_id, invitation['invited_email'], token))
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -251,12 +308,20 @@ def client_approve_proposal(proposal_id):
             client_email = invitation['invited_email']
             
             # Get proposal details - match by client_email OR collaboration_invitation token
-            cursor.execute("""
-                SELECT p.id, p.title, p.content, p.client_name, p.client_email
+            column_info = _get_proposal_column_info(cursor)
+            client_name_expr = column_info['client_name_expr']
+            client_email_expr = column_info['client_email_expr']
+
+            query = f"""
+                SELECT p.id, p.title, p.content,
+                       {client_name_expr} AS client_name,
+                       {client_email_expr} AS client_email
                 FROM proposals p
                 LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id AND ci.access_token = %s
-                WHERE p.id = %s AND (p.client_email = %s OR ci.access_token = %s)
-            """, (token, proposal_id, client_email, token))
+                WHERE p.id = %s AND (ci.invited_email = %s OR ci.access_token = %s)
+            """
+
+            cursor.execute(query, (token, proposal_id, client_email, token))
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -421,19 +486,16 @@ def client_reject_proposal(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Update proposal status - match by client_email OR collaboration_invitation token
+            # Update proposal status - match by collaboration_invitation token only
             cursor.execute("""
                 UPDATE proposals 
                 SET status = 'Client Declined', updated_at = NOW()
-                WHERE id = %s AND (
-                    client_email = %s 
-                    OR id IN (
-                        SELECT proposal_id FROM collaboration_invitations 
-                        WHERE access_token = %s AND proposal_id = %s
-                    )
+                WHERE id = %s AND id IN (
+                    SELECT proposal_id FROM collaboration_invitations 
+                    WHERE access_token = %s AND proposal_id = %s
                 )
                 RETURNING id, title
-            """, (proposal_id, invitation['invited_email'], token, proposal_id))
+            """, (proposal_id, token, proposal_id))
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -498,14 +560,21 @@ def get_client_signing_url(proposal_id):
             
             client_email = invitation['invited_email']
             
-            # Get proposal details - match by client_email OR collaboration_invitation token
-            cursor.execute("""
-                SELECT p.id, p.title, p.content, p.client_name, p.client_email
+            # Get proposal details - match by collaboration_invitation token
+            column_info = _get_proposal_column_info(cursor)
+            client_name_expr = column_info['client_name_expr']
+            client_email_expr = column_info['client_email_expr']
+
+            query = f"""
+                SELECT p.id, p.title, p.content,
+                       {client_name_expr} AS client_name,
+                       {client_email_expr} AS client_email
                 FROM proposals p
                 LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id AND ci.access_token = %s
-                WHERE p.id = %s AND (p.client_email = %s OR ci.access_token = %s)
-            """, (token, proposal_id, client_email, token))
-            
+                WHERE p.id = %s AND (ci.invited_email = %s OR ci.access_token = %s)
+            """
+
+            cursor.execute(query, (token, proposal_id, client_email, token))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
