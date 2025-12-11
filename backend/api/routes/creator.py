@@ -915,33 +915,43 @@ def create_version(username=None, proposal_id=None):
                         user_id
                     )
                 )
+                result = cursor.fetchone()
+                conn.commit()
             except Exception as seq_error:
-                # If sequence issue, reset it and try again
+                # Rollback the failed transaction
+                conn.rollback()
+                
+                # If sequence issue, reset it and try again in a new transaction
                 if 'duplicate key' in str(seq_error).lower() or 'pkey' in str(seq_error).lower():
                     print(f"⚠️ Sequence issue detected, resetting sequence for proposal_versions")
-                    cursor.execute("""
-                        SELECT setval(pg_get_serial_sequence('proposal_versions', 'id'), 
-                                     COALESCE((SELECT MAX(id) FROM proposal_versions), 1), true)
-                    """)
-                    conn.commit()
-                    # Retry the insert
-                    cursor.execute(
-                        '''INSERT INTO proposal_versions 
-                           (proposal_id, version_number, content, created_by)
-                           VALUES (%s, %s, %s, %s)
-                           RETURNING id, proposal_id, version_number, content, created_by, created_at''',
-                        (
-                            proposal_id,
-                            version_number,
-                            data.get('content', ''),
-                            user_id
+                    try:
+                        cursor.execute("""
+                            SELECT setval(pg_get_serial_sequence('proposal_versions', 'id'), 
+                                         COALESCE((SELECT MAX(id) FROM proposal_versions), 1), true)
+                        """)
+                        conn.commit()
+                        
+                        # Retry the insert in a fresh transaction
+                        cursor.execute(
+                            '''INSERT INTO proposal_versions 
+                               (proposal_id, version_number, content, created_by)
+                               VALUES (%s, %s, %s, %s)
+                               RETURNING id, proposal_id, version_number, content, created_by, created_at''',
+                            (
+                                proposal_id,
+                                version_number,
+                                data.get('content', ''),
+                                user_id
+                            )
                         )
-                    )
+                        result = cursor.fetchone()
+                        conn.commit()
+                    except Exception as retry_error:
+                        conn.rollback()
+                        raise Exception(f"Failed to create version after sequence reset: {retry_error}")
                 else:
+                    # For other errors, re-raise
                     raise
-            
-            result = cursor.fetchone()
-            conn.commit()
             
             version = {
                 'id': result[0],
@@ -1527,7 +1537,12 @@ def get_proposal_collaborators(username=None, proposal_id=None):
             if not user_row:
                 print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
+            
+            # Handle both tuple and dict results (RealDictCursor returns dict)
+            user_id = user_row['id'] if isinstance(user_row, dict) else (user_row[0] if isinstance(user_row, (tuple, list)) else None)
+            if not user_id:
+                print(f"❌ Could not extract user_id from user_row: {user_row}")
+                return {'detail': 'User not found'}, 404
             
             # Verify ownership
             cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
@@ -1535,7 +1550,9 @@ def get_proposal_collaborators(username=None, proposal_id=None):
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            if proposal['owner_id'] != user_id:
+            # Handle both dict and tuple results
+            owner_id = proposal['owner_id'] if isinstance(proposal, dict) else proposal[0]
+            if owner_id != user_id:
                 return {'detail': 'Access denied'}, 403
             
             # Get active collaborators from collaborators table

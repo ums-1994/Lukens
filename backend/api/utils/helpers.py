@@ -513,12 +513,9 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
             status='sent'  # Send immediately
         )
         
-        # Set notification settings using dict format (compatible with all DocuSign SDK versions)
-        # DocuSign will use account defaults and send emails automatically
-        envelope_definition.notification = {
-            "useAccountDefaults": "true"
-        }
-        print("✅ Envelope configured with account default notifications")
+        # DocuSign will automatically use account default notification settings
+        # No need to set notification explicitly - DocuSign handles this automatically
+        print("✅ Envelope will use DocuSign account default notifications")
         
         # Create envelope via API
         envelopes_api = EnvelopesApi(api_client)

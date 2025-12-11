@@ -77,10 +77,15 @@ def approve_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get proposal details
+            # Get proposal details - try to get client_email from proposals table or collaboration_invitations
             cursor.execute(
-                '''SELECT id, title, client, '' as client_email, owner_id as user_id, content 
-                   FROM proposals WHERE id = %s''',
+                '''SELECT p.id, p.title, p.client, 
+                          COALESCE(p.client_email, ci.invited_email, '') as client_email,
+                          p.owner_id as user_id, p.content 
+                   FROM proposals p
+                   LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id AND ci.status = 'pending'
+                   WHERE p.id = %s
+                   LIMIT 1''',
                 (proposal_id,)
             )
             proposal = cursor.fetchone()
@@ -91,6 +96,18 @@ def approve_proposal(username=None, proposal_id=None):
             title = proposal.get('title')
             client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
             client_email = proposal.get('client_email') or ''
+            
+            # If still no email, try to get from collaboration_invitations directly
+            if not client_email or not client_email.strip():
+                cursor.execute(
+                    '''SELECT invited_email FROM collaboration_invitations 
+                       WHERE proposal_id = %s AND status = 'pending' 
+                       ORDER BY invited_at DESC LIMIT 1''',
+                    (proposal_id,)
+                )
+                inv_row = cursor.fetchone()
+                if inv_row:
+                    client_email = inv_row.get('invited_email') if isinstance(inv_row, dict) else inv_row[0] if inv_row else ''
             creator = proposal.get('user_id')
             proposal_content = proposal.get('content')
             display_title = title or f"Proposal {proposal_id}"
@@ -145,8 +162,20 @@ def approve_proposal(username=None, proposal_id=None):
                         import secrets
                         access_token = secrets.token_urlsafe(32)
                         
-                        # Use client_name as email if client_email is empty (for DocuSign)
-                        effective_client_email = client_email if client_email and client_email.strip() else f"{client_name.lower().replace(' ', '.')}@example.com"
+                        # Validate client email - must be a real email address
+                        if not client_email or not client_email.strip() or '@' not in client_email:
+                            print(f"⚠️  WARNING: No valid client email found for proposal {proposal_id}")
+                            print(f"   Client name: {client_name}")
+                            print(f"   Attempted email: {client_email}")
+                            print(f"   Cannot send DocuSign envelope or email without valid email address")
+                            return {
+                                'detail': f'Cannot send proposal: No valid client email address. Please add client email to proposal.',
+                                'error': 'missing_client_email',
+                                'client_name': client_name
+                            }, 400
+                        
+                        effective_client_email = client_email.strip()
+                        print(f"✅ Using client email: {effective_client_email}")
                         
                         # Store token in collaboration_invitations for client access
                         cursor.execute("""
@@ -330,9 +359,10 @@ def approve_proposal(username=None, proposal_id=None):
                         
                         email_sent = send_email(effective_client_email, email_subject, email_body)
                         if email_sent:
-                            print(f"[EMAIL] Proposal email sent to {client_email}")
+                            print(f"[EMAIL] ✅ Proposal email sent successfully to {effective_client_email}")
                         else:
-                            print(f"[EMAIL] Failed to send proposal email to {client_email}")
+                            print(f"[EMAIL] ❌ Failed to send proposal email to {effective_client_email}")
+                            print(f"   Please check SendGrid configuration and logs above for details")
                     except Exception as email_error:
                         print(f"[EMAIL] Error sending proposal email: {email_error}")
                         traceback.print_exc()
