@@ -892,18 +892,54 @@ def create_version(username=None, proposal_id=None):
             user_row = cursor.fetchone()
             user_id = user_row[0] if user_row else None
             
-            cursor.execute(
-                '''INSERT INTO proposal_versions 
-                   (proposal_id, version_number, content, created_by)
-                   VALUES (%s, %s, %s, %s)
-                   RETURNING id, proposal_id, version_number, content, created_by, created_at''',
-                (
-                    proposal_id,
-                    data.get('version_number', 1),
-                    data.get('content', ''),
-                    user_id
+            # Get next version number if not provided
+            if 'version_number' not in data:
+                cursor.execute(
+                    'SELECT COALESCE(MAX(version_number), 0) + 1 FROM proposal_versions WHERE proposal_id = %s',
+                    (proposal_id,)
                 )
-            )
+                version_number = cursor.fetchone()[0] or 1
+            else:
+                version_number = data.get('version_number', 1)
+            
+            try:
+                cursor.execute(
+                    '''INSERT INTO proposal_versions 
+                       (proposal_id, version_number, content, created_by)
+                       VALUES (%s, %s, %s, %s)
+                       RETURNING id, proposal_id, version_number, content, created_by, created_at''',
+                    (
+                        proposal_id,
+                        version_number,
+                        data.get('content', ''),
+                        user_id
+                    )
+                )
+            except Exception as seq_error:
+                # If sequence issue, reset it and try again
+                if 'duplicate key' in str(seq_error).lower() or 'pkey' in str(seq_error).lower():
+                    print(f"⚠️ Sequence issue detected, resetting sequence for proposal_versions")
+                    cursor.execute("""
+                        SELECT setval(pg_get_serial_sequence('proposal_versions', 'id'), 
+                                     COALESCE((SELECT MAX(id) FROM proposal_versions), 1), true)
+                    """)
+                    conn.commit()
+                    # Retry the insert
+                    cursor.execute(
+                        '''INSERT INTO proposal_versions 
+                           (proposal_id, version_number, content, created_by)
+                           VALUES (%s, %s, %s, %s)
+                           RETURNING id, proposal_id, version_number, content, created_by, created_at''',
+                        (
+                            proposal_id,
+                            version_number,
+                            data.get('content', ''),
+                            user_id
+                        )
+                    )
+                else:
+                    raise
+            
             result = cursor.fetchone()
             conn.commit()
             
@@ -1314,7 +1350,7 @@ def get_proposal_analytics(username=None, proposal_id=None):
             cursor.execute("""
                 SELECT 
                     pca.id, pca.event_type, pca.metadata, pca.created_at,
-                    COALESCE(c.name, c.company_name, 'Unknown Client') as client_name, 
+                    COALESCE(c.contact_person, c.company_name, 'Unknown Client') as client_name, 
                     COALESCE(c.email, '') as client_email
                 FROM proposal_client_activity pca
                 LEFT JOIN clients c ON pca.client_id = c.id
@@ -1328,7 +1364,7 @@ def get_proposal_analytics(username=None, proposal_id=None):
             cursor.execute("""
                 SELECT 
                     pcs.id, pcs.session_start, pcs.session_end, pcs.total_seconds,
-                    COALESCE(c.name, c.company_name, 'Unknown Client') as client_name, 
+                    COALESCE(c.contact_person, c.company_name, 'Unknown Client') as client_name, 
                     COALESCE(c.email, '') as client_email
                 FROM proposal_client_session pcs
                 LEFT JOIN clients c ON pcs.client_id = c.id
@@ -1571,7 +1607,11 @@ def invite_collaborator(username=None, proposal_id=None):
             if not user_row:
                 print(f"❌ User lookup failed after 3 attempts for username: {username}")
                 return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
+            # Handle both tuple and dict results
+            user_id = user_row[0] if isinstance(user_row, (tuple, list)) else user_row.get('id') if isinstance(user_row, dict) else None
+            if not user_id:
+                print(f"❌ Could not extract user_id from user_row: {user_row}")
+                return {'detail': 'User not found'}, 404
             
             # Verify ownership
             cursor.execute('SELECT owner_id, title FROM proposals WHERE id = %s', (proposal_id,))

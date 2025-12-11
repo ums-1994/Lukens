@@ -199,17 +199,40 @@ def create_comment(username=None, proposal_id=None):
                 if not parent_comment:
                     return {'detail': 'Parent comment not found'}, 404
             
-            # Create comment
-            cursor.execute("""
-                INSERT INTO document_comments 
-                (proposal_id, comment_text, created_by, section_index, section_name, 
-                 highlighted_text, parent_id, block_type, block_id, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                          section_index, section_name, highlighted_text, parent_id,
-                          block_type, block_id, status, updated_at
-            """, (proposal_id, comment_text, user_id, section_index, section_name, 
-                  highlighted_text, parent_id, block_type, block_id, 'open'))
+            # Create comment - handle sequence issues by not specifying id
+            try:
+                cursor.execute("""
+                    INSERT INTO document_comments 
+                    (proposal_id, comment_text, created_by, section_index, section_name, 
+                     highlighted_text, parent_id, block_type, block_id, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id, proposal_id, comment_text, created_by, created_at, 
+                              section_index, section_name, highlighted_text, parent_id,
+                              block_type, block_id, status, updated_at
+                """, (proposal_id, comment_text, user_id, section_index, section_name, 
+                      highlighted_text, parent_id, block_type, block_id, 'open'))
+            except Exception as seq_error:
+                # If sequence issue, reset it and try again
+                if 'duplicate key' in str(seq_error).lower() or 'pkey' in str(seq_error).lower():
+                    print(f"⚠️ Sequence issue detected, resetting sequence for document_comments")
+                    cursor.execute("""
+                        SELECT setval(pg_get_serial_sequence('document_comments', 'id'), 
+                                     COALESCE((SELECT MAX(id) FROM document_comments), 1), true)
+                    """)
+                    conn.commit()
+                    # Retry the insert
+                    cursor.execute("""
+                        INSERT INTO document_comments 
+                        (proposal_id, comment_text, created_by, section_index, section_name, 
+                         highlighted_text, parent_id, block_type, block_id, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id, proposal_id, comment_text, created_by, created_at, 
+                                  section_index, section_name, highlighted_text, parent_id,
+                                  block_type, block_id, status, updated_at
+                    """, (proposal_id, comment_text, user_id, section_index, section_name, 
+                          highlighted_text, parent_id, block_type, block_id, 'open'))
+                else:
+                    raise
             
             result = cursor.fetchone()
             comment_id = result['id']
