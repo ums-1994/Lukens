@@ -471,6 +471,15 @@ def init_pg_schema():
         # Create index for faster signature queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
                          ON proposal_signatures(proposal_id, status, sent_at DESC)''')
+
+        # Ensure proposal_signatures.id sequence is in sync with existing rows
+        cursor.execute('''
+            SELECT setval(
+                pg_get_serial_sequence('proposal_signatures', 'id'),
+                COALESCE((SELECT MAX(id) FROM proposal_signatures), 0) + 1,
+                false
+            )
+        ''')
         
         conn.commit()
         release_pg_conn(conn)
