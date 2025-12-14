@@ -1177,12 +1177,14 @@ def docusign_webhook():
                     UPDATE proposal_signatures 
                     SET status = 'signed',
                         signed_at = NOW()
-                    WHERE envelope_id = %s
-                    RETURNING proposal_id
+                    WHERE LOWER(envelope_id) = LOWER(%s)
+                    RETURNING proposal_id, envelope_id
                 """, (envelope_id,))
                 
                 signature = cursor.fetchone()
                 if signature:
+                    stored_envelope_id = signature.get('envelope_id')
+                    print(f"✅ Signature record matched for webhook envelope {envelope_id} (stored envelope_id={stored_envelope_id})")
                     cursor.execute("""
                         UPDATE proposals 
                         SET status = 'Signed', updated_at = NOW()
@@ -1199,6 +1201,19 @@ def docusign_webhook():
                     print(f"✅ Updated proposal {signature['proposal_id']} to Signed status")
                 else:
                     print(f"⚠️ No signature record found for envelope {envelope_id}")
+                    # Log a few recent signature records to help debug envelope_id mismatches
+                    try:
+                        cursor.execute("""
+                            SELECT proposal_id, envelope_id, status
+                            FROM proposal_signatures
+                            WHERE envelope_id IS NOT NULL
+                            ORDER BY sent_at DESC
+                            LIMIT 5
+                        """)
+                        recent = cursor.fetchall()
+                        print(f"📊 Recent proposal_signatures rows: {recent}")
+                    except Exception as debug_err:
+                        print(f"⚠️ Failed to inspect recent proposal_signatures rows: {debug_err}")
             
             elif event == 'envelope-declined' or status == 'declined':
                 # Use decline_reason parsed above, or default
@@ -1210,12 +1225,14 @@ def docusign_webhook():
                     SET status = 'declined',
                         declined_at = NOW(),
                         decline_reason = %s
-                    WHERE envelope_id = %s
-                    RETURNING proposal_id
+                    WHERE LOWER(envelope_id) = LOWER(%s)
+                    RETURNING proposal_id, envelope_id
                 """, (decline_reason, envelope_id))
                 
                 signature = cursor.fetchone()
                 if signature:
+                    stored_envelope_id = signature.get('envelope_id')
+                    print(f"✅ Signature record matched for declined webhook envelope {envelope_id} (stored envelope_id={stored_envelope_id})")
                     log_activity(
                         signature['proposal_id'],
                         None,
@@ -1229,13 +1246,14 @@ def docusign_webhook():
                 cursor.execute("""
                     UPDATE proposal_signatures 
                     SET status = 'voided'
-                    WHERE envelope_id = %s
-                    RETURNING proposal_id
+                    WHERE LOWER(envelope_id) = LOWER(%s)
+                    RETURNING proposal_id, envelope_id
                 """, (envelope_id,))
                 
                 signature = cursor.fetchone()
                 if signature:
-                    print(f"✅ Updated proposal signature to Voided status")
+                    stored_envelope_id = signature.get('envelope_id')
+                    print(f"✅ Updated proposal signature to Voided status (stored envelope_id={stored_envelope_id})")
             
             conn.commit()
         
