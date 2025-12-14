@@ -44,25 +44,45 @@ def get_docusign_jwt_token():
         
         # Try to get private key from environment variable first (for Render/cloud deployments)
         private_key = os.getenv('DOCUSIGN_PRIVATE_KEY')
-        
-        # If not in env var, try to read from file
+
+        # If not in DOCUSIGN_PRIVATE_KEY, fall back to DOCUSIGN_PRIVATE_KEY_PATH.
+        # IMPORTANT: Many existing deployments store the *key contents* directly
+        # in DOCUSIGN_PRIVATE_KEY_PATH instead of a file path. To be backward
+        # compatible, we treat a value that looks like a PEM key as the key
+        # itself; otherwise we treat it as a filesystem path and try to read it.
         if not private_key:
-            private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
-            
-            # Check if private key file exists
-            if not os.path.exists(private_key_path):
-                raise Exception(
-                    f"DocuSign private key not found. Either:\n"
-                    f"1. Set DOCUSIGN_PRIVATE_KEY environment variable with the key content, OR\n"
-                    f"2. Set DOCUSIGN_PRIVATE_KEY_PATH to a file path (current: {private_key_path})"
-                )
-            
-            # Read private key from file
-            try:
-                with open(private_key_path, 'r') as key_file:
-                    private_key = key_file.read()
-            except Exception as e:
-                raise Exception(f"Failed to read private key file: {e}")
+            raw_path_or_key = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH')
+
+            if raw_path_or_key:
+                candidate = raw_path_or_key.strip()
+
+                # If it starts with a PEM header, assume it is the key content.
+                if candidate.startswith('-----BEGIN'):
+                    private_key = raw_path_or_key
+                else:
+                    private_key_path = raw_path_or_key or './docusign_private.key'
+
+                    # Check if private key file exists
+                    if not os.path.exists(private_key_path):
+                        raise Exception(
+                            f"DocuSign private key not found. Either:\n"
+                            f"1. Set DOCUSIGN_PRIVATE_KEY environment variable with the key content, OR\n"
+                            f"2. Set DOCUSIGN_PRIVATE_KEY_PATH to a valid file path (current: {private_key_path})"
+                        )
+
+                    # Read private key from file
+                    try:
+                        with open(private_key_path, 'r') as key_file:
+                            private_key = key_file.read()
+                    except Exception as e:
+                        raise Exception(f"Failed to read private key file: {e}")
+
+        # If we still don't have a private key at this point, raise a clear error
+        if not private_key:
+            raise Exception(
+                "DocuSign private key not configured. Set DOCUSIGN_PRIVATE_KEY "
+                "or DOCUSIGN_PRIVATE_KEY_PATH with either the key contents or a valid file path."
+            )
         
         # Handle newlines in environment variable (Render may escape them)
         if private_key:

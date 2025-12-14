@@ -175,6 +175,15 @@ def init_pg_schema():
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
 
+        # Ensure client_email column exists for storing client contact email
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS client_email VARCHAR(255)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
+
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
         id SERIAL PRIMARY KEY,

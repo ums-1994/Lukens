@@ -262,7 +262,7 @@ def get_proposals(username=None, user_id=None, email=None):
             
             cursor.execute(
                 '''SELECT id, owner_id, title, content, status, client, 
-                          created_at, updated_at
+                          client_email, created_at, updated_at
                    FROM proposals WHERE owner_id = %s
                    ORDER BY created_at DESC''',
                 (user_id,)
@@ -281,12 +281,12 @@ def get_proposals(username=None, user_id=None, email=None):
                     'status': status,
                     'client_name': row[5] if row[5] else 'Unknown Client',  # Map client to client_name for compatibility
                     'client': row[5] if row[5] else 'Unknown Client',
-                    'client_email': '',  # Not in schema, return empty string
+                    'client_email': row[6] if len(row) > 6 and row[6] else '',
                     'budget': None,  # Not in schema
                     'timeline_days': None,  # Not in schema
-                    'created_at': row[6].isoformat() if row[6] else None,
-                    'updated_at': row[7].isoformat() if row[7] else None,
-                    'updatedAt': row[7].isoformat() if row[7] else None,
+                    'created_at': row[7].isoformat() if len(row) > 7 and row[7] else None,
+                    'updated_at': row[8].isoformat() if len(row) > 8 and row[8] else None,
+                    'updatedAt': row[8].isoformat() if len(row) > 8 and row[8] else None,
                 })
             print(f"✅ Found {len(proposals)} proposals for user {username} (user_id: {user_id})")
             # Return list directly (Flask will JSON-encode it)
@@ -308,6 +308,10 @@ def create_proposal(username=None, user_id=None, email=None):
             cursor = conn.cursor()
             
             client = data.get('client_name') or data.get('client') or 'Unknown Client'
+            # Accept both snake_case and camelCase from the frontend
+            raw_client_email = data.get('client_email') or data.get('clientEmail')
+            client_email = (raw_client_email or '').strip() or None
+            print(f"📧 create_proposal: raw client_email from request: {repr(raw_client_email)} -> normalized: {repr(client_email)}")
             
             # Normalize status - use lowercase to match database constraint
             raw_status = data.get('status', 'draft')
@@ -392,18 +396,33 @@ def create_proposal(username=None, user_id=None, email=None):
             print(f"✅ Final verification passed: User {user_id} exists, proceeding with proposal INSERT")
             
             # Now we can safely insert the proposal - the user definitely exists
-            cursor.execute(
-                '''INSERT INTO proposals (owner_id, title, content, status, client)
-                   VALUES (%s, %s, %s, %s, %s) 
-                   RETURNING id, owner_id, title, content, status, client, created_at, updated_at''',
-                (
-                    user_id,
-                    data.get('title', 'Untitled Document'),
-                    data.get('content'),
-                    normalized_status,
-                    client
+            if client_email is not None:
+                cursor.execute(
+                    '''INSERT INTO proposals (owner_id, title, content, status, client, client_email)
+                       VALUES (%s, %s, %s, %s, %s, %s) 
+                       RETURNING id, owner_id, title, content, status, client, client_email, created_at, updated_at''',
+                    (
+                        user_id,
+                        data.get('title', 'Untitled Document'),
+                        data.get('content'),
+                        normalized_status,
+                        client,
+                        client_email,
+                    )
                 )
-            )
+            else:
+                cursor.execute(
+                    '''INSERT INTO proposals (owner_id, title, content, status, client)
+                       VALUES (%s, %s, %s, %s, %s) 
+                       RETURNING id, owner_id, title, content, status, client, NULL as client_email, created_at, updated_at''',
+                    (
+                        user_id,
+                        data.get('title', 'Untitled Document'),
+                        data.get('content'),
+                        normalized_status,
+                        client,
+                    )
+                )
             result = cursor.fetchone()
             conn.commit()
             
@@ -416,11 +435,11 @@ def create_proposal(username=None, user_id=None, email=None):
                 'status': result[4],
                 'client_name': result[5] if result[5] else 'Unknown Client',  # Map client to client_name for compatibility
                 'client': result[5] if result[5] else 'Unknown Client',
-                'client_email': '',  # Not in schema
+                'client_email': result[6] if len(result) > 6 and result[6] else '',
                 'budget': None,  # Not in schema
                 'timeline_days': None,  # Not in schema
-                'created_at': result[6].isoformat() if result[6] else None,
-                'updated_at': result[7].isoformat() if result[7] else None,
+                'created_at': result[7].isoformat() if len(result) > 7 and result[7] else None,
+                'updated_at': result[8].isoformat() if len(result) > 8 and result[8] else None,
             }
             
             print(f"✅ Proposal created: {proposal['id']}")
@@ -484,10 +503,13 @@ def update_proposal(username=None, proposal_id=None):
                 client_name = data.get('client_name') or data.get('client')
                 updates.append('client = %s')
                 params.append(client_name)
-            # Note: client_email is not in the schema, so we skip it
-            if 'client_email' in data:
-                # client_email column doesn't exist in proposals table, skip it
-                pass
+            # Accept both snake_case and camelCase for client email updates
+            if 'client_email' in data or 'clientEmail' in data:
+                raw_client_email = data.get('client_email') or data.get('clientEmail')
+                client_email = (raw_client_email or '').strip() or None
+                print(f"📧 update_proposal {proposal_id}: raw client_email from request: {repr(raw_client_email)} -> normalized: {repr(client_email)}")
+                updates.append('client_email = %s')
+                params.append(client_email)
             if 'budget' in data:
                 updates.append('budget = %s')
                 params.append(data['budget'])
@@ -503,7 +525,7 @@ def update_proposal(username=None, proposal_id=None):
             
             cursor.execute(
                 f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s
-                   RETURNING id, owner_id as user_id, title, content, status, client, '' as client_email, NULL as budget, NULL as timeline_days, created_at, updated_at''',
+                   RETURNING id, owner_id as user_id, title, content, status, client, client_email, NULL as budget, NULL as timeline_days, created_at, updated_at''',
                 params
             )
             result = cursor.fetchone()
@@ -518,7 +540,7 @@ def update_proposal(username=None, proposal_id=None):
                 'status': result[4],
                 'client_name': result[5],
                 'client': result[5],
-                'client_email': result[6],
+                'client_email': result[6] if result[6] else '',
                 'budget': float(result[7]) if result[7] else None,
                 'timeline_days': result[8],
                 'created_at': result[9].isoformat() if result[9] else None,
@@ -526,6 +548,7 @@ def update_proposal(username=None, proposal_id=None):
             }
             
             print(f"✅ Proposal updated: {proposal_id}")
+            print(f"📧 Proposal {proposal_id} now has client_email={proposal['client_email']!r}")
             return proposal, 200
     except Exception as e:
         print(f"❌ Error updating proposal: {e}")
@@ -580,7 +603,7 @@ def get_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, owner_id, title, content, status, client, '' as client_email, 
+                '''SELECT id, owner_id, title, content, status, client, client_email, 
                           NULL as budget, NULL as timeline_days, created_at, updated_at
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
@@ -596,7 +619,7 @@ def get_proposal(username=None, proposal_id=None):
                     'status': result[4],
                     'client_name': result[5],
                     'client': result[5],
-                    'client_email': result[6],
+                    'client_email': result[6] if result[6] else '',
                     'budget': float(result[7]) if result[7] else None,
                     'timeline_days': result[8],
                     'created_at': result[9].isoformat() if result[9] else None,

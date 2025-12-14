@@ -103,9 +103,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       }
 
       print('📡 Fetching proposals from API...');
-      
+
       // Fetch pending approvals
-      print('🌐 Fetching pending approvals from: ${ApiService.baseUrl}/api/proposals/pending_approval');
+      print(
+          '🌐 Fetching pending approvals from: ${ApiService.baseUrl}/api/proposals/pending_approval');
       final pendingResponse = await http.get(
         Uri.parse('${ApiService.baseUrl}/api/proposals/pending_approval'),
         headers: {
@@ -119,7 +120,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           throw Exception('Request timed out');
         },
       );
-      
+
       List<Map<String, dynamic>> pending = [];
       if (pendingResponse.statusCode == 200) {
         final pendingData = json.decode(pendingResponse.body);
@@ -128,7 +129,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             .toList();
         print('✅ Pending approvals received: ${pending.length}');
       } else {
-        print('⚠️ Failed to fetch pending approvals: ${pendingResponse.statusCode}');
+        print(
+            '⚠️ Failed to fetch pending approvals: ${pendingResponse.statusCode}');
       }
 
       if (mounted) {
@@ -151,7 +153,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +245,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     final user = AuthService.currentUser ?? app.currentUser ?? {};
     final email = user['email']?.toString() ?? 'admin@khonology.com';
     final backendRole = user['role']?.toString().toLowerCase() ?? 'admin';
-    final displayRole = backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Admin';
+    final displayRole =
+        backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Admin';
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -414,8 +416,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                           padding: EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             'Navigation',
-                            style: TextStyle(
-                                color: Colors.white, fontSize: 12),
+                            style: TextStyle(color: Colors.white, fontSize: 12),
                           ),
                         ),
                       Padding(
@@ -434,11 +435,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               ),
             ),
             const SizedBox(height: 12),
-            _buildNavItem(
-                'Dashboard',
-                'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard',
-                context),
+            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+                _currentPage == 'Dashboard', context),
             _buildNavItem(
                 'Proposals for Review',
                 'assets/images/Time Allocation_Approval_Blue.png',
@@ -464,26 +462,17 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 'assets/images/collaborations.png',
                 _currentPage == 'Client Management',
                 context),
-            _buildNavItem(
-                'User Management',
-                'assets/images/collaborations.png',
-                _currentPage == 'User Management',
-                context),
+            _buildNavItem('User Management', 'assets/images/collaborations.png',
+                _currentPage == 'User Management', context),
             _buildNavItem(
                 'Approved Proposals',
                 'assets/images/Time Allocation_Approval_Blue.png',
                 _currentPage == 'Approved Proposals',
                 context),
-            _buildNavItem(
-                'Audit Logs',
-                'assets/images/analytics.png',
-                _currentPage == 'Audit Logs',
-                context),
-            _buildNavItem(
-                'Settings',
-                'assets/images/analytics.png',
-                _currentPage == 'Settings',
-                context),
+            _buildNavItem('Audit Logs', 'assets/images/analytics.png',
+                _currentPage == 'Audit Logs', context),
+            _buildNavItem('Settings', 'assets/images/analytics.png',
+                _currentPage == 'Settings', context),
             const SizedBox(height: 20),
             if (!_isSidebarCollapsed)
               Container(
@@ -492,8 +481,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 color: const Color(0xFF2C3E50),
               ),
             const SizedBox(height: 12),
-            _buildNavItem('Logout', 'assets/images/Logout_KhonoBuzz.png', false,
-                context),
+            _buildNavItem(
+                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
             const SizedBox(height: 20),
           ],
         ),
@@ -501,8 +490,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
-  Widget _buildNavItem(String label, String assetPath, bool isActive,
-      BuildContext context) {
+  Widget _buildNavItem(
+      String label, String assetPath, bool isActive, BuildContext context) {
     if (_isSidebarCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -558,9 +547,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           decoration: BoxDecoration(
             color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9))
-                : null,
+            border:
+                isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
           ),
           child: Row(
             children: [
@@ -622,8 +610,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: const [
-            Icon(Icons.pending_actions,
-                size: 54, color: PremiumTheme.orange),
+            Icon(Icons.pending_actions, size: 54, color: PremiumTheme.orange),
             SizedBox(height: 12),
             Text(
               'No proposals pending approval',
@@ -669,7 +656,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: PremiumTheme.orange.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(20),
@@ -701,7 +689,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                         : 'Unknown'),
                 if (value != null && value != 0) ...[
                   const SizedBox(width: 12),
-                  _buildInfoChip(Icons.attach_money, _formatCurrency(_parseBudget(value))),
+                  _buildInfoChip(
+                      Icons.attach_money, _formatCurrency(_parseBudget(value))),
                 ],
               ],
             ),
@@ -815,14 +804,77 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         throw Exception('Not authenticated');
       }
 
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/approve'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode({}),
-      );
+      String? clientEmail;
+      final rawEmail = proposal['client_email'] ?? proposal['clientEmail'];
+      if (rawEmail is String && rawEmail.trim().isNotEmpty) {
+        clientEmail = rawEmail.trim();
+      }
+
+      Future<http.Response> sendApproval({String? overrideEmail}) {
+        final body = <String, dynamic>{};
+        final emailToUse = overrideEmail ?? clientEmail;
+        if (emailToUse != null && emailToUse.isNotEmpty) {
+          body['client_email'] = emailToUse;
+        }
+        return http.post(
+          Uri.parse('${ApiService.baseUrl}/api/proposals/$id/approve'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: json.encode(body),
+        );
+      }
+
+      http.Response response = await sendApproval();
+
+      if (response.statusCode == 400) {
+        try {
+          final contentType = response.headers['content-type'] ?? '';
+          if (contentType.contains('application/json')) {
+            final error = json.decode(response.body);
+            if (error is Map &&
+                error['error'] == 'missing_client_email' &&
+                error['has_override_option'] == true) {
+              final controller = TextEditingController(text: clientEmail ?? '');
+              final override = await showDialog<String>(
+                context: context,
+                builder: (context) {
+                  return AlertDialog(
+                    title: const Text('Client Email Required'),
+                    content: TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        labelText: 'Client Email',
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () =>
+                            Navigator.pop(context, controller.text.trim()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: PremiumTheme.teal,
+                        ),
+                        child: const Text('Continue'),
+                      ),
+                    ],
+                  );
+                },
+              );
+
+              if (override != null && override.isNotEmpty) {
+                clientEmail = override;
+                response = await sendApproval(overrideEmail: override);
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
       if (response.statusCode == 200) {
         if (mounted) {
@@ -832,11 +884,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               backgroundColor: Color(0xFF2ECC71),
             ),
           );
-          // Reload data
           _loadData();
         }
       } else {
-        // Handle non-JSON error responses (like 404 HTML pages)
         String errorMessage = 'Failed to approve proposal';
         try {
           final contentType = response.headers['content-type'] ?? '';
@@ -844,17 +894,18 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             final error = json.decode(response.body);
             errorMessage = error['detail'] ?? errorMessage;
           } else {
-            // HTML or other non-JSON response (likely 404 page)
             if (response.statusCode == 404) {
-              errorMessage = 'Proposal approval endpoint not found (404). Please check server configuration.';
+              errorMessage =
+                  'Proposal approval endpoint not found (404). Please check server configuration.';
             } else {
-              errorMessage = 'Server error (${response.statusCode}): ${response.body.substring(0, response.body.length > 100 ? 100 : response.body.length)}';
+              errorMessage =
+                  'Server error (${response.statusCode}): ${response.body.substring(0, response.body.length > 100 ? 100 : response.body.length)}';
             }
           }
-        } catch (parseError) {
-          // If JSON parsing fails, use status code info
+        } catch (_) {
           if (response.statusCode == 404) {
-            errorMessage = 'Endpoint not found (404). The approval route may not be registered correctly.';
+            errorMessage =
+                'Endpoint not found (404). The approval route may not be registered correctly.';
           } else {
             errorMessage = 'Server returned error ${response.statusCode}';
           }

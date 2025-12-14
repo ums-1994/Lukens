@@ -73,14 +73,23 @@ def approve_proposal(username=None, proposal_id=None):
     try:
         data = request.get_json(force=True, silent=True) or {}
         comments = data.get('comments', '')
+        # Allow client_email override to be passed explicitly from the frontend
+        # (e.g., for older proposals that were created before client_email
+        # was consistently stored on the proposal record).
+        override_client_email = (
+            data.get('client_email')
+            or data.get('clientEmail')
+            or ''
+        )
+        override_client_email = override_client_email.strip() if isinstance(override_client_email, str) else ''
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get proposal details - client_email column may not exist, so get it from collaboration_invitations
+            # Get proposal details (including client_email if available)
             cursor.execute(
                 '''SELECT p.id, p.title, p.client, 
-                          p.owner_id as user_id, p.content 
+                          p.owner_id as user_id, p.content, p.client_email 
                    FROM proposals p
                    WHERE p.id = %s''',
                 (proposal_id,)
@@ -92,21 +101,43 @@ def approve_proposal(username=None, proposal_id=None):
             
             title = proposal.get('title')
             client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
-            
-            # Get client_email from collaboration_invitations (proposals table doesn't have this column)
-            client_email = ''
-            cursor.execute(
-                '''SELECT invited_email FROM collaboration_invitations 
-                   WHERE proposal_id = %s 
-                   ORDER BY invited_at DESC LIMIT 1''',
-                (proposal_id,)
-            )
-            inv_row = cursor.fetchone()
-            if inv_row:
-                client_email = inv_row.get('invited_email') if isinstance(inv_row, dict) else (inv_row[0] if isinstance(inv_row, (tuple, list)) and len(inv_row) > 0 else '')
-            
-            # Also try to get from proposal_signatures if available
-            if not client_email or not client_email.strip():
+
+            # Start with client_email stored on the proposal (if schema supports it)
+            client_email = (proposal.get('client_email') or '').strip()
+
+            # If frontend explicitly provided a client email and it looks valid,
+            # prefer that and persist it immediately to the proposal so future
+            # approvals don't have to infer it again.
+            if override_client_email and '@' in override_client_email:
+                client_email = override_client_email
+                try:
+                    cursor.execute(
+                        '''UPDATE proposals 
+                           SET client_email = %s, updated_at = NOW() 
+                           WHERE id = %s''',
+                        (client_email, proposal_id),
+                    )
+                    conn.commit()
+                    print(f"✅ Updated proposal {proposal_id} with override client_email from request: {client_email}")
+                except Exception as email_update_err:
+                    print(f"⚠️ Failed to persist override client_email for proposal {proposal_id}: {email_update_err}")
+
+            # Fallback: Get client_email from collaboration_invitations
+            if not client_email or '@' not in client_email:
+                cursor.execute(
+                    '''SELECT invited_email FROM collaboration_invitations 
+                       WHERE proposal_id = %s 
+                       ORDER BY invited_at DESC LIMIT 1''',
+                    (proposal_id,)
+                )
+                inv_row = cursor.fetchone()
+                if inv_row:
+                    invited_email = inv_row.get('invited_email') if isinstance(inv_row, dict) else (inv_row[0] if isinstance(inv_row, (tuple, list)) and len(inv_row) > 0 else '')
+                    if invited_email and '@' in invited_email:
+                        client_email = invited_email.strip()
+
+            # Fallback: Also try to get from proposal_signatures if available
+            if not client_email or '@' not in client_email:
                 cursor.execute(
                     '''SELECT signer_email FROM proposal_signatures 
                        WHERE proposal_id = %s 
@@ -116,8 +147,24 @@ def approve_proposal(username=None, proposal_id=None):
                 sig_row = cursor.fetchone()
                 if sig_row:
                     sig_email = sig_row.get('signer_email') if isinstance(sig_row, dict) else (sig_row[0] if isinstance(sig_row, (tuple, list)) and len(sig_row) > 0 else '')
-                    if sig_email and sig_email.strip():
-                        client_email = sig_email
+                    if sig_email and '@' in sig_email:
+                        client_email = sig_email.strip()
+
+            # Final attempt: if we have now resolved a valid client email from any
+            # source but the proposal row is still empty, backfill it so future
+            # operations see a consistent value.
+            if client_email and '@' in client_email and not (proposal.get('client_email') or '').strip():
+                try:
+                    cursor.execute(
+                        '''UPDATE proposals 
+                           SET client_email = %s, updated_at = NOW() 
+                           WHERE id = %s''',
+                        (client_email, proposal_id),
+                    )
+                    conn.commit()
+                    print(f"✅ Backfilled client_email on proposal {proposal_id}: {client_email}")
+                except Exception as backfill_err:
+                    print(f"⚠️ Failed to backfill client_email on proposal {proposal_id}: {backfill_err}")
             creator = proposal.get('user_id')
             proposal_content = proposal.get('content')
             display_title = title or f"Proposal {proposal_id}"
@@ -180,10 +227,16 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"   Client name: {client_name}")
                             print(f"   Attempted email: {client_email}")
                             print(f"   Cannot send DocuSign envelope or email without valid email address")
+
+                            # Provide a more structured error back to the frontend so
+                            # it can prompt the approver/creator to supply the email
+                            # and retry, while also exposing the proposal/client info.
                             return {
-                                'detail': f'Cannot send proposal: No valid client email address. Please add client email to proposal.',
+                                'detail': 'Cannot send proposal: No valid client email address. Please add client email to proposal.',
                                 'error': 'missing_client_email',
-                                'client_name': client_name
+                                'client_name': client_name,
+                                'proposal_id': proposal_id,
+                                'has_override_option': True,
                             }, 400
                         
                         effective_client_email = client_email.strip()

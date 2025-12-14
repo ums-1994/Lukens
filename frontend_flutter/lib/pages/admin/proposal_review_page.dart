@@ -217,16 +217,16 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         } else if (data is Map && data.containsKey('comment')) {
           comments = [Map<String, dynamic>.from(data)];
         }
-        
+
         setState(() {
           _comments = comments.map((c) {
             // Normalize comment structure
-            final authorName = c['author_name'] ?? 
-                              c['author_username'] ?? 
-                              c['author_email'] ?? 
-                              c['author'] ?? 
-                              c['created_by_name'] ?? 
-                              'Unknown';
+            final authorName = c['author_name'] ??
+                c['author_username'] ??
+                c['author_email'] ??
+                c['author'] ??
+                c['created_by_name'] ??
+                'Unknown';
             return {
               'id': c['id'],
               'comment': c['comment_text'] ?? c['comment'] ?? '',
@@ -342,13 +342,77 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       final proposalId = int.tryParse(widget.proposalId);
       if (proposalId == null) return;
 
-      final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/approve'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+      String? clientEmail;
+      final rawEmail = _proposal?['client_email'] ?? _proposal?['clientEmail'];
+      if (rawEmail is String && rawEmail.trim().isNotEmpty) {
+        clientEmail = rawEmail.trim();
+      }
+
+      Future<http.Response> sendApproval({String? overrideEmail}) {
+        final body = <String, dynamic>{};
+        final emailToUse = overrideEmail ?? clientEmail;
+        if (emailToUse != null && emailToUse.isNotEmpty) {
+          body['client_email'] = emailToUse;
+        }
+        return http.post(
+          Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/approve'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: json.encode(body),
+        );
+      }
+
+      http.Response response = await sendApproval();
+
+      if (response.statusCode == 400) {
+        try {
+          final contentType = response.headers['content-type'] ?? '';
+          if (contentType.contains('application/json')) {
+            final error = json.decode(response.body);
+            if (error is Map &&
+                error['error'] == 'missing_client_email' &&
+                error['has_override_option'] == true) {
+              final controller = TextEditingController(text: clientEmail ?? '');
+              final override = await showDialog<String>(
+                context: context,
+                builder: (context) {
+                  return AlertDialog(
+                    title: const Text('Client Email Required'),
+                    content: TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        labelText: 'Client Email',
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () =>
+                            Navigator.pop(context, controller.text.trim()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: PremiumTheme.teal,
+                        ),
+                        child: const Text('Continue'),
+                      ),
+                    ],
+                  );
+                },
+              );
+
+              if (override != null && override.isNotEmpty) {
+                clientEmail = override;
+                response = await sendApproval(overrideEmail: override);
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
       if (response.statusCode == 200) {
         if (mounted) {
@@ -361,7 +425,6 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           Navigator.pop(context);
         }
       } else {
-        // Handle non-JSON error responses (like 404 HTML pages)
         String errorMessage = 'Failed to approve proposal';
         try {
           final contentType = response.headers['content-type'] ?? '';
@@ -369,17 +432,17 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
             final error = json.decode(response.body);
             errorMessage = error['detail'] ?? errorMessage;
           } else {
-            // HTML or other non-JSON response (likely 404 page)
             if (response.statusCode == 404) {
-              errorMessage = 'Proposal approval endpoint not found (404). Please check server configuration.';
+              errorMessage =
+                  'Proposal approval endpoint not found (404). Please check server configuration.';
             } else {
               errorMessage = 'Server error (${response.statusCode})';
             }
           }
-        } catch (parseError) {
-          // If JSON parsing fails, use status code info
+        } catch (_) {
           if (response.statusCode == 404) {
-            errorMessage = 'Endpoint not found (404). The approval route may not be registered correctly.';
+            errorMessage =
+                'Endpoint not found (404). The approval route may not be registered correctly.';
           } else {
             errorMessage = 'Server returned error ${response.statusCode}';
           }
@@ -538,7 +601,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             ),
             const SizedBox(width: 8),
@@ -549,7 +613,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: PremiumTheme.teal,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             ),
             const SizedBox(width: 16),
@@ -626,7 +691,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                             _proposal!['updated_at'] != null
                                                 ? DateFormat('dd MMM yyyy')
                                                     .format(DateTime.parse(
-                                                        _proposal!['updated_at']))
+                                                        _proposal![
+                                                            'updated_at']))
                                                 : 'Unknown date',
                                           ),
                                         ],
@@ -686,8 +752,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                         children: [
                                           Text(
                                             'Versions',
-                                            style: PremiumTheme.bodyLarge
-                                                .copyWith(
+                                            style:
+                                                PremiumTheme.bodyLarge.copyWith(
                                               color: Colors.white,
                                               fontWeight: FontWeight.w600,
                                             ),
@@ -707,89 +773,90 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                     )
                                   else
                                     GlassContainer(
-                                    borderRadius: 20,
-                                    padding: const EdgeInsets.all(24),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Versions (${_versions.length})',
-                                          style: PremiumTheme.bodyLarge
-                                              .copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
+                                      borderRadius: 20,
+                                      padding: const EdgeInsets.all(24),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Versions (${_versions.length})',
+                                            style:
+                                                PremiumTheme.bodyLarge.copyWith(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(height: 16),
-                                        ..._versions.map((version) => Padding(
-                                              padding: const EdgeInsets.only(
-                                                  bottom: 12),
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.all(12),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white
-                                                      .withOpacity(0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    Expanded(
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          Text(
-                                                            'Version ${version['version_number']}',
-                                                            style:
-                                                                const TextStyle(
-                                                              color:
-                                                                  Colors.white,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                            ),
-                                                          ),
-                                                          if (version[
-                                                                  'description'] !=
-                                                              null)
+                                          const SizedBox(height: 16),
+                                          ..._versions.map((version) => Padding(
+                                                padding: const EdgeInsets.only(
+                                                    bottom: 12),
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.all(12),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white
+                                                        .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
                                                             Text(
-                                                              version[
-                                                                  'description'],
+                                                              'Version ${version['version_number']}',
                                                               style:
-                                                                  TextStyle(
+                                                                  const TextStyle(
                                                                 color: Colors
-                                                                    .white70,
-                                                                fontSize: 12,
+                                                                    .white,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
                                                               ),
                                                             ),
-                                                        ],
+                                                            if (version[
+                                                                    'description'] !=
+                                                                null)
+                                                              Text(
+                                                                version[
+                                                                    'description'],
+                                                                style:
+                                                                    TextStyle(
+                                                                  color: Colors
+                                                                      .white70,
+                                                                  fontSize: 12,
+                                                                ),
+                                                              ),
+                                                          ],
+                                                        ),
                                                       ),
-                                                    ),
-                                                    Text(
-                                                      version['created_at'] !=
-                                                              null
-                                                          ? DateFormat(
-                                                                  'dd MMM yyyy HH:mm')
-                                                              .format(DateTime
-                                                                  .parse(version[
-                                                                      'created_at']))
-                                                          : '',
-                                                      style: TextStyle(
-                                                        color: Colors.white70,
-                                                        fontSize: 12,
+                                                      Text(
+                                                        version['created_at'] !=
+                                                                null
+                                                            ? DateFormat(
+                                                                    'dd MMM yyyy HH:mm')
+                                                                .format(DateTime
+                                                                    .parse(version[
+                                                                        'created_at']))
+                                                            : '',
+                                                        style: TextStyle(
+                                                          color: Colors.white70,
+                                                          fontSize: 12,
+                                                        ),
                                                       ),
-                                                    ),
-                                                  ],
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            )),
-                                      ],
+                                              )),
+                                        ],
+                                      ),
                                     ),
-                                  ),
                                   const SizedBox(height: 24),
                                 ],
 
@@ -825,7 +892,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                 controller: _commentController,
                                                 style: const TextStyle(
                                                     color: Colors.white),
-                                                decoration: const InputDecoration(
+                                                decoration:
+                                                    const InputDecoration(
                                                   hintText: 'Add a comment...',
                                                   hintStyle: TextStyle(
                                                       color: Colors.white54),
@@ -966,4 +1034,3 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     );
   }
 }
-
