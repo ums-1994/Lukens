@@ -53,7 +53,7 @@ from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 from api.utils.risk_checks import run_prechecks, combine_assessments
-from api.utils.email import send_email
+from api.utils.email import send_email, send_encryption_notification_email, get_logo_html
 
 # Load environment variables
 load_dotenv()
@@ -239,9 +239,25 @@ def init_pg_schema():
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         created_by INTEGER,
+        change_description TEXT DEFAULT 'Version created',
         FOREIGN KEY (proposal_id) REFERENCES proposals(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
+        
+        # Add change_description column if it doesn't exist (for existing tables)
+        cursor.execute('''
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'proposal_versions' 
+                    AND column_name = 'change_description'
+                ) THEN
+                    ALTER TABLE proposal_versions 
+                    ADD COLUMN change_description TEXT DEFAULT 'Version created';
+                END IF;
+            END $$;
+        ''')
         
         # Document comments table
         cursor.execute('''CREATE TABLE IF NOT EXISTS document_comments (
@@ -555,6 +571,29 @@ def create_notification(user_id, notification_type, title, message, proposal_id=
     except Exception as e:
         print(f"⚠️ Failed to create notification: {e}")
         # Don't raise - notification should not break main functionality
+
+def get_approvers():
+    """
+    Get all users with approver/CEO role
+    
+    Returns:
+        List of dicts with id, username, email, first_name, last_name
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # Get users with approver, CEO, or admin role
+            cursor.execute("""
+                SELECT id, username, email, first_name, last_name, role
+                FROM users 
+                WHERE role IN ('approver', 'CEO', 'admin', 'reviewer_approver')
+                AND email IS NOT NULL
+            """)
+            approvers = cursor.fetchall()
+            return [dict(approver) for approver in approvers]
+    except Exception as e:
+        print(f"⚠️ Failed to get approvers: {e}")
+        return []
 
 def notify_proposal_collaborators(proposal_id, notification_type, title, message, exclude_user_id=None, metadata=None):
     """
@@ -1556,7 +1595,47 @@ def create_proposal(username):
             """)
             proposal_columns = {row[0] for row in cursor.fetchall()}
 
+            # Check if client_id column exists, if not add it
+            if 'client_id' not in proposal_columns:
+                try:
+                    cursor.execute("""
+                        ALTER TABLE proposals 
+                        ADD COLUMN IF NOT EXISTS client_id INTEGER
+                    """)
+                    conn.commit()
+                    print(f"[INFO] Added client_id column to proposals table")
+                    proposal_columns.add('client_id')
+                except Exception as e:
+                    print(f"[WARN] Could not add client_id column: {e}")
+
+            # If client_id is provided, fetch client details and auto-fill
+            client_id = data.get('client_id')
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
+            client_email = data.get('client_email')
+            
+            if client_id:
+                try:
+                    cursor.execute("""
+                        SELECT id, company_name, contact_person, email
+                        FROM clients
+                        WHERE id = %s AND created_by = %s
+                    """, (client_id, user_id))
+                    client = cursor.fetchone()
+                    
+                    if client:
+                        # Auto-fill client details from client record
+                        if not client_name or client_name == 'Unknown Client':
+                            client_name = client[1] or client[2] or 'Unknown Client'  # company_name or contact_person
+                        if not client_email:
+                            client_email = client[3]  # email
+                        print(f"[INFO] Auto-filled client details from client_id {client_id}: {client_name}, {client_email}")
+                    else:
+                        print(f"[WARN] Client ID {client_id} not found or not owned by user {username}")
+                        client_id = None  # Don't use invalid client_id
+                except Exception as e:
+                    print(f"[WARN] Error fetching client details: {e}")
+                    client_id = None  # Don't use client_id if there's an error
+
             insert_columns = []
             values = []
 
@@ -1576,15 +1655,15 @@ def create_proposal(username):
                 'content': data.get('content'),
                 'status': data.get('status', 'draft'),
                 'client_name': client_name,
-                'client': data.get('client'),
-                'client_email': data.get('client_email'),
+                'client': data.get('client') or client_name,  # Use client_name if client not provided
+                'client_email': client_email,  # Use auto-filled email if available
                 'budget': data.get('budget'),
                 'timeline_days': data.get('timeline_days'),
                 'sections': json.dumps(data.get('sections') or {}) if 'sections' in proposal_columns else None,
                 'template_key': data.get('template_key'),
                 'pdf_url': data.get('pdf_url'),
                 'client_can_edit': data.get('client_can_edit'),
-                'client_id': data.get('client_id'),
+                'client_id': client_id,  # Use validated client_id
                 'content_html': data.get('content_html'),
             }
 
@@ -1619,6 +1698,11 @@ def create_proposal(username):
                 return_fields.append("client_email")
             else:
                 return_fields.append("NULL::text AS client_email")
+            
+            if 'client_id' in proposal_columns:
+                return_fields.append("client_id")
+            else:
+                return_fields.append("NULL::integer AS client_id")
 
             if 'budget' in proposal_columns:
                 return_fields.append("budget")
@@ -1663,6 +1747,34 @@ def create_proposal(username):
 
             cursor.execute(insert_sql, tuple(values))
             result = cursor.fetchone()
+            
+            proposal_id = result.get('id')
+            
+            # If client_id was provided and valid, create link in client_proposals table
+            if client_id and proposal_id:
+                try:
+                    # Check if client_proposals table exists
+                    cursor.execute("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = 'client_proposals'
+                        )
+                    """)
+                    table_exists = cursor.fetchone()[0]
+                    
+                    if table_exists:
+                        cursor.execute("""
+                            INSERT INTO client_proposals (client_id, proposal_id, relationship_type, linked_by)
+                            VALUES (%s, %s, 'primary', %s)
+                            ON CONFLICT (client_id, proposal_id) DO NOTHING
+                        """, (client_id, proposal_id, user_id))
+                        print(f"[INFO] Linked proposal {proposal_id} to client {client_id}")
+                    else:
+                        print(f"[WARN] client_proposals table does not exist, skipping link creation")
+                except Exception as e:
+                    print(f"[WARN] Could not create client-proposal link: {e}")
+                    # Don't fail proposal creation if link fails
+            
             conn.commit()
             
             section_data = {}
@@ -1686,6 +1798,7 @@ def create_proposal(username):
                 'client_name': result.get('client_name') or '',
                 'client': result.get('client') or '',
                 'client_email': result.get('client_email') or '',
+                'client_id': result.get('client_id'),
                 'budget': float(result['budget']) if result.get('budget') is not None else None,
                 'timeline_days': result.get('timeline_days'),
                 'created_at': result['created_at'].isoformat() if result.get('created_at') else None,
@@ -1696,7 +1809,111 @@ def create_proposal(username):
                 'pdf_url': result.get('pdf_url'),
             }
             
-            print(f"✅ Proposal created successfully with ID: {result[0]}")
+            print(f"✅ Proposal created successfully with ID: {proposal_id}")
+            
+            # Send email notifications and create in-app notifications
+            try:
+                proposal_id = result.get('id')
+                proposal_title = result.get('title', 'Untitled Document')
+                client_name = result.get('client_name') or 'Unknown Client'
+                
+                # Get creator's email
+                cursor.execute("SELECT id, email, first_name, last_name FROM users WHERE id = %s", (user_id,))
+                creator = cursor.fetchone()
+                creator_email = creator['email'] if creator and creator.get('email') else None
+                creator_name = f"{creator.get('first_name', '')} {creator.get('last_name', '')}".strip() or username if creator else username
+                
+                # Send email to creator
+                if creator_email:
+                    try:
+                        email_body = f"""
+                        <html>
+                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <h2 style="color: #2ECC71;">✅ Proposal Created Successfully</h2>
+                                <p>Hello {creator_name},</p>
+                                <p>Your proposal <strong>"{proposal_title}"</strong> for <strong>{client_name}</strong> has been created successfully.</p>
+                                <p><strong>Status:</strong> Draft</p>
+                                <p>You can now edit and prepare your proposal before sending it for approval.</p>
+                                <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
+                                    This is an automated notification from Khonology.
+                                </p>
+                            </div>
+                        </body>
+                        </html>
+                        """
+                        send_email(
+                            to_email=creator_email,
+                            subject=f"Proposal Created: {proposal_title}",
+                            html_content=email_body
+                        )
+                        print(f"[EMAIL] ✅ Notification sent to creator: {creator_email}")
+                    except Exception as email_error:
+                        print(f"[EMAIL] ⚠️ Failed to send email to creator: {email_error}")
+                
+                # Create in-app notification for creator
+                create_notification(
+                    user_id=user_id,
+                    notification_type='proposal_created',
+                    title='Proposal Created',
+                    message=f'Your proposal "{proposal_title}" has been created successfully.',
+                    proposal_id=proposal_id
+                )
+                
+                # Get approvers and notify them
+                approvers = get_approvers()
+                for approver in approvers:
+                    approver_id = approver['id']
+                    approver_email = approver.get('email')
+                    approver_name = f"{approver.get('first_name', '')} {approver.get('last_name', '')}".strip() or approver.get('username', 'Approver')
+                    
+                    # Send email to approver
+                    if approver_email:
+                        try:
+                            email_body = f"""
+                            <html>
+                            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                                    <h2 style="color: #3498DB;">📋 New Proposal Created</h2>
+                                    <p>Hello {approver_name},</p>
+                                    <p>A new proposal has been created by <strong>{creator_name}</strong>:</p>
+                                    <div style="background-color: #F8F9FA; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                                        <p><strong>Title:</strong> {proposal_title}</p>
+                                        <p><strong>Client:</strong> {client_name}</p>
+                                        <p><strong>Status:</strong> Draft</p>
+                                    </div>
+                                    <p>The proposal is currently in draft status. You will be notified when it's ready for your review.</p>
+                                    <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
+                                        This is an automated notification from Khonology.
+                                    </p>
+                                </div>
+                            </body>
+                            </html>
+                            """
+                            send_email(
+                                to_email=approver_email,
+                                subject=f"New Proposal Created: {proposal_title}",
+                                html_content=email_body
+                            )
+                            print(f"[EMAIL] ✅ Notification sent to approver: {approver_email}")
+                        except Exception as email_error:
+                            print(f"[EMAIL] ⚠️ Failed to send email to approver {approver_email}: {email_error}")
+                    
+                    # Create in-app notification for approver
+                    create_notification(
+                        user_id=approver_id,
+                        notification_type='new_proposal_created',
+                        title='New Proposal Created',
+                        message=f'"{proposal_title}" for {client_name} has been created by {creator_name}.',
+                        proposal_id=proposal_id
+                    )
+                
+            except Exception as notif_error:
+                print(f"[WARN] Failed to send notifications for proposal {result.get('id')}: {notif_error}")
+                import traceback
+                traceback.print_exc()
+                # Don't fail the proposal creation if notifications fail
+            
             return proposal, 201
     except Exception as e:
         print(f"❌ Error creating proposal: {e}")
@@ -1880,6 +2097,18 @@ def send_for_approval(username, proposal_id):
             if current_status != 'draft':
                 return {'detail': f'Proposal is already {current_status}'}, 400
             
+            # Get proposal details
+            cursor.execute(
+                '''SELECT id, title, client_name, client_email, user_id 
+                   FROM proposals WHERE id = %s''',
+                (proposal_id,)
+            )
+            proposal_details = cursor.fetchone()
+            if not proposal_details:
+                return {'detail': 'Proposal not found'}, 404
+            
+            proposal_id_db, title, client_name, client_email, creator_user_id = proposal_details
+            
             # Update status to Pending CEO Approval
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() 
@@ -1888,6 +2117,126 @@ def send_for_approval(username, proposal_id):
             )
             result = cursor.fetchone()
             conn.commit()
+            
+            # Send email notifications and create in-app notifications
+            try:
+                # Get creator's details
+                cursor.execute("SELECT id, email, first_name, last_name, username FROM users WHERE id = %s", (creator_user_id,))
+                creator = cursor.fetchone()
+                creator_email = creator[1] if creator and creator[1] else None
+                creator_name = f"{creator[2] or ''} {creator[3] or ''}".strip() or (creator[4] if creator else username) if creator else username
+                
+                # Send email to creator (confirmation)
+                if creator_email:
+                    try:
+                        email_body = f"""
+                        <html>
+                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <h2 style="color: #F39C12;">📤 Proposal Sent for Approval</h2>
+                                <p>Hello {creator_name},</p>
+                                <p>Your proposal <strong>"{title}"</strong> for <strong>{client_name or 'Client'}</strong> has been successfully sent for CEO approval.</p>
+                                <div style="background-color: #FFF3CD; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #F39C12;">
+                                    <p><strong>Status:</strong> Pending CEO Approval</p>
+                                    <p>The proposal is now under review. You will be notified once a decision has been made.</p>
+                                </div>
+                                <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
+                                    This is an automated notification from Khonology.
+                                </p>
+                            </div>
+                        </body>
+                        </html>
+                        """
+                        email_sent = send_email(
+                            to_email=creator_email,
+                            subject=f"Proposal Sent for Approval: {title}",
+                            html_content=email_body
+                        )
+                        if email_sent:
+                            print(f"[EMAIL] ✅ Confirmation sent to creator: {creator_email}")
+                        else:
+                            print(f"[EMAIL] ❌ Failed to send email to creator: {creator_email}")
+                    except Exception as email_error:
+                        print(f"[EMAIL] ❌ Exception sending email to creator: {email_error}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # Create in-app notification for creator
+                create_notification(
+                    user_id=creator_user_id,
+                    notification_type='proposal_sent_for_approval',
+                    title='Proposal Sent for Approval',
+                    message=f'Your proposal "{title}" has been sent for CEO approval.',
+                    proposal_id=proposal_id
+                )
+                
+                # Get approvers and notify them
+                approvers = get_approvers()
+                for approver in approvers:
+                    approver_id = approver['id']
+                    approver_email = approver.get('email')
+                    approver_name = f"{approver.get('first_name', '')} {approver.get('last_name', '')}".strip() or approver.get('username', 'Approver')
+                    
+                    # Send email to approver
+                    if approver_email:
+                        try:
+                            proposal_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:8081')}/#/approver_dashboard"
+                            email_body = f"""
+                            <html>
+                            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                                    <h2 style="color: #E74C3C;">🔔 Action Required: Proposal Pending Approval</h2>
+                                    <p>Hello {approver_name},</p>
+                                    <p>A proposal requires your review and approval:</p>
+                                    <div style="background-color: #F8F9FA; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #E74C3C;">
+                                        <p><strong>Title:</strong> {title}</p>
+                                        <p><strong>Client:</strong> {client_name or 'Not specified'}</p>
+                                        <p><strong>Created by:</strong> {creator_name}</p>
+                                        <p><strong>Status:</strong> <span style="color: #E74C3C; font-weight: bold;">Pending CEO Approval</span></p>
+                                    </div>
+                                    <div style="text-align: center; margin: 30px 0;">
+                                        <a href="{proposal_url}" 
+                                           style="background-color: #E74C3C; color: white; padding: 15px 30px; 
+                                                  text-decoration: none; border-radius: 5px; display: inline-block;
+                                                  font-weight: bold;">
+                                            Review Proposal
+                                        </a>
+                                    </div>
+                                    <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
+                                        This is an automated notification from Khonology.
+                                    </p>
+                                </div>
+                            </body>
+                            </html>
+                            """
+                            email_sent = send_email(
+                                to_email=approver_email,
+                                subject=f"Action Required: Review Proposal - {title}",
+                                html_content=email_body
+                            )
+                            if email_sent:
+                                print(f"[EMAIL] ✅ Notification sent to approver: {approver_email}")
+                            else:
+                                print(f"[EMAIL] ❌ Failed to send email to approver: {approver_email}")
+                        except Exception as email_error:
+                            print(f"[EMAIL] ❌ Exception sending email to approver {approver_email}: {email_error}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    # Create in-app notification for approver
+                    create_notification(
+                        user_id=approver_id,
+                        notification_type='proposal_pending_approval',
+                        title='Proposal Pending Approval',
+                        message=f'"{title}" for {client_name or "Client"} requires your review and approval.',
+                        proposal_id=proposal_id
+                    )
+                
+            except Exception as notif_error:
+                print(f"[WARN] Failed to send notifications for proposal {proposal_id}: {notif_error}")
+                import traceback
+                traceback.print_exc()
+                # Don't fail the request if notifications fail
             
             print(f"✅ Proposal {proposal_id} sent for approval")
             return {
@@ -1901,7 +2250,7 @@ def send_for_approval(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/proposals/<int:proposal_id>/approve")
+@app.post("/api/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username, proposal_id):
     """Approve proposal and send to client"""
@@ -1924,95 +2273,81 @@ def approve_proposal(username, proposal_id):
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            proposal_id, title, client_name, client_email, creator = proposal
+            proposal_id, title, client_name, client_email, creator_user_id = proposal
             
-            # Update status to Sent to Client
+            # Update status to Approved (not Sent to Client - that happens when approver sends to client)
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() 
                    WHERE id = %s RETURNING status''',
-                ('Sent to Client', proposal_id)
+                ('Approved', proposal_id)
             )
             result = cursor.fetchone()
             conn.commit()
             
             if result:
-                print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
+                print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved")
                 
-                # Send email to client if email is provided
-                if client_email and client_email.strip():
+                # Get approver's name
+                cursor.execute('SELECT id, first_name, last_name, username FROM users WHERE username = %s', (username,))
+                approver = cursor.fetchone()
+                approver_name = f"{approver[1] or ''} {approver[2] or ''}".strip() or (approver[3] if approver else username) if approver else username
+                
+                # Get creator's details
+                cursor.execute("SELECT id, email, first_name, last_name, username FROM users WHERE id = %s", (creator_user_id,))
+                creator = cursor.fetchone()
+                creator_email = creator[1] if creator and creator[1] else None
+                creator_name = f"{creator[2] or ''} {creator[3] or ''}".strip() or (creator[4] if creator else 'Creator') if creator else 'Creator'
+                
+                # Send email to creator (notification of approval)
+                if creator_email:
                     try:
-                        # Get user ID for the invitation
-                        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                        user = cursor.fetchone()
-                        user_id = user[0] if user else None
-                        
-                        # Generate secure access token for collaboration
-                        access_token = secrets.token_urlsafe(32)
-                        expires_at = datetime.now() + timedelta(days=90)  # 90 days for client access
-                        
-                        # Create collaboration invitation for the client
-                        cursor.execute("""
-                            INSERT INTO collaboration_invitations 
-                            (proposal_id, invited_email, invited_by, access_token, permission_level, expires_at)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                            ON CONFLICT DO NOTHING
-                        """, (proposal_id, client_email, user_id, access_token, 'view', expires_at))
-                        conn.commit()
-                        
-                        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
-                        proposal_url = f"{frontend_url}/#/collaborate?token={access_token}"
-                        
                         email_body = f"""
                         <html>
-                        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                            <div style="background-color: #2ECC71; padding: 20px; text-align: center;">
-                                <h1 style="color: white; margin: 0;">Proposal Approved</h1>
-                            </div>
-                            <div style="padding: 30px; background-color: #f9f9f9;">
-                                <p>Dear {client_name or 'Valued Client'},</p>
-                                
-                                <p>Great news! Your proposal "<strong>{title}</strong>" has been approved and is ready for your review.</p>
-                                
-                                <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                                    <h3 style="margin-top: 0; color: #2C3E50;">Proposal Details</h3>
-                                    <p><strong>Title:</strong> {title}</p>
-                                    <p><strong>Status:</strong> <span style="color: #2ECC71;">Approved & Ready for Review</span></p>
+                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <h2 style="color: #2ECC71;">✅ Proposal Approved</h2>
+                                <p>Hello {creator_name},</p>
+                                <p>Great news! Your proposal <strong>"{title}"</strong> for <strong>{client_name or 'Client'}</strong> has been approved by <strong>{approver_name}</strong>.</p>
+                                <div style="background-color: #D4EDDA; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #2ECC71;">
+                                    <p><strong>Status:</strong> <span style="color: #2ECC71; font-weight: bold;">Approved</span></p>
+                                    <p>The proposal is now ready to be sent to the client. The approver will send the encrypted email with secure link to the client.</p>
                                 </div>
-                                
-                                <div style="text-align: center; margin: 30px 0;">
-                                    <a href="{proposal_url}" 
-                                       style="background-color: #2ECC71; color: white; padding: 15px 30px; 
-                                              text-decoration: none; border-radius: 5px; display: inline-block;
-                                              font-weight: bold;">
-                                        View Proposal
-                                    </a>
-                                </div>
-                                
-                                <p style="color: #7F8C8D; font-size: 12px; margin-top: 30px;">
-                                    This secure link will remain active for 90 days.<br>
-                                    This is an automated message. Please do not reply to this email.
+                                {f'<p><strong>Approver Comments:</strong> {comments}</p>' if comments else ''}
+                                <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
+                                    This is an automated notification from Khonology.
                                 </p>
                             </div>
                         </body>
                         </html>
                         """
-                        
-                        send_email(
-                            to_email=client_email,
+                        email_sent = send_email(
+                            to_email=creator_email,
                             subject=f"Proposal Approved: {title}",
                             html_content=email_body
                         )
-                        print(f"[SUCCESS] Email sent to client: {client_email} with collaboration token")
+                        if email_sent:
+                            print(f"[EMAIL] ✅ Approval notification sent to creator: {creator_email}")
+                        else:
+                            print(f"[EMAIL] ❌ Failed to send email to creator: {creator_email}")
                     except Exception as email_error:
-                        print(f"[WARN] Could not send email to client: {email_error}")
+                        print(f"[EMAIL] ❌ Exception sending email to creator: {email_error}")
                         import traceback
                         traceback.print_exc()
-                        # Don't fail the approval if email fails
+                
+                # Create in-app notification for creator
+                create_notification(
+                    user_id=creator_user_id,
+                    notification_type='proposal_approved',
+                    title='Proposal Approved',
+                    message=f'Your proposal "{title}" has been approved by {approver_name}.',
+                    proposal_id=proposal_id,
+                    metadata={'approver': approver_name, 'comments': comments} if comments else {'approver': approver_name}
+                )
                 
                 return {
-                    'detail': 'Proposal approved and sent to client',
+                    'detail': 'Proposal approved successfully',
                     'status': result[0],
-                    'email_sent': bool(client_email and client_email.strip())
+                    'message': 'The proposal has been approved. You can now send it to the client using the "Send to Client" action.'
                 }, 200
             else:
                 return {'detail': 'Failed to update proposal status'}, 500
@@ -2082,20 +2417,222 @@ def update_proposal_status(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/proposals/<int:proposal_id>/send_to_client")
+@app.post("/api/proposals/<int:proposal_id>/send-to-client")
 @token_required
 def send_to_client(username, proposal_id):
+    """Send encrypted email with secure link to client (for approvers only)"""
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''UPDATE proposals SET status = 'Sent to Client' WHERE id = %s''',
-            (proposal_id,)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Proposal sent to client'}, 200
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get current user's role
+            cursor.execute('SELECT id, role, first_name, last_name FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+            
+            user_id, user_role, first_name, last_name = user
+            approver_name = f"{first_name or ''} {last_name or ''}".strip() or username
+            
+            # Check if user is an approver
+            if user_role not in ('approver', 'CEO', 'admin', 'reviewer_approver'):
+                return {'detail': 'Only approvers can send proposals to clients'}, 403
+            
+            # Get proposal details
+            cursor.execute(
+                '''SELECT id, title, client_name, client_email, user_id, status 
+                   FROM proposals WHERE id = %s''',
+                (proposal_id,)
+            )
+            proposal = cursor.fetchone()
+            
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            proposal_id_db, title, client_name, client_email, creator_user_id, current_status = proposal
+            
+            # Check if proposal is approved
+            if current_status not in ('Approved', 'Pending CEO Approval'):
+                return {'detail': f'Proposal must be approved before sending to client. Current status: {current_status}'}, 400
+            
+            # Check if client email is provided
+            if not client_email or not client_email.strip():
+                return {'detail': 'Client email is required to send the proposal'}, 400
+            
+            # Generate secure access token for client onboarding
+            access_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(days=90)  # 90 days for client access
+            
+            # Create client onboarding invitation (not collaboration invitation)
+            # This will allow the client to access the proposal through onboarding
+            cursor.execute("""
+                INSERT INTO client_onboarding_invitations 
+                (access_token, invited_email, invited_by, expected_company, status, expires_at)
+                VALUES (%s, %s, %s, %s, 'pending', %s)
+                ON CONFLICT (access_token) 
+                DO UPDATE SET access_token = EXCLUDED.access_token, expires_at = EXCLUDED.expires_at
+                RETURNING id, access_token
+            """, (access_token, client_email, user_id, client_name, expires_at))
+            
+            result = cursor.fetchone()
+            if not result:
+                return {'detail': 'Failed to create client invitation'}, 500
+            
+            invitation_id, onboarding_token = result
+            conn.commit()
+            
+            # Generate onboarding link (using hash-based routing)
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+            onboarding_url = f"{frontend_url}/#/onboard/{onboarding_token}"
+            
+            # Send email with onboarding link to client
+            try:
+                logo_html = get_logo_html()
+                html_content = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{ font-family: 'Poppins', Arial, sans-serif; background-color: #000000; padding: 40px 20px; }}
+                        .container {{ max-width: 600px; margin: 0 auto; background-color: #1A1A1A; border-radius: 24px; border: 1px solid rgba(233, 41, 58, 0.3); padding: 40px; }}
+                        .security-box {{ background-color: #2A2A2A; border: 2px solid #E9293A; border-radius: 12px; padding: 24px; margin: 30px 0; }}
+                        .token-box {{ background-color: #111111; border: 1px solid #333333; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0; font-family: 'Courier New', monospace; font-size: 14px; color: #E9293A; word-break: break-all; }}
+                        .footer {{ color: #666; font-size: 12px; text-align: center; margin-top: 30px; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        {logo_html}
+                        <h1 style="color: #FFFFFF; text-align: center; margin-bottom: 20px;">🔒 Secure Proposal Access</h1>
+                        <p style="color: #B3B3B3; font-size: 16px; line-height: 1.6;">
+                            Hello! Your proposal "<strong style="color: #FFFFFF;">{title}</strong>" is ready for secure access.
+                        </p>
+                        
+                        <div class="security-box">
+                            <p style="margin: 0 0 15px 0; font-family: 'Poppins', Arial, sans-serif; font-size: 14px; font-weight: 600; color: #E9293A; text-transform: uppercase; letter-spacing: 0.5px;">
+                                🔐 Security Features
+                            </p>
+                            <ul style="margin: 0; padding-left: 20px; color: #B3B3B3; font-size: 14px; line-height: 1.8;">
+                                <li>End-to-end encryption (AES-256)</li>
+                                <li>Secure token-based access</li>
+                                <li>Time-limited access link</li>
+                                <li>No password required (token-based)</li>
+                            </ul>
+                        </div>
+                        
+                        <p style="color: #B3B3B3; font-size: 16px; line-height: 1.6; text-align: center; margin: 30px 0 20px 0;">
+                            Click the button below to access your proposal:
+                        </p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="{onboarding_url}" style="display: inline-block; padding: 16px 40px; font-family: 'Poppins', Arial, sans-serif; font-size: 16px; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 8px; background: linear-gradient(135deg, #E9293A 0%, #780A01 100%); box-shadow: 0 4px 20px rgba(233, 41, 58, 0.4);">
+                                Access Proposal →
+                            </a>
+                        </div>
+                        
+                        <p style="color: #B3B3B3; font-size: 14px; line-height: 1.6; margin-top: 20px;">
+                            Or copy and paste this secure link into your browser:
+                        </p>
+                        <p style="color: #E9293A; font-size: 11px; line-height: 1.5; word-break: break-all; text-align: center; background-color: #2A2A2A; padding: 12px; border-radius: 6px; margin: 10px 0 30px 0;">
+                            {onboarding_url}
+                        </p>
+                        
+                        <div class="footer">
+                            <p>© 2025 Khonology. All rights reserved.</p>
+                            <p style="margin-top: 8px; color: #555;">This is a secure, encrypted message. Please do not reply to this email.</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+                
+                email_sent = send_email(
+                    to_email=client_email,
+                    subject=f"Secure Access: {title}",
+                    html_content=html_content
+                )
+                
+                if not email_sent:
+                    print(f"[EMAIL] ❌ Failed to send email to client: {client_email}")
+                    return {'detail': 'Failed to send email to client. Please check email configuration.'}, 500
+                
+                print(f"[EMAIL] ✅ Encrypted email sent to client: {client_email}")
+            except Exception as email_error:
+                print(f"[EMAIL] ❌ Failed to send email to client: {email_error}")
+                import traceback
+                traceback.print_exc()
+                return {'detail': f'Failed to send email: {str(email_error)}'}, 500
+            
+            # Update status to Sent to Client
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() 
+                   WHERE id = %s RETURNING status''',
+                ('Sent to Client', proposal_id)
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            
+            # Get creator's details for notification
+            cursor.execute("SELECT id, email, first_name, last_name, username FROM users WHERE id = %s", (creator_user_id,))
+            creator = cursor.fetchone()
+            creator_email = creator[1] if creator and creator[1] else None
+            creator_name = f"{creator[2] or ''} {creator[3] or ''}".strip() or (creator[4] if creator else 'Creator') if creator else 'Creator'
+            
+            # Send email to creator (notification that proposal was sent to client)
+            if creator_email:
+                try:
+                    email_body = f"""
+                    <html>
+                    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                            <h2 style="color: #3498DB;">📧 Proposal Sent to Client</h2>
+                            <p>Hello {creator_name},</p>
+                            <p>Your proposal <strong>"{title}"</strong> for <strong>{client_name or 'Client'}</strong> has been sent to the client by <strong>{approver_name}</strong>.</p>
+                            <div style="background-color: #E8F4F8; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #3498DB;">
+                                <p><strong>Status:</strong> <span style="color: #3498DB; font-weight: bold;">Sent to Client</span></p>
+                                <p><strong>Client Email:</strong> {client_email}</p>
+                                <p>The client has received an encrypted email with a secure link to access the proposal.</p>
+                            </div>
+                            <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
+                                This is an automated notification from Khonology.
+                            </p>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    email_sent = send_email(
+                        to_email=creator_email,
+                        subject=f"Proposal Sent to Client: {title}",
+                        html_content=email_body
+                    )
+                    if email_sent:
+                        print(f"[EMAIL] ✅ Notification sent to creator: {creator_email}")
+                    else:
+                        print(f"[EMAIL] ❌ Failed to send email to creator: {creator_email}")
+                except Exception as email_error:
+                    print(f"[EMAIL] ❌ Exception sending email to creator: {email_error}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Create in-app notification for creator
+            create_notification(
+                user_id=creator_user_id,
+                notification_type='proposal_sent_to_client',
+                title='Proposal Sent to Client',
+                message=f'Your proposal "{title}" has been sent to {client_name or "the client"} by {approver_name}.',
+                proposal_id=proposal_id
+            )
+            
+            return {
+                'detail': 'Proposal sent to client successfully',
+                'status': result[0],
+                'email_sent': True,
+                'client_email': client_email
+            }, 200
+                
     except Exception as e:
+        print(f"❌ Error sending proposal to client: {e}")
+        import traceback
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/proposals/<int:proposal_id>/client_decline")
@@ -5066,8 +5603,10 @@ def cancel_invitation(username=None, invitation_id=None):
 # The blueprint routes are registered above and will take precedence.
 # TODO: Remove these old route definitions after confirming everything works.
 
-@app.post("/onboard/<token>/verify-email")
-def send_verification_code(token):
+# NOTE: Verify email route is handled by the 'onboarding' blueprint
+# This duplicate route has been removed to avoid conflicts
+# Route is defined in: api/routes/onboarding.py
+def _legacy_send_verification_code(token):
     """Send verification code to email (public endpoint)"""
     try:
         data = request.json
@@ -5190,9 +5729,10 @@ def send_verification_code(token):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# Verify email code (PUBLIC - no auth)
-@app.post("/onboard/<token>/verify-code")
-def verify_email_code(token):
+# NOTE: Verify code route is handled by the 'onboarding' blueprint
+# This duplicate route has been removed to avoid conflicts
+# Route is defined in: api/routes/onboarding.py
+def _legacy_verify_email_code(token):
     """Verify email verification code (public endpoint)"""
     try:
         data = request.json
@@ -5302,54 +5842,14 @@ def verify_email_code(token):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# Get onboarding form (PUBLIC - no auth)
-@app.get("/onboard/<token>")
-def get_onboarding_form(token):
-    """Get onboarding form details by token (public endpoint)"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            cursor.execute("""
-                SELECT id, invited_email, expected_company, status, expires_at
-                FROM client_onboarding_invitations
-                WHERE access_token = %s
-            """, (token,))
-            
-            invitation = cursor.fetchone()
-            
-            if not invitation:
-                return jsonify({"error": "Invalid invitation link"}), 404
-            
-            if invitation['status'] != 'pending':
-                return jsonify({"error": "This invitation has already been used"}), 400
-            
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.now(timezone.utc):
-                return jsonify({"error": "This invitation has expired"}), 400
-            
-            # Check if email is verified
-            cursor.execute("""
-                SELECT email_verified_at
-                FROM client_onboarding_invitations
-                WHERE access_token = %s
-            """, (token,))
-            verified = cursor.fetchone()
-            is_verified = verified and verified['email_verified_at']
-            
-            return jsonify({
-                "invited_email": invitation['invited_email'],
-                "expected_company": invitation['expected_company'],
-                "expires_at": invitation['expires_at'].isoformat(),
-                "email_verified": bool(is_verified)
-            }), 200
-            
-    except Exception as e:
-        print(f"❌ Error getting onboarding form: {e}")
-        return jsonify({"error": str(e)}), 500
+# NOTE: Onboarding routes are handled by the 'onboarding' blueprint
+# These duplicate routes have been removed to avoid conflicts
+# Routes are defined in: api/routes/onboarding.py
 
-# Submit onboarding (PUBLIC - no auth)
-@app.post("/onboard/<token>")
-def submit_onboarding(token):
+# NOTE: Submit onboarding route is handled by the 'onboarding' blueprint
+# This duplicate route has been removed to avoid conflicts
+# Route is defined in: api/routes/onboarding.py
+def _legacy_submit_onboarding(token):
     """Submit client onboarding form (public endpoint)"""
     try:
         data = request.json
@@ -5441,6 +5941,70 @@ def submit_onboarding(token):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+# Get clients for dropdown selection (simplified format)
+@app.get("/api/clients/for-selection")
+@token_required
+def get_clients_for_selection(username=None):
+    """Get clients in a simplified format optimized for dropdown/selection components"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user ID
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"error": "User not found"}), 404
+            
+            user_id = user_row['id']
+            
+            # Get search parameter
+            search = request.args.get('search', '').strip()
+            
+            if search:
+                cursor.execute("""
+                    SELECT 
+                        id, company_name, contact_person, email, phone
+                    FROM clients
+                    WHERE created_by = %s
+                    AND status = 'active'
+                    AND (
+                        company_name ILIKE %s 
+                        OR contact_person ILIKE %s 
+                        OR email ILIKE %s
+                    )
+                    ORDER BY company_name ASC
+                    LIMIT 50
+                """, (user_id, f'%{search}%', f'%{search}%', f'%{search}%'))
+            else:
+                cursor.execute("""
+                    SELECT 
+                        id, company_name, contact_person, email, phone
+                    FROM clients
+                    WHERE created_by = %s
+                    AND status = 'active'
+                    ORDER BY company_name ASC
+                    LIMIT 100
+                """, (user_id,))
+            
+            clients = cursor.fetchall()
+            
+            # Return simplified format for dropdown
+            clients_list = [{
+                'id': client['id'],
+                'label': f"{client['company_name']} - {client['contact_person']}",
+                'company_name': client['company_name'],
+                'contact_person': client['contact_person'],
+                'email': client['email'],
+                'phone': client.get('phone')
+            } for client in clients]
+            
+            return jsonify(clients_list), 200
+            
+    except Exception as e:
+        print(f"❌ Error fetching clients for selection: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # Get all clients
 @app.get("/clients")
 @token_required
@@ -5458,20 +6022,58 @@ def get_clients(username=None):
             
             user_id = user_row['id']
             
-            # Get all clients
-            cursor.execute("""
-                SELECT 
-                    id, company_name, contact_person, email, phone,
-                    industry, company_size, location, business_type,
-                    project_needs, budget_range, timeline, additional_info,
-                    status, created_at, updated_at
-                FROM clients
-                WHERE created_by = %s
-                ORDER BY created_at DESC
-            """, (user_id,))
+            # Get all clients - optimized for dropdown selection
+            # Include search parameter if provided
+            search = request.args.get('search', '').strip()
+            
+            if search:
+                cursor.execute("""
+                    SELECT 
+                        id, company_name, contact_person, email, phone,
+                        industry, company_size, location, business_type,
+                        project_needs, budget_range, timeline, additional_info,
+                        status, created_at, updated_at
+                    FROM clients
+                    WHERE created_by = %s
+                    AND (
+                        company_name ILIKE %s 
+                        OR contact_person ILIKE %s 
+                        OR email ILIKE %s
+                    )
+                    ORDER BY company_name ASC
+                    LIMIT 50
+                """, (user_id, f'%{search}%', f'%{search}%', f'%{search}%'))
+            else:
+                cursor.execute("""
+                    SELECT 
+                        id, company_name, contact_person, email, phone,
+                        industry, company_size, location, business_type,
+                        project_needs, budget_range, timeline, additional_info,
+                        status, created_at, updated_at
+                    FROM clients
+                    WHERE created_by = %s
+                    ORDER BY company_name ASC
+                    LIMIT 100
+                """, (user_id,))
             
             clients = cursor.fetchall()
-            return jsonify([dict(client) for client in clients]), 200
+            
+            # Format for dropdown (simplified response)
+            format_type = request.args.get('format', 'full')
+            if format_type == 'dropdown':
+                # Return simplified format for dropdown selection
+                clients_list = [{
+                    'id': client['id'],
+                    'label': f"{client['company_name']} - {client['contact_person']}",
+                    'company_name': client['company_name'],
+                    'contact_person': client['contact_person'],
+                    'email': client['email'],
+                    'phone': client.get('phone')
+                } for client in clients]
+                return jsonify(clients_list), 200
+            else:
+                # Return full client data
+                return jsonify([dict(client) for client in clients]), 200
             
     except Exception as e:
         print(f"❌ Error fetching clients: {e}")
