@@ -8,7 +8,6 @@ import 'dart:math' as math; // For animation utility
 // import 'package:pdh/services/backend_auth_service.dart';
 // import 'package:firebase_auth/firebase_auth.dart';
 // import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:pdh/widgets/floating_circles_particle_animation.dart'; // Assume this is available
 
 // --- START: Merged Screen Widget ---
 
@@ -40,7 +39,6 @@ class _MergedLandingScreenState extends State<MergedLandingScreen>
   late Timer _timer;
   bool _isCheckingToken = false;
   bool _isProcessingButton = false;
-  final GlobalKey<FloatingCirclesParticleAnimationState> _animationKey = GlobalKey();
 
   @override
   void initState() {
@@ -165,14 +163,14 @@ class _MergedLandingScreenState extends State<MergedLandingScreen>
       final int bgWidth = (MediaQuery.of(context).size.width * 1.5).toInt();
       // Precache background image
       precacheImage(
-        const AssetImage('assets/khono_bg.png'),
+        const AssetImage('assets/images/khono_bg.png'),
         context,
         size: Size(bgWidth.toDouble(), MediaQuery.of(context).size.height),
       );
       // Precache logo image
       final double dpr = MediaQuery.of(context).devicePixelRatio;
       precacheImage(
-        const AssetImage('assets/khono.png'),
+        const AssetImage('assets/images/2026.png'),
         context,
         size: Size(320 * dpr, 160 * dpr),
       );
@@ -199,14 +197,6 @@ class _MergedLandingScreenState extends State<MergedLandingScreen>
               // Layer 1: Background with fade-in (Combined background)
               _buildBackground(), // Uses script 2's Opacity & Stack
 
-              // Layer 2: Particle Animation (from script 1)
-              FloatingCirclesParticleAnimation(
-                key: _animationKey,
-                circleColor: const Color(0xFFC10D00).withOpacity(0.7),
-                numberOfParticles: 20,
-                maxParticleSize: 6.0,
-              ),
-
               // Layer 3: Content overlay (from script 1)
               _buildContentOverlay(),
             ],
@@ -219,13 +209,13 @@ class _MergedLandingScreenState extends State<MergedLandingScreen>
   // Background building method adapted from PersonalDevelopmentHubScreen's look,
   // but using AnimatedLandingPageV2's Opacity logic for fade-in.
   Widget _buildBackground() {
-    return Opacity(
-      opacity: _backgroundAnim.value, // Animate from script 2
-      child: Positioned.fill(
+    return Positioned.fill(
+      child: Opacity(
+        opacity: _backgroundAnim.value,
         child: Container(
           decoration: BoxDecoration(
             image: DecorationImage(
-              image: const AssetImage('assets/khono_bg.png'),
+              image: const AssetImage('assets/images/khono_bg.png'),
               fit: BoxFit.cover,
               colorFilter: ColorFilter.mode(
                 Colors.black.withOpacity(0.4),
@@ -250,16 +240,34 @@ class _MergedLandingScreenState extends State<MergedLandingScreen>
               Center(
                 child: GestureDetector(
                   onTap: () {
-                    _animationKey.currentState?.triggerParticleExplosion();
+                    // Particle explosion removed
                   },
                   child: Image.asset(
-                    'assets/khono.png',
+                    'assets/images/2026.png',
                     height: 160,
                     fit: BoxFit.contain,
                     filterQuality: FilterQuality.high,
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+              
+              // Sub-logo Text
+              Opacity(
+                opacity: _subheadingAnim.value,
+                child: const Text(
+                  'Proposal and SOW Builder',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontFamily: 'Poppins',
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+
               const SizedBox(height: 24),
               
               // Tagline - Centered (from script 1) - Fades in with _subheadingAnim
@@ -302,57 +310,44 @@ class _MergedLandingScreenState extends State<MergedLandingScreen>
               // Login/CTA Buttons (New elements, using the style/logic from script 2)
               Opacity(
                 opacity: _buttonsAnim.value,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center, // Center the buttons
-                  children: [
-                    // Start Login Button (Using script 2's glow/style for a modern look)
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(50),
-                        boxShadow: [
-                          BoxShadow(
-                            // Glow effect from script 2
-                            color: const Color(0xFFC10D00).withOpacity(_glowAnim.value),
-                            blurRadius: 30,
-                            spreadRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: _isProcessingButton || _isCheckingToken
-                            ? null
-                            : () {
-                                // Simulate triggering auto-login for demonstration
-                                setState(() {
-                                  _isProcessingButton = true;
-                                });
-                                _checkTokenAndAutoLogin();
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFC10D00),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 56,
-                            vertical: 18,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(50),
-                          ),
-                          elevation: 0,
+                child: Center(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(50),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFC10D00).withOpacity(_glowAnim.value),
+                          blurRadius: 30,
+                          spreadRadius: 5,
                         ),
-                        child: Text(
-                          _isProcessingButton || _isCheckingToken
-                              ? 'Checking Login...' // Show login state
-                              : 'Secure Login', // Updated CTA text
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                          ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/register');
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC10D00),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 56,
+                          vertical: 18,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(50),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'GET STARTED',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
 

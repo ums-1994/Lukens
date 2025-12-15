@@ -150,7 +150,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
           // Background image (matching the rest of the app)
           Positioned.fill(
             child: Image.asset(
-              'assets/images/Global BG.jpg',
+              'assets/images/khono_bg.png',
               fit: BoxFit.cover,
             ),
           ),
