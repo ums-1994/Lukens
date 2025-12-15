@@ -25,7 +25,8 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final String? initialTitle;
   final Map<String, dynamic>? aiGeneratedSections;
   final bool readOnly; // For approver view-only mode
-  final bool isCollaborator; // For collaborator mode - hide navigation, show only editor
+  final bool
+      isCollaborator; // For collaborator mode - hide navigation, show only editor
 
   const BlankDocumentEditorPage({
     super.key,
@@ -73,6 +74,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Sidebar state
   bool _isSidebarCollapsed = false;
+  bool _isRightSidebarCollapsed = false;
   String _currentPage = 'Editor';
 
   List<String> _signatures = [
@@ -116,15 +118,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     print('   proposalTitle: ${widget.proposalTitle}');
     print('   initialTitle: ${widget.initialTitle}');
 
+    final isTempProposal =
+        widget.proposalId != null && widget.proposalId!.startsWith('temp-');
+
     _titleController = TextEditingController(
-      text: widget.initialTitle ?? widget.proposalTitle ?? 'Untitled Document',
+      text: isTempProposal
+          ? ''
+          : widget.initialTitle ?? widget.proposalTitle ?? 'Untitled Document',
     );
     _clientNameController = TextEditingController();
     _clientEmailController = TextEditingController();
     _commentController = TextEditingController();
     _commentController.addListener(_handleCommentTextChanged);
     _commentFocusNode.addListener(_handleCommentFocusChange);
-    
+
     // Auto-show comments panel for collaborators
     if (widget.isCollaborator) {
       _showCommentsPanel = true;
@@ -529,8 +536,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       print('🔄 Loading collaborators for proposal $_savedProposalId...');
       final response = await http.get(
-        Uri.parse(
-            '$baseUrl/api/proposals/$_savedProposalId/collaborators'),
+        Uri.parse('$baseUrl/api/proposals/$_savedProposalId/collaborators'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -2887,7 +2893,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // In collaborator mode, hide navigation sidebar but allow editing
     final isCollaboratorMode = widget.isCollaborator;
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
@@ -2895,7 +2901,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Left Sidebar (hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode) _buildLeftSidebar(),
           // Sections Sidebar (conditional, hide in read-only mode AND collaborator mode)
-          if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar) _buildSectionsSidebar(),
+          if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar)
+            _buildSectionsSidebar(),
           // Main content
           Expanded(
             child: _currentPage == 'Governance & Risk'
@@ -2938,9 +2945,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               ),
                             ),
                             // Right sidebar (hide in read-only mode AND collaborator mode)
-                            if (!isReadOnly && !isCollaboratorMode) _buildRightSidebar(),
+                            if (!isReadOnly && !isCollaboratorMode)
+                              _buildRightSidebar(),
                             // Comments panel (right-side, toggleable) - always show for collaborators
-                            if (_showCommentsPanel || isCollaboratorMode) _buildCommentsPanel(),
+                            if (_showCommentsPanel || isCollaboratorMode)
+                              _buildCommentsPanel(),
                           ],
                         ),
                       ),
@@ -3795,23 +3804,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00BCD4),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'Document',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -5364,38 +5356,74 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildRightSidebar() {
-    return Container(
-      width: 300,
+    final bool isCollapsed = _isRightSidebarCollapsed;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: isCollapsed ? 56 : 300,
       color: Colors.white,
       child: Column(
         children: [
-          // Panel tabs/icons at the top
+          // Panel tabs/icons at the top + collapse toggle
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildPanelTabIcon(Icons.tune, 'templates', 'Templates'),
-                _buildPanelTabIcon(Icons.add_box_outlined, 'build', 'Build'),
-                _buildPanelTabIcon(
-                    Icons.cloud_upload_outlined, 'upload', 'Upload'),
-                _buildPanelTabIcon(Icons.edit_note, 'signature', 'Signature'),
-                _buildAIAnalysisIcon(),
+                if (!isCollapsed)
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildPanelTabIcon(
+                            Icons.tune, 'templates', 'Templates'),
+                        _buildPanelTabIcon(
+                            Icons.add_box_outlined, 'build', 'Build'),
+                        _buildPanelTabIcon(
+                            Icons.cloud_upload_outlined, 'upload', 'Upload'),
+                        _buildPanelTabIcon(
+                            Icons.edit_note, 'signature', 'Signature'),
+                        _buildAIAnalysisIcon(),
+                      ],
+                    ),
+                  ),
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _isRightSidebarCollapsed = !_isRightSidebarCollapsed;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey[300]!, width: 1),
+                    ),
+                    child: Icon(
+                      isCollapsed ? Icons.chevron_left : Icons.chevron_right,
+                      size: 18,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          // Panel content
-          Expanded(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: _buildPanelContent(),
+          // Panel content (hidden when collapsed)
+          if (!isCollapsed)
+            Expanded(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: _buildPanelContent(),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );

@@ -77,16 +77,18 @@ class SectionWidget extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
-                      children: const [
-                        Icon(
+                      children: [
+                        const Icon(
                           Icons.drag_indicator,
                           size: 16,
                           color: Color(0xFF9CA3AF),
                         ),
-                        SizedBox(width: 4),
+                        const SizedBox(width: 4),
                         Text(
-                          'Section block',
-                          style: TextStyle(
+                          section.titleController.text.isEmpty
+                              ? 'Section title'
+                              : section.titleController.text,
+                          style: const TextStyle(
                             fontSize: 11,
                             color: Color(0xFF6B7280),
                             fontWeight: FontWeight.w500,
@@ -151,6 +153,32 @@ class SectionWidget extends StatelessWidget {
                     ),
                   ],
                 ),
+              const SizedBox(height: 4),
+              // Editable section title above content
+              TextField(
+                focusNode: section.titleFocus,
+                controller: section.titleController,
+                enabled: !readOnly,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Section title (e.g., Cover Letter)',
+                  hintStyle: TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                  border: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 4),
+                  isDense: true,
+                ),
+                onChanged: (value) {
+                  section.title = value;
+                },
+              ),
               const SizedBox(height: 4),
               // Clean content area - text field for writing
               TextField(
