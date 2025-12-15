@@ -39,7 +39,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+      _enforceAccessAndLoad();
     });
   }
 
@@ -48,6 +48,20 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _enforceAccessAndLoad() async {
+    final userRole =
+        AuthService.currentUser?['role']?.toString().toLowerCase() ?? 'manager';
+
+    // Only allow admin/CEO users to access this dashboard
+    if (userRole != 'admin' && userRole != 'ceo') {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/creator_dashboard');
+      return;
+    }
+
+    await _loadData();
   }
 
   Future<void> _loadData() async {

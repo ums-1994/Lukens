@@ -643,6 +643,10 @@ class _HomeShellState extends State<HomeShell> {
       // initialize once with desired index
       idx = widget.initialIdx!;
     }
+    final user = AuthService.currentUser;
+    final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
+    final bool isAdminUser = backendRole == 'admin' || backendRole == 'ceo';
+
     return Scaffold(
       body: Row(
         children: [
@@ -651,63 +655,66 @@ class _HomeShellState extends State<HomeShell> {
           Expanded(child: pages[idx]),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Switch Role'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.dashboard_outlined),
-                    title: const Text('Business Developer - Dashboard'),
-                    onTap: () {
-                      setState(() => idx = 0);
-                      Navigator.pop(context);
-                    },
+      floatingActionButton: isAdminUser
+          ? FloatingActionButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Switch Role'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.dashboard_outlined),
+                          title: const Text('Business Developer - Dashboard'),
+                          onTap: () {
+                            setState(() => idx = 0);
+                            Navigator.pop(context);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.description_outlined),
+                          title: const Text('Business Developer - Proposals'),
+                          onTap: () {
+                            setState(() => idx = 1);
+                            Navigator.pop(context);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.approval_outlined),
+                          title: const Text('Reviewer / Approver'),
+                          onTap: () {
+                            setState(() => idx = 9);
+                            Navigator.pop(context);
+                          },
+                        ),
+                        ListTile(
+                          leading:
+                              const Icon(Icons.admin_panel_settings_outlined),
+                          title: const Text('Admin'),
+                          onTap: () {
+                            setState(() => idx = 10);
+                            Navigator.pop(context);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.business_outlined),
+                          title: const Text('Client Portal'),
+                          onTap: () {
+                            setState(() => idx = 1);
+                            Navigator.pop(context);
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.description_outlined),
-                    title: const Text('Business Developer - Proposals'),
-                    onTap: () {
-                      setState(() => idx = 1);
-                      Navigator.pop(context);
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.approval_outlined),
-                    title: const Text('Reviewer / Approver'),
-                    onTap: () {
-                      setState(() => idx = 9);
-                      Navigator.pop(context);
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.admin_panel_settings_outlined),
-                    title: const Text('Admin'),
-                    onTap: () {
-                      setState(() => idx = 10);
-                      Navigator.pop(context);
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.business_outlined),
-                    title: const Text('Client Portal'),
-                    onTap: () {
-                      setState(() => idx = 1);
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-        child: const Icon(Icons.swap_horiz),
-        tooltip: 'Switch Role',
-      ),
+                );
+              },
+              child: const Icon(Icons.swap_horiz),
+              tooltip: 'Switch Role',
+            )
+          : null,
     );
   }
 

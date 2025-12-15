@@ -1,11 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../services/client_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../widgets/custom_scrollbar.dart';
-import '../../widgets/role_switcher.dart';
 import '../../widgets/footer.dart';
 import '../../theme/premium_theme.dart';
 import '../../api.dart';
@@ -70,10 +69,12 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   bool _isEmailVerified(Map<String, dynamic> invite) {
     final emailVerifiedValue = invite['email_verified'];
     final emailVerifiedAt = invite['email_verified_at'];
-    return emailVerifiedValue == true || 
+    return emailVerifiedValue == true ||
         emailVerifiedValue == 'true' ||
         emailVerifiedValue == 1 ||
-        (emailVerifiedAt != null && emailVerifiedAt.toString().isNotEmpty && emailVerifiedAt.toString() != 'null');
+        (emailVerifiedAt != null &&
+            emailVerifiedAt.toString().isNotEmpty &&
+            emailVerifiedAt.toString() != 'null');
   }
 
   Future<void> _loadData() async {
@@ -129,7 +130,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           gradient: PremiumTheme.tealGradient,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.mail_outline, color: Colors.white, size: 24),
+                        child: const Icon(Icons.mail_outline,
+                            color: Colors.white, size: 24),
                       ),
                       const SizedBox(width: 16),
                       const Expanded(
@@ -204,7 +206,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: PremiumTheme.teal,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 32, vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -213,7 +216,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           children: [
                             Icon(Icons.send, size: 18),
                             SizedBox(width: 8),
-                            Text('Send Invitation', style: TextStyle(fontWeight: FontWeight.w600)),
+                            Text('Send Invitation',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -262,7 +266,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               hintStyle: const TextStyle(color: Color(0xFF78909C)),
               prefixIcon: Icon(icon, color: PremiumTheme.teal, size: 20),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             ),
           ),
         ),
@@ -270,7 +275,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     );
   }
 
-  Future<void> _sendInvitation(String email, String company, int expiryDays) async {
+  Future<void> _sendInvitation(
+      String email, String company, int expiryDays) async {
     setState(() => _loading = true);
     try {
       final token = AuthService.token;
@@ -278,13 +284,13 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       print('[DEBUG] Company: $company');
       print('[DEBUG] Expiry days: $expiryDays');
       print('[DEBUG] Token available: ${token != null}');
-      
+
       if (token == null) {
         print('[ERROR] No authentication token available');
         _showSnackBar('Authentication error: Please log in again');
         return;
       }
-      
+
       final result = await ClientService.sendInvitation(
         token: token,
         email: email,
@@ -293,7 +299,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       );
 
       print('[DEBUG] Invitation result: $result');
-      
+
       if (result != null) {
         _showSnackBar('Invitation sent successfully!', isSuccess: true);
         _loadData();
@@ -357,8 +363,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     ),
                     Row(
                       children: [
-                        const CompactRoleSwitcher(),
-                        const SizedBox(width: 20),
                         ClipOval(
                           child: Image.asset(
                             'assets/images/User_Profile.png',
@@ -387,7 +391,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                         ),
                         const SizedBox(width: 10),
                         PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, color: Colors.white),
+                          icon:
+                              const Icon(Icons.more_vert, color: Colors.white),
                           onSelected: (value) {
                             if (value == 'logout') {
                               app.logout();
@@ -466,15 +471,19 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                                   children: [
                                     if (!_isSidebarCollapsed)
                                       const Padding(
-                                        padding: EdgeInsets.symmetric(horizontal: 12),
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 12),
                                         child: Text(
                                           'Navigation',
-                                          style: TextStyle(color: Colors.white, fontSize: 12),
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12),
                                         ),
                                       ),
                                     Padding(
                                       padding: EdgeInsets.symmetric(
-                                          horizontal: _isSidebarCollapsed ? 0 : 8),
+                                          horizontal:
+                                              _isSidebarCollapsed ? 0 : 8),
                                       child: Icon(
                                         _isSidebarCollapsed
                                             ? Icons.keyboard_arrow_right
@@ -489,22 +498,51 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           ),
                           const SizedBox(height: 12),
                           // Navigation items
-                          _buildNavItem('Dashboard', 'assets/images/Dahboard.png', _currentPage == 'Dashboard', context),
+                          _buildNavItem(
+                              'Dashboard',
+                              'assets/images/Dahboard.png',
+                              _currentPage == 'Dashboard',
+                              context),
                           if (!_isAdminUser()) // Only show for non-admin users
-                            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png', _currentPage == 'My Proposals', context),
-                          _buildNavItem('Templates', 'assets/images/content_library.png', _currentPage == 'Templates', context),
-                          _buildNavItem('Content Library', 'assets/images/content_library.png', _currentPage == 'Content Library', context),
-                          _buildNavItem('Client Management', 'assets/images/collaborations.png', _currentPage == 'Client Management', context),
-                          _buildNavItem('Approved Proposals', 'assets/images/Time Allocation_Approval_Blue.png', _currentPage == 'Approved Proposals', context),
+                            _buildNavItem(
+                                'My Proposals',
+                                'assets/images/My_Proposals.png',
+                                _currentPage == 'My Proposals',
+                                context),
+                          _buildNavItem(
+                              'Templates',
+                              'assets/images/content_library.png',
+                              _currentPage == 'Templates',
+                              context),
+                          _buildNavItem(
+                              'Content Library',
+                              'assets/images/content_library.png',
+                              _currentPage == 'Content Library',
+                              context),
+                          _buildNavItem(
+                              'Client Management',
+                              'assets/images/collaborations.png',
+                              _currentPage == 'Client Management',
+                              context),
+                          _buildNavItem(
+                              'Approved Proposals',
+                              'assets/images/Time Allocation_Approval_Blue.png',
+                              _currentPage == 'Approved Proposals',
+                              context),
                           if (!_isAdminUser()) // Only show for non-admin users
-                            _buildNavItem('Analytics (My Pipeline)', 'assets/images/analytics.png', _currentPage == 'Analytics (My Pipeline)', context),
+                            _buildNavItem(
+                                'Analytics (My Pipeline)',
+                                'assets/images/analytics.png',
+                                _currentPage == 'Analytics (My Pipeline)',
+                                context),
 
                           const SizedBox(height: 20),
 
                           // Divider
                           if (!_isSidebarCollapsed)
                             Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               height: 1,
                               color: const Color(0xFF2C3E50),
                             ),
@@ -512,7 +550,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           const SizedBox(height: 12),
 
                           // Logout button
-                          _buildNavItem('Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
+                          _buildNavItem(
+                              'Logout',
+                              'assets/images/Logout_KhonoBuzz.png',
+                              false,
+                              context),
                           const SizedBox(height: 20),
                         ],
                       ),
@@ -541,7 +583,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                               _buildTabs(),
                               const SizedBox(height: 20),
                               if (_loading)
-                                const Center(child: CircularProgressIndicator(color: PremiumTheme.teal))
+                                const Center(
+                                    child: CircularProgressIndicator(
+                                        color: PremiumTheme.teal))
                               else if (_selectedTab == 'clients')
                                 _buildClientsTable()
                               else
@@ -563,7 +607,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     );
   }
 
-  Widget _buildNavItem(String label, String assetPath, bool isActive, BuildContext context) {
+  Widget _buildNavItem(
+      String label, String assetPath, bool isActive, BuildContext context) {
     if (_isSidebarCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -582,7 +627,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 color: Colors.white,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isActive ? const Color(0xFFE74C3C) : const Color(0xFFCBD5E1),
+                  color: isActive
+                      ? const Color(0xFFE74C3C)
+                      : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
                 boxShadow: [
@@ -595,7 +642,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
               padding: const EdgeInsets.all(6),
               child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                child: AssetService.buildImageWidget(assetPath,
+                    fit: BoxFit.contain),
               ),
             ),
           ),
@@ -616,7 +664,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
           decoration: BoxDecoration(
             color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            border: isActive ? Border.all(color: const Color(0xFF2980B9), width: 1) : null,
+            border: isActive
+                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                : null,
           ),
           child: Row(
             children: [
@@ -627,7 +677,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   color: Colors.white,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: isActive ? const Color(0xFFE74C3C) : const Color(0xFFCBD5E1),
+                    color: isActive
+                        ? const Color(0xFFE74C3C)
+                        : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
                   boxShadow: [
@@ -640,7 +692,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 ),
                 padding: const EdgeInsets.all(6),
                 child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
                 ),
               ),
               const SizedBox(width: 12),
@@ -674,7 +727,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
 
   void _navigateToPage(BuildContext context, String label) {
     final isAdmin = _isAdminUser();
-    
+
     switch (label) {
       case 'Dashboard':
         if (isAdmin) {
@@ -764,11 +817,13 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ElevatedButton.icon(
                 onPressed: _showInviteDialog,
                 icon: const Icon(Icons.person_add, size: 20),
-                label: const Text('Invite Client', style: TextStyle(fontWeight: FontWeight.w600)),
+                label: const Text('Invite Client',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: PremiumTheme.teal,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -797,7 +852,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   ),
                   child: TextField(
                     onChanged: (value) => setState(() => _searchQuery = value),
@@ -807,7 +863,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       hintStyle: TextStyle(color: Color(0xFF78909C)),
                       prefixIcon: Icon(Icons.search, color: PremiumTheme.teal),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     ),
                   ),
                 ),
@@ -819,18 +876,29 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       value: _inviteFilter,
                       dropdownColor: const Color(0xFF0E1726),
                       items: const [
-                        DropdownMenuItem(value: 'all', child: Text('All', style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(value: 'verified', child: Text('Verified', style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(value: 'unverified', child: Text('Unverified', style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(
+                            value: 'all',
+                            child: Text('All',
+                                style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(
+                            value: 'verified',
+                            child: Text('Verified',
+                                style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(
+                            value: 'unverified',
+                            child: Text('Unverified',
+                                style: TextStyle(color: Colors.white))),
                       ],
-                      onChanged: (val) => setState(() => _inviteFilter = val ?? 'all'),
+                      onChanged: (val) =>
+                          setState(() => _inviteFilter = val ?? 'all'),
                       icon: const Icon(Icons.filter_alt, color: Colors.white),
                     ),
                   ),
@@ -842,7 +910,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 icon: const Icon(Icons.refresh, color: Colors.white),
                 style: IconButton.styleFrom(
                   backgroundColor: Colors.white.withValues(alpha: 0.1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.all(16),
                 ),
               ),
@@ -859,12 +928,14 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final activeInvitations = _invitations.where((i) {
       final status = i['status']?.toString().toLowerCase() ?? '';
       final clientId = i['client_id'];
-      return status != 'completed' && (clientId == null || clientId.toString().isEmpty);
+      return status != 'completed' &&
+          (clientId == null || clientId.toString().isEmpty);
     }).toList();
-    
+
     // Count pending invites - those that are not verified yet (from active invitations only)
     final pendingInvites = activeInvitations.where((i) {
-      return !_isEmailVerified(i) && (i['status'] == 'pending' || i['status'] == null);
+      return !_isEmailVerified(i) &&
+          (i['status'] == 'pending' || i['status'] == null);
     }).length;
     // Count completed invites - those that are verified (from active invitations only)
     final completedInvites = activeInvitations.where((i) {
@@ -888,7 +959,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       children: [
                         Icon(Icons.people, color: Colors.white, size: 20),
                         SizedBox(width: 8),
-                        Text('Total Clients', style: TextStyle(color: Colors.white, fontSize: 14)),
+                        Text('Total Clients',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 14)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -929,7 +1002,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       children: [
                         Icon(Icons.mail, color: Colors.white, size: 20),
                         SizedBox(width: 8),
-                        Text('Pending Invites', style: TextStyle(color: Colors.white, fontSize: 14)),
+                        Text('Pending Invites',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 14)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -970,7 +1045,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       children: [
                         Icon(Icons.rate_review, color: Colors.white, size: 20),
                         SizedBox(width: 8),
-                        Text('This Month', style: TextStyle(color: Colors.white, fontSize: 14)),
+                        Text('This Month',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 14)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -978,9 +1055,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       '${_clients.where((c) {
                         if (c['created_at'] == null) return false;
                         try {
-                          final createdAt = DateTime.parse(c['created_at'].toString());
+                          final createdAt =
+                              DateTime.parse(c['created_at'].toString());
                           final now = DateTime.now();
-                          return createdAt.month == now.month && createdAt.year == now.year;
+                          return createdAt.month == now.month &&
+                              createdAt.year == now.year;
                         } catch (_) {
                           return false;
                         }
@@ -1036,14 +1115,20 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       children: [
                         Icon(
                           Icons.people,
-                          color: _selectedTab == 'clients' ? PremiumTheme.teal : Colors.white,
+                          color: _selectedTab == 'clients'
+                              ? PremiumTheme.teal
+                              : Colors.white,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           'Clients (${_clients.length})',
                           style: TextStyle(
-                            color: _selectedTab == 'clients' ? PremiumTheme.teal : Colors.white,
-                            fontWeight: _selectedTab == 'clients' ? FontWeight.w600 : FontWeight.w400,
+                            color: _selectedTab == 'clients'
+                                ? PremiumTheme.teal
+                                : Colors.white,
+                            fontWeight: _selectedTab == 'clients'
+                                ? FontWeight.w600
+                                : FontWeight.w400,
                           ),
                         ),
                       ],
@@ -1070,18 +1155,27 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       children: [
                         Icon(
                           Icons.mail,
-                          color: _selectedTab == 'invitations' ? PremiumTheme.teal : Colors.white,
+                          color: _selectedTab == 'invitations'
+                              ? PremiumTheme.teal
+                              : Colors.white,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           'Invitations (${_invitations.where((i) {
-                            final status = i['status']?.toString().toLowerCase() ?? '';
+                            final status =
+                                i['status']?.toString().toLowerCase() ?? '';
                             final clientId = i['client_id'];
-                            return status != 'completed' && (clientId == null || clientId.toString().isEmpty);
+                            return status != 'completed' &&
+                                (clientId == null ||
+                                    clientId.toString().isEmpty);
                           }).length})',
                           style: TextStyle(
-                            color: _selectedTab == 'invitations' ? PremiumTheme.teal : Colors.white,
-                            fontWeight: _selectedTab == 'invitations' ? FontWeight.w600 : FontWeight.w400,
+                            color: _selectedTab == 'invitations'
+                                ? PremiumTheme.teal
+                                : Colors.white,
+                            fontWeight: _selectedTab == 'invitations'
+                                ? FontWeight.w600
+                                : FontWeight.w400,
                           ),
                         ),
                       ],
@@ -1118,11 +1212,15 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             child: const Center(
               child: Column(
                 children: [
-                  Icon(Icons.people_outline, size: 64, color: Color(0xFF78909C)),
+                  Icon(Icons.people_outline,
+                      size: 64, color: Color(0xFF78909C)),
                   SizedBox(height: 16),
                   Text(
                     'No clients yet',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600),
                   ),
                   SizedBox(height: 8),
                   Text(
@@ -1157,12 +1255,42 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 ),
                 child: const Row(
                   children: [
-                    Expanded(flex: 3, child: Text('Company', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Contact', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Email', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Industry', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 1, child: Text('Status', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    SizedBox(width: 80, child: Text('Actions', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 3,
+                        child: Text('Company',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Contact',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Email',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Industry',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 1,
+                        child: Text('Status',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    SizedBox(
+                        width: 80,
+                        child: Text('Actions',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -1186,31 +1314,50 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+          bottom:
+              BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
         ),
       ),
       child: Row(
         children: [
-          Expanded(flex: 3, child: Text(company, style: const TextStyle(color: Colors.white))),
-          Expanded(flex: 2, child: Text(contact, style: const TextStyle(color: Color(0xFFB0BEC5)))),
-          Expanded(flex: 2, child: Text(email, style: const TextStyle(color: Color(0xFFB0BEC5)))),
-          Expanded(flex: 2, child: Text(industry, style: const TextStyle(color: Color(0xFFB0BEC5)))),
+          Expanded(
+              flex: 3,
+              child:
+                  Text(company, style: const TextStyle(color: Colors.white))),
+          Expanded(
+              flex: 2,
+              child: Text(contact,
+                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+          Expanded(
+              flex: 2,
+              child: Text(email,
+                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+          Expanded(
+              flex: 2,
+              child: Text(industry,
+                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
           Expanded(
             flex: 1,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: status == 'active' ? PremiumTheme.success.withValues(alpha: 0.2) : PremiumTheme.warning.withValues(alpha: 0.2),
+                color: status == 'active'
+                    ? PremiumTheme.success.withValues(alpha: 0.2)
+                    : PremiumTheme.warning.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: status == 'active' ? PremiumTheme.success : PremiumTheme.warning,
+                  color: status == 'active'
+                      ? PremiumTheme.success
+                      : PremiumTheme.warning,
                   width: 1,
                 ),
               ),
               child: Text(
                 status.toUpperCase(),
                 style: TextStyle(
-                  color: status == 'active' ? PremiumTheme.success : PremiumTheme.warning,
+                  color: status == 'active'
+                      ? PremiumTheme.success
+                      : PremiumTheme.warning,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1248,9 +1395,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       final status = inv['status']?.toString().toLowerCase() ?? '';
       final clientId = inv['client_id'];
       // Exclude invitations that are completed or have a client_id (they're now clients)
-      return status != 'completed' && (clientId == null || clientId.toString().isEmpty);
+      return status != 'completed' &&
+          (clientId == null || clientId.toString().isEmpty);
     }).toList();
-    
+
     // Apply verified/unverified filter
     if (_inviteFilter != 'all') {
       final wantVerified = _inviteFilter == 'verified';
@@ -1261,7 +1409,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     if (_searchQuery.isNotEmpty) {
       filteredInvitations = filteredInvitations.where((invite) {
         final email = invite['invited_email']?.toString().toLowerCase() ?? '';
-        final company = invite['expected_company']?.toString().toLowerCase() ?? '';
+        final company =
+            invite['expected_company']?.toString().toLowerCase() ?? '';
         final query = _searchQuery.toLowerCase();
         return email.contains(query) || company.contains(query);
       }).toList();
@@ -1282,7 +1431,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   SizedBox(height: 16),
                   Text(
                     'No invitations yet',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600),
                   ),
                   SizedBox(height: 8),
                   Text(
@@ -1317,17 +1469,48 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 ),
                 child: const Row(
                   children: [
-                    Expanded(flex: 3, child: Text('Email', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Company', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Sent Date', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Expires', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 1, child: Text('Status', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
-                    SizedBox(width: 80, child: Text('Actions', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 3,
+                        child: Text('Email',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Company',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Sent Date',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Expires',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    Expanded(
+                        flex: 1,
+                        child: Text('Status',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
+                    SizedBox(
+                        width: 80,
+                        child: Text('Actions',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
               // Table Rows
-              ...filteredInvitations.map((invite) => _buildInvitationRow(invite)),
+              ...filteredInvitations
+                  .map((invite) => _buildInvitationRow(invite)),
             ],
           ),
         ),
@@ -1340,46 +1523,63 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final company = invite['expected_company'] ?? 'Not specified';
     final status = invite['status'] ?? 'pending';
     final emailVerified = _isEmailVerified(invite);
-    
+
     final sentDate = invite['invited_at'] != null
-        ? DateFormat('MMM dd, yyyy').format(DateTime.parse(invite['invited_at'].toString()))
+        ? DateFormat('MMM dd, yyyy')
+            .format(DateTime.parse(invite['invited_at'].toString()))
         : 'N/A';
-    
+
     final expiresDate = invite['expires_at'] != null
-        ? DateFormat('MMM dd, yyyy').format(DateTime.parse(invite['expires_at'].toString()))
+        ? DateFormat('MMM dd, yyyy')
+            .format(DateTime.parse(invite['expires_at'].toString()))
         : 'N/A';
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+          bottom:
+              BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
         ),
       ),
       child: Row(
         children: [
-          Expanded(flex: 3, child: Text(email, style: const TextStyle(color: Colors.white))),
-          Expanded(flex: 2, child: Text(company, style: const TextStyle(color: Color(0xFFB0BEC5)))),
-          Expanded(flex: 2, child: Text(sentDate, style: const TextStyle(color: Color(0xFFB0BEC5)))),
-          Expanded(flex: 2, child: Text(expiresDate, style: const TextStyle(color: Color(0xFFB0BEC5)))),
+          Expanded(
+              flex: 3,
+              child: Text(email, style: const TextStyle(color: Colors.white))),
+          Expanded(
+              flex: 2,
+              child: Text(company,
+                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+          Expanded(
+              flex: 2,
+              child: Text(sentDate,
+                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+          Expanded(
+              flex: 2,
+              child: Text(expiresDate,
+                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
           Expanded(
             flex: 1,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: emailVerified 
+                color: emailVerified
                     ? PremiumTheme.success.withValues(alpha: 0.2)
                     : _getStatusColor(status).withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: emailVerified ? PremiumTheme.success : _getStatusColor(status), 
-                  width: 1
-                ),
+                    color: emailVerified
+                        ? PremiumTheme.success
+                        : _getStatusColor(status),
+                    width: 1),
               ),
               child: Text(
                 emailVerified ? 'VERIFIED' : status.toUpperCase(),
                 style: TextStyle(
-                  color: emailVerified ? PremiumTheme.success : _getStatusColor(status),
+                  color: emailVerified
+                      ? PremiumTheme.success
+                      : _getStatusColor(status),
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1389,12 +1589,15 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
           ),
           SizedBox(
             width: 80,
-              child: PopupMenuButton<String>(
+            child: PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.white, size: 18),
               onSelected: (value) => _handleInvitationAction(value, invite),
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'resend', child: Text('Resend')),
-                if (!_isEmailVerified(invite)) const PopupMenuItem(value: 'send_code', child: Text('Send Verification Code')),
+                if (!_isEmailVerified(invite))
+                  const PopupMenuItem(
+                      value: 'send_code',
+                      child: Text('Send Verification Code')),
                 const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
@@ -1418,7 +1621,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
-  void _handleInvitationAction(String action, Map<String, dynamic> invite) async {
+  void _handleInvitationAction(
+      String action, Map<String, dynamic> invite) async {
     final token = AuthService.token;
     if (token == null) return;
 
@@ -1435,7 +1639,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         if (success) _loadData();
         break;
       case 'send_code':
-        final success = await ClientService.sendVerificationCode(token, inviteId);
+        final success =
+            await ClientService.sendVerificationCode(token, inviteId);
         _showSnackBar(
           success ? 'Verification code sent!' : 'Failed to send code',
           isSuccess: success,
@@ -1502,7 +1707,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -1530,4 +1736,3 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return result ?? false;
   }
 }
-

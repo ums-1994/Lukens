@@ -55,11 +55,8 @@ from werkzeug.utils import secure_filename
 from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
-<<<<<<< HEAD
-=======
 from api.utils.risk_checks import run_prechecks, combine_assessments
 from api.utils.email import send_email, send_encryption_notification_email, get_logo_html
->>>>>>> 2cb95cd (Add proposals wizard and client onboarding improvements: client_id linking, notifications, and refactored routes)
 
 # Load environment variables
 load_dotenv()
@@ -117,8 +114,6 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 # Initialize OpenAI with API key
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
-<<<<<<< HEAD
-=======
 # ============================================================================
 # REGISTER BLUEPRINTS (Refactored routes)
 # ============================================================================
@@ -133,8 +128,6 @@ try:
 except Exception as e:
     print(f"[WARN] Could not register blueprints: {e}")
     print("[INFO] Falling back to legacy routes in app.py")
-
->>>>>>> 2cb95cd (Add proposals wizard and client onboarding improvements: client_id linking, notifications, and refactored routes)
 # Database initialization - PostgreSQL only
 BACKEND_TYPE = 'postgresql'
 
@@ -775,19 +768,6 @@ def create_notification(
         print(f"⚠️ Failed to create notification: {e}")
         # Don't raise - notification should not break main functionality
 
-<<<<<<< HEAD
-def notify_proposal_collaborators(
-    proposal_id,
-    notification_type,
-    title,
-    message,
-    exclude_user_id=None,
-    metadata=None,
-    send_email_flag=False,
-    email_subject=None,
-    email_body=None,
-):
-=======
 def get_approvers():
     """
     Get all users with approver/CEO role
@@ -812,7 +792,6 @@ def get_approvers():
         return []
 
 def notify_proposal_collaborators(proposal_id, notification_type, title, message, exclude_user_id=None, metadata=None):
->>>>>>> 2cb95cd (Add proposals wizard and client onboarding improvements: client_id linking, notifications, and refactored routes)
     """
     Notify all collaborators on a proposal
     
@@ -1540,8 +1519,6 @@ def admin_required(f):
         return f(username=username, *args, **kwargs)
     return decorated
 
-<<<<<<< HEAD
-=======
 # Content library endpoints
 
 @app.get("/content")
@@ -4443,7 +4420,6 @@ def client_reject_proposal(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
->>>>>>> 2cb95cd (Add proposals wizard and client onboarding improvements: client_id linking, notifications, and refactored routes)
 # ============================================================================
 # ROUTES MOVED TO ROLE-BASED FILES
 # ============================================================================
@@ -4463,8 +4439,6 @@ def client_reject_proposal(proposal_id):
 # All route definitions have been moved to role-based files.
 # See api/routes/ directory for all endpoints.
 # ============================================================================
-<<<<<<< HEAD
-=======
 # CLIENT MANAGEMENT ENDPOINTS - MIGRATED TO api/routes/clients.py
 # ============================================================================
 # NOTE: These routes have been migrated to the 'clients' blueprint.
@@ -5493,7 +5467,6 @@ def unlink_client_proposal(username=None, client_id=None, proposal_id=None):
 # ============================================================
 # END CLIENT MANAGEMENT ENDPOINTS
 # ============================================================
->>>>>>> 2cb95cd (Add proposals wizard and client onboarding improvements: client_id linking, notifications, and refactored routes)
 
 # Health check endpoint (no auth required)
 @app.get("/health")
