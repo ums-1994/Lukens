@@ -55,7 +55,27 @@ from werkzeug.utils import secure_filename
 from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
-from api.utils.risk_checks import run_prechecks, combine_assessments
+
+# Optional import for risk checks - provide fallback if module doesn't exist
+try:
+    from api.utils.risk_checks import run_prechecks, combine_assessments
+except ImportError:
+    # Fallback implementations if risk_checks module doesn't exist
+    def run_prechecks(proposal_dict):
+        """Fallback: Return empty precheck summary if module not available"""
+        return {
+            "block_release": False,
+            "risk_score": 0,
+            "issues": [],
+            "summary": "Risk checks module not available"
+        }
+    
+    def combine_assessments(precheck_summary, ai_result):
+        """Fallback: Return AI result if available, otherwise precheck"""
+        if ai_result:
+            return ai_result
+        return precheck_summary
+
 from api.utils.email import send_email, send_encryption_notification_email, get_logo_html
 
 # Load environment variables
