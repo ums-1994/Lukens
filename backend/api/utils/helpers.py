@@ -393,7 +393,7 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
     
     # Simple content parsing - split by paragraphs
     if content:
-        for para in content.split('\n\n'):
+        for para in content.split('\\n\\n'):
             if para.strip():
                 elements.append(Paragraph(html.escape(para.strip()), content_style))
                 elements.append(Spacer(1, 0.2*inch))
@@ -596,3 +596,33 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         print(f"❌ Error creating DocuSign envelope: {e}")
         traceback.print_exc()
         raise
+
+
+def resolve_user_id(cursor, username_or_id):
+    """
+    Resolve a user identifier (username or ID) to a numeric ID.
+    Returns the numeric ID or None.
+    """
+    if username_or_id is None:
+        return None
+        
+    # If it's already an integer, verify it exists
+    if isinstance(username_or_id, int):
+        cursor.execute("SELECT id FROM users WHERE id = %s", (username_or_id,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+        
+    # Try to parse as integer
+    try:
+        numeric_id = int(username_or_id)
+        cursor.execute("SELECT id FROM users WHERE id = %s", (numeric_id,))
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+    except (TypeError, ValueError):
+        pass
+        
+    # Treat as username
+    cursor.execute("SELECT id FROM users WHERE username = %s", (username_or_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None

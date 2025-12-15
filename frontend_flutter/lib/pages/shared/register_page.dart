@@ -30,12 +30,6 @@ class _RegisterPageState extends State<RegisterPage>
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
   double _passwordStrength = 0.0;
-  Map<String, bool> _criteria = {
-    'minLength': false,
-    'uppercase': false,
-    'number': false,
-    'special': false,
-  };
 
   late final AnimationController _frameController;
   late final AnimationController _parallaxController;
@@ -116,12 +110,6 @@ class _RegisterPageState extends State<RegisterPage>
         .where((e) => e)
         .length;
     setState(() {
-      _criteria = {
-        'minLength': hasMinLength,
-        'uppercase': hasUppercase,
-        'number': hasNumber,
-        'special': hasSpecial,
-      };
       _passwordStrength = passed / 4.0;
     });
   }
@@ -368,9 +356,9 @@ class _RegisterPageState extends State<RegisterPage>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.black.withOpacity(0.5),
-                  Colors.black.withOpacity(0.7),
-                  Colors.black.withOpacity(0.6),
+                  Colors.black.withValues(alpha: 0.5),
+                  Colors.black.withValues(alpha: 0.7),
+                  Colors.black.withValues(alpha: 0.6),
                 ],
               ),
             ),
@@ -420,7 +408,9 @@ class _RegisterPageState extends State<RegisterPage>
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(
+                alpha: darkness.clamp(0.0, 1.0),
+              ),
             );
           },
         ),
@@ -443,7 +433,7 @@ class _RegisterPageState extends State<RegisterPage>
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.04)),
                   size: const Size(70, 70),
                 ),
               ),
@@ -459,7 +449,7 @@ class _RegisterPageState extends State<RegisterPage>
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -474,15 +464,15 @@ class _RegisterPageState extends State<RegisterPage>
     return Container(
       constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 500),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withOpacity(0.95),
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE9293A).withOpacity(0.3),
+          color: const Color(0xFFE9293A).withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFE9293A).withOpacity(0.2),
+            color: const Color(0xFFE9293A).withValues(alpha: 0.2),
             blurRadius: 40,
             spreadRadius: 0,
           ),
@@ -668,7 +658,7 @@ class _RegisterPageState extends State<RegisterPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE9293A).withOpacity(0.4),
+                    color: const Color(0xFFE9293A).withValues(alpha: 0.4),
                     blurRadius: 20,
                     spreadRadius: 2,
                   ),

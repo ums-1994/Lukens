@@ -4,8 +4,6 @@ Extracted from app.py for better organization
 """
 from flask import Blueprint, request, jsonify
 from api.utils.decorators import token_required, admin_required
-from api.services.proposal_service import ProposalService
-from api.services.notification_service import create_notification, get_approvers
 from api.utils.database import get_db_connection
 from api.utils.helpers import resolve_user_id
 from api.utils.email import send_email
