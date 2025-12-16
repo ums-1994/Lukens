@@ -77,6 +77,7 @@ except ImportError:
         return precheck_summary
 
 from api.utils.email import send_email, get_logo_html
+from api.utils.decorators import token_required as api_token_required
 
 # Load environment variables
 load_dotenv()
@@ -1542,7 +1543,7 @@ def admin_required(f):
 # Content library endpoints
 
 @app.get("/content")
-@token_required
+@api_token_required
 def get_content(username):
     try:
         conn = _pg_conn()
@@ -1568,7 +1569,7 @@ def get_content(username):
         return {'detail': str(e)}, 500
 
 @app.post("/content")
-@token_required
+@api_token_required
 def create_content(username):
     try:
         data = request.get_json()
@@ -1590,7 +1591,7 @@ def create_content(username):
         return {'detail': str(e)}, 500
 
 @app.put("/content/<int:content_id>")
-@token_required
+@api_token_required
 def update_content(username, content_id):
     try:
         data = request.get_json()
@@ -1624,7 +1625,7 @@ def update_content(username, content_id):
         return {'detail': str(e)}, 500
 
 @app.delete("/content/<int:content_id>")
-@token_required
+@api_token_required
 def delete_content(username, content_id):
     try:
         conn = _pg_conn()
@@ -1637,7 +1638,7 @@ def delete_content(username, content_id):
         return {'detail': str(e)}, 500
 
 @app.post("/content/<int:content_id>/restore")
-@token_required
+@api_token_required
 def restore_content(username, content_id):
     try:
         conn = _pg_conn()
@@ -1650,7 +1651,7 @@ def restore_content(username, content_id):
         return {'detail': str(e)}, 500
 
 @app.delete("/content/<int:content_id>/permanent")
-@token_required
+@api_token_required
 def permanently_delete_content(username, content_id):
     try:
         conn = _pg_conn()
