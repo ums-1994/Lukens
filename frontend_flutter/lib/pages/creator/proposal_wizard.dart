@@ -2516,7 +2516,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               );
             }
 
-            final issue = raw as Map<String, dynamic>;
+            final issue = raw;
             final title = issue['title']?.toString() ?? 'Issue';
             final description = issue['description']?.toString() ?? '';
             final action = issue['action']?.toString();
@@ -2589,11 +2589,9 @@ class _ProposalWizardState extends State<ProposalWizard>
                           children: [
                             TextButton(
                               onPressed: () async {
-                                if (sectionId != null) {
-                                  _ensureModuleSelected(sectionId);
-                                  await _openContentLibraryAndInsert(sectionId);
-                                }
-                              },
+                                _ensureModuleSelected(sectionId);
+                                await _openContentLibraryAndInsert(sectionId);
+                                                            },
                               child: const Text('Add module'),
                             ),
                             const SizedBox(width: 8),
@@ -2607,10 +2605,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 ),
                               ),
                               onPressed: () {
-                                if (sectionId != null) {
-                                  _addModuleWithAI(sectionId);
-                                }
-                              },
+                                _addModuleWithAI(sectionId);
+                                                            },
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Add with AI'),
                             ),
