@@ -9,7 +9,7 @@ import secrets
 import smtplib
 import difflib
 import html
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse, parse_qs
@@ -56,25 +56,33 @@ from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 
-# Optional import for risk checks - provide fallback if module doesn't exist
-try:
-    from api.utils.risk_checks import run_prechecks, combine_assessments
-except ImportError:
-    # Fallback implementations if risk_checks module doesn't exist
-    def run_prechecks(proposal_dict):
-        """Fallback: Return empty precheck summary if module not available"""
-        return {
-            "block_release": False,
-            "risk_score": 0,
-            "issues": [],
-            "summary": "Risk checks module not available"
-        }
-    
-    def combine_assessments(precheck_summary, ai_result):
-        """Fallback: Return AI result if available, otherwise precheck"""
-        if ai_result:
-            return ai_result
-        return precheck_summary
+def run_prechecks(proposal_dict):
+    return {
+        "block_release": False,
+        "risk_score": 0,
+        "issues": [],
+        "summary": "Risk checks module not available",
+    }
+
+
+def combine_assessments(precheck_summary, ai_result):
+    if ai_result:
+        return ai_result
+    return precheck_summary
+
+
+def sanitize_for_json(value):
+    if isinstance(value, dict):
+        return {k: sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [sanitize_for_json(v) for v in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
 
 from api.utils.email import send_email, get_logo_html
 
@@ -91,6 +99,7 @@ allowed_origins_list = [
     'http://127.0.0.1:8081',
     'http://localhost:3000',
     'https://sowbuilders.netlify.app',  # Fixed typo: was sowbuilder, now sowbuilders
+    'https://proposal-and-sow-builder.onrender.com',
 ]
 
 CORS(app, 
@@ -887,9 +896,6 @@ def notify_proposal_collaborators(proposal_id, notification_type, title, message
                     message,
                     proposal_id,
                     base_metadata,
-                    send_email_flag=send_email_flag,
-                    email_subject=email_subject,
-                    email_body=email_body,
                 )
 
             # Get accepted collaborators (users with accepted invitation)
@@ -914,9 +920,6 @@ def notify_proposal_collaborators(proposal_id, notification_type, title, message
                         message,
                         proposal_id,
                         base_metadata,
-                        send_email_flag=send_email_flag,
-                        email_subject=email_subject,
-                        email_body=email_body,
                     )
                     
     except Exception as e:
