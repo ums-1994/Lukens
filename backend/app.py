@@ -20,6 +20,7 @@ from io import BytesIO
 
 import psycopg2
 import psycopg2.extras
+from psycopg2 import errors
 import cloudinary
 import cloudinary.uploader
 
@@ -1871,9 +1872,44 @@ def create_proposal(username):
                 RETURNING {', '.join(return_fields)}
             """
 
-            cursor.execute(insert_sql, tuple(values))
-            result = cursor.fetchone()
-            
+            try:
+                cursor.execute(insert_sql, tuple(values))
+            except errors.UniqueViolation as seq_error:
+                # Handle out-of-sync proposals.id sequence by resetting it and retrying once
+                print(f"⚠️ Sequence issue detected while inserting into proposals: {seq_error}")
+                try:
+                    conn.rollback()
+                except Exception as rollback_error:
+                    print(f"[WARN] Error during rollback after sequence issue: {rollback_error}")
+
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """
+                        SELECT setval(
+                            pg_get_serial_sequence('proposals', 'id'),
+                            COALESCE((SELECT MAX(id) FROM proposals), 1),
+                            true
+                        )
+                        """
+                    )
+                    conn.commit()
+                    print("✅ Reset proposals.id sequence based on MAX(id)")
+
+                    cursor = conn.cursor()
+                    cursor.execute(insert_sql, tuple(values))
+                except Exception as reset_error:
+                    print(f"❌ Failed to reset proposals sequence and re-insert: {reset_error}")
+                    raise
+
+            result_row = cursor.fetchone()
+            if not result_row:
+                return {'detail': 'Failed to create proposal'}, 500
+
+            # Convert row tuple to dict keyed by column names for easier access
+            column_names = [desc[0] for desc in cursor.description] if cursor.description else []
+            result = dict(zip(column_names, result_row)) if column_names else {}
+
             proposal_id = result.get('id')
             
             # If client_id was provided and valid, create link in client_proposals table
@@ -1945,9 +1981,17 @@ def create_proposal(username):
                 
                 # Get creator's email
                 cursor.execute("SELECT id, email, first_name, last_name FROM users WHERE id = %s", (user_id,))
-                creator = cursor.fetchone()
-                creator_email = creator['email'] if creator and creator.get('email') else None
-                creator_name = f"{creator.get('first_name', '')} {creator.get('last_name', '')}".strip() or username if creator else username
+                creator_row = cursor.fetchone()
+                creator = None
+                if creator_row:
+                    creator_columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                    creator = dict(zip(creator_columns, creator_row)) if creator_columns else {}
+
+                creator_email = creator.get('email') if creator else None
+                creator_name = (
+                    f"{creator.get('first_name', '')} {creator.get('last_name', '')}".strip()
+                    if creator else username
+                ) or username
                 
                 # Send email to creator
                 if creator_email:
