@@ -52,6 +52,8 @@ class _ProposalWizardState extends State<ProposalWizard>
   final ScrollController _composeScrollController = ScrollController();
   final ScrollController _governScrollController = ScrollController();
   final ScrollController _riskScrollController = ScrollController();
+  final ScrollController _internalSignoffScrollController = ScrollController();
+  final ScrollController _clientSignoffScrollController = ScrollController();
 
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
@@ -248,6 +250,8 @@ class _ProposalWizardState extends State<ProposalWizard>
     _composeScrollController.dispose();
     _governScrollController.dispose();
     _riskScrollController.dispose();
+    _internalSignoffScrollController.dispose();
+    _clientSignoffScrollController.dispose();
     super.dispose();
   }
 
@@ -1545,7 +1549,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _internalSignoffScrollController,
             child: SingleChildScrollView(
+              controller: _internalSignoffScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildInternalApproval(),
             ),
@@ -1572,7 +1578,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _clientSignoffScrollController,
             child: SingleChildScrollView(
+              controller: _clientSignoffScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildClientSignature(),
             ),
