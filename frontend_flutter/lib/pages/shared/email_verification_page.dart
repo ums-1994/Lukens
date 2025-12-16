@@ -228,3 +228,4 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     );
   }
 }
+

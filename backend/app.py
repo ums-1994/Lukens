@@ -2330,7 +2330,7 @@ def approve_proposal(username, proposal_id):
             
             # Get proposal details including client email
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, user_id 
+                '''SELECT id, title, client, client_email, owner_id 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -2506,7 +2506,7 @@ def send_to_client(username, proposal_id):
             
             # Get proposal details
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, user_id, status 
+                '''SELECT id, title, client, client_email, owner_id, status 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -3026,6 +3026,16 @@ def create_comment(username, proposal_id):
             user_id = user['id']
             
             # Create comment, handling potential out-of-sync sequence on document_comments.id
+            # First, ensure the sequence is properly synchronized
+            cursor.execute("""
+                SELECT setval(
+                    pg_get_serial_sequence('document_comments', 'id'),
+                    COALESCE((SELECT MAX(id) FROM document_comments), 1),
+                    true
+                )
+            """)
+            conn.commit()
+            
             insert_sql = """
                 INSERT INTO document_comments 
                 (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
@@ -3039,7 +3049,7 @@ def create_comment(username, proposal_id):
                     insert_sql,
                     (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open')
                 )
-            except errors.UniqueViolation as seq_error:
+            except psycopg2.errors.UniqueViolation as seq_error:
                 # Handle out-of-sync document_comments.id sequence by resetting it and retrying once
                 print(f"⚠️ Sequence issue detected while inserting into document_comments: {seq_error}")
                 try:
@@ -4188,7 +4198,7 @@ def get_client_proposals():
             
             # Get all proposals for this client email
             cursor.execute("""
-                SELECT p.id, p.title, p.status, p.created_at, p.updated_at, p.client_name, p.client_email
+                SELECT p.id, p.title, p.status, p.created_at, p.updated_at, p.client, p.client_email
                 FROM proposals p
                 WHERE p.client_email = %s
                 ORDER BY p.updated_at DESC
@@ -4234,7 +4244,7 @@ def get_client_proposal_details(proposal_id):
             # Get proposal details (schema uses owner_id as foreign key to users.id)
             cursor.execute("""
                 SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client_name, p.client_email, p.owner_id,
+                       p.client, p.client_email, p.owner_id,
                        u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
                 LEFT JOIN users u ON p.owner_id = u.id

@@ -512,3 +512,4 @@ class TrianglePainter extends CustomPainter {
   @override
   bool shouldRepaint(TrianglePainter oldDelegate) => false;
 }
+

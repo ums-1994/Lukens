@@ -1192,3 +1192,4 @@ class ProposalItem extends StatelessWidget {
     );
   }
 }
+

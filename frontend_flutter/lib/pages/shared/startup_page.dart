@@ -230,3 +230,4 @@ class _GlowingLogoState extends State<GlowingLogo>
     );
   }
 }
+

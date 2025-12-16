@@ -522,3 +522,4 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
   }
 }
 
+
