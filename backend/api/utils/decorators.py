@@ -1,13 +1,12 @@
 """
 Flask decorators for authentication and authorization
-Supports both Firebase tokens and legacy JWT tokens
+Supports Firebase tokens
 """
 import os
 import psycopg2
 import psycopg2.extensions
 from functools import wraps
 from flask import request
-from api.utils.auth import verify_token, get_valid_tokens
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token
 from api.utils.database import get_db_connection
 
@@ -19,7 +18,7 @@ DEV_DEFAULT_USERNAME = os.getenv('DEV_DEFAULT_USERNAME', 'admin')
 def token_required(f):
     """
     Decorator to require valid authentication token
-    Supports both Firebase ID tokens and legacy JWT tokens
+    Supports Firebase ID tokens
     """
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -290,30 +289,25 @@ def token_required(f):
                                 clean_kwargs['email'] = email
                             return f(username=username, *args, **clean_kwargs)
             else:
-                # Firebase token verification failed, but don't log error if it's clearly not a Firebase token
-                # (will fall through to legacy token validation)
-                pass
+                # Firebase token verification failed
+                if DEV_BYPASS_ENABLED:
+                    print(
+                        "[DEV] Firebase token invalid. Using development bypass for user "
+                        f"'{DEV_DEFAULT_USERNAME}'. Set DEV_BYPASS_AUTH=false to disable."
+                    )
+                    return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
+                print('[ERROR] Firebase token validation failed - invalid or expired token')
+                return {'detail': 'Invalid or expired token'}, 401
         else:
-            # Token doesn't look like a Firebase JWT, skip Firebase verification
-            print(f"[TOKEN] Token format suggests legacy token (not Firebase JWT), skipping Firebase verification")
-
-        # Fall back to legacy JWT token
-        valid_tokens = get_valid_tokens()
-        print(f"[TOKEN] Validating legacy token... (valid_tokens has {len(valid_tokens)} tokens)")
-        username = verify_token(token)
-        if not username:
+            # Token doesn't look like a Firebase JWT, reject it (no legacy fallback)
             if DEV_BYPASS_ENABLED:
                 print(
-                    "[DEV] Token invalid. Using development bypass for user "
+                    "[DEV] Non-Firebase token provided. Using development bypass for user "
                     f"'{DEV_DEFAULT_USERNAME}'. Set DEV_BYPASS_AUTH=false to disable."
                 )
                 return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
-            print('[ERROR] Token validation failed - token not found or expired')
-            print(f"[TOKEN] Current valid tokens: {list(valid_tokens.keys())[:3]}...")
-            return {'detail': 'Invalid or expired token'}, 401
-
-        print(f"[OK] Legacy token validated for user: {username}")
-        return f(username=username, *args, **kwargs)
+            print('[ERROR] Token is not a valid Firebase ID token (legacy tokens disabled)')
+            return {'detail': 'Invalid or unsupported token type'}, 401
 
     return decorated
 
