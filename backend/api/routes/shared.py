@@ -1038,9 +1038,9 @@ def unlock_section(username=None, proposal_id=None, section_id=None):
                 DELETE FROM section_locks
                 WHERE proposal_id = %s AND section_id = %s
                 AND (locked_by = %s OR EXISTS (
-                    SELECT 1 FROM proposals WHERE id = %s AND user_id = %s
+                    SELECT 1 FROM proposals WHERE id = %s AND owner_id = %s
                 ))
-            """, (proposal_id, section_id, user_id, proposal_id, username))
+            """, (proposal_id, section_id, user_id, proposal_id, user_id))
             
             conn.commit()
             

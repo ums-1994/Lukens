@@ -2149,9 +2149,9 @@ def send_for_approval(username, proposal_id):
 
             user_id = user[0]
 
-            # Check if proposal exists and belongs to user
+            # Check if proposal exists and belongs to user (schema uses owner_id, not user_id)
             cursor.execute(
-                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                'SELECT id, title, status FROM proposals WHERE id = %s AND owner_id = %s',
                 (proposal_id, user_id)
             )
             proposal = cursor.fetchone()
@@ -2165,7 +2165,7 @@ def send_for_approval(username, proposal_id):
             
             # Get proposal details
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, user_id 
+                '''SELECT id, title, client_name, client_email, owner_id 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -3733,10 +3733,10 @@ def invite_collaborator(username, proposal_id):
             user_id = user[0]
             inviter_email = user[1]
             
-            # Check if proposal exists and belongs to user
+            # Check if proposal exists and belongs to user (schema uses owner_id)
             cursor.execute(
-                'SELECT title FROM proposals WHERE id = %s AND user_id = %s',
-                (proposal_id, username)
+                'SELECT title FROM proposals WHERE id = %s AND owner_id = %s',
+                (proposal_id, user_id)
             )
             proposal = cursor.fetchone()
             if not proposal:
@@ -3841,10 +3841,17 @@ def get_collaborators(username, proposal_id):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Verify ownership
+            # Resolve username to numeric user_id
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            owner_row = cursor.fetchone()
+            if not owner_row:
+                return {'detail': 'User not found'}, 404
+            owner_id = owner_row['id'] if isinstance(owner_row, dict) else owner_row[0]
+
+            # Verify ownership using owner_id
             cursor.execute(
-                'SELECT id FROM proposals WHERE id = %s AND user_id = %s',
-                (proposal_id, username)
+                'SELECT id FROM proposals WHERE id = %s AND owner_id = %s',
+                (proposal_id, owner_id)
             )
             if not cursor.fetchone():
                 return {'detail': 'Proposal not found or access denied'}, 404
@@ -3888,13 +3895,13 @@ def remove_collaborator(username, invitation_id):
             
             user_id = user[0]
             
-            # Check if user owns the proposal
+            # Check if user owns the proposal (match by invited_by or proposal owner_id)
             cursor.execute("""
                 SELECT ci.id 
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
-                WHERE ci.id = %s AND (ci.invited_by = %s OR p.user_id = %s)
-            """, (invitation_id, user_id, username))
+                WHERE ci.id = %s AND (ci.invited_by = %s OR p.owner_id = %s)
+            """, (invitation_id, user_id, user_id))
             
             if not cursor.fetchone():
                 return {'detail': 'Invitation not found or access denied'}, 404
@@ -3931,7 +3938,6 @@ def get_collaboration_access():
                     ci.expires_at,
                     p.title,
                     p.content,
-                    p.user_id,
                     u.email as owner_email,
                     u.full_name as owner_name
                 FROM collaboration_invitations ci
@@ -4187,13 +4193,13 @@ def get_client_proposal_details(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Get proposal details
+            # Get proposal details (schema uses owner_id as foreign key to users.id)
             cursor.execute("""
                 SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client_name, p.client_email, p.user_id,
+                       p.client_name, p.client_email, p.owner_id,
                        u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
-                LEFT JOIN users u ON p.user_id = u.username
+                LEFT JOIN users u ON p.owner_id = u.id
                 WHERE p.id = %s AND p.client_email = %s
             """, (proposal_id, invitation['invited_email']))
             
