@@ -1497,33 +1497,7 @@ def send_password_reset_email(email, reset_token):
     return send_email(email, subject, html_content)
 
 def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            auth_header = request.headers['Authorization']
-            if auth_header:
-                try:
-                    token = auth_header.split(" ")[1]
-                    print(f"🔑 Token received: {token[:20]}...{token[-10:]}")
-                except (IndexError, AttributeError):
-                    print(f"❌ Invalid token format in header: {auth_header}")
-                    return {'detail': 'Invalid token format'}, 401
-        
-        if not token:
-            print(f"❌ No token found in Authorization header")
-            return {'detail': 'Token is missing'}, 401
-        
-        print(f"🔍 Validating token... (valid_tokens has {len(valid_tokens)} tokens)")
-        username = verify_token(token)
-        if not username:
-            print(f"❌ Token validation failed - token not found or expired")
-            print(f"📋 Current valid tokens: {list(valid_tokens.keys())[:3]}...")
-            return {'detail': 'Invalid or expired token'}, 401
-        
-        print(f"✅ Token validated for user: {username}")
-        return f(username=username, *args, **kwargs)
-    return decorated
+    return api_token_required(f)
 
 def admin_required(f):
     @wraps(f)
