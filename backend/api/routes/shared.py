@@ -163,11 +163,23 @@ def get_notifications(username=None, user_id=None, email=None):
                 ORDER BY created_at DESC
                 LIMIT 50
             """, (str(user_id),))
-            
+
             notifications = cursor.fetchall()
-            
+
+            # Calculate unread count for the client badge / UX
+            unread_count = 0
+            for n in notifications:
+                try:
+                    # RealDictRow behaves like a dict
+                    if not n.get('is_read'):
+                        unread_count += 1
+                except Exception:
+                    # In case of unexpected row shape, fall back safely
+                    pass
+
             return {
-                'notifications': [dict(n) for n in notifications]
+                'notifications': [dict(n) for n in notifications],
+                'unread_count': int(unread_count),
             }, 200
             
     except Exception as e:
