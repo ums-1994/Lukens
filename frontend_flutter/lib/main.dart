@@ -298,6 +298,7 @@ class MyApp extends StatelessWidget {
             return EmailVerificationPage(token: token);
           },
           '/home': (context) => const DashboardPage(),
+          '/dashboard': (context) => const DashboardPage(),
           '/creator_dashboard': (context) => const DashboardPage(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) {

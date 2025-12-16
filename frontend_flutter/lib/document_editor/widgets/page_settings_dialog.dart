@@ -133,7 +133,7 @@ class PageSettingsDialog {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  const TextField(
+                  TextField(
                     decoration: InputDecoration(
                       hintText: 'Enter margin size (in cm)',
                       border: OutlineInputBorder(
