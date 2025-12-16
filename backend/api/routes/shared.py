@@ -499,28 +499,41 @@ def send_for_signature(username=None, proposal_id=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
+
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
-            
-            cursor.execute("""
-                SELECT id, title, content FROM proposals 
-                WHERE id = %s AND user_id = %s
-            """, (proposal_id, username))
-            
+
+            current_user_id = current_user['id'] if isinstance(current_user, dict) else current_user[0]
+
+            cursor.execute(
+                """
+                SELECT id, title, content, client AS client_name, client_email, owner_id
+                FROM proposals 
+                WHERE id = %s AND owner_id = %s
+                """,
+                (proposal_id, current_user_id),
+            )
+
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
-            
+
+            client_name_val = (
+                proposal.get('client_name') if isinstance(proposal, dict) else None
+            )
+            client_email_val = (
+                proposal.get('client_email') if isinstance(proposal, dict) else None
+            )
+
             # Generate PDF
             pdf_content = generate_proposal_pdf(
                 proposal_id=proposal_id,
-                title=proposal['title'],
-                content=proposal.get('content', ''),
-                client_name=proposal.get('client_name'),
-                client_email=proposal.get('client_email')
+                title=proposal['title'] if isinstance(proposal, dict) else proposal[1],
+                content=proposal.get('content', '') if isinstance(proposal, dict) else '',
+                client_name=client_name_val,
+                client_email=client_email_val,
             )
             
             # Create DocuSign envelope
@@ -534,24 +547,35 @@ def send_for_signature(username=None, proposal_id=None):
             )
             
             # Store signature record
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO proposal_signatures 
                 (proposal_id, envelope_id, signer_name, signer_email, signer_title, 
                  signing_url, status, created_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, sent_at
-            """, (proposal_id, envelope_result['envelope_id'], signer_name, signer_email, 
-                  signer_title, envelope_result['signing_url'], 'sent', current_user['id']))
+                """,
+                (
+                    proposal_id,
+                    envelope_result['envelope_id'],
+                    signer_name,
+                    signer_email,
+                    signer_title,
+                    envelope_result['signing_url'],
+                    'sent',
+                    current_user_id,
+                ),
+            )
             
             signature_record = cursor.fetchone()
             conn.commit()
             
             log_activity(
                 proposal_id,
-                current_user['id'],
+                current_user_id,
                 'signature_requested',
                 f"Proposal sent to {signer_name} for signature",
-                {'envelope_id': envelope_result['envelope_id'], 'signer_email': signer_email}
+                {'envelope_id': envelope_result['envelope_id'], 'signer_email': signer_email},
             )
             
             # Update proposal status and client_email if it's empty or matches the signer

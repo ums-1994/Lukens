@@ -6,6 +6,7 @@ import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
 import 'template_library_page.dart';
+import 'blank_document_editor/services/document_proposal_service.dart';
 
 class ProposalWizard extends StatefulWidget {
   const ProposalWizard({super.key});
@@ -3167,17 +3168,61 @@ class _ProposalWizardState extends State<ProposalWizard>
         return;
       }
 
-      // Simulate API call - replace with actual
-      await Future.delayed(const Duration(seconds: 1));
+      final app = context.read<AppState>();
+      final token = app.authToken;
+
+      if (token == null || token.isEmpty) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You must be logged in to submit for approval'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      int? proposalId;
+      if (_proposalId != null) {
+        proposalId = int.tryParse(_proposalId!);
+      }
+
+      if (proposalId == null && app.currentProposal != null) {
+        final dynamic rawId = app.currentProposal!['id'];
+        if (rawId is int) {
+          proposalId = rawId;
+        } else if (rawId is String) {
+          proposalId = int.tryParse(rawId);
+        }
+      }
+
+      if (proposalId == null) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'No saved proposal found. Please create and save the proposal before submitting for approval.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final response = await DocumentProposalService.sendForApproval(
+        proposalId,
+        token,
+      );
 
       setState(() {
         _isInternalApproved = true;
         _isLoading = false;
       });
 
+      final status = response?['status']?.toString() ?? 'Pending CEO Approval';
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Proposal submitted for internal approval'),
+        SnackBar(
+          content: Text('Proposal submitted for internal approval ($status)'),
           backgroundColor: Colors.green,
         ),
       );
@@ -3203,8 +3248,70 @@ class _ProposalWizardState extends State<ProposalWizard>
     setState(() => _isLoading = true);
 
     try {
-      // Simulate API call - replace with actual
-      await Future.delayed(const Duration(seconds: 1));
+      final app = context.read<AppState>();
+
+      int? proposalId;
+      if (_proposalId != null) {
+        proposalId = int.tryParse(_proposalId!);
+      }
+
+      if (proposalId == null && app.currentProposal != null) {
+        final dynamic rawId = app.currentProposal!['id'];
+        if (rawId is int) {
+          proposalId = rawId;
+        } else if (rawId is String) {
+          proposalId = int.tryParse(rawId);
+        }
+      }
+
+      if (proposalId == null) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'No saved proposal found. Please create and save the proposal before sending to the client.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final clientName =
+          (_formData['clientName']?.toString().isNotEmpty ?? false)
+              ? _formData['clientName'].toString()
+              : 'Client';
+      final clientEmail =
+          (_formData['clientEmail']?.toString().isNotEmpty ?? false)
+              ? _formData['clientEmail'].toString()
+              : '';
+
+      if (clientEmail.isEmpty || !clientEmail.contains('@')) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please provide a valid client email before sending'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final result = await app.sendProposalForSignature(
+        proposalId: proposalId,
+        signerName: clientName,
+        signerEmail: clientEmail,
+      );
+
+      if (result == null) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to send proposal to client'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
       setState(() {
         _isClientSigned = true;
