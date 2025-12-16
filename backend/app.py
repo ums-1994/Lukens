@@ -76,7 +76,7 @@ except ImportError:
             return ai_result
         return precheck_summary
 
-from api.utils.email import send_email, send_encryption_notification_email, get_logo_html
+from api.utils.email import send_email, get_logo_html
 
 # Load environment variables
 load_dotenv()
