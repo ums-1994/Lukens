@@ -86,7 +86,8 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => const ClientDashboardHome(),
+                builder: (context) =>
+                    ClientDashboardHome(initialToken: widget.token),
               ),
             );
           }
@@ -129,7 +130,8 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const ClientDashboardHome(),
+              builder: (context) =>
+                  ClientDashboardHome(initialToken: widget.token),
             ),
           );
         }

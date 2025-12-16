@@ -6,7 +6,9 @@ import 'client_proposal_viewer.dart';
 import '../../api.dart';
 
 class ClientDashboardHome extends StatefulWidget {
-  const ClientDashboardHome({super.key});
+  final String? initialToken;
+
+  const ClientDashboardHome({super.key, this.initialToken});
 
   @override
   State<ClientDashboardHome> createState() => _ClientDashboardHomeState();
@@ -34,14 +36,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   void _extractTokenAndLoad() {
-    String? token;
+    String? token = widget.initialToken;
 
     try {
       final currentUrl = web.window.location.href;
       final uri = Uri.parse(currentUrl);
 
-      // Try multiple ways to extract token
-      token = uri.queryParameters['token'];
+      if (token == null || token.isEmpty) {
+        // Try multiple ways to extract token
+        token = uri.queryParameters['token'];
+      }
 
       if ((token == null || token.isEmpty) && uri.fragment.isNotEmpty) {
         final fragment = uri.fragment;

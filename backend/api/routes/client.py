@@ -9,6 +9,7 @@ from datetime import datetime
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
+from api.utils.jwt_validator import validate_jwt_token, JWTValidationError
 
 bp = Blueprint('client', __name__)
 
@@ -46,9 +47,177 @@ def _get_proposal_column_info(cursor):
         'client_email_expr': client_email_expr,
     }
 
+
+# ============================================================================
+# CLIENT DASHBOARD JWT TOKEN ROUTES
+# ============================================================================
+
+
+@bp.get("/client/validate-token")
+def validate_client_dashboard_token():
+    """
+    Validate a JWT token for the client dashboard.
+    """
+    try:
+        auth_header = request.headers.get('Authorization', '')
+        token = None
+
+        if auth_header.startswith('Bearer '):
+            token = auth_header.split(' ', 1)[1].strip()
+        else:
+            token = request.args.get('token')
+
+        if not token:
+            return {'detail': 'Token is required'}, 400
+
+        try:
+            decoded = validate_jwt_token(token)
+        except JWTValidationError as e:
+            return {'detail': str(e)}, 401
+
+        return decoded, 200
+    except Exception as e:
+        print(f"❌ Error validating client dashboard token: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/client-dashboard-mini/<token>")
+def client_dashboard_mini(token):
+    """
+    Minimal HTML dashboard view for clients using a JWT token.
+    """
+    try:
+        try:
+            decoded = validate_jwt_token(token)
+        except JWTValidationError as e:
+            return f"<h1>Invalid or expired token</h1><p>{e}</p>", 401
+
+        client_email = decoded.get('client_email', 'Client')
+        proposal_data = decoded.get('proposal_data') or {}
+        proposal_title = proposal_data.get('title', 'Business Proposal')
+        proposal_status = proposal_data.get('status', 'For Review')
+
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Client Dashboard</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    background: #0b1020;
+                    color: #f9fafb;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                }}
+                .card {{
+                    background: radial-gradient(circle at top left, #111827, #020617);
+                    border-radius: 16px;
+                    border: 1px solid rgba(148, 163, 184, 0.3);
+                    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.6);
+                    padding: 32px;
+                    max-width: 640px;
+                    width: 100%;
+                }}
+                h1 {{
+                    margin: 0 0 4px;
+                    font-size: 24px;
+                }}
+                h2 {{
+                    margin: 24px 0 8px;
+                    font-size: 18px;
+                }}
+                p {{
+                    margin: 4px 0;
+                    color: #cbd5f5;
+                    font-size: 14px;
+                }}
+                .badge {{
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 4px 10px;
+                    border-radius: 999px;
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.08em;
+                    background: rgba(56, 189, 248, 0.1);
+                    color: #38bdf8;
+                    border: 1px solid rgba(56, 189, 248, 0.4);
+                    margin-bottom: 16px;
+                }}
+                .section-title {{
+                    font-weight: 600;
+                    margin-top: 24px;
+                    margin-bottom: 8px;
+                    font-size: 13px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.08em;
+                    color: #9ca3af;
+                }}
+                .proposal-card {{
+                    margin-top: 8px;
+                    padding: 16px;
+                    border-radius: 12px;
+                    background: rgba(15, 23, 42, 0.8);
+                    border: 1px solid rgba(148, 163, 184, 0.3);
+                }}
+                .status-pill {{
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 4px 12px;
+                    border-radius: 999px;
+                    font-size: 12px;
+                    background: rgba(34, 197, 94, 0.12);
+                    color: #4ade80;
+                    border: 1px solid rgba(34, 197, 94, 0.5);
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="badge">Client Dashboard</div>
+                <h1>Welcome to Your Client Portal</h1>
+                <p>Hi {client_email}, here's a quick view of your proposal.</p>
+
+                <div class="section-title">My Proposals</div>
+                <div class="proposal-card">
+                    <p style="font-weight: 600; font-size: 15px;">{proposal_title}</p>
+                    <p style="margin-top: 8px;">
+                        <span class="status-pill">{proposal_status}</span>
+                    </p>
+                </div>
+
+                <div class="section-title">Sign Documents</div>
+                <p>Open your full client portal to review, comment and sign.</p>
+
+                <div class="section-title">Signed History</div>
+                <p>Keep track of your completed agreements and engagements.</p>
+
+                <div class="section-title">Feedback</div>
+                <p>Share feedback directly in the portal for quicker alignment.</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        return html, 200
+    except Exception as e:
+        print(f"❌ Error rendering mini client dashboard: {e}")
+        traceback.print_exc()
+        return "<h1>Server Error</h1><p>Unable to render dashboard.</p>", 500
+
+
 # ============================================================================
 # CLIENT PROPOSAL ROUTES (using token-based access)
 # ============================================================================
+
 
 @bp.get("/api/client/proposals")
 def get_client_proposals():

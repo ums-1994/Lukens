@@ -235,6 +235,37 @@ class AuthService {
     }
   }
 
+  // Login using external Khonobuzz JWT token
+  static Future<Map<String, dynamic>?> loginWithJwt(String jwtToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/khonobuzz/jwt-login'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'token': jwtToken}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final user = data['user'] as Map<String, dynamic>?;
+        final token = data['token'] as String?;
+
+        if (user == null || token == null) {
+          throw Exception('Malformed response from jwt-login endpoint');
+        }
+
+        setUserData(user, token);
+        return data;
+      } else {
+        final error = json.decode(response.body);
+        throw Exception(
+            error['detail'] ?? 'External JWT login failed with status ${response.statusCode}');
+      }
+    } catch (e) {
+      print('External JWT login error: $e');
+      rethrow;
+    }
+  }
+
   // Resend verification email
   static Future<Map<String, dynamic>?> resendVerification(String email) async {
     try {

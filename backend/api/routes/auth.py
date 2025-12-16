@@ -15,6 +15,7 @@ from api.utils.decorators import token_required
 from api.utils.auth import verify_token, get_valid_tokens, generate_token, hash_password, verify_password, save_tokens
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, firebase_token_required, initialize_firebase
 from api.utils.email import send_email, send_verification_email
+from api.utils.jwt_validator import JWTValidationError, validate_jwt_token, extract_user_info
 from werkzeug.security import check_password_hash
 
 bp = Blueprint('auth', __name__)
@@ -585,6 +586,111 @@ def verify_firebase_auth(firebase_user=None, firebase_uid=None, firebase_email=N
         finally:
             release_pg_conn(conn)
     except Exception as e:
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/khonobuzz/jwt-login")
+def khonobuzz_jwt_login():
+    """
+    Authenticate user using external Khonobuzz JWT token.
+
+    Expects JSON body: {"token": "<jwt>"} or query parameter ?token=...
+    Validates JWT, upserts user by email, and returns backend auth token + user info.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        token = data.get('token') or request.args.get('token')
+
+        if not token:
+            return {'detail': 'JWT token is required'}, 400
+
+        try:
+            decoded = validate_jwt_token(token)
+            user_info = extract_user_info(decoded)
+        except JWTValidationError as e:
+            return {'detail': str(e)}, 401
+
+        email = user_info.get('email')
+        user_id_claim = user_info.get('user_id')
+
+        if not email:
+            return {'detail': 'Token must include email or user_email/email_address claim'}, 400
+
+        conn = _pg_conn()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users WHERE email = %s''',
+                (email,)
+            )
+            user = cursor.fetchone()
+
+            if user:
+                user_id = user[0]
+                username = user[1]
+                full_name = user[3] or email.split('@')[0]
+                role_value = user[4] or 'manager'
+                department = user[5]
+                is_active = user[6]
+            else:
+                base_username = email.split('@')[0]
+                username = base_username
+                counter = 1
+                while True:
+                    cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                    if cursor.fetchone() is None:
+                        break
+                    username = f"{base_username}{counter}"
+                    counter += 1
+
+                full_name = decoded.get('name') or decoded.get('full_name') or email.split('@')[0]
+                role_value = decoded.get('role') or 'manager'
+                department = decoded.get('department')
+                is_active = True
+
+                cursor.execute(
+                    '''INSERT INTO users (username, email, password_hash, full_name, role, department, is_active, is_email_verified)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                       RETURNING id''',
+                    (
+                        username,
+                        email,
+                        f"external_jwt:{user_id_claim or email}",
+                        full_name,
+                        role_value,
+                        department,
+                        is_active,
+                        True,
+                    ),
+                )
+                user_id = cursor.fetchone()[0]
+
+                conn.commit()
+
+            backend_token = generate_token(username)
+            save_tokens(get_valid_tokens())
+
+            return {
+                'token': backend_token,
+                'user': {
+                    'id': user_id,
+                    'username': username,
+                    'email': email,
+                    'full_name': full_name,
+                    'role': role_value,
+                    'department': department,
+                    'is_active': is_active,
+                    'external_source': 'khonobuzz',
+                },
+                'claims': decoded,
+            }, 200
+        finally:
+            release_pg_conn(conn)
+    except Exception as e:
+        print(f'Khonobuzz JWT login error: {e}')
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.post("/verify-email")
