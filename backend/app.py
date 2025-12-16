@@ -2163,9 +2163,9 @@ def send_for_approval(username, proposal_id):
             if current_status != 'draft':
                 return {'detail': f'Proposal is already {current_status}'}, 400
             
-            # Get proposal details
+            # Get proposal details (Render/Postgres schema uses "client" column, not client_name)
             cursor.execute(
-                '''SELECT id, title, client_name, client_email, owner_id 
+                '''SELECT id, title, client, client_email, owner_id 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -3025,15 +3025,53 @@ def create_comment(username, proposal_id):
             
             user_id = user['id']
             
-            # Create comment
-            cursor.execute("""
+            # Create comment, handling potential out-of-sync sequence on document_comments.id
+            insert_sql = """
                 INSERT INTO document_comments 
                 (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id, proposal_id, comment_text, created_by, created_at, 
                           section_index, highlighted_text, status, updated_at
-            """, (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open'))
-            
+            """
+
+            try:
+                cursor.execute(
+                    insert_sql,
+                    (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open')
+                )
+            except errors.UniqueViolation as seq_error:
+                # Handle out-of-sync document_comments.id sequence by resetting it and retrying once
+                print(f"⚠️ Sequence issue detected while inserting into document_comments: {seq_error}")
+                try:
+                    conn.rollback()
+                except Exception as rollback_error:
+                    print(f"[WARN] Error during rollback after document_comments sequence issue: {rollback_error}")
+
+                try:
+                    # Reset the sequence based on the current MAX(id)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """
+                        SELECT setval(
+                            pg_get_serial_sequence('document_comments', 'id'),
+                            COALESCE((SELECT MAX(id) FROM document_comments), 1),
+                            true
+                        )
+                        """
+                    )
+                    conn.commit()
+                    print("✅ Reset document_comments.id sequence based on MAX(id)")
+
+                    # Retry the insert using a RealDictCursor
+                    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                    cursor.execute(
+                        insert_sql,
+                        (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open')
+                    )
+                except Exception as reset_error:
+                    print(f"❌ Failed to reset document_comments sequence and re-insert: {reset_error}")
+                    raise
+
             result = cursor.fetchone()
             conn.commit()
             
