@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:provider/provider.dart';
+import 'package:web/web.dart' as web;
+import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
+import '../../api.dart';
 
 /// Khonology Landing Page with Precise Animation Timeline
 /// Total Duration: 5.0 seconds with staggered element reveals
@@ -126,6 +131,85 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
 
     // Start the main animation
     _controller.forward();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleJwtLoginFromUrl();
+    });
+  }
+
+  Future<void> _handleJwtLoginFromUrl() async {
+    if (!mounted) return;
+
+    final currentUrl = web.window.location.href;
+    final uri = Uri.parse(currentUrl);
+
+    final source = uri.queryParameters['source'] ?? '';
+    if (source.toLowerCase() != 'khonobuzz') {
+      return;
+    }
+
+    String? externalToken = uri.queryParameters['token'];
+
+    if (externalToken == null || externalToken.isEmpty) {
+      final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+      if (hashMatch != null) {
+        externalToken = hashMatch.group(1);
+      }
+    }
+
+    if (externalToken == null || externalToken.isEmpty) {
+      return;
+    }
+
+    try {
+      final loginResult = await AuthService.loginWithJwt(externalToken);
+      final userProfile =
+          loginResult?['user'] as Map<String, dynamic>?;
+      final token = loginResult?['token'] as String?;
+
+      if (!mounted) return;
+
+      if (userProfile == null || token == null) {
+        return;
+      }
+
+      final appState = context.read<AppState>();
+      appState.authToken = token;
+      appState.currentUser = userProfile;
+
+      final roleService = context.read<RoleService>();
+      await roleService.initializeRoleFromUser(userProfile);
+
+      await appState.init();
+
+      final rawRole = userProfile['role']?.toString() ?? '';
+      final userRole = rawRole.toLowerCase().trim();
+      String dashboardRoute;
+
+      final isAdmin = userRole == 'admin' || userRole == 'ceo';
+      final isManager = userRole == 'manager' ||
+          userRole == 'financial manager' ||
+          userRole == 'creator' ||
+          userRole == 'user';
+
+      if (isAdmin) {
+        dashboardRoute = '/approver_dashboard';
+      } else if (isManager) {
+        dashboardRoute = '/creator_dashboard';
+      } else {
+        dashboardRoute = '/creator_dashboard';
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        dashboardRoute,
+        (route) => false,
+      );
+    } catch (e) {
+      print('❌ JWT login from landing page failed: $e');
+    }
   }
 
   @override

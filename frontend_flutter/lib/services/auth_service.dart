@@ -1,9 +1,8 @@
 import 'dart:convert';
-import 'dart:js' as js;
+import 'dart:js_util' as js_util;
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:web/web.dart' as web;
 
 class AuthService {
   // Get API URL from JavaScript config or use default
@@ -11,10 +10,9 @@ class AuthService {
     if (kIsWeb) {
       try {
         // Try to get from window.APP_CONFIG.API_URL
-        final config = js.context['APP_CONFIG'];
+        final config = js_util.getProperty(js_util.globalThis, 'APP_CONFIG');
         if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
+          final apiUrl = js_util.getProperty(config, 'API_URL');
           if (apiUrl != null && apiUrl.toString().isNotEmpty) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
             print('🌐 Using API URL from APP_CONFIG: $url');
@@ -22,7 +20,8 @@ class AuthService {
           }
         }
         // Fallback: try window.REACT_APP_API_URL
-        final envUrl = js.context['REACT_APP_API_URL'];
+        final envUrl =
+            js_util.getProperty(js_util.globalThis, 'REACT_APP_API_URL');
         if (envUrl != null && envUrl.toString().isNotEmpty) {
           final url = envUrl.toString().replaceAll('"', '').trim();
           print('🌐 Using API URL from REACT_APP_API_URL: $url');
@@ -34,16 +33,14 @@ class AuthService {
     }
     // Check if we're in production (not localhost)
     if (kIsWeb) {
-      final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
-        
-        if (isProduction) {
-          print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
+      final hostname = web.window.location.hostname;
+      final isProduction = hostname.contains('netlify.app') ||
+          hostname.contains('onrender.com') ||
+          !hostname.contains('localhost');
+
+      if (isProduction) {
+        print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
+        return 'https://lukens-wp8w.onrender.com';
       }
     }
     // Default to Render backend (production)
@@ -71,11 +68,11 @@ class AuthService {
       if (kIsWeb && _token != null && _currentUser != null) {
         final data = json.encode({'token': _token, 'user': _currentUser});
         print('💾 Data to store length: ${data.length}');
-        html.window.localStorage[_storageKey] = data;
+        web.window.localStorage.setItem(_storageKey, data);
         print('✅ Session persisted to localStorage');
 
         // Verify it was saved
-        final saved = html.window.localStorage[_storageKey];
+        final saved = web.window.localStorage.getItem(_storageKey);
         print('✅ Verification - Data saved: ${saved != null}');
       } else {
         print(
@@ -90,7 +87,7 @@ class AuthService {
     try {
       print('🔄 AuthService: Attempting to restore session from storage...');
       if (kIsWeb) {
-        final data = html.window.localStorage[_storageKey];
+        final data = web.window.localStorage.getItem(_storageKey);
         print('📦 localStorage key: $_storageKey');
         print('📦 Data exists: ${data != null}');
         print('📦 Data isEmpty: ${data?.isEmpty ?? true}');
@@ -133,7 +130,7 @@ class AuthService {
   static void _clearSessionStorage() {
     try {
       if (kIsWeb) {
-        html.window.localStorage.remove(_storageKey);
+        web.window.localStorage.removeItem(_storageKey);
       }
     } catch (_) {}
   }
@@ -231,6 +228,37 @@ class AuthService {
       }
     } catch (e) {
       print('Email verification error: $e');
+      rethrow;
+    }
+  }
+
+  // Login using external Khonobuzz JWT token
+  static Future<Map<String, dynamic>?> loginWithJwt(String jwtToken) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/khonobuzz/jwt-login'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'token': jwtToken}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final user = data['user'] as Map<String, dynamic>?;
+        final token = data['token'] as String?;
+
+        if (user == null || token == null) {
+          throw Exception('Malformed response from jwt-login endpoint');
+        }
+
+        setUserData(user, token);
+        return data;
+      } else {
+        final error = json.decode(response.body);
+        throw Exception(
+            error['detail'] ?? 'External JWT login failed with status ${response.statusCode}');
+      }
+    } catch (e) {
+      print('External JWT login error: $e');
       rethrow;
     }
   }

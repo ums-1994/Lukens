@@ -199,10 +199,10 @@ class MyApp extends StatelessWidget {
           }
 
           // Handle client proposals route
-          if (settings.name == '/client/proposals' ||
-              (settings.name != null &&
-                  settings.name!.startsWith('/client/proposals'))) {
-            print('🔍 Client proposals route detected: ${settings.name}');
+        if (settings.name == '/client/proposals' ||
+            (settings.name != null &&
+                settings.name!.startsWith('/client/proposals'))) {
+          print('🔍 Client proposals route detected: ${settings.name}');
 
             // Extract token from URL
             final currentUrl = web.window.location.href;
@@ -211,8 +211,10 @@ class MyApp extends StatelessWidget {
 
             if (token != null && token.isNotEmpty) {
               print('✅ Token found for client proposals');
+              final validToken = token;
               return MaterialPageRoute(
-                builder: (context) => const ClientDashboardHome(),
+                builder: (context) =>
+                    ClientDashboardHome(initialToken: validToken),
               );
             } else {
               print('❌ No token found in client proposals URL');
@@ -409,9 +411,77 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _checkVerificationUrl();
   }
 
-  void _checkVerificationUrl() {
+  Future<void> _checkVerificationUrl() async {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
+
+    // Check for external Khonobuzz JWT login (source=khonobuzz&token=...)
+    final source = uri.queryParameters['source'] ?? '';
+    if (source.toLowerCase() == 'khonobuzz') {
+      String? externalToken = uri.queryParameters['token'];
+
+      // Fallback: try to extract from hash or full URL
+      if (externalToken == null || externalToken.isEmpty) {
+        final hashMatch =
+            RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+        if (hashMatch != null) {
+          externalToken = hashMatch.group(1);
+        }
+      }
+
+      if (externalToken != null && externalToken.isNotEmpty) {
+        print(
+            '✅ Detected Khonobuzz JWT login - token: ${externalToken.substring(0, 10)}...');
+        try {
+          final loginResult =
+              await AuthService.loginWithJwt(externalToken);
+          final userProfile =
+              loginResult?['user'] as Map<String, dynamic>?;
+          final token = loginResult?['token'] as String?;
+
+          if (userProfile != null && token != null && mounted) {
+            final appState = context.read<AppState>();
+            appState.authToken = token;
+            appState.currentUser = userProfile;
+
+            final roleService = context.read<RoleService>();
+            await roleService.initializeRoleFromUser(userProfile);
+            await appState.init();
+
+            final rawRole = userProfile['role']?.toString() ?? '';
+            final userRole = rawRole.toLowerCase().trim();
+            String dashboardRoute;
+
+            final isAdmin = userRole == 'admin' || userRole == 'ceo';
+            final isManager = userRole == 'manager' ||
+                userRole == 'financial manager' ||
+                userRole == 'creator' ||
+                userRole == 'user';
+
+            if (isAdmin) {
+              dashboardRoute = '/approver_dashboard';
+              print('✅ Khonobuzz: Routing to Admin Dashboard');
+            } else if (isManager) {
+              dashboardRoute = '/creator_dashboard';
+              print('✅ Khonobuzz: Routing to Creator Dashboard (Manager)');
+            } else {
+              dashboardRoute = '/creator_dashboard';
+              print(
+                  '⚠️ Khonobuzz: Unknown role "$userRole", defaulting to Creator Dashboard');
+            }
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.pushReplacementNamed(context, dashboardRoute);
+            });
+            return;
+          }
+        } catch (e) {
+          print('❌ Khonobuzz JWT login failed: $e');
+        }
+      } else {
+        print('❌ Khonobuzz source detected but no token found in URL');
+      }
+    }
 
     // Check if this is a client onboarding URL (priority check)
     final isOnboarding = currentUrl.contains('/onboard') ||
