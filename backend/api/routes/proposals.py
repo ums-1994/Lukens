@@ -4,28 +4,169 @@ Extracted from app.py for better organization
 """
 from flask import Blueprint, request, jsonify
 from api.utils.decorators import token_required, admin_required
-from api.services.proposal_service import ProposalService
-from api.services.notification_service import create_notification, get_approvers
 from api.utils.database import get_db_connection
 from api.utils.helpers import resolve_user_id
 from api.utils.email import send_email
 import json
 import psycopg2.extras
+import traceback
 
 bp = Blueprint('proposals', __name__)
 
 
+@bp.post("/proposals")
+@token_required
+def create_proposal(username=None, user_id=None, email=None):
+    """Create a new proposal"""
+    try:
+        data = request.get_json()
+        print(f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email})")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Robust user lookup with retries (ported from creator.py)
+            # This handles eventual consistency where the user might not be visible immediately after creation
+            found_user_id = None
+            import time
+            
+            # Strategy: Try user_id first (if provided), then email, then username
+            lookup_strategies = []
+            if user_id:
+                lookup_strategies.append(('user_id', user_id))
+            if email:
+                lookup_strategies.append(('email', email))
+            if username:
+                lookup_strategies.append(('username', username))
+            
+            max_retries = 30
+            retry_delay = 0.2
+            
+            for attempt in range(max_retries):
+                for strategy_type, strategy_value in lookup_strategies:
+                    try:
+                        if strategy_type == 'user_id':
+                            cursor.execute('SELECT id FROM users WHERE id = %s', (strategy_value,))
+                        elif strategy_type == 'email':
+                            cursor.execute('SELECT id FROM users WHERE email = %s', (strategy_value,))
+                        elif strategy_type == 'username':
+                            cursor.execute('SELECT id FROM users WHERE username = %s', (strategy_value,))
+                        
+                        user_row = cursor.fetchone()
+                        if user_row:
+                            found_user_id = user_row[0]
+                            print(f"✅ Found user_id {found_user_id} using {strategy_type}: {strategy_value} (attempt {attempt + 1})")
+                            break
+                    except Exception as e:
+                        print(f"⚠️ Error looking up by {strategy_type}: {e}")
+                
+                if found_user_id:
+                    break
+                
+                if attempt < max_retries - 1:
+                    print(f"⚠️ User not found yet, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
+                    time.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.3, 1.0)
+            
+            if not found_user_id:
+                print(f"❌ User lookup failed after {max_retries} attempts for username: {username}, email: {email}, user_id: {user_id}")
+                return jsonify({'detail': f"User not found after {max_retries} retries"}), 400
+            
+            user_id = found_user_id
+                
+            # Extract fields
+            title = data.get('title', 'Untitled Proposal')
+            content = data.get('content')
+            
+            # Normalize status
+            raw_status = data.get('status', 'draft')
+            status = 'draft'
+            if raw_status:
+                status_lower = str(raw_status).lower().strip()
+                if status_lower == 'draft':
+                    status = 'draft'
+                elif 'pending' in status_lower and 'ceo' in status_lower:
+                    status = 'Pending CEO Approval'
+                elif 'sent' in status_lower and 'client' in status_lower:
+                    status = 'Sent to Client'
+                elif status_lower == 'signed':
+                    status = 'Signed'
+                elif status_lower == 'approved':
+                    status = 'Approved'
+                elif 'review' in status_lower:
+                    status = 'In Review'
+                else:
+                    status = status_lower
+
+            client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
+            client_email = data.get('client_email')
+            
+            # Insert
+            cursor.execute("""
+                INSERT INTO proposals 
+                (title, content, status, client, client_email, owner_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, title, content, status, client, client_email, owner_id, created_at, updated_at
+            """, (title, content, status, client_name, client_email, user_id))
+            
+            row = cursor.fetchone()
+            conn.commit()
+            
+            new_proposal = {
+                'id': row[0],
+                'title': row[1],
+                'content': row[2],
+                'status': row[3],
+                'client_name': row[4],
+                'client_email': row[5],
+                'owner_id': row[6],
+                'created_at': row[7].isoformat() if row[7] else None,
+                'updated_at': row[8].isoformat() if row[8] else None
+            }
+            
+            print(f"✅ Proposal created: {new_proposal['id']}")
+            return jsonify(new_proposal), 201
+            
+    except Exception as e:
+        print(f"❌ Error creating proposal: {e}")
+        traceback.print_exc()
+        return jsonify({'detail': str(e)}), 500
+
+
 @bp.get("/proposals")
 @token_required
-def get_proposals(username):
+def get_proposals(username=None, user_id=None, email=None):
     """Get all proposals for the current user"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            print(f"🔍 Looking for proposals for user {username}")
+            print(f"🔍 Looking for proposals for user {username} (user_id: {user_id}, email: {email})")
             
-            user_id = resolve_user_id(cursor, username)
+            # Robust user lookup (similar to create_proposal but simpler since read doesn't need to wait for write visibility as critically)
+            found_user_id = None
+            
+            # 1. Trust decorator user_id if provided
+            if user_id:
+                try:
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    if cursor.fetchone():
+                        found_user_id = user_id
+                except Exception:
+                    pass
+            
+            # 2. Try email
+            if not found_user_id and email:
+                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                row = cursor.fetchone()
+                if row:
+                    found_user_id = row[0]
+            
+            # 3. Try username (fallback)
+            if not found_user_id and username:
+                found_user_id = resolve_user_id(cursor, username)
+            
+            user_id = found_user_id
             if not user_id:
                 print(f"⚠️ Could not resolve numeric ID for {username}, returning empty list")
                 return jsonify([]), 200

@@ -47,6 +47,37 @@ except ImportError as e:
     print(f"⚠️ DocuSign SDK not available: {e}")
     print("   Install with: pip install docusign-esign")
 
+def resolve_user_id(cursor, identifier):
+    """
+    Resolve a user identifier (username, email, or ID) to a user_id.
+    """
+    if not identifier:
+        return None
+        
+    # 1. If it's an integer, verify it exists
+    if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+        try:
+            uid = int(identifier)
+            cursor.execute("SELECT id FROM users WHERE id = %s", (uid,))
+            if cursor.fetchone():
+                return uid
+        except Exception:
+            pass
+            
+    # 2. Try by username
+    cursor.execute("SELECT id FROM users WHERE username = %s", (str(identifier),))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+        
+    # 3. Try by email
+    cursor.execute("SELECT id FROM users WHERE email = %s", (str(identifier),))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+        
+    return None
+
 
 def get_frontend_url():
     """
