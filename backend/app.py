@@ -1980,7 +1980,7 @@ def create_proposal(username):
                 client_name = result.get('client_name') or 'Unknown Client'
                 
                 # Get creator's email
-                cursor.execute("SELECT id, email, first_name, last_name FROM users WHERE id = %s", (user_id,))
+                cursor.execute("SELECT id, email, full_name FROM users WHERE id = %s", (user_id,))
                 creator_row = cursor.fetchone()
                 creator = None
                 if creator_row:
@@ -1988,10 +1988,7 @@ def create_proposal(username):
                     creator = dict(zip(creator_columns, creator_row)) if creator_columns else {}
 
                 creator_email = creator.get('email') if creator else None
-                creator_name = (
-                    f"{creator.get('first_name', '')} {creator.get('last_name', '')}".strip()
-                    if creator else username
-                ) or username
+                creator_name = creator.get('full_name') if creator else username
                 
                 # Send email to creator
                 if creator_email:
@@ -2035,7 +2032,7 @@ def create_proposal(username):
                 for approver in approvers:
                     approver_id = approver['id']
                     approver_email = approver.get('email')
-                    approver_name = f"{approver.get('first_name', '')} {approver.get('last_name', '')}".strip() or approver.get('username', 'Approver')
+                    approver_name = approver.get('full_name') or approver.get('username', 'Approver')
                     
                     # Send email to approver
                     if approver_email:
@@ -2187,10 +2184,10 @@ def send_for_approval(username, proposal_id):
             # Send email notifications and create in-app notifications
             try:
                 # Get creator's details
-                cursor.execute("SELECT id, email, first_name, last_name, username FROM users WHERE id = %s", (creator_user_id,))
+                cursor.execute("SELECT id, email, full_name, username FROM users WHERE id = %s", (creator_user_id,))
                 creator = cursor.fetchone()
                 creator_email = creator[1] if creator and creator[1] else None
-                creator_name = f"{creator[2] or ''} {creator[3] or ''}".strip() or (creator[4] if creator else username) if creator else username
+                creator_name = creator[2] if creator and creator[2] else (creator[3] if creator else username)
                 
                 # Send email to creator (confirmation)
                 if creator_email:
@@ -2241,7 +2238,7 @@ def send_for_approval(username, proposal_id):
                 for approver in approvers:
                     approver_id = approver['id']
                     approver_email = approver.get('email')
-                    approver_name = f"{approver.get('first_name', '')} {approver.get('last_name', '')}".strip() or approver.get('username', 'Approver')
+                    approver_name = approver.get('full_name') or approver.get('username', 'Approver')
                     
                     # Send email to approver
                     if approver_email:
@@ -2354,15 +2351,15 @@ def approve_proposal(username, proposal_id):
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved")
                 
                 # Get approver's name
-                cursor.execute('SELECT id, first_name, last_name, username FROM users WHERE username = %s', (username,))
+                cursor.execute('SELECT id, full_name, username FROM users WHERE username = %s', (username,))
                 approver = cursor.fetchone()
-                approver_name = f"{approver[1] or ''} {approver[2] or ''}".strip() or (approver[3] if approver else username) if approver else username
+                approver_name = approver[1] if approver and approver[1] else (approver[2] if approver else username)
                 
                 # Get creator's details
-                cursor.execute("SELECT id, email, first_name, last_name, username FROM users WHERE id = %s", (creator_user_id,))
+                cursor.execute("SELECT id, email, full_name, username FROM users WHERE id = %s", (creator_user_id,))
                 creator = cursor.fetchone()
                 creator_email = creator[1] if creator and creator[1] else None
-                creator_name = f"{creator[2] or ''} {creator[3] or ''}".strip() or (creator[4] if creator else 'Creator') if creator else 'Creator'
+                creator_name = creator[2] if creator and creator[2] else (creator[3] if creator else 'Creator')
                 
                 # Send email to creator (notification of approval)
                 if creator_email:
@@ -2492,13 +2489,13 @@ def send_to_client(username, proposal_id):
             cursor = conn.cursor()
             
             # Get current user's role
-            cursor.execute('SELECT id, role, first_name, last_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, role, full_name FROM users WHERE username = %s', (username,))
             user = cursor.fetchone()
             if not user:
                 return {'detail': 'User not found'}, 404
             
-            user_id, user_role, first_name, last_name = user
-            approver_name = f"{first_name or ''} {last_name or ''}".strip() or username
+            user_id, user_role, full_name = user
+            approver_name = full_name if full_name else username
             
             # Check if user is an approver
             if user_role not in ('approver', 'CEO', 'admin', 'reviewer_approver'):
@@ -2638,10 +2635,10 @@ def send_to_client(username, proposal_id):
             conn.commit()
             
             # Get creator's details for notification
-            cursor.execute("SELECT id, email, first_name, last_name, username FROM users WHERE id = %s", (creator_user_id,))
+            cursor.execute("SELECT id, email, full_name, username FROM users WHERE id = %s", (creator_user_id,))
             creator = cursor.fetchone()
             creator_email = creator[1] if creator and creator[1] else None
-            creator_name = f"{creator[2] or ''} {creator[3] or ''}".strip() or (creator[4] if creator else 'Creator') if creator else 'Creator'
+            creator_name = creator[2] if creator and creator[2] else (creator[3] if creator else 'Creator')
             
             # Send email to creator (notification that proposal was sent to client)
             if creator_email:
