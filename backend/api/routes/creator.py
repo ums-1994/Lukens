@@ -324,8 +324,12 @@ def create_proposal(username=None, user_id=None, email=None):
                     normalized_status = 'Pending CEO Approval'
                 elif 'sent' in status_lower and 'client' in status_lower:
                     normalized_status = 'Sent to Client'
-                elif status_lower in ['signed', 'approved']:
-                    normalized_status = 'signed'
+                elif status_lower == 'signed':
+                    # Keep a distinct Signed status for fully signed proposals
+                    normalized_status = 'Signed'
+                elif status_lower == 'approved':
+                    # Preserve Approved as its own state (e.g. admin approved but not yet signed)
+                    normalized_status = 'Approved'
                 elif 'review' in status_lower:
                     normalized_status = 'In Review'
                 else:

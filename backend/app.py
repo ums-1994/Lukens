@@ -2313,7 +2313,7 @@ def send_for_approval(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/proposals/<int:proposal_id>/approve")
+@app.post("/legacy/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username, proposal_id):
     """Approve proposal and send to client"""
