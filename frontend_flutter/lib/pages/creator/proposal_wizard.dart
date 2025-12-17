@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -53,6 +56,7 @@ class _ProposalWizardState extends State<ProposalWizard>
   final ScrollController _composeScrollController = ScrollController();
   final ScrollController _governScrollController = ScrollController();
   final ScrollController _riskScrollController = ScrollController();
+  final ScrollController _previewScrollController = ScrollController();
   final ScrollController _internalSignoffScrollController = ScrollController();
 
   // Workflow steps matching the image
@@ -250,6 +254,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     _composeScrollController.dispose();
     _governScrollController.dispose();
     _riskScrollController.dispose();
+    _previewScrollController.dispose();
     _internalSignoffScrollController.dispose();
     super.dispose();
   }
@@ -498,79 +503,104 @@ class _ProposalWizardState extends State<ProposalWizard>
         return _governanceResults.isNotEmpty;
       case 2: // AI Risk Gate - require risk assessment to have run
         return _riskAssessment.isNotEmpty;
-      case 3: // Preview - review step
+      case 3: // Preview - document review step
         return true;
-      case 4: // Internal Sign-off - require internal approval flag
-        return _isInternalApproved;
+      case 4: // Internal Sign-off - always allow clicking Submit (method enforces rules)
+        return true;
       default:
         return false;
     }
   }
 
   Future<void> _createProposal() async {
+    if (_isLoading) return;
+
     setState(() => _isLoading = true);
 
     try {
       final app = context.read<AppState>();
 
-      // Create proposal in backend so that downstream flows have a real ID
+      final String opportunityName =
+          (_formData['opportunityName']?.toString().isNotEmpty ?? false)
+              ? _formData['opportunityName'].toString()
+              : 'Untitled Proposal';
+      final String clientName =
+          (_formData['clientName']?.toString().isNotEmpty ?? false)
+              ? _formData['clientName'].toString()
+              : 'Client';
+
+      // 1) Create proposal using legacy AppState so dashboards and lists update
       final created = await app.createProposal(
-        _formData['opportunityName'],
-        _formData['clientName'],
+        opportunityName,
+        clientName,
         templateKey: _formData['templateId']?.toString().isNotEmpty == true
             ? _formData['templateId'].toString()
             : null,
       );
 
-      final proposalId = (created != null && created['id'] != null)
-          ? created['id'].toString()
-          : 'draft-${DateTime.now().millisecondsSinceEpoch}';
+      String? proposalId;
+      int? proposalIdInt;
+      if (created != null && created['id'] != null) {
+        proposalId = created['id'].toString();
+        proposalIdInt = int.tryParse(proposalId);
+      }
 
-      _proposalId = proposalId;
+      if (proposalId == null || proposalIdInt == null) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Could not create a proposal record. Please try again before submitting for approval.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
-      // Build initial proposal data to seed EnhancedCompose
-      final Map<String, String> moduleContents =
-          Map<String, String>.from(_formData['moduleContents'] ?? {});
+      // 2) Enrich proposal in new API layer so approver flow has client email & content
+      final token = app.authToken;
+      if (token != null && token.isNotEmpty) {
+        try {
+          final serializedContent = _serializeWizardContentForBackend(
+            title: opportunityName,
+          );
 
-      final Map<String, dynamic> initialData = {
-        'clientName': _formData['clientName'] ?? '',
-        'clientEmail': _formData['clientEmail'] ?? '',
-        'projectType': _formData['projectType'] ?? '',
-        'estimatedValue': _formData['estimatedValue'] ?? '',
-        'timeline': _formData['timeline'] ?? '',
-        'opportunityName': _formData['opportunityName'] ?? '',
-      };
+          await ApiService.updateProposal(
+            token: token,
+            id: proposalIdInt,
+            title: opportunityName,
+            content: serializedContent,
+            clientName:
+                (_formData['clientName']?.toString().isNotEmpty ?? false)
+                    ? _formData['clientName'].toString()
+                    : null,
+            clientEmail:
+                (_formData['clientEmail']?.toString().isNotEmpty ?? false)
+                    ? _formData['clientEmail'].toString()
+                    : null,
+            status: 'draft',
+          );
+        } catch (e) {
+          debugPrint('⚠️ Error enriching proposal with client email: $e');
+        }
+      }
 
-      moduleContents.forEach((key, value) {
-        initialData[key] = value;
+      // 3) Store proposal ID locally and move user to Internal Sign-off (step 5)
+      setState(() {
+        _proposalId = proposalId;
+        _isLoading = false;
+        _currentStep = 4;
       });
 
-      final proposalTitle =
-          (_formData['proposalTitle']?.toString().isNotEmpty ?? false)
-              ? _formData['proposalTitle'].toString()
-              : _formData['opportunityName'];
-
-      // Navigate to enhanced compose page
-      Navigator.pushReplacementNamed(
-        context,
-        '/enhanced-compose',
-        arguments: {
-          'proposalId': proposalId,
-          'proposalTitle': proposalTitle,
-          'templateType': _formData['templateType'],
-          'selectedModules': _formData['selectedModules'],
-          'initialData': initialData,
-        },
-      );
+      _pageController.jumpToPage(4);
     } catch (e) {
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error creating proposal: $e'),
           backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      setState(() => _isLoading = false);
     }
   }
 
@@ -610,22 +640,23 @@ class _ProposalWizardState extends State<ProposalWizard>
                 children: [
                   // Header
                   _buildHeader(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   // Proposal Workflow
                   GlassContainer(
                     borderRadius: 16,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           'Proposal Workflow',
-                          style: PremiumTheme.bodyLarge.copyWith(
+                          style: PremiumTheme.bodyMedium.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: _workflowSteps.map((step) {
@@ -697,9 +728,11 @@ class _ProposalWizardState extends State<ProposalWizard>
                         const SizedBox(width: 12),
                         ElevatedButton(
                           onPressed: _canProceed()
-                              ? (_currentStep == _totalSteps - 1
+                              ? (_currentStep == 3
                                   ? _createProposal
-                                  : _nextStep)
+                                  : _currentStep == _totalSteps - 1
+                                      ? _submitForInternalApproval
+                                      : _nextStep)
                               : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: PremiumTheme.teal,
@@ -722,9 +755,11 @@ class _ProposalWizardState extends State<ProposalWizard>
                                   ),
                                 )
                               : Text(
-                                  _currentStep == _totalSteps - 1
+                                  _currentStep == 3
                                       ? 'Create Proposal'
-                                      : 'Next',
+                                      : _currentStep == _totalSteps - 1
+                                          ? 'Submit for Approval'
+                                          : 'Next',
                                   style: PremiumTheme.bodyMedium.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
@@ -851,7 +886,9 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _previewScrollController,
             child: SingleChildScrollView(
+              controller: _previewScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: Center(
                 child: ConstrainedBox(
@@ -875,12 +912,21 @@ class _ProposalWizardState extends State<ProposalWizard>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Container(
+                              height: 4,
+                              width: 60,
+                              decoration: BoxDecoration(
+                                color: PremiumTheme.teal,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
                             Text(
                               proposalTitle,
                               style: const TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF2C3E50),
+                                color: Color(0xFF0F172A),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -888,7 +934,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                               'Prepared for: $clientName',
                               style: const TextStyle(
                                 fontSize: 16,
-                                color: Colors.grey,
+                                color: Color(0xFF4B5563),
                               ),
                             ),
                             if (opportunityName != null) ...[
@@ -897,7 +943,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 opportunityName,
                                 style: const TextStyle(
                                   fontSize: 14,
-                                  color: Colors.grey,
+                                  color: Color(0xFF6B7280),
                                 ),
                               ),
                             ],
@@ -906,7 +952,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                               'Date: $dateLabel',
                               style: const TextStyle(
                                 fontSize: 14,
-                                color: Colors.grey,
+                                color: Color(0xFF6B7280),
                               ),
                             ),
                           ],
@@ -935,7 +981,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                           margin: const EdgeInsets.only(bottom: 24),
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
@@ -948,12 +994,21 @@ class _ProposalWizardState extends State<ProposalWizard>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Container(
+                                height: 3,
+                                width: 40,
+                                decoration: BoxDecoration(
+                                  color: PremiumTheme.teal.withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
                               Text(
                                 title,
                                 style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
-                                  color: Color(0xFF2C3E50),
+                                  color: Color(0xFF0F172A),
                                 ),
                               ),
                               const SizedBox(height: 12),
@@ -1303,8 +1358,8 @@ class _ProposalWizardState extends State<ProposalWizard>
         child: Column(
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: isCompleted
                     ? PremiumTheme.success
@@ -1325,7 +1380,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     : Text(
                         number,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: isActive
                               ? PremiumTheme.info // Blue text
@@ -1334,7 +1389,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                       ),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
               label,
               style: PremiumTheme.bodyMedium.copyWith(
@@ -1342,7 +1397,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ? PremiumTheme.textPrimary
                     : PremiumTheme.textSecondary,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                fontSize: 11,
+                fontSize: 10,
               ),
               textAlign: TextAlign.center,
               maxLines: 2,
@@ -3016,6 +3071,50 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
 
     return data;
+  }
+
+  String _serializeWizardContentForBackend({required String title}) {
+    final selectedModules =
+        List<String>.from(_formData['selectedModules'] ?? const []);
+    final moduleContents =
+        Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+    final sections = <Map<String, dynamic>>[];
+
+    for (final moduleId in selectedModules) {
+      final content = moduleContents[moduleId] ?? '';
+      if (content.isEmpty) continue;
+
+      final module = _contentModules.firstWhere(
+        (m) => m['id'] == moduleId,
+        orElse: () => {
+          'id': moduleId,
+          'name': moduleId.replaceAll('_', ' '),
+        },
+      );
+
+      sections.add({
+        'title': module['name']?.toString() ?? moduleId.replaceAll('_', ' '),
+        'content': content,
+        'backgroundColor': const Color(0xFFFFFFFF).value,
+        'backgroundImageUrl': null,
+        'sectionType': 'content',
+        'isCoverPage': false,
+        'inlineImages': <dynamic>[],
+        'tables': <dynamic>[],
+      });
+    }
+
+    final documentData = <String, dynamic>{
+      'title': title,
+      'sections': sections,
+      'metadata': {
+        'source': 'wizard_v2',
+        'last_modified': DateTime.now().toIso8601String(),
+      },
+    };
+
+    return json.encode(documentData);
   }
 
   // Run AI Governance Check
