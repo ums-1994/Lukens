@@ -20,6 +20,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
   bool _submitting = false;
   bool _submitted = false;
   String? _errorMessage;
+  bool _tourShown = false;
   
   // Form fields
   final _companyNameController = TextEditingController();
@@ -78,6 +79,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
           _companyNameController.text = _expectedCompany ?? '';
           _loading = false;
         });
+        _maybeShowTour();
       } else {
         final error = json.decode(response.body);
         setState(() {
@@ -91,6 +93,26 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
         _loading = false;
       });
     }
+  }
+
+  void _maybeShowTour() {
+    if (!mounted) return;
+    if (_tourShown) return;
+    if (_loading || _errorMessage != null || _submitted) return;
+
+    _tourShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => _OnboardingTourDialog(
+          invitedEmail: _invitedEmail ?? _emailController.text,
+          expectedCompany: _expectedCompany ?? _companyNameController.text,
+          expiresAt: _expiresAt,
+        ),
+      );
+    });
   }
 
   Future<void> _submitForm() async {
@@ -159,8 +181,8 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -550,6 +572,113 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
                   }
                 : null,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OnboardingTourDialog extends StatefulWidget {
+  final String invitedEmail;
+  final String expectedCompany;
+  final String? expiresAt;
+
+  const _OnboardingTourDialog({
+    required this.invitedEmail,
+    required this.expectedCompany,
+    required this.expiresAt,
+  });
+
+  @override
+  State<_OnboardingTourDialog> createState() => _OnboardingTourDialogState();
+}
+
+class _OnboardingTourDialogState extends State<_OnboardingTourDialog> {
+  int _step = 0;
+
+  List<Map<String, String>> get _steps {
+    final company = widget.expectedCompany.trim().isNotEmpty
+        ? widget.expectedCompany.trim()
+        : 'your company';
+    final email = widget.invitedEmail.trim().isNotEmpty
+        ? widget.invitedEmail.trim()
+        : 'your email';
+    return [
+      {
+        'title': 'Welcome',
+        'body':
+            'This link is for $email. We\'ll collect a few details and set up secure access for $company.',
+      },
+      {
+        'title': 'Check your details',
+        'body':
+            'Company and email may already be pre-filled. Please confirm they\'re correct before submitting.',
+      },
+      {
+        'title': 'Complete the form',
+        'body':
+            'Fill out the required fields marked with an asterisk (*) so we can tailor the proposal experience to you.',
+      },
+      {
+        'title': 'Submit',
+        'body':
+            'When you\'re ready, click "Complete Onboarding" at the bottom. We\'ll confirm once it\'s received.',
+      },
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final step = _steps[_step];
+    final progress = '${_step + 1}/${_steps.length}';
+
+    return AlertDialog(
+      title: Text(step['title'] ?? 'Onboarding'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Step $progress',
+            style: const TextStyle(color: PremiumTheme.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            step['body'] ?? '',
+            style: const TextStyle(fontSize: 14),
+          ),
+          if ((widget.expiresAt ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Invite expires: ${widget.expiresAt}',
+              style: const TextStyle(color: PremiumTheme.textSecondary, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Skip'),
+        ),
+        if (_step > 0)
+          TextButton(
+            onPressed: () => setState(() => _step -= 1),
+            child: const Text('Back'),
+          ),
+        ElevatedButton(
+          onPressed: () {
+            if (_step >= _steps.length - 1) {
+              Navigator.pop(context);
+            } else {
+              setState(() => _step += 1);
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: PremiumTheme.teal,
+            foregroundColor: Colors.white,
+          ),
+          child: Text(_step >= _steps.length - 1 ? 'Done' : 'Next'),
         ),
       ],
     );
