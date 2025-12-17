@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'client_proposal_viewer.dart';
 import '../../api.dart';
+import '../../theme/premium_theme.dart';
 
 class ClientDashboardHome extends StatefulWidget {
   final String? initialToken;
@@ -97,8 +98,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     try {
       final response = await http.get(
-        Uri.parse(
-            '$baseUrl/api/client/proposals?token=$_accessToken'),
+        Uri.parse('$baseUrl/api/client/proposals?token=$_accessToken'),
       );
 
       if (response.statusCode == 200) {
@@ -169,7 +169,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F9),
+        backgroundColor: Colors.transparent,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -185,7 +185,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     if (_error != null) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F9),
+        backgroundColor: Colors.transparent,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -210,28 +210,53 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7F9),
-      body: Column(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Header
-          _buildHeader(),
-
-          // Content
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Stats Cards
-                  _buildStatsCards(),
-
-                  const SizedBox(height: 32),
-
-                  // Proposals Table
-                  _buildProposalsSection(),
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/Global BG.jpg',
+              fit: BoxFit.cover,
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.black.withOpacity(0.65),
+                  Colors.black.withOpacity(0.35),
                 ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
               ),
+            ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                // Header
+                _buildHeader(),
+
+                // Content
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Stats Cards
+                        _buildStatsCards(),
+
+                        const SizedBox(height: 32),
+
+                        // Proposals Table
+                        _buildProposalsSection(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -297,7 +322,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             'Pending Review',
             _statusCounts['pending'].toString(),
             Icons.pending_actions,
-            Colors.orange,
+            PremiumTheme.orangeGradient,
           ),
         ),
         const SizedBox(width: 16),
@@ -306,7 +331,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             'Approved',
             _statusCounts['approved'].toString(),
             Icons.check_circle,
-            Colors.green,
+            PremiumTheme.tealGradient,
           ),
         ),
         const SizedBox(width: 16),
@@ -315,7 +340,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             'Rejected',
             _statusCounts['rejected'].toString(),
             Icons.cancel,
-            Colors.red,
+            PremiumTheme.redGradient,
           ),
         ),
         const SizedBox(width: 16),
@@ -324,7 +349,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             'Total Proposals',
             _proposals.length.toString(),
             Icons.description,
-            Colors.blue,
+            PremiumTheme.blueGradient,
           ),
         ),
       ],
@@ -332,71 +357,38 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildStatCard(
-      String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: color, size: 24),
-              ),
-              const Spacer(),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
+      String title, String value, IconData icon, Gradient gradient) {
+    String subtitle;
+    switch (title) {
+      case 'Pending Review':
+        subtitle = 'For your review';
+        break;
+      case 'Approved':
+        subtitle = 'Signed / approved';
+        break;
+      case 'Rejected':
+        subtitle = 'Declined proposals';
+        break;
+      case 'Total Proposals':
+        subtitle = 'All proposals sent to you';
+        break;
+      default:
+        subtitle = '';
+    }
+
+    return PremiumStatCard(
+      title: title,
+      value: value,
+      subtitle: subtitle.isEmpty ? null : subtitle,
+      icon: icon,
+      gradient: gradient,
     );
   }
 
   Widget _buildProposalsSection() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return GlassContainer(
+      borderRadius: 20,
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -405,20 +397,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             padding: const EdgeInsets.all(20),
             child: Row(
               children: [
-                const Text(
+                Text(
                   'Your Proposals',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF2C3E50),
-                  ),
+                  style: PremiumTheme.titleMedium,
                 ),
                 const Spacer(),
                 Text(
                   '${_proposals.length} ${_proposals.length == 1 ? 'proposal' : 'proposals'}',
                   style: const TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
+                    color: Colors.white70,
                   ),
                 ),
               ],
