@@ -438,21 +438,46 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 24,
-                headingRowColor:
-                    WidgetStateProperty.all(const Color(0xFFF8F9FA)),
+                headingRowColor: WidgetStateProperty.all(
+                  const Color(0xFF111827),
+                ),
                 columns: const [
                   DataColumn(
-                      label: Text('Proposal',
-                          style: TextStyle(fontWeight: FontWeight.bold))),
+                    label: Text(
+                      'Proposal',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                   DataColumn(
-                      label: Text('Status',
-                          style: TextStyle(fontWeight: FontWeight.bold))),
+                    label: Text(
+                      'Status',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                   DataColumn(
-                      label: Text('Last Updated',
-                          style: TextStyle(fontWeight: FontWeight.bold))),
+                    label: Text(
+                      'Last Updated',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                   DataColumn(
-                      label: Text('Action',
-                          style: TextStyle(fontWeight: FontWeight.bold))),
+                    label: Text(
+                      'Action',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
                 ],
                 rows: _proposals.map((proposal) {
                   return DataRow(cells: [
