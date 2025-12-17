@@ -1171,9 +1171,38 @@ class ProposalItem extends StatelessWidget {
                           ? idVal
                           : int.tryParse(idVal.toString()) ?? 0;
                       if (intId != 0) {
-                        await ApiService.deleteProposal(
+                        final success = await ApiService.deleteProposal(
                             token: token, id: intId);
-                        if (onRefresh != null) onRefresh!();
+                        
+                        if (success) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Proposal deleted successfully'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                          if (onRefresh != null) onRefresh!();
+                        } else {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to delete proposal. Please try again.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Invalid proposal ID'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
                       }
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
