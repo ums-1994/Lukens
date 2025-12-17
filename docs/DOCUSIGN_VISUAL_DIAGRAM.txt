@@ -1,0 +1,82 @@
+﻿# VISUAL: PROBLEM vs SOLUTION
+# ============================
+
+## ❌ PROBLEM (Current Code):
+
+┌─────────────────────────────────────────────────────────────────┐
+│ send_for_signature() endpoint called                            │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ create_docusign_envelope():                                     │
+│                                                                 │
+│   access_token = get_docusign_jwt_token()                       │
+│   ✅ Returns: 'abc123xyz...'                                    │
+│                                                                 │
+│   account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')                │
+│   ❌ Returns: '70784c46-78c0-45af-8207-f4b8e8a43ea' (INCOMPLETE)│
+│      or None if not set                                        │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ DocuSign API: create_envelope(account_id='null', ...)           │
+│                                                                 │
+│ API Response:                                                   │
+│ ❌ Error 400: Bad Request                                       │
+│ ❌ 'Invalid value specified for accountId'                      │
+└─────────────────────────────────────────────────────────────────┘
+
+
+## ✅ SOLUTION (Fixed Code):
+
+┌─────────────────────────────────────────────────────────────────┐
+│ send_for_signature() endpoint called                            │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ create_docusign_envelope():                                     │
+│                                                                 │
+│   auth_data = get_docusign_jwt_token()                          │
+│   ✅ Returns: {                                                 │
+│      'access_token': 'abc123xyz...',                            │
+│      'account_id': 'e7f5b3c1-2d4e-4f5a-b6c7-d8e9f0a1b2c3'     │
+│   }                                                             │
+│                                                                 │
+│   access_token = auth_data['access_token']                     │
+│   ✅ access_token = 'abc123xyz...'                              │
+│                                                                 │
+│   account_id = auth_data['account_id']                         │
+│   ✅ account_id = 'e7f5b3c1-2d4e-4f5a-b6c7-d8e9f0a1b2c3'       │
+│      (VALID UUID from DocuSign)                                │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ DocuSign API: create_envelope(                                  │
+│    account_id='e7f5b3c1-2d4e-4f5a-b6c7-d8e9f0a1b2c3',          │
+│    ...                                                          │
+│ )                                                               │
+│                                                                 │
+│ API Response:                                                   │
+│ ✅ Status 200: OK                                               │
+│ ✅ envelope_id: 'abc123def456...'                               │
+│ ✅ signing_url: 'https://demo.docusign.net/...'                │
+└─────────────────────────────────────────────────────────────────┘
+
+
+## KEY DIFFERENCE:
+
+❌ OLD: Reads account_id from .env (may be incomplete/wrong)
+✅ NEW: Extracts account_id from DocuSign's own JWT response
+        (100% guaranteed to be valid)
+
+The JWT response from DocuSign ALWAYS includes:
+- response.access_token
+- response.accounts[0].account_id  ← THIS IS NEW
+- response.accounts[0].account_name
+- Other account info...
+
+This is the RIGHT way to get the account_id!

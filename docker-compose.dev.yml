@@ -1,0 +1,32 @@
+# Development docker-compose to run a local Postgres for the backend.
+# Usage: docker compose -f docker-compose.dev.yml up -d
+# Notes:
+# - The DB credentials below match the values in `backend/.env` so the app can connect locally.
+# - For local runs you can set PGSSLMODE=disable (or edit backend/.env / create an .env.local) to avoid SSL errors.
+
+services:
+  db:
+    image: postgres:15
+    container_name: unathi-postgres
+    environment:
+      POSTGRES_USER: lukens_db_user
+      POSTGRES_PASSWORD: "08icraVXvxMu5nUeG3PZGTlShuQUpN0C"
+      POSTGRES_DB: lukens_db
+    ports:
+      # Map container 5432 to a high host port to avoid conflicts with any local Postgres
+        - "55432:5432"
+    volumes:
+      - unathi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lukens_db_user -d lukens_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  unathi_pgdata:
+    # Use a named volume so DB data persists between runs
+    
+# Optional: If you want the backend to run as a container as well, you can add a service
+# that mounts the local source tree and runs the app. I left it out to keep this file
+# simple; tell me if you want a backend service added that builds the `backend/Dockerfile`.

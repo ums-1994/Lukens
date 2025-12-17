@@ -1,0 +1,57 @@
+services:
+  # Backend API Service
+  - type: web
+    name: lukens-backend
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && python migrate_db.py && gunicorn -c gunicorn_conf.py app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DB_HOST
+        fromDatabase:
+          name: lukens-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: lukens-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: lukens-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: lukens-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: lukens-db
+          property: password
+      # Add your other environment variables in Render dashboard
+      # OPENROUTER_API_KEY, CLOUDINARY_*, SENDGRID_*, DOCUSIGN_*, FIREBASE_*, etc.
+      # FRONTEND_URL=https://sowbuilders.netlify.app (set in Render dashboard)
+
+  # Frontend Static Site
+  - type: web
+    name: lukens-frontend
+    env: static
+    region: oregon
+    plan: starter
+    buildCommand: git clone https://github.com/flutter/flutter.git -b stable /tmp/flutter && export PATH="$PATH:/tmp/flutter/bin" && flutter config --enable-web && cd frontend_flutter && flutter pub get && flutter build web --release --base-href /
+    staticPublishPath: frontend_flutter/build/web
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false
+        # Set this to your backend URL after deployment: https://lukens-backend.onrender.com
+
+databases:
+  # PostgreSQL Database
+  - name: lukens-db
+    databaseName: lukens_production
+    user: lukens_user
+    plan: starter
+    region: oregon
+

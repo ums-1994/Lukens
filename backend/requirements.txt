@@ -1,0 +1,41 @@
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.3
+Flask-Cors==3.0.10
+python-dotenv==1.0.0
+asgiref==3.8.1
+
+# FastAPI stack
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+reportlab==4.0.9
+requests==2.31.0
+openai==0.28.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+fastapi-mail==1.4.1
+email-validator==2.1.0
+psycopg2-binary==2.9.9
+cloudinary==1.36.0
+
+# Document extraction
+PyPDF2==3.0.1
+python-docx==0.8.11
+
+# DocuSign E-Signature Integration
+docusign-esign>=5.4.0
+PyJWT>=2.8.0
+cryptography>=41.0.7
+
+# Rate limiting
+Flask-Limiter>=3.5.0
+
+# WSGI server
+gunicorn>=21.2.0
+
+# Firebase Admin SDK
+firebase-admin>=6.2.0
+
+# SendGrid for email delivery
+sendgrid>=6.11.0

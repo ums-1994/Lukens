@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Firebase Microsoft & Google Login Demo</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+</head>
+<body>
+  <h2>Firebase Microsoft & Google Login Demo</h2>
+  <button onclick="loginWithMicrosoft()">Sign in with Microsoft</button>
+  <button onclick="loginWithGoogle()">Sign in with Google</button>
+  <pre id="output"></pre>
+  <script>
+    // TODO: Replace with your Firebase config
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      appId: "YOUR_APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+
+    function log(msg) {
+      document.getElementById('output').textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+    }
+
+    function loginWithMicrosoft() {
+      var provider = new firebase.auth.OAuthProvider('microsoft.com');
+      firebase.auth().signInWithPopup(provider)
+        .then((result) => {
+          log(result.user);
+          result.user.getIdToken().then(token => {
+            log({user: result.user, idToken: token});
+            // Optionally: send token to backend
+          });
+        })
+        .catch((error) => {
+          log(error);
+        });
+    }
+
+    function loginWithGoogle() {
+      var provider = new firebase.auth.GoogleAuthProvider();
+      firebase.auth().signInWithPopup(provider)
+        .then((result) => {
+          log(result.user);
+          result.user.getIdToken().then(token => {
+            log({user: result.user, idToken: token});
+            // Optionally: send token to backend
+          });
+        })
+        .catch((error) => {
+          log(error);
+        });
+    }
+  </script>
+</body>
+</html>

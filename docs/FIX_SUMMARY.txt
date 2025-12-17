@@ -1,0 +1,57 @@
+﻿✅ DOCUSIGN FIX SUMMARY
+=======================
+
+ERROR: Invalid value specified for accountId
+STATUS: 🔧 FIXABLE
+
+ROOT CAUSE:
+-----------
+The get_docusign_jwt_token() function returns only the access_token
+but NOT the account_id. The create_docusign_envelope() function then
+tries to get account_id from environment variable DOCUSIGN_ACCOUNT_ID,
+which appears incomplete/malformed in your .env file.
+
+Result: account_id = NULL → DocuSign API rejects with 400 Bad Request
+
+WHAT NEEDS TO CHANGE:
+---------------------
+Two functions in backend/app.py need updates:
+
+1. get_docusign_jwt_token() - Line ~850
+   ❌ OLD: return response.access_token
+   ✅ NEW: Extract account_id from response.accounts[0].account_id
+           return dict with both access_token and account_id
+
+2. create_docusign_envelope() - Line ~900
+   ❌ OLD: account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+   ✅ NEW: account_id = get_docusign_jwt_token()['account_id']
+
+WHY THIS WORKS:
+---------------
+- DocuSign JWT response includes accounts array with account_id
+- This account_id is GUARANTEED to be valid
+- It's ALWAYS available after successful JWT authentication
+- No dependency on .env file which may be incomplete/wrong
+
+IMPLEMENTATION:
+---------------
+See DOCUSIGN_FIX_COMPLETE.md for full code replacements
+
+Quick steps:
+1. Open backend/app.py
+2. Find get_docusign_jwt_token() function
+3. Copy code from DOCUSIGN_FIX_COMPLETE.md STEP 1
+4. Find create_docusign_envelope() function
+5. Copy code from DOCUSIGN_FIX_COMPLETE.md STEP 2
+6. Restart: python app.py
+
+TESTING:
+--------
+- Backend will log: ✅ DocuSign JWT authenticated. Account ID: [UUID]
+- Then: ✅ DocuSign envelope created: [ENVELOPE_ID]
+- If you see these = SUCCESS ✅
+
+EXPECTED RESULT:
+----------------
+"POST /api/proposals/35/docusign/send HTTP/1.1" 200 ✅
+(Instead of 500 error)

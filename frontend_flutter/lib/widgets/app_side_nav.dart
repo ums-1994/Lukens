@@ -1,0 +1,239 @@
+import 'package:flutter/material.dart';
+import '../services/asset_service.dart';
+import '../theme/premium_theme.dart';
+
+class AppSideNav extends StatelessWidget {
+  const AppSideNav({
+    super.key,
+    required this.isCollapsed,
+    required this.currentLabel,
+    required this.onSelect,
+    required this.onToggle,
+    required this.isAdmin,
+  });
+
+  final bool isCollapsed;
+  final String currentLabel;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onToggle;
+  final bool isAdmin;
+
+  static const double collapsedWidth = 90.0;
+  static const double expandedWidth = 250.0;
+
+  static const List<Map<String, String>> _items = [
+    {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
+    {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
+    {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
+    {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
+    {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
+    {'label': 'Approved Proposals', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
+    {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        if (isCollapsed) onToggle();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: isCollapsed ? collapsedWidth : expandedWidth,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.black.withOpacity(0.3),
+              Colors.black.withOpacity(0.2),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          border: Border(
+            right: BorderSide(
+              color: PremiumTheme.glassWhiteBorder,
+              width: 1,
+            ),
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              // Toggle button (always visible)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: InkWell(
+                  onTap: onToggle,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2C3E50),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: isCollapsed
+                          ? MainAxisAlignment.center
+                          : MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (!isCollapsed)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'Navigation',
+                              style: TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 0 : 8),
+                          child: Icon(
+                            isCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Main icons
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final it in _items)
+                        if (!_shouldHideItemForAdmin(it['label']!))
+                          _buildItem(it['label']!, it['icon']!),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Bottom section - Logout
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  children: [
+                    if (!isCollapsed)
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        height: 1,
+                        color: const Color(0xFF2C3E50),
+                      ),
+                    _buildItem('Logout', 'assets/images/Logout_KhonoBuzz.png'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _shouldHideItemForAdmin(String label) {
+    if (!isAdmin) return false;
+    if (label == 'My Proposals') return true;
+    if (label == 'Analytics (My Pipeline)') return true;
+    return false;
+  }
+
+  Widget _buildItem(String label, String assetPath) {
+    final bool active = label == currentLabel;
+    if (isCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: InkWell(
+          onTap: () => onSelect(label),
+          borderRadius: BorderRadius.circular(30),
+          child: _buildCollapsedIcon(assetPath, active),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => onSelect(label),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            // Keep row background transparent so the sidebar color is stable
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            // Use a subtle red border to indicate the active item
+            border: active
+                ? Border.all(color: const Color(0xFFE74C3C), width: 1)
+                : null,
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 54,
+                height: 54,
+                child: _buildWhiteCircleIcon(assetPath, active),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: active ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (active) const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsedIcon(String assetPath, bool active) {
+    return _buildWhiteCircleIcon(assetPath, active);
+  }
+
+  Widget _buildWhiteCircleIcon(String assetPath, bool active) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: active ? const Color(0xFFE74C3C) : const Color(0xFF4B5563),
+          width: active ? 2 : 1,
+        ),
+        boxShadow: active
+            ? [
+                BoxShadow(
+                  color: const Color(0xFFE74C3C).withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      padding: const EdgeInsets.all(6),
+      child: ClipOval(
+        child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+      ),
+    );
+  }
+
+}
+
