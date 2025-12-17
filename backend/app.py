@@ -1702,18 +1702,59 @@ def _resolve_user_id(cursor, username: str):
 
 @app.post("/proposals")
 @token_required
-def create_proposal(username):
+def create_proposal(username=None, user_id=None, email=None):
     """Create a new proposal - TODO: Migrate to api/routes/proposals.py"""
     try:
-        data = request.get_json()
-        print(f"📝 Creating proposal for user {username}: {data.get('title', 'Untitled')}")
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return {'detail': 'Invalid JSON payload'}, 400
+        print(
+            f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email}): "
+            f"{data.get('title', 'Untitled')}"
+        )
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            user_id = _resolve_user_id(cursor, username)
+            import time
+
+            resolved_user_id = None
+            lookup_strategies = []
+            if user_id:
+                lookup_strategies.append(('user_id', user_id))
+            if email:
+                lookup_strategies.append(('email', email))
+            if username:
+                lookup_strategies.append(('username', username))
+
+            max_retries = 30
+            retry_delay = 0.2
+            for attempt in range(max_retries):
+                for strategy_type, strategy_value in lookup_strategies:
+                    try:
+                        if strategy_type == 'user_id':
+                            cursor.execute('SELECT id FROM users WHERE id = %s', (strategy_value,))
+                            row = cursor.fetchone()
+                            resolved_user_id = row[0] if row else None
+                        else:
+                            # _resolve_user_id looks up by username OR email
+                            resolved_user_id = _resolve_user_id(cursor, str(strategy_value))
+                    except Exception as lookup_err:
+                        print(f"⚠️ Error resolving user via {strategy_type}: {lookup_err}")
+                        resolved_user_id = None
+
+                    if resolved_user_id:
+                        break
+
+                if resolved_user_id:
+                    break
+
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.3, 1.0)
+
+            user_id = resolved_user_id
             if not user_id:
-                return {'detail': f"User '{username}' not found"}, 400
+                return {'detail': 'User not found'}, 400
 
             cursor.execute("""
                 SELECT column_name 
