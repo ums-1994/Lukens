@@ -32,8 +32,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   final TextEditingController _commentController = TextEditingController();
   bool _isSubmittingComment = false;
   String? _currentSessionId;
+  // Section-by-section viewing state for analytics
+  List<Map<String, dynamic>> _sections = [];
+  int _currentSectionIndex = 0;
+  DateTime? _sectionViewStart;
 
-  int _selectedTab = 0; // 0: Content, 1: Activity, 2: Comments
+  int _selectedTab = 0; // 0: Content, 1: Comments
 
   @override
   void initState() {
@@ -44,17 +48,118 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     _logEvent('open');
   }
 
+  List<Map<String, dynamic>> _parseSectionsFromContent(dynamic content) {
+    try {
+      if (content == null) return [];
+
+      dynamic decoded = content;
+      if (decoded is String) {
+        if (decoded.trim().isEmpty) return [];
+        decoded = jsonDecode(decoded);
+      }
+
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['sections'] is List) {
+          final list = decoded['sections'] as List;
+          return list
+              .where((item) => item is Map)
+              .map((item) => Map<String, dynamic>.from(item as Map))
+              .toList();
+        }
+
+        return decoded.entries
+            .map((entry) => <String, dynamic>{
+                  'title': entry.key,
+                  'content': entry.value?.toString() ?? '',
+                })
+            .toList();
+      }
+
+      if (decoded is Map) {
+        final map = Map<String, dynamic>.from(decoded as Map);
+        return _parseSectionsFromContent(map);
+      }
+
+      if (decoded is List) {
+        return decoded
+            .where((item) => item is Map)
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      }
+
+      return [
+        {
+          'title': 'Content',
+          'content': decoded.toString(),
+        },
+      ];
+    } catch (e) {
+      print('Error parsing sections from content: $e');
+      return [];
+    }
+  }
+
+  void _logCurrentSectionView() {
+    if (_sections.isEmpty || _sectionViewStart == null) return;
+
+    final now = DateTime.now();
+    final index = _currentSectionIndex.clamp(0, _sections.length - 1);
+    final section = _sections[index];
+    final sectionTitle =
+        (section['title']?.toString().trim().isNotEmpty ?? false)
+            ? section['title'].toString().trim()
+            : 'Section ${index + 1}';
+
+    final durationSeconds = now.difference(_sectionViewStart!).inSeconds;
+    final safeDuration = durationSeconds <= 0 ? 1 : durationSeconds;
+
+    _logEvent('view_section', metadata: {
+      'section': sectionTitle,
+      'duration': safeDuration,
+    });
+  }
+
+  void _onSectionChanged(int newIndex) {
+    if (_sections.isEmpty) return;
+    if (newIndex < 0 || newIndex >= _sections.length) return;
+
+    final now = DateTime.now();
+
+    // Log time spent on previous section before switching
+    if (_sectionViewStart != null && newIndex != _currentSectionIndex) {
+      final prevIndex = _currentSectionIndex.clamp(0, _sections.length - 1);
+      final previousSection = _sections[prevIndex];
+      final prevTitle =
+          (previousSection['title']?.toString().trim().isNotEmpty ?? false)
+              ? previousSection['title'].toString().trim()
+              : 'Section ${prevIndex + 1}';
+
+      final durationSeconds = now.difference(_sectionViewStart!).inSeconds;
+      final safeDuration = durationSeconds <= 0 ? 1 : durationSeconds;
+
+      _logEvent('view_section', metadata: {
+        'section': prevTitle,
+        'duration': safeDuration,
+      });
+    }
+
+    setState(() {
+      _currentSectionIndex = newIndex;
+      _sectionViewStart = now;
+    });
+  }
+
   void _checkIfReturnedFromSigning() {
     // Check if we're returning from DocuSign signing
     if (kIsWeb) {
       final currentUrl = web.window.location.href;
       final uri = Uri.parse(currentUrl);
-      
+
       // Check for signed=true in query params or hash
       final signedParam = uri.queryParameters['signed'];
       final hash = uri.fragment;
       final hasSignedInHash = hash.contains('signed=true');
-      
+
       if (signedParam == 'true' || hasSignedInHash) {
         print('✅ Detected return from DocuSign signing');
         // Reload proposal after a short delay to ensure backend has updated
@@ -69,6 +174,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   @override
   void dispose() {
+    _logCurrentSectionView();
     _endSession();
     _logEvent('close');
     _commentController.dispose();
@@ -112,7 +218,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     }
   }
 
-  Future<void> _logEvent(String eventType, {Map<String, dynamic>? metadata}) async {
+  Future<void> _logEvent(String eventType,
+      {Map<String, dynamic>? metadata}) async {
     try {
       await http.post(
         Uri.parse('$baseUrl/api/client/activity'),
@@ -148,12 +255,15 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         print('📄 Content type: ${content?.runtimeType}');
         if (content != null) {
           final contentStr = content.toString();
-          final preview = contentStr.length > 100 ? contentStr.substring(0, 100) : contentStr;
+          final preview = contentStr.length > 100
+              ? contentStr.substring(0, 100)
+              : contentStr;
           print('📄 Content value: $preview');
         } else {
           print('📄 Content is null or empty');
         }
-        
+        final parsedSections = _parseSectionsFromContent(content);
+
         setState(() {
           _proposalData = data['proposal'];
           _signatureData = data['signature'] != null
@@ -161,12 +271,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               : null;
           _signingUrl = _signatureData?['signing_url']?.toString();
           _signatureStatus = _signatureData?['status']?.toString();
-          
+
           // Debug logging for signature data
           print('📝 Signature data: ${_signatureData?.toString()}');
           print('📝 Signing URL: $_signingUrl');
           print('📝 Signature Status: $_signatureStatus');
-          
+
           _comments = (data['comments'] as List?)
                   ?.map((c) => Map<String, dynamic>.from(c))
                   .toList() ??
@@ -175,6 +285,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
                   ?.map((a) => Map<String, dynamic>.from(a))
                   .toList() ??
               [];
+          _sections = parsedSections;
+          _currentSectionIndex = 0;
+          _sectionViewStart = _sections.isNotEmpty ? DateTime.now() : null;
           _isLoading = false;
         });
       } else {
@@ -189,7 +302,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           });
         } catch (e) {
           setState(() {
-            _error = 'Failed to load proposal (${response.statusCode}): $errorBody';
+            _error =
+                'Failed to load proposal (${response.statusCode}): $errorBody';
             _isLoading = false;
           });
         }
@@ -219,8 +333,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
     try {
       final response = await http.post(
-        Uri.parse(
-            '$baseUrl/api/client/proposals/${widget.proposalId}/comment'),
+        Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/comment'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -231,7 +344,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       );
 
       if (response.statusCode == 201) {
-        _logEvent('comment', metadata: {'comment_length': _commentController.text.trim().length});
+        _logEvent('comment', metadata: {
+          'comment_length': _commentController.text.trim().length
+        });
         _commentController.clear();
         await _loadProposal();
 
@@ -357,16 +472,11 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           // Action Buttons - Always show if proposal is not signed
           if (canTakeAction) _buildActionBar(),
 
-          // Tabs
-          _buildTabBar(),
-
           // Content
           Expanded(
             child: _selectedTab == 0
                 ? _buildProposalContent(proposal)
-                : _selectedTab == 1
-                    ? _buildActivityTimeline()
-                    : _buildCommentsSection(),
+                : _buildCommentsSection(),
           ),
         ],
       ),
@@ -439,10 +549,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     final isSigned = signatureStatus.contains('completed');
     final isDeclined = signatureStatus.contains('declined');
     final hasSigningUrl = _signingUrl != null && _signingUrl!.isNotEmpty;
-    
+
     // Debug logging
-    print('🔍 Action Bar - isSigned: $isSigned, isDeclined: $isDeclined, hasSigningUrl: $hasSigningUrl');
-    print('🔍 Action Bar - signatureStatus: $_signatureStatus, signingUrl: $_signingUrl');
+    print(
+        '🔍 Action Bar - isSigned: $isSigned, isDeclined: $isDeclined, hasSigningUrl: $hasSigningUrl');
+    print(
+        '🔍 Action Bar - signatureStatus: $_signatureStatus, signingUrl: $_signingUrl');
     final statusColor = isSigned
         ? Colors.green
         : isDeclined
@@ -504,27 +616,31 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
             ElevatedButton.icon(
               onPressed: () {
                 print('🔐 ========== SIGN PROPOSAL BUTTON CLICKED ==========');
-                print('🔐 Current URL before click: ${web.window.location.href}');
-                print('🔐 Signing URL: ${_signingUrl?.substring(0, _signingUrl!.length > 80 ? 80 : _signingUrl!.length)}...');
-                
+                print(
+                    '🔐 Current URL before click: ${web.window.location.href}');
+                print(
+                    '🔐 Signing URL: ${_signingUrl?.substring(0, _signingUrl!.length > 80 ? 80 : _signingUrl!.length)}...');
+
                 if (_signingUrl == null || _signingUrl!.isEmpty) {
                   print('⚠️ No signing URL available');
                   _openSigningModal();
                   return;
                 }
-                
+
                 // Open DocuSign in the same tab (redirect mode - works on HTTP)
                 print('🔐 Opening DocuSign in same tab (redirect mode)...');
                 final url = _signingUrl!;
-                
+
                 try {
-                  print('🔐 Navigating to DocuSign URL: ${url.substring(0, url.length > 100 ? 100 : url.length)}...');
-                  
+                  print(
+                      '🔐 Navigating to DocuSign URL: ${url.substring(0, url.length > 100 ? 100 : url.length)}...');
+
                   // Use replace() to navigate to external URL (bypasses Flutter routing)
                   // This prevents Flutter from intercepting the external DocuSign URL
                   web.window.location.replace(url);
-                  print('✅ Navigation initiated to DocuSign using location.replace()');
-                  
+                  print(
+                      '✅ Navigation initiated to DocuSign using location.replace()');
+
                   // Note: We don't show a SnackBar here because the page will navigate immediately
                   // The navigation happens synchronously, so any mounted check would be unreliable
                 } catch (e, stackTrace) {
@@ -578,7 +694,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     print('🔐 Opening signing modal...');
     print('🔐 Current signing URL: $_signingUrl');
     _logEvent('sign', metadata: {'action': 'signing_modal_opened'});
-    
+
     // If no signing URL, try to get/create one
     if (_signingUrl == null || _signingUrl!.isEmpty) {
       print('⚠️ No signing URL, creating one...');
@@ -590,7 +706,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           ),
         );
       }
-      
+
       try {
         final response = await http.post(
           Uri.parse(
@@ -602,7 +718,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
             'token': widget.accessToken,
           }),
         );
-        
+
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final signingUrl = data['signing_url']?.toString();
@@ -615,7 +731,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Failed to create signing link. Please try again later.'),
+                  content: Text(
+                      'Failed to create signing link. Please try again later.'),
                   backgroundColor: Colors.red,
                 ),
               );
@@ -627,7 +744,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(error['detail'] ?? 'Failed to create signing link'),
+                content:
+                    Text(error['detail'] ?? 'Failed to create signing link'),
                 backgroundColor: Colors.red,
               ),
             );
@@ -646,16 +764,17 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         return;
       }
     }
-    
+
     if (!kIsWeb) {
       await launchUrlString(_signingUrl!, mode: LaunchMode.externalApplication);
       return;
     }
-    
+
     // Use redirect mode - navigate to DocuSign in the same tab (works on HTTP)
     final urlToOpen = _signingUrl!;
-    print('🔐 Opening DocuSign URL (redirect mode): ${urlToOpen.substring(0, urlToOpen.length > 100 ? 100 : urlToOpen.length)}...');
-    
+    print(
+        '🔐 Opening DocuSign URL (redirect mode): ${urlToOpen.substring(0, urlToOpen.length > 100 ? 100 : urlToOpen.length)}...');
+
     try {
       if (kIsWeb) {
         // Navigate to DocuSign in the same tab (redirect mode)
@@ -690,8 +809,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       child: Row(
         children: [
           _buildTab(0, 'Proposal Content', Icons.description),
-          _buildTab(1, 'Activity', Icons.timeline),
-          _buildTab(2, 'Comments (${_comments.length})', Icons.comment),
+          _buildTab(1, 'Comments (${_comments.length})', Icons.comment),
         ],
       ),
     );
@@ -785,6 +903,111 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Widget _buildContentSections(dynamic content) {
+    if (_sections.isNotEmpty) {
+      final total = _sections.length;
+      final index = _currentSectionIndex.clamp(0, total - 1);
+      final currentSection = _sections[index];
+      final sectionTitle =
+          (currentSection['title']?.toString().trim().isNotEmpty ?? false)
+              ? currentSection['title'].toString().trim()
+              : 'Section ${index + 1}';
+      final sectionContent = currentSection['content']?.toString() ??
+          currentSection['text']?.toString() ??
+          '';
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Sections',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
+              Text(
+                'Section ${index + 1} of $total',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: List.generate(total, (i) {
+                final section = _sections[i];
+                final title =
+                    (section['title']?.toString().trim().isNotEmpty ?? false)
+                        ? section['title'].toString().trim()
+                        : 'Section ${i + 1}';
+                final isSelected = i == index;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(
+                      title,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      if (selected) {
+                        _onSectionChanged(i);
+                      }
+                    },
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            sectionTitle,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF2C3E50),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SelectableText(
+            sectionContent,
+            style: const TextStyle(
+              fontSize: 15,
+              height: 1.8,
+              color: Color(0xFF34495E),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TextButton.icon(
+                onPressed:
+                    index > 0 ? () => _onSectionChanged(index - 1) : null,
+                icon: const Icon(Icons.chevron_left),
+                label: const Text('Previous section'),
+              ),
+              TextButton.icon(
+                onPressed: index < total - 1
+                    ? () => _onSectionChanged(index + 1)
+                    : null,
+                label: const Text('Next section'),
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
     if (content == null || content.toString().isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(24),
@@ -792,7 +1015,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.description_outlined, size: 64, color: Colors.grey[400]),
+              Icon(Icons.description_outlined,
+                  size: 64, color: Colors.grey[400]),
               const SizedBox(height: 16),
               Text(
                 'No content available',
@@ -812,7 +1036,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
     // Try to parse as JSON
     try {
-      Map<String, dynamic> sections;
       if (content is String) {
         if (content.trim().isEmpty) {
           return Padding(
@@ -825,9 +1048,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
             ),
           );
         }
-        sections = jsonDecode(content);
-      } else if (content is Map) {
-        sections = Map<String, dynamic>.from(content);
+        final decoded = jsonDecode(content);
+        return _buildContentSections(decoded);
+      } else if (content is Map || content is List) {
+        return _buildContentSections(_parseSectionsFromContent(content));
       } else {
         return Padding(
           padding: const EdgeInsets.all(24),
@@ -837,54 +1061,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           ),
         );
       }
-
-      // Check if sections is empty
-      if (sections.isEmpty) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: Text(
-              'No content available',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          ),
-        );
-      }
-
-      // Build sections
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: sections.entries.map((entry) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    entry.key,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SelectableText(
-                    entry.value?.toString() ?? '',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      height: 1.8,
-                      color: Color(0xFF34495E),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-        ),
-      );
     } catch (e) {
       print('Error parsing content: $e');
       return Padding(
@@ -1261,7 +1437,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     ];
     return months[month];
   }
-
 }
 
 // Reject Dialog
@@ -1302,8 +1477,7 @@ class _RejectDialogState extends State<RejectDialog> {
 
     try {
       final response = await http.post(
-        Uri.parse(
-            '$baseUrl/api/client/proposals/${widget.proposalId}/reject'),
+        Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/reject'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1482,8 +1656,7 @@ class _ApproveDialogState extends State<ApproveDialog> {
 
     try {
       final response = await http.post(
-        Uri.parse(
-            '$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
+        Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1498,17 +1671,18 @@ class _ApproveDialogState extends State<ApproveDialog> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final signingUrl = data['signing_url']?.toString();
-        
+
         if (mounted) {
           Navigator.pop(context); // Close approve dialog
-          
+
           if (signingUrl != null && signingUrl.isNotEmpty) {
             // Open DocuSign signing modal
             _openDocuSignSigning(signingUrl);
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Proposal approved, but signing URL not available'),
+                content:
+                    Text('Proposal approved, but signing URL not available'),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -1539,19 +1713,22 @@ class _ApproveDialogState extends State<ApproveDialog> {
 
   Future<void> _openDocuSignSigning(String signingUrl) async {
     // Open DocuSign in the same tab
-    print('🔐 ApproveDialog: Opening DocuSign URL in same tab: ${signingUrl.substring(0, signingUrl.length > 100 ? 100 : signingUrl.length)}...');
-    
+    print(
+        '🔐 ApproveDialog: Opening DocuSign URL in same tab: ${signingUrl.substring(0, signingUrl.length > 100 ? 100 : signingUrl.length)}...');
+
     try {
       // Navigate to DocuSign in the same tab (redirect mode - works on HTTP)
       print('🔐 ApproveDialog: Navigating to DocuSign (redirect mode)...');
       // Use replace() to navigate to external URL (bypasses Flutter routing)
       web.window.location.replace(signingUrl);
-      print('✅ Navigation initiated to DocuSign from ApproveDialog using location.replace()');
-      
+      print(
+          '✅ Navigation initiated to DocuSign from ApproveDialog using location.replace()');
+
       // Reload proposal after a delay to check for signature completion
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
-          print('🔄 ApproveDialog: Reloading proposal to check signature status...');
+          print(
+              '🔄 ApproveDialog: Reloading proposal to check signature status...');
           widget.onSuccess(); // Reload to check if signed
         }
       });
@@ -1587,7 +1764,8 @@ class _ApproveDialogState extends State<ApproveDialog> {
                     color: Colors.green.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.check_circle, color: Colors.green, size: 28),
+                  child: const Icon(Icons.check_circle,
+                      color: Colors.green, size: 28),
                 ),
                 const SizedBox(width: 16),
                 const Expanded(
