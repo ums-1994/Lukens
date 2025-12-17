@@ -4265,15 +4265,23 @@ def get_client_proposal_details(proposal_id):
             comments = cursor.fetchall()
             
             # Get activity log (simplified - you can enhance this)
+            safe_owner_name = proposal.get('owner_name') or proposal.get('owner_email') or 'Owner'
+            safe_client_name = (
+                proposal.get('client_name')
+                or proposal.get('client')
+                or invitation.get('invited_email')
+                or 'Client'
+            )
+
             activity = [
                 {
                     'action': 'Proposal Created',
-                    'description': f'Proposal was created by {proposal["owner_name"]}',
+                    'description': f'Proposal was created by {safe_owner_name}',
                     'timestamp': proposal['created_at'].isoformat() if proposal['created_at'] else None
                 },
                 {
                     'action': 'Sent to Client',
-                    'description': f'Proposal was sent to {proposal["client_name"]}',
+                    'description': f'Proposal was sent to {safe_client_name}',
                     'timestamp': proposal['updated_at'].isoformat() if proposal['updated_at'] else None
                 }
             ]

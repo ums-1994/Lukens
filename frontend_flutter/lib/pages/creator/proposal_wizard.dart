@@ -700,11 +700,12 @@ class _ProposalWizardState extends State<ProposalWizard>
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 12),
                   // Navigation buttons
                   GlassContainer(
                     borderRadius: 24,
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 10),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -713,7 +714,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                             onPressed: _previousStep,
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 24, vertical: 12),
+                                  horizontal: 24, vertical: 8),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -738,7 +739,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                             backgroundColor: PremiumTheme.teal,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 24, vertical: 12),
+                                horizontal: 24, vertical: 8),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -971,7 +972,8 @@ class _ProposalWizardState extends State<ProposalWizard>
 
                         final title =
                             module['name']?.toString() ?? moduleId.toString();
-                        final content = moduleContents[moduleId] ?? '';
+                        final content =
+                            _mergePlaceholders(moduleContents[moduleId] ?? '');
 
                         if (content.isEmpty) {
                           return const SizedBox.shrink();
@@ -3073,6 +3075,32 @@ class _ProposalWizardState extends State<ProposalWizard>
     return data;
   }
 
+  String _mergePlaceholders(String content) {
+    if (content.isEmpty) return content;
+
+    final Map<String, String> replacements = {
+      'project name': _formData['opportunityName']?.toString() ?? '',
+      'client name': _formData['clientName']?.toString() ?? '',
+      'client': _formData['clientName']?.toString() ?? '',
+      'client email': _formData['clientEmail']?.toString() ?? '',
+      'timeline': _formData['timeline']?.toString() ?? '',
+      'estimated value': _formData['estimatedValue']?.toString() ?? '',
+    };
+
+    return content.replaceAllMapped(
+      RegExp(r'\{\{\s*([^}]+?)\s*\}\}', caseSensitive: false),
+      (match) {
+        final key = match.group(1)!.toLowerCase().trim();
+        final normalized = key.replaceAll('_', ' ');
+        final value = replacements[normalized];
+        if (value == null || value.isEmpty) {
+          return match.group(0)!; // leave placeholder as-is
+        }
+        return value;
+      },
+    );
+  }
+
   String _serializeWizardContentForBackend({required String title}) {
     final selectedModules =
         List<String>.from(_formData['selectedModules'] ?? const []);
@@ -3082,7 +3110,8 @@ class _ProposalWizardState extends State<ProposalWizard>
     final sections = <Map<String, dynamic>>[];
 
     for (final moduleId in selectedModules) {
-      final content = moduleContents[moduleId] ?? '';
+      final rawContent = moduleContents[moduleId] ?? '';
+      final content = _mergePlaceholders(rawContent);
       if (content.isEmpty) continue;
 
       final module = _contentModules.firstWhere(

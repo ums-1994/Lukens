@@ -468,15 +468,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
+                                color: Colors.white,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4),
                             Text(
                               'ID: ${proposal['id']}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey[600],
+                                color: Colors.white70,
                               ),
                             ),
                           ],
@@ -488,7 +489,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     DataCell(
                       Text(
                         _formatDate(proposal['updated_at']),
-                        style: const TextStyle(fontSize: 14),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.white70,
+                        ),
                       ),
                     ),
                     DataCell(
