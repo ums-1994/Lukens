@@ -586,8 +586,9 @@ class AppState extends ChangeNotifier {
       {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/approve?comments=$comments"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/approve"),
         headers: _headers,
+        body: jsonEncode({"comments": comments}),
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
@@ -606,8 +607,9 @@ class AppState extends ChangeNotifier {
       {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/reject?comments=$comments"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/reject"),
         headers: _headers,
+        body: jsonEncode({"comments": comments}),
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
@@ -625,7 +627,7 @@ class AppState extends ChangeNotifier {
   Future<String?> sendToClient(String proposalId) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/send-to-client"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
