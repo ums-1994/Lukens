@@ -54,15 +54,14 @@ class _ProposalWizardState extends State<ProposalWizard>
   final ScrollController _governScrollController = ScrollController();
   final ScrollController _riskScrollController = ScrollController();
   final ScrollController _internalSignoffScrollController = ScrollController();
-  final ScrollController _clientSignoffScrollController = ScrollController();
 
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
     {'number': '1', 'label': 'Compose'},
     {'number': '2', 'label': 'Govern'},
     {'number': '3', 'label': 'AI Risk Gate'},
-    {'number': '4', 'label': 'Internal Sign-off'},
-    {'number': '5', 'label': 'Client Sign-off'},
+    {'number': '4', 'label': 'Preview'},
+    {'number': '5', 'label': 'Internal Sign-off'},
   ];
 
   // Content modules
@@ -252,7 +251,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     _governScrollController.dispose();
     _riskScrollController.dispose();
     _internalSignoffScrollController.dispose();
-    _clientSignoffScrollController.dispose();
     super.dispose();
   }
 
@@ -500,10 +498,10 @@ class _ProposalWizardState extends State<ProposalWizard>
         return _governanceResults.isNotEmpty;
       case 2: // AI Risk Gate - require risk assessment to have run
         return _riskAssessment.isNotEmpty;
-      case 3: // Internal Sign-off - require internal approval flag
+      case 3: // Preview - review step
+        return true;
+      case 4: // Internal Sign-off - require internal approval flag
         return _isInternalApproved;
-      case 4: // Client Sign-off - Review
-        return true; // review/confirm step
       default:
         return false;
     }
@@ -662,11 +660,11 @@ class _ProposalWizardState extends State<ProposalWizard>
                             child: _buildRiskGateStep(),
                           ), // Step 3: AI Risk Gate
                           SizedBox.expand(
-                            child: _buildInternalSignoffStep(),
-                          ), // Step 4: Internal Sign-off
+                            child: _buildReviewPage(),
+                          ), // Step 4: Preview
                           SizedBox.expand(
-                            child: _buildClientSignoffStep(),
-                          ), // Step 5: Client Sign-off
+                            child: _buildInternalSignoffStep(),
+                          ), // Step 5: Internal Sign-off
                         ],
                       ),
                     ),
@@ -818,44 +816,36 @@ class _ProposalWizardState extends State<ProposalWizard>
   }
 
   Widget _buildReviewPage() {
-    // Get template details from library
-    final templateId = _formData['templateId']?.toString() ?? '';
-    final template = _availableTemplates.firstWhere(
-      (t) => t.id == templateId,
-      orElse: () => Template(
-        id: '',
-        name: 'Unknown Template',
-        templateType: '',
-        approvalStatus: '',
-        isPublic: false,
-        isApproved: false,
-        version: 1,
-        sections: [],
-        dynamicFields: [],
-        usageCount: 0,
-        createdBy: '',
-        createdDate: DateTime.now(),
-      ),
-    );
+    final proposalTitle =
+        (_formData['proposalTitle']?.toString().isNotEmpty ?? false)
+            ? _formData['proposalTitle'].toString()
+            : 'Untitled Proposal';
+    final clientName = (_formData['clientName']?.toString().isNotEmpty ?? false)
+        ? _formData['clientName'].toString()
+        : 'Client Name';
+    final opportunityName =
+        (_formData['opportunityName']?.toString().isNotEmpty ?? false)
+            ? _formData['opportunityName'].toString()
+            : null;
 
-    // Get selected modules with names instead of IDs
     final selectedModuleIds =
-        List<String>.from(_formData['selectedModules'] ?? []);
-    final selectedModules = _contentModules
-        .where((m) => selectedModuleIds.contains(m['id']))
-        .map((m) => m['name'] as String)
-        .toList();
+        List<String>.from(_formData['selectedModules'] ?? const []);
+    final moduleContents =
+        Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+    final date = DateTime.now();
+    final dateLabel = '${date.day}/${date.month}/${date.year}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Review & Create',
+          'Document Preview',
           style: PremiumTheme.titleMedium,
         ),
         const SizedBox(height: 8),
         Text(
-          'Review your proposal details and create',
+          'Review the proposal as your client will see it',
           style: PremiumTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
@@ -863,93 +853,130 @@ class _ProposalWizardState extends State<ProposalWizard>
           child: CustomScrollbar(
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              child: GlassContainer(
-                borderRadius: 24,
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Proposal Summary',
-                      style: PremiumTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.06),
+                              blurRadius: 18,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              proposalTitle,
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF2C3E50),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Prepared for: $clientName',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            if (opportunityName != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                opportunityName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 4),
+                            Text(
+                              'Date: $dateLabel',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    _buildReviewRow('Template:', template.name),
-                    _buildReviewRow('Client:', _formData['clientName'] ?? ''),
-                    _buildReviewRow(
-                        'Project:', _formData['opportunityName'] ?? ''),
-                    _buildReviewRow(
-                        'Modules:', '${selectedModules.length} selected'),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Next Steps',
-                      style: PremiumTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildNextStepItem(
-                        '• Your proposal will be created in draft status',
-                        PremiumTheme.info),
-                    _buildNextStepItem(
-                        '• You can continue editing and adding content',
-                        PremiumTheme.info),
-                    _buildNextStepItem(
-                        '• Submit for approval when ready', PremiumTheme.info),
-                    _buildNextStepItem(
-                        '• Track progress through the approval workflow',
-                        PremiumTheme.info),
-                  ],
+                      const SizedBox(height: 24),
+                      // Content sections
+                      ...selectedModuleIds.map((moduleId) {
+                        final module = _contentModules.firstWhere(
+                          (m) => m['id'] == moduleId,
+                          orElse: () => {
+                            'id': moduleId,
+                            'name': moduleId.toString().replaceAll('_', ' '),
+                          },
+                        );
+
+                        final title =
+                            module['name']?.toString() ?? moduleId.toString();
+                        final content = moduleContents[moduleId] ?? '';
+
+                        if (content.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 24),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2C3E50),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                content,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF2C3E50),
+                                  height: 1.6,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildReviewRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: PremiumTheme.bodyMedium.copyWith(
-                color: PremiumTheme.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: PremiumTheme.bodyMedium.copyWith(
-                color: PremiumTheme.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNextStepItem(String text, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        text,
-        style: PremiumTheme.bodyMedium.copyWith(
-          color: color,
-          height: 1.5,
-        ),
-      ),
     );
   }
 
@@ -1533,7 +1560,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     );
   }
 
-  // Step 4: Internal Sign-off
+  // Step 5: Internal Sign-off
   Widget _buildInternalSignoffStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1555,35 +1582,6 @@ class _ProposalWizardState extends State<ProposalWizard>
               controller: _internalSignoffScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildInternalApproval(),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Step 5: Client Sign-off
-  Widget _buildClientSignoffStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Client Sign-off',
-          style: PremiumTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Send proposal to client for review and signature',
-          style: PremiumTheme.bodyMedium,
-        ),
-        const SizedBox(height: 24),
-        Expanded(
-          child: CustomScrollbar(
-            controller: _clientSignoffScrollController,
-            child: SingleChildScrollView(
-              controller: _clientSignoffScrollController,
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: _buildClientSignature(),
             ),
           ),
         ),
@@ -2900,76 +2898,6 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
         ],
       ),
-    );
-  }
-
-  // Client Signature Builder
-  Widget _buildClientSignature() {
-    return Column(
-      children: [
-        GlassContainer(
-          borderRadius: 24,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Send to Client',
-                style: PremiumTheme.titleMedium,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Client Information:',
-                style: PremiumTheme.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildInfoRow(
-                  'Name:', _formData['clientName'] ?? 'Not specified'),
-              _buildInfoRow(
-                  'Email:', _formData['clientEmail'] ?? 'Not specified'),
-              const SizedBox(height: 24),
-              if (_isClientSigned)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.success.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: PremiumTheme.success),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle, color: PremiumTheme.success),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Proposal signed by client',
-                          style: PremiumTheme.bodyMedium.copyWith(
-                            color: PremiumTheme.success,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                ElevatedButton.icon(
-                  onPressed: _sendToClient,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Send to Client'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: PremiumTheme.teal,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

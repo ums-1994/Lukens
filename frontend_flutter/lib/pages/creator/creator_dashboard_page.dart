@@ -26,7 +26,7 @@ class _DashboardPageState extends State<DashboardPage>
   bool _isRefreshing = false;
   String _statusFilter = 'all'; // all, draft, published, pending, approved
   final ScrollController _scrollController = ScrollController();
-  
+
   // AI Risk Gate mock data
   List<Map<String, dynamic>> _riskItems = [];
 
@@ -83,7 +83,7 @@ class _DashboardPageState extends State<DashboardPage>
       ]);
       print(
           'Dashboard data refreshed - ${app.proposals.length} proposals loaded');
-      
+
       // Reload risk data after refreshing proposals
       await _loadRiskData(app);
     } catch (e) {
@@ -97,32 +97,34 @@ class _DashboardPageState extends State<DashboardPage>
 
   Future<void> _loadRiskData(AppState app) async {
     if (app.authToken == null) return;
-    
+
     final List<Map<String, dynamic>> risks = [];
-    
+
     try {
       // Fetch risks for proposals that need review (draft or pending approval)
       final proposalsNeedingReview = app.proposals.where((proposal) {
         final status = (proposal['status'] ?? '').toString().toLowerCase();
         return status == 'draft' || status == 'pending ceo approval';
       }).toList();
-      
+
       // Analyze risks for each proposal using the AI risk analysis API
       for (var proposal in proposalsNeedingReview) {
         final proposalId = proposal['id']?.toString();
         final title = proposal['title'] ?? 'Untitled Proposal';
-        
+
         if (proposalId == null) continue;
-        
+
         try {
           // Call the real AI risk analysis API
-          final riskAnalysis = await _fetchProposalRisks(app.authToken!, proposalId);
-          
+          final riskAnalysis =
+              await _fetchProposalRisks(app.authToken!, proposalId);
+
           if (riskAnalysis != null) {
             final riskScore = riskAnalysis['risk_score'] as int? ?? 0;
             final issues = riskAnalysis['issues'] as List<dynamic>? ?? [];
-            final overallRiskLevel = riskAnalysis['overall_risk_level'] as String? ?? 'low';
-            
+            final overallRiskLevel =
+                riskAnalysis['overall_risk_level'] as String? ?? 'low';
+
             // Only show risks if there are issues and risk score is significant
             if (issues.isNotEmpty && riskScore > 0) {
               final riskDescriptions = issues
@@ -130,7 +132,7 @@ class _DashboardPageState extends State<DashboardPage>
                   .where((desc) => desc.isNotEmpty)
                   .take(5)
                   .toList();
-              
+
               if (riskDescriptions.isNotEmpty) {
                 risks.add({
                   'id': 'risk_$proposalId',
@@ -139,8 +141,9 @@ class _DashboardPageState extends State<DashboardPage>
                   'riskCount': issues.length,
                   'risks': riskDescriptions,
                   'riskScore': riskScore,
-                  'severity': overallRiskLevel == 'critical' || overallRiskLevel == 'high' 
-                      ? 'high' 
+                  'severity': overallRiskLevel == 'critical' ||
+                          overallRiskLevel == 'high'
+                      ? 'high'
                       : 'medium',
                   'createdAt': DateTime.now().toIso8601String(),
                   'isDismissed': false,
@@ -156,7 +159,7 @@ class _DashboardPageState extends State<DashboardPage>
     } catch (e) {
       print('Error loading risk data: $e');
     }
-    
+
     if (mounted) {
       setState(() {
         _riskItems = risks.where((r) => r['isDismissed'] != true).toList();
@@ -164,7 +167,8 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
-  Future<Map<String, dynamic>?> _fetchProposalRisks(String token, String proposalId) async {
+  Future<Map<String, dynamic>?> _fetchProposalRisks(
+      String token, String proposalId) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/ai/analyze-risks'),
@@ -179,7 +183,8 @@ class _DashboardPageState extends State<DashboardPage>
         final data = jsonDecode(response.body);
         return data as Map<String, dynamic>;
       } else {
-        print('Risk analysis failed: ${response.statusCode} - ${response.body}');
+        print(
+            'Risk analysis failed: ${response.statusCode} - ${response.body}');
         return null;
       }
     } catch (e) {
@@ -192,7 +197,7 @@ class _DashboardPageState extends State<DashboardPage>
     setState(() {
       _riskItems = _riskItems.where((r) => r['id'] != riskId).toList();
     });
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Risk dismissed'),
@@ -212,7 +217,7 @@ class _DashboardPageState extends State<DashboardPage>
       );
       return;
     }
-    
+
     Navigator.of(context).pushNamed(
       '/blank-document',
       arguments: {
@@ -237,12 +242,12 @@ class _DashboardPageState extends State<DashboardPage>
       // Normalize status for comparison (handle case variations)
       final status = rawStatus.toString().toLowerCase().trim();
       final filter = _statusFilter.toLowerCase().trim();
-      
+
       // Special handling for draft status variations
       if (filter == 'draft') {
         return status == 'draft' || status.isEmpty;
       }
-      
+
       // For other statuses, do exact match after normalization
       return status == filter;
     }).toList();
@@ -1107,8 +1112,8 @@ class _DashboardPageState extends State<DashboardPage>
         _buildWorkflowStep('1', 'Compose', context),
         _buildWorkflowStep('2', 'Govern', context),
         _buildWorkflowStep('3', 'AI Risk Gate', context),
-        _buildWorkflowStep('4', 'Internal Sign-off', context),
-        _buildWorkflowStep('5', 'Client Sign-off', context),
+        _buildWorkflowStep('4', 'Preview', context),
+        _buildWorkflowStep('5', 'Internal Sign-off', context),
       ],
     );
   }
@@ -1176,10 +1181,10 @@ class _DashboardPageState extends State<DashboardPage>
           // For now, navigate to approvals as AI risk gate might be part of approval process
           Navigator.pushNamed(context, '/approvals');
           break;
-        case 'Internal Sign-off':
+        case 'Preview':
           Navigator.pushNamed(context, '/approvals');
           break;
-        case 'Client Sign-off':
+        case 'Internal Sign-off':
           Navigator.pushNamed(context, '/approvals');
           break;
         default:
@@ -1434,7 +1439,8 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               if (_riskItems.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: PremiumTheme.orange.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
@@ -1529,7 +1535,8 @@ class _DashboardPageState extends State<DashboardPage>
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: severity == 'high'
                       ? PremiumTheme.error.withOpacity(0.2)
@@ -1555,7 +1562,8 @@ class _DashboardPageState extends State<DashboardPage>
               const Spacer(),
               if (proposalId != null)
                 TextButton.icon(
-                  onPressed: () => _navigateToRiskProposal(proposalId, proposalTitle),
+                  onPressed: () =>
+                      _navigateToRiskProposal(proposalId, proposalTitle),
                   icon: const Icon(Icons.arrow_forward, size: 16),
                   label: const Text('Review Proposal'),
                   style: TextButton.styleFrom(
@@ -1585,12 +1593,13 @@ class _DashboardPageState extends State<DashboardPage>
               _buildFilterTab(
                   'Draft',
                   'draft',
-                  proposals
-                      .where((p) {
-                        final status = (p['status'] ?? 'Draft').toString().toLowerCase().trim();
-                        return status == 'draft' || status.isEmpty;
-                      })
-                      .length),
+                  proposals.where((p) {
+                    final status = (p['status'] ?? 'Draft')
+                        .toString()
+                        .toLowerCase()
+                        .trim();
+                    return status == 'draft' || status.isEmpty;
+                  }).length),
               const SizedBox(width: 8),
               _buildFilterTab(
                   'Sent to Client',
@@ -1721,7 +1730,7 @@ class _DashboardPageState extends State<DashboardPage>
     final subtitle = 'Last modified: ${_formatDate(proposal['updated_at'])}';
     final isSentToClient = status.toLowerCase() == 'sent to client';
     final clientName = proposal['client_name'] ?? proposal['client'] ?? '';
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1795,16 +1804,20 @@ class _DashboardPageState extends State<DashboardPage>
                             ),
                             const SizedBox(width: 8),
                             FutureBuilder<Map<String, dynamic>?>(
-                              future: _getLastActivity(proposal['id']?.toString()),
+                              future:
+                                  _getLastActivity(proposal['id']?.toString()),
                               builder: (context, snapshot) {
-                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
                                   return const SizedBox(
                                     width: 12,
                                     height: 12,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   );
                                 }
-                                final lastActivity = _formatLastActivity(snapshot.data);
+                                final lastActivity =
+                                    _formatLastActivity(snapshot.data);
                                 return Text(
                                   lastActivity,
                                   style: PremiumTheme.bodyMedium.copyWith(
@@ -1826,7 +1839,8 @@ class _DashboardPageState extends State<DashboardPage>
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
                   color: statusColor.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
@@ -1882,23 +1896,23 @@ class _DashboardPageState extends State<DashboardPage>
 
   String _formatLastActivity(Map<String, dynamic>? analytics) {
     if (analytics == null) return 'Not viewed';
-    
+
     final events = analytics['events'] as List?;
     if (events == null || events.isEmpty) return 'Not viewed';
-    
+
     // Find the most recent 'open' event
     final openEvents = events.where((e) => e['event_type'] == 'open').toList();
     if (openEvents.isEmpty) return 'Not viewed';
-    
+
     final lastOpen = openEvents.first;
     final createdAt = lastOpen['created_at'] as String?;
     if (createdAt == null) return 'Not viewed';
-    
+
     try {
       final date = DateTime.parse(createdAt);
       final now = DateTime.now();
       final diff = now.difference(date);
-      
+
       if (diff.inDays > 0) return 'Viewed ${diff.inDays}d ago';
       if (diff.inHours > 0) return 'Viewed ${diff.inHours}h ago';
       if (diff.inMinutes > 0) return 'Viewed ${diff.inMinutes}m ago';
@@ -1939,8 +1953,7 @@ class _DashboardPageState extends State<DashboardPage>
       ),
       itemCount: components.length,
       itemBuilder: (context, index) {
-        final component =
-            components[index] as Map<String, dynamic>;
+        final component = components[index] as Map<String, dynamic>;
         final label = component['label'] as String;
         final iconData = component['icon'] as IconData;
         return InkWell(
