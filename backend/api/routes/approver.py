@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
-from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope
+from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification
 
 bp = Blueprint('approver', __name__)
 
@@ -195,7 +195,21 @@ def approve_proposal(username=None, proposal_id=None):
             if status_row:
                 new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
-                
+
+                # Notify proposal creator about approval
+                try:
+                    if creator:
+                        create_notification(
+                            user_id=creator,
+                            notification_type='proposal_approved',
+                            title='Proposal Approved',
+                            message=f"Your proposal '{display_title}' for {client_name or 'Client'} has been approved by {approver_name}.",
+                            proposal_id=proposal_id,
+                            metadata={'approver': approver_name, 'comments': comments} if comments else {'approver': approver_name},
+                        )
+                except Exception as notif_err:
+                    print(f"[WARN] Failed to create approval notification for proposal {proposal_id}: {notif_err}")
+
                 # Send email to client
                 email_sent = False
                 # Note: client_email might be empty since the column doesn't exist in schema
@@ -457,12 +471,14 @@ def reject_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Get proposal
-            cursor.execute('SELECT id, title, user_id FROM proposals WHERE id = %s', (proposal_id,))
+            # Get proposal (use owner_id as the creator/owner)
+            cursor.execute('SELECT id, title, owner_id FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+
+            proposal_id_db, title, creator_user_id = proposal
             
             # Update status to Draft
             cursor.execute(
@@ -470,7 +486,25 @@ def reject_proposal(username=None, proposal_id=None):
                 (proposal_id,)
             )
             conn.commit()
-            
+
+            # Notify proposal creator about rejection
+            try:
+                if creator_user_id:
+                    rejection_message = f"Your proposal '{title}' was rejected by {username}."
+                    if comments:
+                        rejection_message += f" Comments: {comments}"
+
+                    create_notification(
+                        user_id=creator_user_id,
+                        notification_type='proposal_rejected',
+                        title='Proposal Rejected',
+                        message=rejection_message,
+                        proposal_id=proposal_id,
+                        metadata={'comments': comments} if comments else None,
+                    )
+            except Exception as notif_err:
+                print(f"[WARN] Failed to create rejection notification for proposal {proposal_id}: {notif_err}")
+
             # Add rejection comment if provided
             if comments:
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))

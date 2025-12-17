@@ -13,7 +13,13 @@ import sys
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
-from api.utils.helpers import log_activity, generate_proposal_pdf, create_docusign_envelope, notify_proposal_collaborators
+from api.utils.helpers import (
+    log_activity,
+    generate_proposal_pdf,
+    create_docusign_envelope,
+    notify_proposal_collaborators,
+    create_notification,
+)
 
 bp = Blueprint('shared', __name__)
 
@@ -1234,6 +1240,46 @@ def docusign_webhook():
                         f"Proposal signed via DocuSign (envelope: {envelope_id})",
                         {'envelope_id': envelope_id}
                     )
+
+                    # Notify proposal creator that the client has signed
+                    try:
+                        cursor.execute(
+                            """
+                            SELECT owner_id, title
+                            FROM proposals
+                            WHERE id = %s
+                            """,
+                            (signature['proposal_id'],),
+                        )
+                        proposal_row = cursor.fetchone()
+                        if proposal_row:
+                            # proposal_row is a RealDictRow, but be defensive
+                            owner_id = (
+                                proposal_row.get('owner_id')
+                                if hasattr(proposal_row, 'get')
+                                else proposal_row[0]
+                            )
+                            proposal_title = (
+                                proposal_row.get('title')
+                                if hasattr(proposal_row, 'get')
+                                else proposal_row[1]
+                            )
+                            if owner_id:
+                                create_notification(
+                                    user_id=owner_id,
+                                    notification_type='proposal_signed',
+                                    title='Proposal Signed by Client',
+                                    message=f"Your proposal '{proposal_title}' has been signed by the client.",
+                                    proposal_id=signature['proposal_id'],
+                                    metadata={
+                                        'envelope_id': envelope_id,
+                                        'event': event,
+                                        'status': status,
+                                    },
+                                )
+                    except Exception as notif_err:
+                        print(f"[WARN] Failed to create signed notification for envelope {envelope_id}: {notif_err}")
+
                     print(f"✅ Updated proposal {signature['proposal_id']} to Signed status")
                 else:
                     print(f"⚠️ No signature record found for envelope {envelope_id}")
