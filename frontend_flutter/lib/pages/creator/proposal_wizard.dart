@@ -578,10 +578,9 @@ class _ProposalWizardState extends State<ProposalWizard>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background image
           Positioned.fill(
             child: Image.asset(
-              'assets/images/Global BG.jpg',
+              'assets/images/khono_bg.png',
               fit: BoxFit.cover,
             ),
           ),

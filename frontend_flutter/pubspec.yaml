@@ -36,3 +36,6 @@ flutter:
   assets:
     - assets/images/
     - assets/
+    - assets/images/khono_bg.png
+    - assets/images/Document_Upload.png
+     

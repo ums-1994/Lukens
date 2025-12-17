@@ -4,7 +4,6 @@ import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
-import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
 
@@ -372,10 +371,6 @@ class _ProposalsPageState extends State<ProposalsPage>
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: const Footer(),
-              ),
             ],
           ),
         ),
@@ -656,7 +651,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('New Proposal'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: PremiumTheme.purple,
+                    backgroundColor: const Color(0xFFC10D00),
                     foregroundColor: Colors.white,
                     padding:
                         const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -776,40 +771,44 @@ class _ProposalsPageState extends State<ProposalsPage>
             )
           else if (proposals.isEmpty)
             Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 48.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.description_outlined,
-                        size: 64, color: Colors.grey[400]),
-                    const SizedBox(height: 16),
-                    const Text('No proposals yet',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white)),
-                    const SizedBox(height: 8),
-                    Text('Create your first proposal to get started',
-                        style: TextStyle(color: Colors.white70)),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      onPressed: _showCreateNewDialog,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Create Your First Proposal'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: PremiumTheme.purple,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 48.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/images/Document_Upload.png',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('No proposals yet',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white)),
+                  const SizedBox(height: 8),
+                  Text('Create your first proposal to get started',
+                      style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _showCreateNewDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create Your First Proposal'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC10D00),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    )
-                  ],
-                ),
+                    ),
+                  )
+                ],
               ),
+            ),
             )
           else
             ListView.separated(

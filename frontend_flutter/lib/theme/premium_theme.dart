@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'dart:ui';
 
 /// Premium glassmorphic theme inspired by executive dashboards
@@ -33,31 +33,31 @@ class PremiumTheme {
   
   // Gradients
   static const tealGradient = LinearGradient(
-    colors: [Color(0xFF20E3B2), Color(0xFF17B897)],
+    colors: [Color(0xFFC10D00), Color(0xFFC10D00)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const blueGradient = LinearGradient(
-    colors: [Color(0xFF42A5F5), Color(0xFF1E88E5)],
+    colors: [Color(0xFFC10D00), Color(0xFFC10D00)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const purpleGradient = LinearGradient(
-    colors: [Color(0xFF9D4EDD), Color(0xFF7209B7)],
+    colors: [Color(0xFFC10D00), Color(0xFFC10D00)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const redGradient = LinearGradient(
-    colors: [Color(0xFFEF5350), Color(0xFFE53935)],
+    colors: [Color(0xFFC10D00), Color(0xFFC10D00)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const orangeGradient = LinearGradient(
-    colors: [Color(0xFFFF6B35), Color(0xFFFF8C42)],
+    colors: [Color(0xFFC10D00), Color(0xFFC10D00)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

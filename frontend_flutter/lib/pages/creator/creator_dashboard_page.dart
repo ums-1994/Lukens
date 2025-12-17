@@ -592,7 +592,12 @@ class _DashboardPageState extends State<DashboardPage>
 
     return Scaffold(
       body: Container(
-        color: Colors.transparent,
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/images/khono_bg.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
         child: Column(
           children: [
             // Header
@@ -1125,15 +1130,15 @@ class _DashboardPageState extends State<DashboardPage>
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF2F8),
+                color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF3498DB), width: 2),
+                border: Border.all(color: const Color(0xFFC10D00), width: 2),
               ),
               child: Center(
                 child: Text(
                   number,
                   style: const TextStyle(
-                    color: Color(0xFF3498DB),
+                    color: Color(0xFFC10D00),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1962,7 +1967,7 @@ class _DashboardPageState extends State<DashboardPage>
                 Icon(
                   iconData,
                   size: 28,
-                  color: const Color(0xFF3498DB),
+                  color: Color(0xFFC10D00),
                 ),
                 const SizedBox(height: 8),
                 Text(

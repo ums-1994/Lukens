@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math' as math;
-import 'login_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -222,104 +221,84 @@ class _RegisterPageState extends State<RegisterPage>
       print(
           '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
 
-      // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Syncing user to backend database...');
-      final response = await http.post(
-        Uri.parse('${AuthService.baseUrl}/firebase'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'id_token': firebaseIdToken,
-          'role': role, // Send role to backend
-        }),
-      );
+      Map<String, dynamic>? userProfile;
+      String authToken = firebaseIdToken;
 
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        final error = json.decode(response.body);
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(error['detail'] ?? 'Backend registration failed'),
-              backgroundColor: Colors.red,
-            ),
-          );
+      try {
+        final response = await http.post(
+          Uri.parse('${AuthService.baseUrl}/firebase'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'id_token': firebaseIdToken,
+            'role': role,
+          }),
+        );
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final result = json.decode(response.body);
+          userProfile = result['user'] as Map<String, dynamic>?;
+          authToken = (result['token'] as String?) ?? firebaseIdToken;
+        } else {
+          print(
+              '⚠️ Backend registration failed with status ${response.statusCode}: ${response.body}');
         }
-        return;
+      } catch (e) {
+        print('⚠️ Backend sync failed, continuing with Firebase only: $e');
       }
-
-      final result = json.decode(response.body);
-      final userProfile = result['user'] as Map<String, dynamic>?;
-      final String authToken = firebaseIdToken;
 
       if (mounted) {
         setState(() => _isLoading = false);
 
+        Map<String, dynamic> effectiveProfile;
         if (userProfile != null) {
-          // Update role in backend if needed
-          if (userProfile['role'] != role) {
-            // Role might need to be updated in backend
-            print(
-                '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
-          }
-
-          // Auto-login after successful registration
-          final appState = context.read<AppState>();
-          appState.authToken = authToken;
-          appState.currentUser = userProfile;
-
-          // Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, authToken);
-
-          // Initialize role service
-          final roleService = context.read<RoleService>();
-          await roleService.initializeRoleFromUser(userProfile);
-
-          await appState.init();
-
-          // Redirect based on user role
-          final userRole =
-              (userProfile['role']?.toString() ?? '').toLowerCase().trim();
-          String dashboardRoute;
-
-          print('🔍 User role from backend: "$userRole"');
-          print('🔍 Requested role: "$role"');
-
-          // Check both the backend role and the requested role
-          if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
-            dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Approval Dashboard');
-          } else {
-            dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard');
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registration successful!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            dashboardRoute,
-            (route) => false,
-          );
+          effectiveProfile = userProfile;
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Registration successful, but failed to get user profile. Please login.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const LoginPage(),
-            ),
-          );
+          effectiveProfile = {
+            'email': email,
+            'full_name': '$firstName $lastName'.trim(),
+            'role': role == 'admin' ? 'admin' : 'manager',
+          };
         }
+
+        final appState = context.read<AppState>();
+        appState.authToken = authToken;
+        appState.currentUser = effectiveProfile;
+
+        AuthService.setUserData(effectiveProfile, authToken);
+
+        final roleService = context.read<RoleService>();
+        await roleService.initializeRoleFromUser(effectiveProfile);
+
+        await appState.init();
+
+        final userRole =
+            (effectiveProfile['role']?.toString() ?? '').toLowerCase().trim();
+        String dashboardRoute;
+
+        print('🔍 User role from backend: "$userRole"');
+        print('🔍 Requested role: "$role"');
+
+        if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
+          dashboardRoute = '/approver_dashboard';
+          print('✅ Routing to Approval Dashboard');
+        } else {
+          dashboardRoute = '/creator_dashboard';
+          print('✅ Routing to Creator Dashboard');
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registration successful!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          dashboardRoute,
+          (route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {
