@@ -422,7 +422,7 @@ class AppState extends ChangeNotifier {
       {String? templateKey}) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals"),
+        Uri.parse("$baseUrl/api/proposals"),
         headers: _headers,
         body: jsonEncode(
             {"title": title, "client": client, "template_key": templateKey}),
