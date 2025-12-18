@@ -1580,6 +1580,29 @@ class _DashboardPageState extends State<DashboardPage>
   Widget _buildRecentProposals(List<dynamic> proposals) {
     final filteredProposals = _getFilteredProposals(proposals);
 
+    // Sort by created_at descending so the most recent proposals appear first
+    filteredProposals.sort((a, b) {
+      final aCreatedRaw = a['created_at']?.toString();
+      final bCreatedRaw = b['created_at']?.toString();
+
+      // Handle null/empty dates by pushing them to the end
+      final aEmpty = aCreatedRaw == null || aCreatedRaw.isEmpty;
+      final bEmpty = bCreatedRaw == null || bCreatedRaw.isEmpty;
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1; // a after b
+      if (bEmpty) return -1; // b after a
+
+      final aDate = DateTime.tryParse(aCreatedRaw);
+      final bDate = DateTime.tryParse(bCreatedRaw);
+
+      if (aDate == null && bDate == null) return 0;
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
+
+      // Newest first
+      return bDate.compareTo(aDate);
+    });
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
