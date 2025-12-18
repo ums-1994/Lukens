@@ -7,7 +7,7 @@ import '../../api.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:math' as math;
+ 
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -16,9 +16,7 @@ class RegisterPage extends StatefulWidget {
   State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage>
-    with TickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
+class _RegisterPageState extends State<RegisterPage> {
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -36,59 +34,11 @@ class _RegisterPageState extends State<RegisterPage>
     'special': false,
   };
 
-  late final AnimationController _frameController;
-  late final AnimationController _parallaxController;
-  late final AnimationController _fadeInController;
-
-  final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
-  ];
-
-  int _currentFrameIndex = 0;
-
   final List<String> _roles = ['Manager', 'Admin'];
 
   @override
   void initState() {
     super.initState();
-
-    _frameController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
-
-    _parallaxController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
-
-    _fadeInController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat(reverse: true);
-
-    _precacheFrames();
-    _cycleBackgrounds();
-  }
-
-  Future<void> _precacheFrames() async {
-    for (final imagePath in _backgroundImages) {
-      await precacheImage(AssetImage(imagePath), context);
-    }
-  }
-
-  void _cycleBackgrounds() {
-    _frameController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        setState(() {
-          _currentFrameIndex =
-              (_currentFrameIndex + 1) % _backgroundImages.length;
-        });
-        _frameController.reset();
-        _frameController.forward();
-      }
-    });
-    _frameController.forward();
   }
 
   @override
@@ -98,9 +48,6 @@ class _RegisterPageState extends State<RegisterPage>
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _frameController.dispose();
-    _parallaxController.dispose();
-    _fadeInController.dispose();
     super.dispose();
   }
 
@@ -134,8 +81,38 @@ class _RegisterPageState extends State<RegisterPage>
     return const Color(0xFF1A1A1A); // Dark - No password
   }
 
+  bool _validateInputs() {
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final confirm = _confirmPasswordController.text;
+
+    String? error;
+    if (firstName.isEmpty) error = 'First name required';
+    else if (lastName.isEmpty) error = 'Last name required';
+    else if (email.isEmpty) error = 'Email required';
+    else if (!email.contains('@')) error = 'Invalid email';
+    else if (password.isEmpty) error = 'Password required';
+    else if (password.length < 8) error = 'Min 8 characters';
+    else if (!RegExp(r'[A-Z]').hasMatch(password)) error = 'Need uppercase';
+    else if (!RegExp(r'[0-9]').hasMatch(password)) error = 'Need number';
+    else if (!RegExp(r'[!@#\$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;]')
+        .hasMatch(password)) error = 'Need special char';
+    else if (confirm.isEmpty) error = 'Confirm password';
+    else if (confirm != password) error = "Passwords don't match";
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_validateInputs()) return;
 
     setState(() => _isLoading = true);
 
@@ -337,8 +314,13 @@ class _RegisterPageState extends State<RegisterPage>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Animated background
-          _buildBackgroundLayers(),
+          Image.asset(
+            'assets/images/khono_bg.png',
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: Colors.black);
+            },
+          ),
 
           // Dark gradient overlay
           Container(
@@ -355,8 +337,7 @@ class _RegisterPageState extends State<RegisterPage>
             ),
           ),
 
-          // Floating shapes - desktop only
-          if (!isMobile) _buildFloatingShapes(),
+          // No floating shapes
 
           // Floating registration card
           Center(
@@ -373,81 +354,7 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildBackgroundLayers() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Base background image
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 1200),
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
-          child: Image.asset(
-            _backgroundImages[_currentFrameIndex],
-            key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(color: Colors.black);
-            },
-          ),
-        ),
-        // Pulsing light overlay (dark to light breathing)
-        AnimatedBuilder(
-          animation: _parallaxController,
-          builder: (context, child) {
-            // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
-            final darkness =
-                0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
-            return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFloatingShapes() {
-    return AnimatedBuilder(
-      animation: _parallaxController,
-      builder: (context, child) {
-        return Stack(
-          children: [
-            Positioned(
-              left: 120 +
-                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 +
-                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
-              child: Transform.rotate(
-                angle: _parallaxController.value * 2 * math.pi,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
-                  size: const Size(70, 70),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 140 +
-                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
-                      50),
-              top: 220 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
-                      35),
-              child: Transform.rotate(
-                angle: -_parallaxController.value * 2 * math.pi * 0.8,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
-                  size: const Size(90, 90),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  
 
   Widget _buildRegistrationCard(bool isMobile) {
     return Container(
@@ -468,40 +375,12 @@ class _RegisterPageState extends State<RegisterPage>
         ],
       ),
       padding: EdgeInsets.all(isMobile ? 24 : 40),
-      child: Form(
-        key: _formKey,
-        child: Column(
+      child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Logo with subtle breathing fade animation
-            Center(
-              child: FadeTransition(
-                opacity: Tween<double>(begin: 0.3, end: 1.0).animate(
-                  CurvedAnimation(
-                    parent: _fadeInController,
-                    curve: Curves.easeInOut,
-                  ),
-                ),
-                child: Image.asset(
-                  'assets/images/2026.png',
-                  height: 120,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Text(
-                      '✕ Khonology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 56,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
+            // Removed top animated asset
+            const SizedBox(height: 0),
 
             // First & Last Name Row
             Row(
@@ -731,7 +610,6 @@ class _RegisterPageState extends State<RegisterPage>
             ),
           ],
         ),
-      ),
     );
   }
 
