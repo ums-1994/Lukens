@@ -5,7 +5,6 @@ import '../../services/client_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../widgets/custom_scrollbar.dart';
-import '../../widgets/footer.dart';
 import '../../theme/premium_theme.dart';
 import '../../api.dart';
 import 'dart:ui';
@@ -33,7 +32,12 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   void initState() {
     super.initState();
     _loadData();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRoute());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final app = context.read<AppState>();
+      _isSidebarCollapsed = app.managerSidebarCollapsed;
+      _currentPage = app.managerSidebarCurrentLabel;
+      _syncRoute();
+    });
   }
 
   @override
@@ -46,6 +50,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     setState(() {
       _isSidebarCollapsed = !_isSidebarCollapsed;
     });
+    final app = context.read<AppState>();
+    app.updateManagerSidebar(
+      collapsed: _isSidebarCollapsed,
+      label: _currentPage,
+    );
   }
 
   void _syncRoute() {
@@ -600,7 +609,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
 
-            const Footer(),
+            // Footer removed for this page as requested
           ],
         ),
       ),
@@ -617,6 +626,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
           child: InkWell(
             onTap: () {
               setState(() => _currentPage = label);
+              final app = context.read<AppState>();
+              app.updateManagerSidebar(
+                label: label,
+                collapsed: _isSidebarCollapsed,
+              );
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
@@ -628,7 +642,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive
-                      ? const Color(0xFFE74C3C)
+                      ? const Color(0xFFC10D00)
                       : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
@@ -657,15 +671,20 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         borderRadius: BorderRadius.circular(8),
         onTap: () {
           setState(() => _currentPage = label);
+          final app = context.read<AppState>();
+          app.updateManagerSidebar(
+            label: label,
+            collapsed: _isSidebarCollapsed,
+          );
           _navigateToPage(context, label);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                ? Border.all(color: const Color(0xFFC10D00), width: 1)
                 : null,
           ),
           child: Row(
@@ -678,7 +697,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
-                        ? const Color(0xFFE74C3C)
+                        ? const Color(0xFFC10D00)
                         : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
@@ -700,6 +719,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               Expanded(
                 child: Text(
                   label,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                   style: TextStyle(
                     color: isActive ? Colors.white : const Color(0xFFECF0F1),
                     fontSize: 14,
@@ -776,16 +797,34 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           padding: const EdgeInsets.all(32),
-          decoration: PremiumTheme.glassCard(
-            gradientStart: PremiumTheme.cyan,
-            gradientEnd: PremiumTheme.teal,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFFC10D00),
+                const Color(0xFFC10D00).withValues(alpha: 0.0),
+              ],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: PremiumTheme.glassWhiteBorder,
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
+                  color: const Color(0xFFC10D00).withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(Icons.people, color: Colors.white, size: 32),
@@ -820,8 +859,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 label: const Text('Invite Client',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: PremiumTheme.teal,
+                  backgroundColor: const Color(0xFFC10D00),
+                  foregroundColor: Colors.white,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -955,13 +994,21 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.people, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('Total Clients',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 14)),
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: Image.asset(
+                            'assets/images/HR_Team_Management/red_Management_Red_Badge_White.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Total Clients',
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -998,13 +1045,21 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.mail, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('Pending Invites',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 14)),
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: Image.asset(
+                            'assets/images/Email_Notification/Notification_Red_White.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Pending Invites',
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -1041,13 +1096,21 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.rate_review, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('This Month',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 14)),
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: Image.asset(
+                            'assets/images/Project_Direction_Acceleration/Global_Rank.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'This Month',
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -1103,29 +1166,28 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
                       color: _selectedTab == 'clients'
-                          ? PremiumTheme.teal.withValues(alpha: 0.3)
+                          ? const Color(0xFFC10D00).withValues(alpha: 0.25)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                       border: _selectedTab == 'clients'
-                          ? Border.all(color: PremiumTheme.teal, width: 2)
+                          ? Border.all(
+                              color: const Color(0xFFC10D00),
+                              width: 2,
+                            )
                           : null,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.people,
-                          color: _selectedTab == 'clients'
-                              ? PremiumTheme.teal
-                              : Colors.white,
+                          color: Colors.white,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           'Clients (${_clients.length})',
                           style: TextStyle(
-                            color: _selectedTab == 'clients'
-                                ? PremiumTheme.teal
-                                : Colors.white,
+                            color: Colors.white,
                             fontWeight: _selectedTab == 'clients'
                                 ? FontWeight.w600
                                 : FontWeight.w400,
@@ -1143,21 +1205,22 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
                       color: _selectedTab == 'invitations'
-                          ? PremiumTheme.teal.withValues(alpha: 0.3)
+                          ? const Color(0xFFC10D00).withValues(alpha: 0.25)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                       border: _selectedTab == 'invitations'
-                          ? Border.all(color: PremiumTheme.teal, width: 2)
+                          ? Border.all(
+                              color: const Color(0xFFC10D00),
+                              width: 2,
+                            )
                           : null,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.mail,
-                          color: _selectedTab == 'invitations'
-                              ? PremiumTheme.teal
-                              : Colors.white,
+                          color: Colors.white,
                         ),
                         const SizedBox(width: 8),
                         Text(
@@ -1170,9 +1233,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                                     clientId.toString().isEmpty);
                           }).length})',
                           style: TextStyle(
-                            color: _selectedTab == 'invitations'
-                                ? PremiumTheme.teal
-                                : Colors.white,
+                            color: Colors.white,
                             fontWeight: _selectedTab == 'invitations'
                                 ? FontWeight.w600
                                 : FontWeight.w400,

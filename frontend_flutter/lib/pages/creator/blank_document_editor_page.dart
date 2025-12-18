@@ -3437,10 +3437,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            color: isActive ? const Color(0xFFE74C3C) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                ? Border.all(color: const Color(0xFFE74C3C), width: 1)
                 : null,
           ),
           child: Row(

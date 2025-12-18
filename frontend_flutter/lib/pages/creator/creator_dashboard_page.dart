@@ -37,13 +37,20 @@ class _DashboardPageState extends State<DashboardPage>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    // Start collapsed
     _animationController.value = 1.0;
 
-    // Refresh data when dashboard loads (after AppState is ready)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Ensure AppState has the token before refreshing
       final app = context.read<AppState>();
+      _isSidebarCollapsed = app.managerSidebarCollapsed;
+      _currentPage = app.managerSidebarCurrentLabel;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+
+      // Refresh data when dashboard loads (after AppState is ready)
+      // Ensure AppState has the token before refreshing
       if (app.authToken == null && AuthService.token != null) {
         print('Syncing token to AppState...');
         app.authToken = AuthService.token;
@@ -264,6 +271,11 @@ class _DashboardPageState extends State<DashboardPage>
         _animationController.reverse();
       }
     });
+    final app = context.read<AppState>();
+    app.updateManagerSidebar(
+      collapsed: _isSidebarCollapsed,
+      label: _currentPage,
+    );
   }
 
   Widget _buildNotificationButton(AppState app) {
@@ -863,6 +875,11 @@ class _DashboardPageState extends State<DashboardPage>
           child: InkWell(
             onTap: () {
               setState(() => _currentPage = label);
+              final app = context.read<AppState>();
+              app.updateManagerSidebar(
+                label: label,
+                collapsed: _isSidebarCollapsed,
+              );
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
@@ -874,7 +891,7 @@ class _DashboardPageState extends State<DashboardPage>
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive
-                      ? const Color(0xFFE74C3C)
+                      ? const Color(0xFFC10D00)
                       : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
@@ -903,15 +920,20 @@ class _DashboardPageState extends State<DashboardPage>
         borderRadius: BorderRadius.circular(8),
         onTap: () {
           setState(() => _currentPage = label);
+          final app = context.read<AppState>();
+          app.updateManagerSidebar(
+            label: label,
+            collapsed: _isSidebarCollapsed,
+          );
           _navigateToPage(context, label);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                ? Border.all(color: const Color(0xFFC10D00), width: 1)
                 : null,
           ),
           child: Row(
@@ -924,7 +946,7 @@ class _DashboardPageState extends State<DashboardPage>
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
-                        ? const Color(0xFFE74C3C)
+                        ? const Color(0xFFC10D00)
                         : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
@@ -946,6 +968,8 @@ class _DashboardPageState extends State<DashboardPage>
               Expanded(
                 child: Text(
                   label,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                   style: TextStyle(
                     color: isActive ? Colors.white : const Color(0xFFECF0F1),
                     fontSize: 14,
@@ -972,8 +996,7 @@ class _DashboardPageState extends State<DashboardPage>
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        // Templates functionality - redirect to content library for now
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');

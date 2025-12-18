@@ -38,4 +38,6 @@ flutter:
     - assets/
     - assets/images/khono_bg.png
     - assets/images/Document_Upload.png
-     
+    - assets/images/HR_Team_Management/red_Management_Red_Badge_White.png
+    - assets/images/Email_Notification/Notification_Red_White.png
+    - assets/images/Project_Direction_Acceleration/Global_Rank.png

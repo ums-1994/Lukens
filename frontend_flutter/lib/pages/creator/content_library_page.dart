@@ -77,12 +77,17 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    // Start collapsed
     _animationController.value = 1.0;
 
-    // Fetch content if empty
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final app = context.read<AppState>();
+      _isSidebarCollapsed = app.managerSidebarCollapsed;
+      _currentPage = app.managerSidebarCurrentLabel;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
       if (app.contentBlocks.isEmpty) {
         await app.fetchContent();
       }
@@ -961,6 +966,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         _animationController.reverse();
       }
     });
+    final app = context.read<AppState>();
+    app.updateManagerSidebar(
+      collapsed: _isSidebarCollapsed,
+      label: _currentPage,
+    );
   }
 
   void _showVersionHistory(BuildContext context) {
@@ -1120,11 +1130,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          Colors.black.withOpacity(0.35),
+                          Colors.black.withOpacity(0.3),
                           Colors.black.withOpacity(0.2),
                         ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
                       ),
                       border: Border(
                         right: BorderSide(
@@ -1259,12 +1269,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                 horizontal: 24, vertical: 18),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: const [
-                                  Color(0xFF0F172A),
-                                  Color(0xFF1E293B),
+                                colors: [
+                                  const Color(0xFFC10D00),
+                                  const Color(0xFFC10D00).withValues(alpha: 0.0),
                                 ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
                               ),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
@@ -1277,7 +1287,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                 Container(
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: PremiumTheme.purple
+                                    color: const Color(0xFFC10D00)
                                         .withValues(alpha: 0.25),
                                     shape: BoxShape.circle,
                                   ),
@@ -1312,7 +1322,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     setState(() => _showAIGenerator = true);
                                   },
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: PremiumTheme.purple,
+                                    backgroundColor: const Color(0xFFC10D00),
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 18, vertical: 12),
@@ -1330,7 +1340,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                   onPressed: () =>
                                       _showNewContentMenu(context, app),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: PremiumTheme.teal,
+                                    backgroundColor: const Color(0xFFC10D00),
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 18, vertical: 12),
@@ -2035,17 +2045,19 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive ? Colors.blue[50] : Colors.transparent,
+              color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isActive ? Colors.blue[300]! : Colors.grey[300]!,
+                color: isActive
+                    ? const Color(0xFFC10D00)
+                    : Colors.white.withValues(alpha: 0.4),
               ),
             ),
             child: Text(
               label,
               style: TextStyle(
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                color: isActive ? Colors.blue[700] : Colors.grey[700],
+                color: Colors.white,
               ),
             ),
           ),
@@ -3608,6 +3620,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           child: InkWell(
             onTap: () {
               setState(() => _currentPage = label);
+              final app = context.read<AppState>();
+              app.updateManagerSidebar(
+                label: label,
+                collapsed: _isSidebarCollapsed,
+              );
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
@@ -3616,12 +3633,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               height: 42,
               decoration: BoxDecoration(
                 color: isActive
-                    ? PremiumTheme.purple.withValues(alpha: 0.3)
+                    ? const Color(0xFFC10D00).withValues(alpha: 0.3)
                     : Colors.transparent,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive
-                      ? PremiumTheme.purple
+                      ? const Color(0xFFC10D00)
                       : PremiumTheme.glassWhiteBorder,
                   width: isActive ? 2 : 1,
                 ),
@@ -3643,18 +3660,23 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         borderRadius: BorderRadius.circular(12),
         onTap: () {
           setState(() => _currentPage = label);
+          final app = context.read<AppState>();
+          app.updateManagerSidebar(
+            label: label,
+            collapsed: _isSidebarCollapsed,
+          );
           _navigateToPage(context, label);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: isActive
-                ? PremiumTheme.purple.withValues(alpha: 0.25)
+                ? const Color(0xFFC10D00).withValues(alpha: 0.25)
                 : Colors.white.withValues(alpha: 0.03),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isActive
-                  ? PremiumTheme.purple
+                  ? const Color(0xFFC10D00)
                   : PremiumTheme.glassWhiteBorder.withValues(alpha: 0.7),
               width: isActive ? 1.5 : 1,
             ),
@@ -3666,12 +3688,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 height: 42,
                 decoration: BoxDecoration(
                   color: isActive
-                      ? PremiumTheme.purple.withValues(alpha: 0.3)
+                      ? const Color(0xFFC10D00).withValues(alpha: 0.3)
                       : Colors.white.withValues(alpha: 0.04),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
-                        ? PremiumTheme.purple
+                        ? const Color(0xFFC10D00)
                         : PremiumTheme.glassWhiteBorder,
                     width: isActive ? 2 : 1,
                   ),
@@ -3686,6 +3708,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               Expanded(
                 child: Text(
                   label,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                   style: TextStyle(
                     color: isActive ? Colors.white : Colors.white70,
                     fontSize: 14,
@@ -3726,22 +3750,22 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         }
         break;
       case 'My Proposals':
-        Navigator.pushNamed(context, '/proposals');
+        Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushNamed(context, '/templates');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         // Already on content library
         break;
       case 'Client Management':
-        Navigator.pushNamed(context, '/client_management');
+        Navigator.pushReplacementNamed(context, '/client_management');
         break;
       case 'Approved Proposals':
-        Navigator.pushNamed(context, '/approved_proposals');
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
-        Navigator.pushNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'Logout':
         _handleLogout(context);

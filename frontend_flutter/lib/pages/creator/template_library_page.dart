@@ -64,6 +64,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
       vsync: this,
     );
     _animationController.value = 1.0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final app = context.read<AppState>();
+      _isSidebarCollapsed = app.managerSidebarCollapsed;
+      _currentPage = app.managerSidebarCurrentLabel;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
     _loadTemplates();
   }
 
@@ -407,6 +417,11 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
         _animationController.reverse();
       }
     });
+    final app = context.read<AppState>();
+    app.updateManagerSidebar(
+      collapsed: _isSidebarCollapsed,
+      label: _currentPage,
+    );
   }
 
   void _navigateToPage(BuildContext context, String label) {
@@ -594,6 +609,11 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           child: InkWell(
             onTap: () {
               setState(() => _currentPage = label);
+              final app = context.read<AppState>();
+              app.updateManagerSidebar(
+                label: label,
+                collapsed: _isSidebarCollapsed,
+              );
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
@@ -605,7 +625,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive
-                      ? const Color(0xFFE74C3C)
+                      ? const Color(0xFFC10D00)
                       : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
@@ -634,15 +654,20 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
         borderRadius: BorderRadius.circular(8),
         onTap: () {
           setState(() => _currentPage = label);
+          final app = context.read<AppState>();
+          app.updateManagerSidebar(
+            label: label,
+            collapsed: _isSidebarCollapsed,
+          );
           _navigateToPage(context, label);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                ? Border.all(color: const Color(0xFFC10D00), width: 1)
                 : null,
           ),
           child: Row(
@@ -655,7 +680,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
-                        ? const Color(0xFFE74C3C)
+                        ? const Color(0xFFC10D00)
                         : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),

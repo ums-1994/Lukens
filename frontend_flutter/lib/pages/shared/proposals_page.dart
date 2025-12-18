@@ -38,8 +38,17 @@ class _ProposalsPageState extends State<ProposalsPage>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    // Start collapsed
     _animationController.value = 1.0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final app = context.read<AppState>();
+      _isSidebarCollapsed = app.managerSidebarCollapsed;
+      _currentPage = app.managerSidebarCurrentLabel;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
     _loadProposals();
   }
 
@@ -69,6 +78,11 @@ class _ProposalsPageState extends State<ProposalsPage>
         _animationController.reverse();
       }
     });
+    final app = context.read<AppState>();
+    app.updateManagerSidebar(
+      collapsed: _isSidebarCollapsed,
+      label: _currentPage,
+    );
   }
 
   Future<void> _loadProposals() async {
@@ -828,7 +842,7 @@ class _ProposalsPageState extends State<ProposalsPage>
     );
   }
 
-  // Helper methods from dashboard
+  // Helper methods from dashboard - unified manager sidebar style
   Widget _buildNavItem(
       String label, String assetPath, bool isActive, BuildContext context) {
     if (_isSidebarCollapsed) {
@@ -839,6 +853,11 @@ class _ProposalsPageState extends State<ProposalsPage>
           child: InkWell(
             onTap: () {
               setState(() => _currentPage = label);
+              final app = context.read<AppState>();
+              app.updateManagerSidebar(
+                label: label,
+                collapsed: _isSidebarCollapsed,
+              );
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
@@ -846,16 +865,21 @@ class _ProposalsPageState extends State<ProposalsPage>
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: isActive
-                    ? PremiumTheme.purple.withValues(alpha: 0.3)
-                    : _navSurface,
+                color: Colors.white,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive
-                      ? PremiumTheme.purple
-                      : _navBorder.withValues(alpha: 0.6),
+                      ? const Color(0xFFC10D00)
+                      : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               padding: const EdgeInsets.all(6),
               child: ClipOval(
@@ -874,21 +898,21 @@ class _ProposalsPageState extends State<ProposalsPage>
         borderRadius: BorderRadius.circular(8),
         onTap: () {
           setState(() => _currentPage = label);
+          final app = context.read<AppState>();
+          app.updateManagerSidebar(
+            label: label,
+            collapsed: _isSidebarCollapsed,
+          );
           _navigateToPage(context, label);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive
-                ? PremiumTheme.purple.withValues(alpha: 0.25)
-                : _navSurface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isActive
-                  ? PremiumTheme.purple
-                  : _navBorder.withValues(alpha: 0.7),
-              width: isActive ? 1.5 : 1,
-            ),
+            color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isActive
+                ? Border.all(color: const Color(0xFFC10D00), width: 1)
+                : null,
           ),
           child: Row(
             children: [
@@ -896,16 +920,21 @@ class _ProposalsPageState extends State<ProposalsPage>
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: isActive
-                      ? PremiumTheme.purple.withValues(alpha: 0.3)
-                      : _navSurface.withValues(alpha: 0.8),
+                  color: Colors.white,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
-                        ? PremiumTheme.purple
-                        : _navBorder.withValues(alpha: 0.6),
+                        ? const Color(0xFFC10D00)
+                        : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 padding: const EdgeInsets.all(6),
                 child: ClipOval(
@@ -918,7 +947,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                 child: Text(
                   label,
                   style: TextStyle(
-                    color: isActive ? Colors.white : Colors.white70,
+                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
                     fontSize: 14,
                     fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),

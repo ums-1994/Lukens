@@ -559,10 +559,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            color: isActive ? const Color(0xFFE74C3C) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border:
-                isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
+                isActive ? Border.all(color: const Color(0xFFE74C3C)) : null,
           ),
           child: Row(
             children: [

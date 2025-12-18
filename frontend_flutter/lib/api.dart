@@ -43,6 +43,25 @@ class AppState extends ChangeNotifier {
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
 
+  // Shared manager sidebar state
+  String managerSidebarCurrentLabel = 'Dashboard';
+  bool managerSidebarCollapsed = true;
+
+  void updateManagerSidebar({String? label, bool? collapsed}) {
+    bool changed = false;
+    if (label != null && label != managerSidebarCurrentLabel) {
+      managerSidebarCurrentLabel = label;
+      changed = true;
+    }
+    if (collapsed != null && collapsed != managerSidebarCollapsed) {
+      managerSidebarCollapsed = collapsed;
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+    }
+  }
+
   Future<void> init() async {
     // IMPORTANT: Sync token from AuthService on startup
     if (AuthService.token != null && AuthService.currentUser != null) {

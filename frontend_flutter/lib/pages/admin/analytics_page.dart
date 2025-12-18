@@ -32,6 +32,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       NumberFormat.currency(symbol: _currencySymbol, decimalDigits: 0);
   final NumberFormat _compactCurrencyFormatter =
       NumberFormat.compactCurrency(symbol: _currencySymbol, decimalDigits: 1);
+  String _currentPage = 'Analytics (My Pipeline)';
 
   @override
   void initState() {
@@ -43,6 +44,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
+      _isSidebarCollapsed = app.managerSidebarCollapsed;
+      _currentPage = app.managerSidebarCurrentLabel;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
       if (app.proposals.isEmpty) {
         app.fetchProposals();
       }
@@ -65,6 +73,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         _animationController.reverse();
       }
     });
+    final app = context.read<AppState>();
+    app.updateManagerSidebar(
+      collapsed: _isSidebarCollapsed,
+      label: _currentPage,
+    );
   }
 
   void _exportAsCSV() {
@@ -726,7 +739,22 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withOpacity(0.3),
+                          Colors.black.withOpacity(0.2),
+                        ],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      border: Border(
+                        right: BorderSide(
+                          color: PremiumTheme.glassWhiteBorder,
+                          width: 1,
+                        ),
+                      ),
+                    ),
                     child: SingleChildScrollView(
                       child: Column(
                         children: [
@@ -735,12 +763,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: InkWell(
                               onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
                               child: Container(
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
+                                  color: PremiumTheme.glassWhite,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: PremiumTheme.glassWhiteBorder,
+                                    width: 1,
+                                  ),
                                 ),
                                 child: Row(
                                   mainAxisAlignment: _isSidebarCollapsed
@@ -776,37 +808,46 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             ),
                           ),
                           const SizedBox(height: 12),
-                          _buildNavItem('Dashboard',
-                              'assets/images/Dahboard.png', false, context),
-                          _buildNavItem('My Proposals',
-                              'assets/images/My_Proposals.png', false, context),
                           _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              false,
-                              context),
+                            'Dashboard',
+                            'assets/images/Dahboard.png',
+                            _currentPage == 'Dashboard',
+                            context,
+                          ),
+                          _buildNavItem(
+                            'My Proposals',
+                            'assets/images/My_Proposals.png',
+                            _currentPage == 'My Proposals',
+                            context,
+                          ),
+                          _buildNavItem(
+                            'Templates',
+                            'assets/images/content_library.png',
+                            _currentPage == 'Templates',
+                            context,
+                          ),
                           _buildNavItem(
                             'Content Library',
                             'assets/images/content_library.png',
-                            false,
+                            _currentPage == 'Content Library',
                             context,
                           ),
                           _buildNavItem(
                             'Client Management',
                             'assets/images/collaborations.png',
-                            false,
+                            _currentPage == 'Client Management',
                             context,
                           ),
                           _buildNavItem(
                             'Approved Proposals',
                             'assets/images/Time Allocation_Approval_Blue.png',
-                            false,
+                            _currentPage == 'Approved Proposals',
                             context,
                           ),
                           _buildNavItem(
                             'Analytics (My Pipeline)',
                             'assets/images/analytics.png',
-                            true,
+                            _currentPage == 'Analytics (My Pipeline)',
                             context,
                           ),
                           const SizedBox(height: 20),
@@ -955,6 +996,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           message: label,
           child: InkWell(
             onTap: () {
+              setState(() => _currentPage = label);
+              final app = context.read<AppState>();
+              app.updateManagerSidebar(
+                label: label,
+                collapsed: _isSidebarCollapsed,
+              );
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
@@ -966,7 +1013,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive
-                      ? const Color(0xFFE74C3C)
+                      ? const Color(0xFFC10D00)
                       : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
@@ -992,17 +1039,23 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         onTap: () {
+          setState(() => _currentPage = label);
+          final app = context.read<AppState>();
+          app.updateManagerSidebar(
+            label: label,
+            collapsed: _isSidebarCollapsed,
+          );
           _navigateToPage(context, label);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
             border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
+                ? Border.all(color: const Color(0xFFC10D00), width: 1)
                 : null,
           ),
           child: Row(
@@ -1015,7 +1068,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
-                        ? const Color(0xFFE74C3C)
+                        ? const Color(0xFFC10D00)
                         : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
@@ -1037,6 +1090,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               Expanded(
                 child: Text(
                   label,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                   style: TextStyle(
                     color: isActive ? Colors.white : const Color(0xFFECF0F1),
                     fontSize: 13,
@@ -1736,7 +1791,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');

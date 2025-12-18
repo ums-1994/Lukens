@@ -40,6 +40,14 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     );
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final app = context.read<AppState>();
+      _isSidebarCollapsed = app.managerSidebarCollapsed;
+      _currentPage = app.managerSidebarCurrentLabel;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
       _loadData();
     });
   }
@@ -509,6 +517,11 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
           child: InkWell(
             onTap: () {
               setState(() => _currentPage = label);
+              final app = context.read<AppState>();
+              app.updateManagerSidebar(
+                label: label,
+                collapsed: _isSidebarCollapsed,
+              );
               _navigateToPage(context, label);
             },
             borderRadius: BorderRadius.circular(30),
@@ -520,13 +533,13 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive
-                      ? const Color(0xFFE74C3C)
+                      ? const Color(0xFFC10D00)
                       : const Color(0xFFCBD5E1),
                   width: isActive ? 2 : 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
+                    color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -549,15 +562,20 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         borderRadius: BorderRadius.circular(12),
         onTap: () {
           setState(() => _currentPage = label);
+          final app = context.read<AppState>();
+          app.updateManagerSidebar(
+            label: label,
+            collapsed: _isSidebarCollapsed,
+          );
           _navigateToPage(context, label);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+            color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border:
-                isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
+                isActive ? Border.all(color: const Color(0xFFC10D00)) : null,
           ),
           child: Row(
             children: [
@@ -569,7 +587,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
-                        ? const Color(0xFFE74C3C)
+                        ? const Color(0xFFC10D00)
                         : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
@@ -610,6 +628,11 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         _animationController.reverse();
       }
     });
+    final app = context.read<AppState>();
+    app.updateManagerSidebar(
+      collapsed: _isSidebarCollapsed,
+      label: _currentPage,
+    );
   }
 
   Widget _buildSnapshotMetrics() {
