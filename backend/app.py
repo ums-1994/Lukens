@@ -3484,15 +3484,42 @@ def get_client_proposal_details(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
+            # Determine which owner column exists on the proposals table
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            rows = cursor.fetchall()
+            column_names = set()
+            for row in rows:
+                name = row['column_name'] if isinstance(row, dict) else (row[0] if row else None)
+                if name:
+                    column_names.add(name)
+
+            if 'user_id' in column_names:
+                owner_select_expr = 'p.user_id'
+                user_join_clause = 'LEFT JOIN users u ON p.user_id = u.username'
+            elif 'owner_id' in column_names:
+                owner_select_expr = 'p.owner_id'
+                user_join_clause = 'LEFT JOIN users u ON p.owner_id = u.id'
+            else:
+                owner_select_expr = 'NULL'
+                user_join_clause = 'LEFT JOIN users u ON 1 = 0'
+
             # Get proposal details
-            cursor.execute("""
+            query = f"""
                 SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client, p.client_email, p.user_id,
+                       p.client, p.client_email, {owner_select_expr} AS user_id,
                        u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
-                LEFT JOIN users u ON p.user_id = u.username
+                {user_join_clause}
                 WHERE p.id = %s AND p.client_email = %s
-            """, (proposal_id, invitation['invited_email']))
+            """
+
+            cursor.execute(query, (proposal_id, invitation['invited_email']))
             
             proposal = cursor.fetchone()
             if not proposal:
