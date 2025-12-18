@@ -641,6 +641,7 @@ def get_proposal_signatures(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
+@bp.get("/proposals/<int:proposal_id>/signed-document")
 @bp.get("/api/proposals/<int:proposal_id>/signed-document")
 @token_required
 def get_signed_document(username=None, proposal_id=None):
