@@ -1580,27 +1580,40 @@ class _DashboardPageState extends State<DashboardPage>
   Widget _buildRecentProposals(List<dynamic> proposals) {
     final filteredProposals = _getFilteredProposals(proposals);
 
-    // Sort by created_at descending so the most recent proposals appear first
     filteredProposals.sort((a, b) {
-      final aCreatedRaw = a['created_at']?.toString();
-      final bCreatedRaw = b['created_at']?.toString();
+      DateTime? parseDate(dynamic value) {
+        if (value == null) return null;
+        final s = value.toString();
+        if (s.isEmpty) return null;
+        return DateTime.tryParse(s);
+      }
 
-      // Handle null/empty dates by pushing them to the end
-      final aEmpty = aCreatedRaw == null || aCreatedRaw.isEmpty;
-      final bEmpty = bCreatedRaw == null || bCreatedRaw.isEmpty;
-      if (aEmpty && bEmpty) return 0;
-      if (aEmpty) return 1; // a after b
-      if (bEmpty) return -1; // b after a
+      final aUpdated = parseDate(a['updated_at']);
+      final bUpdated = parseDate(b['updated_at']);
 
-      final aDate = DateTime.tryParse(aCreatedRaw);
-      final bDate = DateTime.tryParse(bCreatedRaw);
+      // Prefer updated_at when available
+      if (aUpdated != null && bUpdated != null) {
+        return bUpdated.compareTo(aUpdated);
+      }
+      if (aUpdated != null) return -1;
+      if (bUpdated != null) return 1;
 
-      if (aDate == null && bDate == null) return 0;
-      if (aDate == null) return 1;
-      if (bDate == null) return -1;
+      final aCreated = parseDate(a['created_at']);
+      final bCreated = parseDate(b['created_at']);
 
-      // Newest first
-      return bDate.compareTo(aDate);
+      if (aCreated != null && bCreated != null) {
+        return bCreated.compareTo(aCreated);
+      }
+      if (aCreated != null) return -1;
+      if (bCreated != null) return 1;
+
+      // Fallback: sort by numeric id if dates are missing
+      final aId = int.tryParse(a['id']?.toString() ?? '');
+      final bId = int.tryParse(b['id']?.toString() ?? '');
+      if (aId != null && bId != null) {
+        return bId.compareTo(aId);
+      }
+      return 0;
     });
 
     return Column(
