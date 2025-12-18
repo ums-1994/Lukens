@@ -39,15 +39,17 @@ class ApiService {
         final isProduction = hostname.contains('netlify.app') ||
             hostname.contains('onrender.com') ||
             !hostname.contains('localhost');
-        
+
         if (isProduction) {
-          print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+          print(
+              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
           return 'https://lukens-wp8w.onrender.com';
         }
       }
     }
     // Default to Render backend (production)
-    print('🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
+    print(
+        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
 
@@ -145,7 +147,7 @@ class ApiService {
   static Future<List<dynamic>> getProposals(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/proposals'),
+        Uri.parse('$baseUrl/api/proposals'),
         headers: _getHeaders(token),
       );
 
@@ -169,7 +171,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/proposals'),
+        Uri.parse('$baseUrl/api/proposals'),
         headers: _getHeaders(token),
         body: json.encode({
           'title': title,
@@ -203,7 +205,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/proposals/$id'),
+        Uri.parse('$baseUrl/api/proposals/$id'),
         headers: _getHeaders(token),
         body: json.encode({
           'title': title,
@@ -230,7 +232,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/proposals/$id'),
+        Uri.parse('$baseUrl/api/proposals/$id'),
         headers: _getHeaders(token),
       );
 
@@ -533,7 +535,8 @@ class ApiService {
     String? status, // 'open', 'resolved', or null for all
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/api/comments/document/$proposalId').replace(
+      final uri =
+          Uri.parse('$baseUrl/api/comments/document/$proposalId').replace(
         queryParameters: {
           if (sectionId != null) 'section_id': sectionId.toString(),
           if (blockId != null) 'block_id': blockId,

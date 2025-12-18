@@ -27,7 +27,7 @@ class ContentLibraryService {
     String? token,
   }) async {
     try {
-      String url = '$baseUrl/content';
+      String url = '$baseUrl/api/content';
       if (category != null && category.isNotEmpty) {
         url += '?category=$category';
       }
@@ -73,7 +73,7 @@ class ContentLibraryService {
   Future<Map<String, dynamic>?> getContentModule(int contentId) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/content/$contentId'),
+        Uri.parse('$baseUrl/api/content/$contentId'),
         headers: _getHeaders(),
       );
 
@@ -112,7 +112,7 @@ class ContentLibraryService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/content'),
+        Uri.parse('$baseUrl/api/content'),
         headers: _getHeaders(),
         body: json.encode({
           'key': key,
@@ -151,7 +151,7 @@ class ContentLibraryService {
       if (publicId != null) body['public_id'] = publicId;
 
       final response = await http.put(
-        Uri.parse('$baseUrl/content/$contentId'),
+        Uri.parse('$baseUrl/api/content/$contentId'),
         headers: _getHeaders(),
         body: json.encode(body),
       );
@@ -167,7 +167,7 @@ class ContentLibraryService {
   Future<bool> deleteContentModule(int contentId) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/content/$contentId'),
+        Uri.parse('$baseUrl/api/content/$contentId'),
         headers: _getHeaders(),
       );
 
