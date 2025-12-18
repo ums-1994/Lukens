@@ -7,7 +7,7 @@ Firebase authentication has been integrated into the backend. This document expl
 1. ✅ **Fixed bug** - `save_tokens()` call on line 167 now passes required argument
 2. ✅ **Added Firebase Admin SDK** - Added `firebase-admin` to requirements.txt
 3. ✅ **Created Firebase auth utility** - `backend/api/utils/firebase_auth.py`
-4. ✅ **New auth endpoints** - `/auth/firebase` and `/auth/firebase/verify`
+4. ✅ **New auth endpoints** - `/api/firebase` and `/api/firebase/verify`
 5. ✅ **Updated decorators** - `token_required` now supports both Firebase and legacy tokens
 
 ## Setup Instructions
@@ -59,7 +59,7 @@ If running on Google Cloud, Firebase Admin SDK can use default credentials autom
 
 ## API Endpoints
 
-### POST `/api/auth/firebase`
+### POST `/api/firebase`
 
 Authenticate with Firebase ID token. Creates or updates user in database.
 
@@ -86,7 +86,7 @@ Authenticate with Firebase ID token. Creates or updates user in database.
 }
 ```
 
-### GET `/api/auth/firebase/verify`
+### GET `/api/firebase/verify`
 
 Verify Firebase token and get user info. Requires valid Firebase token in Authorization header.
 
@@ -131,7 +131,7 @@ final idToken = await userCredential.user?.getIdToken();
 3. **Send to backend**:
 ```dart
 final response = await http.post(
-  Uri.parse('http://localhost:8000/api/auth/firebase'),
+  Uri.parse('http://localhost:8000/api/firebase'),
   headers: {'Content-Type': 'application/json'},
   body: jsonEncode({'idToken': idToken}),
 );
@@ -151,7 +151,7 @@ final headers = {
 
 1. User signs in with Firebase on frontend
 2. Frontend gets Firebase ID token
-3. Frontend sends token to `/api/auth/firebase`
+3. Frontend sends token to `/api/firebase`
 4. Backend verifies token with Firebase Admin SDK
 5. Backend creates/updates user in PostgreSQL database
 6. Backend returns user info
@@ -219,7 +219,7 @@ This will check:
 ### "User not found in database"
 
 - User authenticated with Firebase but doesn't exist in PostgreSQL
-- The `/auth/firebase` endpoint will create the user automatically
+- The `/api/firebase` endpoint will create the user automatically
 - Make sure the endpoint is called after Firebase sign-in
 
 ## Security Notes

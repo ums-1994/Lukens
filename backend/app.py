@@ -63,6 +63,23 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
+# Register API blueprints
+from api.routes.auth import bp as auth_bp
+from api.routes.proposals import bp as proposals_bp
+from api.routes.creator import bp as creator_bp
+from api.routes.shared import bp as shared_bp
+from api.routes.onboarding import bp as onboarding_bp
+from api.routes.collaborator import bp as collaborator_bp
+from api.routes.clients import bp as clients_bp
+
+app.register_blueprint(auth_bp, url_prefix='/api')
+app.register_blueprint(proposals_bp, url_prefix='/api')
+app.register_blueprint(creator_bp, url_prefix='/api')
+app.register_blueprint(shared_bp, url_prefix='/api')
+app.register_blueprint(onboarding_bp, url_prefix='/api')
+app.register_blueprint(collaborator_bp, url_prefix='/api')
+app.register_blueprint(clients_bp, url_prefix='/api')
+
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
 
