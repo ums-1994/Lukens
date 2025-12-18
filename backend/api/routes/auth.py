@@ -363,20 +363,6 @@ def test_auth_blueprint():
     """Test route to verify auth blueprint is registered"""
     return {'status': 'ok', 'message': 'Auth blueprint is working'}, 200
 
-@bp.route("/firebase", methods=['OPTIONS'])
-def options_firebase_auth():
-    """Handle CORS preflight for Firebase auth endpoint"""
-    from flask import Response
-    origin = request.headers.get('Origin')
-    response = Response()
-    if origin:
-        response.headers.add('Access-Control-Allow-Origin', origin)
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Collab-Token')
-        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
-        response.headers.add('Access-Control-Max-Age', '3600')
-    return response, 200
-
 @bp.post("/firebase")
 def firebase_auth():
     """

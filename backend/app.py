@@ -72,7 +72,7 @@ from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 
-app.register_blueprint(auth_bp, url_prefix='/')
+app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
 app.register_blueprint(creator_bp, url_prefix='/api')
 app.register_blueprint(shared_bp, url_prefix='/api')
