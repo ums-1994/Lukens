@@ -100,9 +100,9 @@ class AppState extends ChangeNotifier {
         authToken = AuthService.token;
         print('🔄 Synced token from AuthService in fetchContent');
       }
-      
+
       final r = await http.get(
-        Uri.parse("$baseUrl/content"),
+        Uri.parse("$baseUrl/api/content"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -289,7 +289,7 @@ class AppState extends ChangeNotifier {
 
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/api/notifications"),
+        Uri.parse("$baseUrl/api/api/notifications"),
         headers: _headers,
       );
 
@@ -357,7 +357,7 @@ class AppState extends ChangeNotifier {
   Future<void> fetchProposals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals"),
+        Uri.parse("$baseUrl/api/proposals"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
