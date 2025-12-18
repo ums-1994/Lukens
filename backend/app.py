@@ -8,7 +8,6 @@ import hmac
 import secrets
 import smtplib
 import difflib
-import html
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -20,7 +19,6 @@ from io import BytesIO
 
 import psycopg2
 import psycopg2.extras
-from psycopg2 import errors
 import cloudinary
 import cloudinary.uploader
 
@@ -35,6 +33,7 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
+    # ReportLab missing: warn user (emoji-friendly message)
     print("⚠️ ReportLab not installed. PDF generation will be limited. Run: pip install reportlab")
 
 # DocuSign SDK
@@ -45,6 +44,7 @@ try:
     DOCUSIGN_AVAILABLE = True
 except ImportError:
     DOCUSIGN_AVAILABLE = False
+    # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
 from flask import Flask, request, jsonify, send_file, Response, send_from_directory
@@ -57,51 +57,11 @@ from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 
-# Optional import for risk checks - provide fallback if module doesn't exist
-try:
-    from api.utils.risk_checks import run_prechecks, combine_assessments
-except ImportError:
-    # Fallback implementations if risk_checks module doesn't exist
-    def run_prechecks(proposal_dict):
-        """Fallback: Return empty precheck summary if module not available"""
-        return {
-            "block_release": False,
-            "risk_score": 0,
-            "issues": [],
-            "summary": "Risk checks module not available"
-        }
-    
-    def combine_assessments(precheck_summary, ai_result):
-        """Fallback: Return AI result if available, otherwise precheck"""
-        if ai_result:
-            return ai_result
-        return precheck_summary
-
-from api.utils.email import send_email, get_logo_html
-from api.utils.decorators import token_required as api_token_required
-
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
-# Configure CORS to allow requests from frontend
-# Note: When supports_credentials=True, cannot use '*' - must specify exact origins
-# We'll handle Netlify subdomains dynamically in the before_request handler
-allowed_origins_list = [
-    'http://localhost:8081',
-    'http://localhost:8080',
-    'http://127.0.0.1:8081',
-    'http://localhost:3000',
-    'https://sowbuilders.netlify.app',  # Fixed typo: was sowbuilder, now sowbuilders
-]
-
-CORS(app, 
-     supports_credentials=True,
-     origins=allowed_origins_list,
-     methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-     allow_headers=['Content-Type', 'Authorization', 'Collab-Token'],
-     expose_headers=['Content-Type', 'Authorization'],
-     automatic_options=True)  # Automatically handle OPTIONS requests
+CORS(app, supports_credentials=True)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -136,20 +96,6 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 # Initialize OpenAI with API key
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
-# ============================================================================
-# REGISTER BLUEPRINTS (Refactored routes)
-# ============================================================================
-# Import and register blueprints for refactored routes
-try:
-    from api.routes import auth, clients, onboarding, proposals
-    app.register_blueprint(auth.bp)
-    app.register_blueprint(clients.bp)
-    app.register_blueprint(onboarding.bp)
-    app.register_blueprint(proposals.bp)
-    print("[OK] Registered refactored blueprints: auth, clients, onboarding, proposals")
-except Exception as e:
-    print(f"[WARN] Could not register blueprints: {e}")
-    print("[INFO] Falling back to legacy routes in app.py")
 # Database initialization - PostgreSQL only
 BACKEND_TYPE = 'postgresql'
 
@@ -168,24 +114,15 @@ def get_pg_pool():
                 'password': os.getenv('DB_PASSWORD', ''),
                 'port': int(os.getenv('DB_PORT', '5432'))
             }
-            
-            # Add SSL mode for external connections (like Render)
-            # Check if host contains 'render.com' or SSL is explicitly required
-            ssl_mode = os.getenv('DB_SSLMODE', 'prefer')
-            if 'render.com' in db_config['host'].lower() or os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
-                ssl_mode = 'require'
-                db_config['sslmode'] = ssl_mode
-                print(f"🔒 Using SSL mode: {ssl_mode} for external connection")
-            
-            print(f"🔄 Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+            print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
                 minconn=1,
                 maxconn=20,  # Increased max connections
                 **db_config
             )
-            print("✅ PostgreSQL connection pool created successfully")
+            print("[OK] PostgreSQL connection pool created successfully")
         except Exception as e:
-            print(f"❌ Error creating PostgreSQL connection pool: {e}")
+            print(f"[ERROR] Error creating PostgreSQL connection pool: {e}")
             raise
     return _pg_pool
 
@@ -193,7 +130,7 @@ def _pg_conn():
     try:
         return get_pg_pool().getconn()
     except Exception as e:
-        print(f"❌ Error getting PostgreSQL connection: {e}")
+        print(f"[ERROR] Error getting PostgreSQL connection: {e}")
         raise
 
 def release_pg_conn(conn):
@@ -201,7 +138,7 @@ def release_pg_conn(conn):
         if conn:
             get_pg_pool().putconn(conn)
     except Exception as e:
-        print(f"⚠️ Error releasing PostgreSQL connection: {e}")
+        print(f"[WARN] Error releasing PostgreSQL connection: {e}")
 
 # Context manager for automatic connection cleanup
 from contextlib import contextmanager
@@ -290,25 +227,9 @@ def init_pg_schema():
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         created_by INTEGER,
-        change_description TEXT DEFAULT 'Version created',
         FOREIGN KEY (proposal_id) REFERENCES proposals(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
-        
-        # Add change_description column if it doesn't exist (for existing tables)
-        cursor.execute('''
-            DO $$ 
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'proposal_versions' 
-                    AND column_name = 'change_description'
-                ) THEN
-                    ALTER TABLE proposal_versions 
-                    ADD COLUMN change_description TEXT DEFAULT 'Version created';
-                END IF;
-            END $$;
-        ''')
         
         # Document comments table
         cursor.execute('''CREATE TABLE IF NOT EXISTS document_comments (
@@ -328,28 +249,6 @@ def init_pg_schema():
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
         
-        # Add new columns for enhanced comment features (PostgreSQL)
-        cursor.execute('''ALTER TABLE document_comments 
-                         ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES document_comments(id) ON DELETE CASCADE''')
-        cursor.execute('''ALTER TABLE document_comments 
-                         ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)''')
-        cursor.execute('''ALTER TABLE document_comments 
-                         ADD COLUMN IF NOT EXISTS block_id VARCHAR(255)''')
-        cursor.execute('''ALTER TABLE document_comments 
-                         ADD COLUMN IF NOT EXISTS section_name VARCHAR(255)''')
-        
-        # Create indexes for performance (PostgreSQL-specific optimizations)
-        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_proposal 
-                         ON document_comments(proposal_id)''')
-        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_parent 
-                         ON document_comments(parent_id) WHERE parent_id IS NOT NULL''')
-        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_status 
-                         ON document_comments(status) WHERE status = 'open' ''')
-        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_section 
-                         ON document_comments(proposal_id, section_index) WHERE section_index IS NOT NULL''')
-        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_document_comments_block 
-                         ON document_comments(proposal_id, block_type, block_id) WHERE block_id IS NOT NULL''')
-        
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,
@@ -364,23 +263,6 @@ def init_pg_schema():
         expires_at TIMESTAMP,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
         FOREIGN KEY (invited_by) REFERENCES users(id)
-        )''')
-        
-        # Active collaborators table (tracks collaborators who have accessed the proposal)
-        cursor.execute('''CREATE TABLE IF NOT EXISTS collaborators (
-        id SERIAL PRIMARY KEY,
-        proposal_id INTEGER NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        user_id INTEGER,
-        invited_by INTEGER NOT NULL,
-        permission_level VARCHAR(50) DEFAULT 'comment',
-        status VARCHAR(50) DEFAULT 'active',
-        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_accessed_at TIMESTAMP,
-        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-        FOREIGN KEY (invited_by) REFERENCES users(id),
-        UNIQUE(proposal_id, email)
         )''')
         
         # Suggested changes table for suggest mode
@@ -446,40 +328,6 @@ def init_pg_schema():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
         )''')
-
-        # Ensure notification table has latest columns/constraints
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS proposal_id INTEGER
-        ''')
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS notification_type VARCHAR(100)
-        ''')
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS title VARCHAR(255)
-        ''')
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS message TEXT
-        ''')
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS metadata JSONB
-        ''')
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE
-        ''')
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ''')
-        cursor.execute('''
-            ALTER TABLE notifications
-            ADD COLUMN IF NOT EXISTS read_at TIMESTAMP
-        ''')
         
         # Create index for faster notification queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user 
@@ -525,21 +373,12 @@ def init_pg_schema():
         # Create index for faster signature queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
                          ON proposal_signatures(proposal_id, status, sent_at DESC)''')
-
-        # Ensure proposal_signatures.id sequence is in sync with existing rows
-        cursor.execute('''
-            SELECT setval(
-                pg_get_serial_sequence('proposal_signatures', 'id'),
-                COALESCE((SELECT MAX(id) FROM proposal_signatures), 0) + 1,
-                false
-            )
-        ''')
         
         conn.commit()
         release_pg_conn(conn)
-        print("✅ PostgreSQL schema initialized successfully")
+        print("[OK] PostgreSQL schema initialized successfully")
     except Exception as e:
-        print(f"❌ Error initializing PostgreSQL schema: {e}")
+        print(f"[ERROR] Error initializing PostgreSQL schema: {e}")
         if conn:
             try:
                 release_pg_conn(conn)
@@ -547,45 +386,21 @@ def init_pg_schema():
                 pass
         raise
 
-# Handle CORS for Netlify subdomains not in the allowed_origins_list
-# Flask-CORS already handles origins in allowed_origins_list, so we only handle others
-@app.after_request
-def handle_cors_after_request(response):
-    """Add CORS headers for Netlify subdomains that aren't in the static allowed_origins_list"""
-    origin = request.headers.get('Origin')
-    
-    # Only handle Netlify subdomains that are NOT in the allowed_origins_list
-    # Flask-CORS will handle the ones that are in the list
-    if origin and origin.endswith('.netlify.app') and origin not in allowed_origins_list:
-        # This is a Netlify subdomain not in our list, so we need to add headers
-        # But first check if Flask-CORS already set them (shouldn't happen, but be safe)
-        if 'Access-Control-Allow-Origin' not in response.headers:
-            response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Collab-Token'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
-    
-    return response
-
 # Initialize database schema on first request
 @app.before_request
 def init_db():
     """Initialize PostgreSQL schema on first request"""
-    # Skip OPTIONS requests (handled by handle_preflight)
-    if request.method == 'OPTIONS':
-        return
-    
     global _db_initialized
     if _db_initialized:
         return
     
     try:
-        print("🔄 Initializing PostgreSQL schema...")
+        print("[*] Initializing PostgreSQL schema...")
         init_pg_schema()
         _db_initialized = True
-        print("✅ Database schema initialized successfully")
+        print("[OK] Database schema initialized successfully")
     except Exception as e:
-        print(f"❌ Database initialization error: {e}")
+        print(f"[ERROR] Database initialization error: {e}")
         raise
 
 # Auth token storage (in production, use Redis or session manager)
@@ -658,17 +473,7 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
 # NOTIFICATION HELPER
 # ============================================================================
 
-def create_notification(
-    user_id,
-    notification_type,
-    title,
-    message,
-    proposal_id=None,
-    metadata=None,
-    send_email_flag=False,
-    email_subject=None,
-    email_body=None,
-):
+def create_notification(user_id, notification_type, title, message, proposal_id=None, metadata=None):
     """
     Create a notification for a user
     
@@ -679,139 +484,19 @@ def create_notification(
         message: Notification message
         proposal_id: Optional proposal ID
         metadata: Optional dict with additional data
-        send_email_flag: Whether to send an email in addition to the in-app notification
-        email_subject: Optional override for the email subject
-        email_body: Optional override for the email body (HTML)
     """
     try:
-        recipient_info = None
         with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-            # Determine which notifications table/columns exist (legacy support)
+            cursor = conn.cursor()
             cursor.execute("""
-                SELECT table_name 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name IN ('notifications', 'notificationss')
-            """)
-            table_rows = cursor.fetchall()
-            if not table_rows:
-                raise Exception("Notifications table not found")
-
-            table_names = {row['table_name'] for row in table_rows}
-            table_name = 'notifications' if 'notifications' in table_names else table_rows[0]['table_name']
-
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_schema = 'public' AND table_name = %s
-            """, (table_name,))
-            column_names = {row['column_name'] for row in cursor.fetchall()}
-
-            metadata_json = json.dumps(metadata) if metadata else None
-
-            columns = []
-            values = []
-
-            def add_column(col_name, value):
-                columns.append(col_name)
-                values.append(value)
-
-            add_column('user_id', user_id)
-
-            if 'notification_type' in column_names:
-                add_column('notification_type', notification_type)
-            if 'type' in column_names:
-                add_column('type', notification_type)
-            if 'resource_type' in column_names:
-                add_column('resource_type', notification_type)
-            if 'resource_id' in column_names:
-                resource_id = None
-                if metadata and isinstance(metadata, dict):
-                    resource_id = metadata.get('resource_id')
-                if resource_id is None:
-                    resource_id = proposal_id
-                add_column('resource_id', resource_id)
-
-            if 'title' in column_names:
-                add_column('title', title)
-            if 'message' in column_names:
-                add_column('message', message)
-            if 'proposal_id' in column_names:
-                add_column('proposal_id', proposal_id)
-            if 'metadata' in column_names:
-                add_column('metadata', metadata_json)
-
-            placeholders = ', '.join(['%s'] * len(columns))
-            columns_sql = ', '.join(columns)
-
-            cursor.execute(
-                f"INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders}) RETURNING id",
-                values,
-            )
-            notification_row = cursor.fetchone()
-
-            if send_email_flag:
-                cursor.execute(
-                    "SELECT email, full_name FROM users WHERE id = %s",
-                    (user_id,)
-                )
-                recipient_info = cursor.fetchone()
-
+                INSERT INTO notifications (user_id, proposal_id, notification_type, title, message, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (user_id, proposal_id, notification_type, title, message, json.dumps(metadata) if metadata else None))
             conn.commit()
-
-        if notification_row:
             print(f"✅ Notification created for user {user_id}: {title}")
-
-        if send_email_flag and recipient_info and recipient_info.get('email'):
-            recipient_email = recipient_info['email']
-            recipient_name = recipient_info.get('full_name') or recipient_email
-            subject = email_subject or title
-
-            html_content = email_body or f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6;">
-                    <p>Hi {recipient_name},</p>
-                    <p>{message}</p>
-                    {f'<p><strong>Proposal ID:</strong> {proposal_id}</p>' if proposal_id else ''}
-                    <p style="font-size: 12px; color: #888;">You received this notification because you are part of a proposal on ProposalHub.</p>
-                </body>
-            </html>
-            """
-
-            try:
-                send_email(recipient_email, subject, html_content)
-                print(f"📧 Notification email sent to {recipient_email}")
-            except Exception as email_err:
-                print(f"⚠️ Failed to send notification email to {recipient_email}: {email_err}")
-
     except Exception as e:
         print(f"⚠️ Failed to create notification: {e}")
         # Don't raise - notification should not break main functionality
-
-def get_approvers():
-    """
-    Get all users with approver/CEO role
-    
-    Returns:
-        List of dicts with id, username, email, first_name, last_name
-    """
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            # Get users with approver, CEO, or admin role
-            cursor.execute("""
-                SELECT id, username, email, first_name, last_name, role
-                FROM users 
-                WHERE role IN ('approver', 'CEO', 'admin', 'reviewer_approver')
-                AND email IS NOT NULL
-            """)
-            approvers = cursor.fetchall()
-            return [dict(approver) for approver in approvers]
-    except Exception as e:
-        print(f"⚠️ Failed to get approvers: {e}")
-        return []
 
 def notify_proposal_collaborators(proposal_id, notification_type, title, message, exclude_user_id=None, metadata=None):
     """
@@ -828,98 +513,31 @@ def notify_proposal_collaborators(proposal_id, notification_type, title, message
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-            # Fetch proposal details once
-            cursor.execute(
-                "SELECT user_id, title FROM proposals WHERE id = %s",
-                (proposal_id,),
-            )
+            
+            # Get proposal owner
+            cursor.execute("SELECT user_id FROM proposals WHERE id = %s", (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return
-
-            proposal_title = (
-                proposal.get('title')
-                if isinstance(proposal, dict)
-                else None
-            ) or f"Proposal #{proposal_id}"
-
-            base_metadata = {
-                'proposal_id': proposal_id,
-                'proposal_title': proposal_title,
-                'resource_id': proposal_id,
-            }
-            if isinstance(metadata, dict):
-                base_metadata.update(metadata)
-
-            def _resolve_user_row(identifier):
-                if identifier is None:
-                    return None
-                if isinstance(identifier, int):
-                    cursor.execute(
-                        "SELECT id FROM users WHERE id = %s",
-                        (identifier,),
-                    )
-                    return cursor.fetchone()
-                # Try to treat as numeric string id
-                try:
-                    numeric_id = int(identifier)
-                except (TypeError, ValueError):
-                    numeric_id = None
-                if numeric_id is not None:
-                    cursor.execute(
-                        "SELECT id FROM users WHERE id = %s",
-                        (numeric_id,),
-                    )
-                    row = cursor.fetchone()
-                    if row:
-                        return row
-                cursor.execute(
-                    "SELECT id FROM users WHERE username = %s",
-                    (identifier,),
-                )
-                return cursor.fetchone()
-
-            owner = _resolve_user_row(proposal.get('user_id'))
+            
+            # Get owner's user ID
+            cursor.execute("SELECT id FROM users WHERE username = %s", (proposal['user_id'],))
+            owner = cursor.fetchone()
             if owner and owner['id'] != exclude_user_id:
-                create_notification(
-                    owner['id'],
-                    notification_type,
-                    title,
-                    message,
-                    proposal_id,
-                    base_metadata,
-                    send_email_flag=send_email_flag,
-                    email_subject=email_subject,
-                    email_body=email_body,
-                )
-
-            # Get accepted collaborators (users with accepted invitation)
-            cursor.execute(
-                """
+                create_notification(owner['id'], notification_type, title, message, proposal_id, metadata)
+            
+            # Get all collaborators
+            cursor.execute("""
                 SELECT DISTINCT u.id
                 FROM collaboration_invitations ci
                 JOIN users u ON ci.invited_email = u.email
                 WHERE ci.proposal_id = %s AND ci.status = 'accepted'
-                """,
-                (proposal_id,),
-            )
-
+            """, (proposal_id,))
+            
             collaborators = cursor.fetchall()
             for collab in collaborators:
-                collab_id = collab.get('id') if isinstance(collab, dict) else collab[0]
-                if collab_id and collab_id != exclude_user_id:
-                    create_notification(
-                        collab_id,
-                        notification_type,
-                        title,
-                        message,
-                        proposal_id,
-                        base_metadata,
-                        send_email_flag=send_email_flag,
-                        email_subject=email_subject,
-                        email_body=email_body,
-                    )
+                if collab['id'] != exclude_user_id:
+                    create_notification(collab['id'], notification_type, title, message, proposal_id, metadata)
                     
     except Exception as e:
         print(f"⚠️ Failed to notify collaborators: {e}")
@@ -1000,20 +618,7 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
                     'You were mentioned',
                     f"{commenter_name} mentioned you in a comment",
                     proposal_id,
-                    {'comment_id': comment_id, 'mentioned_by': mentioned_by_user_id},
-                    send_email_flag=True,
-                    email_subject=f"[ProposalHub] {commenter_name} mentioned you",
-                    email_body=f"""
-                    <html>
-                        <body style='font-family: Arial, sans-serif; line-height:1.6;'>
-                            <p>{html.escape(commenter_name)} mentioned you in a comment on proposal #{proposal_id}.</p>
-                            <blockquote style='margin: 0; padding-left: 15px; border-left: 3px solid #27ae60; color: #555;'>
-                                {html.escape(comment_text)}
-                            </blockquote>
-                            <p style='font-size: 12px; color: #888;'>Sign in to ProposalHub to respond.</p>
-                        </body>
-                    </html>
-                    """
+                    {'comment_id': comment_id, 'mentioned_by': mentioned_by_user_id}
                 )
                 
                 print(f"✅ Notified @{mentioned_user['email']} about mention")
@@ -1039,30 +644,17 @@ def get_docusign_jwt_token():
         integration_key = os.getenv('DOCUSIGN_INTEGRATION_KEY')
         user_id = os.getenv('DOCUSIGN_USER_ID')
         auth_server = os.getenv('DOCUSIGN_AUTH_SERVER', 'account-d.docusign.com')
+        private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
         
         if not all([integration_key, user_id]):
             raise Exception("DocuSign credentials not configured")
         
-        # Try to get private key from environment variable first (for Render/cloud deployments)
-        private_key = os.getenv('DOCUSIGN_PRIVATE_KEY')
+        with open(private_key_path, 'r') as key_file:
+            private_key = key_file.read()
         
-        # If not in env var, try to read from file
-        if not private_key:
-            private_key_path = os.getenv('DOCUSIGN_PRIVATE_KEY_PATH', './docusign_private.key')
-            if not os.path.exists(private_key_path):
-                raise Exception(f"DocuSign private key not found. Set DOCUSIGN_PRIVATE_KEY env var or DOCUSIGN_PRIVATE_KEY_PATH to a valid file path.")
-            with open(private_key_path, 'r') as key_file:
-                private_key = key_file.read()
-        
-        # Handle newlines in environment variable (Render may escape them)
-        if private_key:
-            private_key = private_key.replace('\\n', '\n')
-        
-        # Create API client
         api_client = ApiClient()
         api_client.set_base_path(f"https://{auth_server}")
         
-        # Request JWT token
         response = api_client.request_jwt_user_token(
             client_id=integration_key,
             user_id=user_id,
@@ -1072,10 +664,35 @@ def get_docusign_jwt_token():
             scopes=["signature", "impersonation"]
         )
         
-        return response.access_token
+        user_info = api_client.get_user_info(response.access_token)
+        accounts = getattr(user_info, 'accounts', None)
+        account = None
+        if accounts:
+            for acc in accounts:
+                if getattr(acc, 'is_default', '').lower() == 'true':
+                    account = acc
+                    break
+            if account is None:
+                account = accounts[0]
+        if not account or not getattr(account, 'account_id', None):
+            raise Exception("No account_id returned from DocuSign user info")
+        account_id = account.account_id
+        base_uri = getattr(account, 'base_uri', None)
+        if not base_uri:
+            raise Exception("No base_uri returned from DocuSign user info")
+        base_path = f"{base_uri}/restapi"
+        
+        print(f"✅ DocuSign JWT authenticated. Account ID: {account_id}")
+        
+        return {
+            'access_token': response.access_token,
+            'account_id': account_id,
+            'base_path': base_path
+        }
         
     except Exception as e:
         print(f"❌ Error getting DocuSign JWT token: {e}")
+        traceback.print_exc()
         raise
 
 def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
@@ -1301,21 +918,14 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         raise Exception("DocuSign SDK not installed")
     
     try:
-        # Get access token
-        access_token = get_docusign_jwt_token()
+        auth_data = get_docusign_jwt_token()
+        access_token = auth_data['access_token']
+        account_id = auth_data['account_id']
+        base_path = auth_data.get('base_path') or os.getenv('DOCUSIGN_BASE_PATH', 'https://demo.docusign.net/restapi')
         
-        # Get account ID - must be set in .env
-        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
-        if not account_id:
-            raise Exception("DOCUSIGN_ACCOUNT_ID is required. Get it from: https://demo.docusign.net → Settings → My Account Information → Account ID")
+        print(f"ℹ️  Using account_id: {account_id}")
+        print(f"ℹ️  Using base_path: {base_path}")
         
-        # Validate account ID format (should be a GUID)
-        if len(account_id) < 30 or '-' not in account_id:
-            raise Exception(f"Invalid DOCUSIGN_ACCOUNT_ID format: {account_id}. Should be a GUID like: 70784c46-78c0-45af-8207-f4b8e8a43ea")
-        
-        base_path = os.getenv('DOCUSIGN_BASE_PATH', 'https://demo.docusign.net/restapi')
-        
-        # Create API client
         api_client = ApiClient()
         api_client.host = base_path
         api_client.set_default_header("Authorization", f"Bearer {access_token}")
@@ -1421,11 +1031,16 @@ def generate_token(username):
         'expires_at': datetime.now() + timedelta(days=7)
     }
     save_tokens()  # Persist to file
-    print(f"🎫 Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
-    print(f"📋 Total valid tokens: {len(valid_tokens)}")
+    print(f"[TOKEN] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
+    print(f"[TOKEN] Total valid tokens: {len(valid_tokens)}")
     return token
 
 def verify_token(token):
+    # Dev bypass for testing
+    if token == 'dev-bypass-token':
+        print("[DEV] Using dev-bypass-token for username: admin")
+        return 'admin'
+    
     if token not in valid_tokens:
         return None
     token_data = valid_tokens[token]
@@ -1439,19 +1054,27 @@ def verify_token(token):
 def send_email(to_email, subject, html_content):
     """Send email using SMTP"""
     try:
+        print(f"[EMAIL] Attempting to send email to {to_email}")
+        
         smtp_host = os.getenv('SMTP_HOST')
         smtp_port = int(os.getenv('SMTP_PORT', '587'))
         smtp_user = os.getenv('SMTP_USER')
         smtp_pass = os.getenv('SMTP_PASS')
+        smtp_from_email = os.getenv('SMTP_FROM_EMAIL', smtp_user)
+        smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
+        
+        print(f"[EMAIL] SMTP Config - Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
+        print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
         
         if not all([smtp_host, smtp_user, smtp_pass]):
-            print(f"❌ SMTP configuration incomplete")
+            print(f"[ERROR] SMTP configuration incomplete")
+            print(f"[ERROR] Missing: Host={smtp_host}, User={smtp_user}, Pass={'SET' if smtp_pass else 'NOT SET'}")
             return False
         
         # Create message
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From'] = smtp_user
+        msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
         msg['To'] = to_email
         
         # Attach HTML content
@@ -1459,23 +1082,26 @@ def send_email(to_email, subject, html_content):
         msg.attach(html_part)
         
         # Send email
+        print(f"[EMAIL] Connecting to SMTP server...")
         with smtplib.SMTP(smtp_host, smtp_port) as server:
+            print(f"[EMAIL] Starting TLS...")
             server.starttls()
+            print(f"[EMAIL] Logging in...")
             server.login(smtp_user, smtp_pass)
+            print(f"[EMAIL] Sending message...")
             server.send_message(msg)
         
-        print(f"✅ Email sent to {to_email}")
+        print(f"[SUCCESS] Email sent to {to_email}")
         return True
     except Exception as e:
-        print(f"❌ Error sending email: {e}")
+        print(f"[ERROR] Error sending email: {e}")
         traceback.print_exc()
         return False
 
 
 def send_password_reset_email(email, reset_token):
     """Send password reset email"""
-    frontend_url = os.getenv('FRONTEND_URL') or os.getenv('REACT_APP_API_URL') or 'https://sowbuilders.netlify.app'
-    frontend_url = frontend_url.rstrip('/').replace('/api', '').replace('/backend', '')
+    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
     reset_link = f"{frontend_url}/verify.html?token={reset_token}"
     
     subject = "Reset Your Password"
@@ -1498,7 +1124,33 @@ def send_password_reset_email(email, reset_token):
     return send_email(email, subject, html_content)
 
 def token_required(f):
-    return api_token_required(f)
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header:
+                try:
+                    token = auth_header.split(" ")[1]
+                    print(f"[TOKEN] Token received: {token[:20]}...{token[-10:]}")
+                except (IndexError, AttributeError):
+                    print(f"[ERROR] Invalid token format in header: {auth_header}")
+                    return {'detail': 'Invalid token format'}, 401
+        
+        if not token:
+            print(f"[ERROR] No token found in Authorization header")
+            return {'detail': 'Token is missing'}, 401
+        
+        print(f"[TOKEN] Validating token... (valid_tokens has {len(valid_tokens)} tokens)")
+        username = verify_token(token)
+        if not username:
+            print(f"[ERROR] Token validation failed - token not found or expired")
+            print(f"[TOKEN] Current valid tokens: {list(valid_tokens.keys())[:3]}...")
+            return {'detail': 'Invalid or expired token'}, 401
+        
+        print(f"[OK] Token validated for user: {username}")
+        return f(username=username, *args, **kwargs)
+    return decorated
 
 def admin_required(f):
     @wraps(f)
@@ -1515,10 +1167,199 @@ def admin_required(f):
         return f(username=username, *args, **kwargs)
     return decorated
 
+# Authentication endpoints
+
+@app.post("/register")
+def register():
+    try:
+        data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        full_name = data.get('full_name')
+        role = data.get('role', 'user')
+        
+        if not all([username, email, password]):
+            return {'detail': 'Missing required fields'}, 400
+        
+        password_hash = hash_password(password)
+        
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                '''INSERT INTO users (username, email, password_hash, full_name, role)
+                   VALUES (%s, %s, %s, %s, %s)''',
+                (username, email, password_hash, full_name, role)
+            )
+            conn.commit()
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            return {'detail': 'Username or email already exists'}, 409
+        finally:
+            release_pg_conn(conn)
+        
+        # Email verification disabled - users can login immediately
+        # verification_token = generate_verification_token(email)
+        # send_verification_email(email, verification_token)
+        
+        return {'detail': 'Registration successful. You can now login.', 'email': email}, 200
+    except Exception as e:
+        print(f'Registration error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/login")
+def login():
+    try:
+        data = request.form
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return {'detail': 'Missing username or password'}, 400
+        
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE username = %s', (username,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if not result or not result[0] or not verify_password(result[0], password):
+            return {'detail': 'Invalid credentials'}, 401
+        
+        token = generate_token(username)
+        return {'access_token': token, 'token_type': 'bearer'}, 200
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+@app.post("/login-email")
+def login_email():
+    try:
+        data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return {'detail': 'Missing email or password'}, 400
+        
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE email = %s', (email,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if not result or not result[0] or not verify_password(result[0], password):
+            return {'detail': 'Invalid credentials'}, 401
+        
+        token = generate_token(email)
+        return {'access_token': token, 'token_type': 'bearer'}, 200
+    except Exception as e:
+        print(f'Login error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/forgot-password")
+def forgot_password():
+    try:
+        data = request.get_json()
+        if data is None:
+            return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
+        
+        email = data.get('email')
+        if not email:
+            return {'detail': 'Missing email'}, 400
+        
+        # Check if user exists
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if not result:
+            # For security, don't reveal whether email exists
+            return {'detail': 'If this email exists, a password reset link will be sent'}, 200
+        
+        # Generate reset token
+        reset_token = generate_verification_token(email)
+        
+        # Send password reset email
+        send_password_reset_email(email, reset_token)
+        
+        return {'detail': 'If this email exists, a password reset link will be sent', 'message': 'Password reset link has been sent to your email'}, 200
+    except Exception as e:
+        print(f'Forgot password error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/me")
+@token_required
+def get_current_user(username):
+    try:
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users WHERE username = %s''',
+            (username,)
+        )
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        if result:
+            return {
+                'id': result[0],
+                'username': result[1],
+                'email': result[2],
+                'full_name': result[3],
+                'role': result[4],
+                'department': result[5],
+                'is_active': result[6]
+            }
+        
+        return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+@app.get("/user/profile")
+@token_required
+def get_user_profile(username):
+    """Alias for /me endpoint for Flutter compatibility"""
+    try:
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users WHERE username = %s''',
+            (username,)
+        )
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        if result:
+            return {
+                'id': result[0],
+                'username': result[1],
+                'email': result[2],
+                'full_name': result[3],
+                'role': result[4],
+                'department': result[5],
+                'is_active': result[6]
+            }
+        return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
 # Content library endpoints
 
 @app.get("/content")
-@api_token_required
+@token_required
 def get_content(username):
     try:
         conn = _pg_conn()
@@ -1544,7 +1385,7 @@ def get_content(username):
         return {'detail': str(e)}, 500
 
 @app.post("/content")
-@api_token_required
+@token_required
 def create_content(username):
     try:
         data = request.get_json()
@@ -1566,7 +1407,7 @@ def create_content(username):
         return {'detail': str(e)}, 500
 
 @app.put("/content/<int:content_id>")
-@api_token_required
+@token_required
 def update_content(username, content_id):
     try:
         data = request.get_json()
@@ -1600,7 +1441,7 @@ def update_content(username, content_id):
         return {'detail': str(e)}, 500
 
 @app.delete("/content/<int:content_id>")
-@api_token_required
+@token_required
 def delete_content(username, content_id):
     try:
         conn = _pg_conn()
@@ -1613,7 +1454,7 @@ def delete_content(username, content_id):
         return {'detail': str(e)}, 500
 
 @app.post("/content/<int:content_id>/restore")
-@api_token_required
+@token_required
 def restore_content(username, content_id):
     try:
         conn = _pg_conn()
@@ -1626,7 +1467,7 @@ def restore_content(username, content_id):
         return {'detail': str(e)}, 500
 
 @app.delete("/content/<int:content_id>/permanent")
-@api_token_required
+@token_required
 def permanently_delete_content(username, content_id):
     try:
         conn = _pg_conn()
@@ -1666,462 +1507,100 @@ def get_trash(username):
 
 # Proposal endpoints
 
-def _resolve_user_id(cursor, username: str):
-    """
-    Normalize any username/email/string identifier into the numeric user ID.
-    Supports:
-      - username stored in users table
-      - email stored in users table
-      - numeric username strings (legacy)
-    """
+@app.get("/proposals")
+@token_required
+def get_proposals(username):
     try:
-        cursor.execute(
-            "SELECT id FROM users WHERE username = %s OR email = %s",
-            (username, username),
-        )
-        result = cursor.fetchone()
-        if result:
-            return result[0]
-    except Exception as lookup_err:
-        print(f"⚠️ Error resolving user id for {username}: {lookup_err}")
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            print(f"🔍 Looking for proposals for user {username}")
+            
+            # Query all columns that exist in the database
+            cursor.execute(
+                '''SELECT id, user_id, title, content, status, client, client_email, 
+                          budget, timeline_days, created_at, updated_at
+                   FROM proposals WHERE user_id = %s
+                   ORDER BY created_at DESC''',
+                (username,)
+            )
+            rows = cursor.fetchall()
+            proposals = []
+            for row in rows:
+                proposals.append({
+                    'id': row[0],
+                    'user_id': row[1],
+                    'owner_id': row[1],  # For compatibility
+                    'title': row[2],
+                    'content': row[3],
+                    'status': row[4],
+                    'client_name': row[5],
+                    'client': row[5],  # For compatibility
+                    'client_email': row[6],
+                    'budget': float(row[7]) if row[7] else None,
+                    'timeline_days': row[8],
+                    'created_at': row[9].isoformat() if row[9] else None,
+                    'updated_at': row[10].isoformat() if row[10] else None,
+                    'updatedAt': row[10].isoformat() if row[10] else None,
+                })
+            print(f"✅ Found {len(proposals)} proposals for user {username}")
+            return proposals, 200
+    except Exception as e:
+        print(f"❌ Error getting proposals: {e}")
+        import traceback
         traceback.print_exc()
-
-    if isinstance(username, str) and username.isdigit():
-        print(f"⚠️ Falling back to numeric conversion for username '{username}'")
-        return int(username)
-
-    return None
-
-
-# ============================================================================
-# PROPOSAL ROUTES - PARTIALLY MIGRATED
-# ============================================================================
-# GET /proposals has been migrated to api/routes/proposals.py
-# All other proposal routes below still need to be migrated
-# TODO: Extract remaining proposal routes to api/routes/proposals.py
+        return {'detail': str(e)}, 500
 
 @app.post("/proposals")
 @token_required
-def create_proposal(username=None, user_id=None, email=None):
-    """Create a new proposal - TODO: Migrate to api/routes/proposals.py"""
+def create_proposal(username):
     try:
-        data = request.get_json(silent=True) or {}
-        if not isinstance(data, dict):
-            return {'detail': 'Invalid JSON payload'}, 400
-        print(
-            f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email}): "
-            f"{data.get('title', 'Untitled')}"
-        )
+        data = request.get_json()
+        print(f"📝 Creating proposal for user {username}: {data.get('title', 'Untitled')}")
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            import time
-
-            resolved_user_id = None
-            lookup_strategies = []
-            if user_id:
-                lookup_strategies.append(('user_id', user_id))
-            if email:
-                lookup_strategies.append(('email', email))
-            if username:
-                lookup_strategies.append(('username', username))
-
-            max_retries = 30
-            retry_delay = 0.2
-            for attempt in range(max_retries):
-                for strategy_type, strategy_value in lookup_strategies:
-                    try:
-                        if strategy_type == 'user_id':
-                            cursor.execute('SELECT id FROM users WHERE id = %s', (strategy_value,))
-                            row = cursor.fetchone()
-                            resolved_user_id = row[0] if row else None
-                        else:
-                            # _resolve_user_id looks up by username OR email
-                            resolved_user_id = _resolve_user_id(cursor, str(strategy_value))
-                    except Exception as lookup_err:
-                        print(f"⚠️ Error resolving user via {strategy_type}: {lookup_err}")
-                        resolved_user_id = None
-
-                    if resolved_user_id:
-                        break
-
-                if resolved_user_id:
-                    break
-
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 1.3, 1.0)
-
-            user_id = resolved_user_id
-            if not user_id:
-                return {'detail': 'User not found'}, 400
-
-            cursor.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'proposals'
-            """)
-            proposal_columns = {row[0] for row in cursor.fetchall()}
-
-            # Check if client_id column exists, if not add it
-            if 'client_id' not in proposal_columns:
-                try:
-                    cursor.execute("""
-                        ALTER TABLE proposals 
-                        ADD COLUMN IF NOT EXISTS client_id INTEGER
-                    """)
-                    conn.commit()
-                    print(f"[INFO] Added client_id column to proposals table")
-                    proposal_columns.add('client_id')
-                except Exception as e:
-                    print(f"[WARN] Could not add client_id column: {e}")
-
-            # If client_id is provided, fetch client details and auto-fill
-            client_id = data.get('client_id')
+            
+            # Insert using all available columns
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
-            client_email = data.get('client_email')
+            client_email = data.get('client_email') or ''
             
-            if client_id:
-                try:
-                    cursor.execute("""
-                        SELECT id, company_name, contact_person, email
-                        FROM clients
-                        WHERE id = %s AND created_by = %s
-                    """, (client_id, user_id))
-                    client = cursor.fetchone()
-                    
-                    if client:
-                        # Auto-fill client details from client record
-                        if not client_name or client_name == 'Unknown Client':
-                            client_name = client[1] or client[2] or 'Unknown Client'  # company_name or contact_person
-                        if not client_email:
-                            client_email = client[3]  # email
-                        print(f"[INFO] Auto-filled client details from client_id {client_id}: {client_name}, {client_email}")
-                    else:
-                        print(f"[WARN] Client ID {client_id} not found or not owned by user {username}")
-                        client_id = None  # Don't use invalid client_id
-                except Exception as e:
-                    print(f"[WARN] Error fetching client details: {e}")
-                    client_id = None  # Don't use client_id if there's an error
-
-            insert_columns = []
-            values = []
-
-            owner_column = None
-            if 'owner_id' in proposal_columns:
-                owner_column = 'owner_id'
-            elif 'user_id' in proposal_columns:
-                owner_column = 'user_id'
-            else:
-                return {'detail': "proposals table missing owner_id/user_id column"}, 500
-
-            insert_columns.append(owner_column)
-            values.append(user_id)
-
-            field_map = {
-                'title': data.get('title', 'Untitled Document'),
-                'content': data.get('content'),
-                'status': data.get('status', 'draft'),
-                'client_name': client_name,
-                'client': data.get('client') or client_name,  # Use client_name if client not provided
-                'client_email': client_email,  # Use auto-filled email if available
-                'budget': data.get('budget'),
-                'timeline_days': data.get('timeline_days'),
-                'sections': json.dumps(data.get('sections') or {}) if 'sections' in proposal_columns else None,
-                'template_key': data.get('template_key'),
-                'pdf_url': data.get('pdf_url'),
-                'client_can_edit': data.get('client_can_edit'),
-                'client_id': client_id,  # Use validated client_id
-                'content_html': data.get('content_html'),
-            }
-
-            for column, value in field_map.items():
-                if column in proposal_columns and value is not None:
-                    insert_columns.append(column)
-                    values.append(value)
-
-            placeholders = ', '.join(['%s'] * len(values))
-
-            return_fields = [
-                "id",
-                owner_column,
-                "title",
-                "content",
-                "status",
-            ]
-
-            if 'client_name' in proposal_columns:
-                return_fields.append("client_name")
-            else:
-                return_fields.append("NULL::text AS client_name")
-
-            if 'client' in proposal_columns:
-                return_fields.append("client")
-            elif 'client_name' in proposal_columns:
-                return_fields.append("client_name AS client")
-            else:
-                return_fields.append("NULL::text AS client")
-
-            if 'client_email' in proposal_columns:
-                return_fields.append("client_email")
-            else:
-                return_fields.append("NULL::text AS client_email")
-            
-            if 'client_id' in proposal_columns:
-                return_fields.append("client_id")
-            else:
-                return_fields.append("NULL::integer AS client_id")
-
-            if 'budget' in proposal_columns:
-                return_fields.append("budget")
-            else:
-                return_fields.append("NULL::numeric AS budget")
-
-            if 'timeline_days' in proposal_columns:
-                return_fields.append("timeline_days")
-            else:
-                return_fields.append("NULL::integer AS timeline_days")
-
-            if 'created_at' in proposal_columns:
-                return_fields.append("created_at")
-            else:
-                return_fields.append("NOW() AS created_at")
-
-            if 'updated_at' in proposal_columns:
-                return_fields.append("updated_at")
-            else:
-                return_fields.append("NOW() AS updated_at")
-
-            if 'sections' in proposal_columns:
-                return_fields.append("sections")
-            else:
-                return_fields.append("NULL::text AS sections")
-
-            if 'template_key' in proposal_columns:
-                return_fields.append("template_key")
-            else:
-                return_fields.append("NULL::text AS template_key")
-
-            if 'pdf_url' in proposal_columns:
-                return_fields.append("pdf_url")
-            else:
-                return_fields.append("NULL::text AS pdf_url")
-
-            insert_sql = f"""
-                INSERT INTO proposals ({', '.join(insert_columns)})
-                VALUES ({placeholders})
-                RETURNING {', '.join(return_fields)}
-            """
-
-            try:
-                cursor.execute(insert_sql, tuple(values))
-            except errors.UniqueViolation as seq_error:
-                # Handle out-of-sync proposals.id sequence by resetting it and retrying once
-                print(f"⚠️ Sequence issue detected while inserting into proposals: {seq_error}")
-                try:
-                    conn.rollback()
-                except Exception as rollback_error:
-                    print(f"[WARN] Error during rollback after sequence issue: {rollback_error}")
-
-                try:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        """
-                        SELECT setval(
-                            pg_get_serial_sequence('proposals', 'id'),
-                            COALESCE((SELECT MAX(id) FROM proposals), 1),
-                            true
-                        )
-                        """
-                    )
-                    conn.commit()
-                    print("✅ Reset proposals.id sequence based on MAX(id)")
-
-                    cursor = conn.cursor()
-                    cursor.execute(insert_sql, tuple(values))
-                except Exception as reset_error:
-                    print(f"❌ Failed to reset proposals sequence and re-insert: {reset_error}")
-                    raise
-
-            result_row = cursor.fetchone()
-            if not result_row:
-                return {'detail': 'Failed to create proposal'}, 500
-
-            # Convert row tuple to dict keyed by column names for easier access
-            column_names = [desc[0] for desc in cursor.description] if cursor.description else []
-            result = dict(zip(column_names, result_row)) if column_names else {}
-
-            proposal_id = result.get('id')
-            
-            # If client_id was provided and valid, create link in client_proposals table
-            if client_id and proposal_id:
-                try:
-                    # Check if client_proposals table exists
-                    cursor.execute("""
-                        SELECT EXISTS (
-                            SELECT FROM information_schema.tables 
-                            WHERE table_name = 'client_proposals'
-                        )
-                    """)
-                    table_exists = cursor.fetchone()[0]
-                    
-                    if table_exists:
-                        cursor.execute("""
-                            INSERT INTO client_proposals (client_id, proposal_id, relationship_type, linked_by)
-                            VALUES (%s, %s, 'primary', %s)
-                            ON CONFLICT (client_id, proposal_id) DO NOTHING
-                        """, (client_id, proposal_id, user_id))
-                        print(f"[INFO] Linked proposal {proposal_id} to client {client_id}")
-                    else:
-                        print(f"[WARN] client_proposals table does not exist, skipping link creation")
-                except Exception as e:
-                    print(f"[WARN] Could not create client-proposal link: {e}")
-                    # Don't fail proposal creation if link fails
-            
+            cursor.execute(
+                '''INSERT INTO proposals (user_id, title, content, status, client, client_email, budget, timeline_days)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
+                   RETURNING id, user_id, title, content, status, client, client_email, budget, timeline_days, created_at, updated_at''',
+                (
+                    username,
+                    data.get('title', 'Untitled Document'),
+                    data.get('content'),
+                    data.get('status', 'draft'),
+                    client_name,
+                    client_email,
+                    data.get('budget'),
+                    data.get('timeline_days')
+                )
+            )
+            result = cursor.fetchone()
             conn.commit()
             
-            section_data = {}
-            if result.get('sections'):
-                try:
-                    if isinstance(result['sections'], str):
-                        section_data = json.loads(result['sections'])
-                    else:
-                        section_data = result['sections']
-                except json.JSONDecodeError:
-                    section_data = {}
-
-            owner_value = result.get(owner_column)
             proposal = {
-                'id': result.get('id'),
-                'owner_id': str(owner_value) if owner_value is not None else None,
-                'user_id': str(owner_value) if owner_value is not None else None,
-                'title': result.get('title'),
-                'content': result.get('content'),
-                'status': result.get('status'),
-                'client_name': result.get('client_name') or '',
-                'client': result.get('client') or '',
-                'client_email': result.get('client_email') or '',
-                'client_id': result.get('client_id'),
-                'budget': float(result['budget']) if result.get('budget') is not None else None,
-                'timeline_days': result.get('timeline_days'),
-                'created_at': result['created_at'].isoformat() if result.get('created_at') else None,
-                'updated_at': result['updated_at'].isoformat() if result.get('updated_at') else None,
-                'updatedAt': result['updated_at'].isoformat() if result.get('updated_at') else None,
-                'sections': section_data,
-                'template_key': result.get('template_key'),
-                'pdf_url': result.get('pdf_url'),
+                'id': result[0],
+                'user_id': result[1],
+                'owner_id': result[1],  # For compatibility
+                'title': result[2],
+                'content': result[3],
+                'status': result[4],
+                'client_name': result[5],
+                'client': result[5],
+                'client_email': result[6],
+                'budget': float(result[7]) if result[7] else None,
+                'timeline_days': result[8],
+                'created_at': result[9].isoformat() if result[9] else None,
+                'updated_at': result[10].isoformat() if result[10] else None,
+                'updatedAt': result[10].isoformat() if result[10] else None,
             }
             
-            print(f"✅ Proposal created successfully with ID: {proposal_id}")
-            
-            # Send email notifications and create in-app notifications
-            try:
-                proposal_id = result.get('id')
-                proposal_title = result.get('title', 'Untitled Document')
-                client_name = result.get('client_name') or 'Unknown Client'
-                
-                # Get creator's email
-                cursor.execute("SELECT id, email, full_name FROM users WHERE id = %s", (user_id,))
-                creator_row = cursor.fetchone()
-                creator = None
-                if creator_row:
-                    creator_columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                    creator = dict(zip(creator_columns, creator_row)) if creator_columns else {}
-
-                creator_email = creator.get('email') if creator else None
-                creator_name = creator.get('full_name') if creator else username
-                
-                # Send email to creator
-                if creator_email:
-                    try:
-                        email_body = f"""
-                        <html>
-                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                                <h2 style="color: #2ECC71;">✅ Proposal Created Successfully</h2>
-                                <p>Hello {creator_name},</p>
-                                <p>Your proposal <strong>"{proposal_title}"</strong> for <strong>{client_name}</strong> has been created successfully.</p>
-                                <p><strong>Status:</strong> Draft</p>
-                                <p>You can now edit and prepare your proposal before sending it for approval.</p>
-                                <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
-                                    This is an automated notification from Khonology.
-                                </p>
-                            </div>
-                        </body>
-                        </html>
-                        """
-                        send_email(
-                            to_email=creator_email,
-                            subject=f"Proposal Created: {proposal_title}",
-                            html_content=email_body
-                        )
-                        print(f"[EMAIL] ✅ Notification sent to creator: {creator_email}")
-                    except Exception as email_error:
-                        print(f"[EMAIL] ⚠️ Failed to send email to creator: {email_error}")
-                
-                # Create in-app notification for creator
-                create_notification(
-                    user_id=user_id,
-                    notification_type='proposal_created',
-                    title='Proposal Created',
-                    message=f'Your proposal "{proposal_title}" has been created successfully.',
-                    proposal_id=proposal_id
-                )
-                
-                # Get approvers and notify them
-                approvers = get_approvers()
-                for approver in approvers:
-                    approver_id = approver['id']
-                    approver_email = approver.get('email')
-                    approver_name = approver.get('full_name') or approver.get('username', 'Approver')
-                    
-                    # Send email to approver
-                    if approver_email:
-                        try:
-                            email_body = f"""
-                            <html>
-                            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                                    <h2 style="color: #3498DB;">📋 New Proposal Created</h2>
-                                    <p>Hello {approver_name},</p>
-                                    <p>A new proposal has been created by <strong>{creator_name}</strong>:</p>
-                                    <div style="background-color: #F8F9FA; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                                        <p><strong>Title:</strong> {proposal_title}</p>
-                                        <p><strong>Client:</strong> {client_name}</p>
-                                        <p><strong>Status:</strong> Draft</p>
-                                    </div>
-                                    <p>The proposal is currently in draft status. You will be notified when it's ready for your review.</p>
-                                    <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
-                                        This is an automated notification from Khonology.
-                                    </p>
-                                </div>
-                            </body>
-                            </html>
-                            """
-                            send_email(
-                                to_email=approver_email,
-                                subject=f"New Proposal Created: {proposal_title}",
-                                html_content=email_body
-                            )
-                            print(f"[EMAIL] ✅ Notification sent to approver: {approver_email}")
-                        except Exception as email_error:
-                            print(f"[EMAIL] ⚠️ Failed to send email to approver {approver_email}: {email_error}")
-                    
-                    # Create in-app notification for approver
-                    create_notification(
-                        user_id=approver_id,
-                        notification_type='new_proposal_created',
-                        title='New Proposal Created',
-                        message=f'"{proposal_title}" for {client_name} has been created by {creator_name}.',
-                        proposal_id=proposal_id
-                    )
-                
-            except Exception as notif_error:
-                print(f"[WARN] Failed to send notifications for proposal {result.get('id')}: {notif_error}")
-                import traceback
-                traceback.print_exc()
-                # Don't fail the proposal creation if notifications fail
-            
+            print(f"✅ Proposal created successfully with ID: {result[0]}")
             return proposal, 201
     except Exception as e:
         print(f"❌ Error creating proposal: {e}")
@@ -2129,7 +1608,98 @@ def create_proposal(username=None, user_id=None, email=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-# PUT, DELETE, GET by ID routes migrated to api/routes/proposals.py
+@app.put("/proposals/<int:proposal_id>")
+@token_required
+def update_proposal(username, proposal_id):
+    try:
+        data = request.get_json()
+        print(f"📝 Updating proposal {proposal_id} for user {username}")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            updates = ['updated_at = NOW()']
+            params = []
+            
+            # Update all columns that exist in the database
+            if 'title' in data:
+                updates.append('title = %s')
+                params.append(data['title'])
+            if 'content' in data:
+                updates.append('content = %s')
+                params.append(data['content'])
+            if 'status' in data:
+                updates.append('status = %s')
+                params.append(data['status'])
+            if 'client_name' in data or 'client' in data:
+                updates.append('client = %s')
+                params.append(data.get('client_name') or data.get('client'))
+            if 'client_email' in data:
+                updates.append('client_email = %s')
+                params.append(data['client_email'])
+            if 'budget' in data:
+                updates.append('budget = %s')
+                params.append(data['budget'])
+            if 'timeline_days' in data:
+                updates.append('timeline_days = %s')
+                params.append(data['timeline_days'])
+            
+            params.append(proposal_id)
+            cursor.execute(f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s''', params)
+            conn.commit()
+            
+            print(f"✅ Proposal {proposal_id} updated successfully")
+            return {'detail': 'Proposal updated'}, 200
+    except Exception as e:
+        print(f"❌ Error updating proposal {proposal_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.delete("/proposals/<int:proposal_id>")
+@token_required
+def delete_proposal(username, proposal_id):
+    try:
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM proposals WHERE id = %s', (proposal_id,))
+        conn.commit()
+        release_pg_conn(conn)
+        return {'detail': 'Proposal deleted'}, 200
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+@app.get("/proposals/<int:proposal_id>")
+@token_required
+def get_proposal(username, proposal_id):
+    try:
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT id, title, client, owner_id, status, created_at, updated_at, template_key, content, sections, pdf_url
+               FROM proposals WHERE id = %s''',
+            (proposal_id,)
+        )
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        
+        if result:
+                return {
+                'id': result[0],
+                'title': result[1],
+                'client': result[2],
+                'owner_id': result[3],
+                'status': result[4],
+                'created_at': result[5].isoformat() if result[5] else None,
+                'updated_at': result[6].isoformat() if result[6] else None,
+                'template_key': result[7],
+                'content': result[8],
+                'sections': json.loads(result[9]) if result[9] else {},
+                'pdf_url': result[10]
+            }, 200
+        return {'detail': 'Proposal not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
 
 @app.post("/proposals/<int:proposal_id>/submit")
 @token_required
@@ -2178,19 +1748,11 @@ def send_for_approval(username, proposal_id):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-
-            # Get current user's ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            if not user:
-                return {'detail': 'User not found'}, 404
-
-            user_id = user[0]
-
-            # Check if proposal exists and belongs to user (schema uses owner_id, not user_id)
+            
+            # Check if proposal exists and belongs to user
             cursor.execute(
-                'SELECT id, title, status FROM proposals WHERE id = %s AND owner_id = %s',
-                (proposal_id, user_id)
+                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
             )
             proposal = cursor.fetchone()
             
@@ -2201,18 +1763,6 @@ def send_for_approval(username, proposal_id):
             if current_status != 'draft':
                 return {'detail': f'Proposal is already {current_status}'}, 400
             
-            # Get proposal details (Render/Postgres schema uses "client" column, not client_name)
-            cursor.execute(
-                '''SELECT id, title, client, client_email, owner_id 
-                   FROM proposals WHERE id = %s''',
-                (proposal_id,)
-            )
-            proposal_details = cursor.fetchone()
-            if not proposal_details:
-                return {'detail': 'Proposal not found'}, 404
-            
-            proposal_id_db, title, client_name, client_email, creator_user_id = proposal_details
-            
             # Update status to Pending CEO Approval
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() 
@@ -2221,126 +1771,6 @@ def send_for_approval(username, proposal_id):
             )
             result = cursor.fetchone()
             conn.commit()
-            
-            # Send email notifications and create in-app notifications
-            try:
-                # Get creator's details
-                cursor.execute("SELECT id, email, full_name, username FROM users WHERE id = %s", (creator_user_id,))
-                creator = cursor.fetchone()
-                creator_email = creator[1] if creator and creator[1] else None
-                creator_name = creator[2] if creator and creator[2] else (creator[3] if creator else username)
-                
-                # Send email to creator (confirmation)
-                if creator_email:
-                    try:
-                        email_body = f"""
-                        <html>
-                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                                <h2 style="color: #F39C12;">📤 Proposal Sent for Approval</h2>
-                                <p>Hello {creator_name},</p>
-                                <p>Your proposal <strong>"{title}"</strong> for <strong>{client_name or 'Client'}</strong> has been successfully sent for CEO approval.</p>
-                                <div style="background-color: #FFF3CD; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #F39C12;">
-                                    <p><strong>Status:</strong> Pending CEO Approval</p>
-                                    <p>The proposal is now under review. You will be notified once a decision has been made.</p>
-                                </div>
-                                <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
-                                    This is an automated notification from Khonology.
-                                </p>
-                            </div>
-                        </body>
-                        </html>
-                        """
-                        email_sent = send_email(
-                            to_email=creator_email,
-                            subject=f"Proposal Sent for Approval: {title}",
-                            html_content=email_body
-                        )
-                        if email_sent:
-                            print(f"[EMAIL] ✅ Confirmation sent to creator: {creator_email}")
-                        else:
-                            print(f"[EMAIL] ❌ Failed to send email to creator: {creator_email}")
-                    except Exception as email_error:
-                        print(f"[EMAIL] ❌ Exception sending email to creator: {email_error}")
-                        import traceback
-                        traceback.print_exc()
-                
-                # Create in-app notification for creator
-                create_notification(
-                    user_id=creator_user_id,
-                    notification_type='proposal_sent_for_approval',
-                    title='Proposal Sent for Approval',
-                    message=f'Your proposal "{title}" has been sent for CEO approval.',
-                    proposal_id=proposal_id
-                )
-                
-                # Get approvers and notify them
-                approvers = get_approvers()
-                for approver in approvers:
-                    approver_id = approver['id']
-                    approver_email = approver.get('email')
-                    approver_name = approver.get('full_name') or approver.get('username', 'Approver')
-                    
-                    # Send email to approver
-                    if approver_email:
-                        try:
-                            proposal_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:8081')}/#/approver_dashboard"
-                            email_body = f"""
-                            <html>
-                            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                                    <h2 style="color: #E74C3C;">🔔 Action Required: Proposal Pending Approval</h2>
-                                    <p>Hello {approver_name},</p>
-                                    <p>A proposal requires your review and approval:</p>
-                                    <div style="background-color: #F8F9FA; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #E74C3C;">
-                                        <p><strong>Title:</strong> {title}</p>
-                                        <p><strong>Client:</strong> {client_name or 'Not specified'}</p>
-                                        <p><strong>Created by:</strong> {creator_name}</p>
-                                        <p><strong>Status:</strong> <span style="color: #E74C3C; font-weight: bold;">Pending CEO Approval</span></p>
-                                    </div>
-                                    <div style="text-align: center; margin: 30px 0;">
-                                        <a href="{proposal_url}" 
-                                           style="background-color: #E74C3C; color: white; padding: 15px 30px; 
-                                                  text-decoration: none; border-radius: 5px; display: inline-block;
-                                                  font-weight: bold;">
-                                            Review Proposal
-                                        </a>
-                                    </div>
-                                    <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
-                                        This is an automated notification from Khonology.
-                                    </p>
-                                </div>
-                            </body>
-                            </html>
-                            """
-                            email_sent = send_email(
-                                to_email=approver_email,
-                                subject=f"Action Required: Review Proposal - {title}",
-                                html_content=email_body
-                            )
-                            if email_sent:
-                                print(f"[EMAIL] ✅ Notification sent to approver: {approver_email}")
-                            else:
-                                print(f"[EMAIL] ❌ Failed to send email to approver: {approver_email}")
-                        except Exception as email_error:
-                            print(f"[EMAIL] ❌ Exception sending email to approver {approver_email}: {email_error}")
-                            import traceback
-                            traceback.print_exc()
-                    
-                    # Create in-app notification for approver
-                    create_notification(
-                        user_id=approver_id,
-                        notification_type='proposal_pending_approval',
-                        title='Proposal Pending Approval',
-                        message=f'"{title}" for {client_name or "Client"} requires your review and approval.',
-                        proposal_id=proposal_id
-                    )
-                
-            except Exception as notif_error:
-                print(f"[WARN] Failed to send notifications for proposal {proposal_id}: {notif_error}")
-                import traceback
-                traceback.print_exc()
-                # Don't fail the request if notifications fail
             
             print(f"✅ Proposal {proposal_id} sent for approval")
             return {
@@ -2354,7 +1784,7 @@ def send_for_approval(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/legacy/proposals/<int:proposal_id>/approve")
+@app.post("/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username, proposal_id):
     """Approve proposal and send to client"""
@@ -2368,7 +1798,7 @@ def approve_proposal(username, proposal_id):
             
             # Get proposal details including client email
             cursor.execute(
-                '''SELECT id, title, client, client_email, owner_id 
+                '''SELECT id, title, client, client_email, user_id 
                    FROM proposals WHERE id = %s''',
                 (proposal_id,)
             )
@@ -2377,81 +1807,95 @@ def approve_proposal(username, proposal_id):
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            proposal_id, title, client_name, client_email, creator_user_id = proposal
+            proposal_id, title, client_name, client_email, creator = proposal
             
-            # Update status to Approved (not Sent to Client - that happens when approver sends to client)
+            # Update status to Sent to Client
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() 
                    WHERE id = %s RETURNING status''',
-                ('Approved', proposal_id)
+                ('Sent to Client', proposal_id)
             )
             result = cursor.fetchone()
             conn.commit()
             
             if result:
-                print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved")
+                print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
                 
-                # Get approver's name
-                cursor.execute('SELECT id, full_name, username FROM users WHERE username = %s', (username,))
-                approver = cursor.fetchone()
-                approver_name = approver[1] if approver and approver[1] else (approver[2] if approver else username)
-                
-                # Get creator's details
-                cursor.execute("SELECT id, email, full_name, username FROM users WHERE id = %s", (creator_user_id,))
-                creator = cursor.fetchone()
-                creator_email = creator[1] if creator and creator[1] else None
-                creator_name = creator[2] if creator and creator[2] else (creator[3] if creator else 'Creator')
-                
-                # Send email to creator (notification of approval)
-                if creator_email:
+                # Send email to client if email is provided
+                if client_email and client_email.strip():
                     try:
+                        # Get user ID for the invitation
+                        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                        user = cursor.fetchone()
+                        user_id = user[0] if user else None
+                        
+                        # Generate secure access token for collaboration
+                        access_token = secrets.token_urlsafe(32)
+                        expires_at = datetime.now() + timedelta(days=90)  # 90 days for client access
+                        
+                        # Create collaboration invitation for the client
+                        cursor.execute("""
+                            INSERT INTO collaboration_invitations 
+                            (proposal_id, invited_email, invited_by, access_token, permission_level, expires_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT DO NOTHING
+                        """, (proposal_id, client_email, user_id, access_token, 'view', expires_at))
+                        conn.commit()
+                        
+                        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
+                        proposal_url = f"{frontend_url}/#/collaborate?token={access_token}"
+                        
                         email_body = f"""
                         <html>
-                        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                                <h2 style="color: #2ECC71;">✅ Proposal Approved</h2>
-                                <p>Hello {creator_name},</p>
-                                <p>Great news! Your proposal <strong>"{title}"</strong> for <strong>{client_name or 'Client'}</strong> has been approved by <strong>{approver_name}</strong>.</p>
-                                <div style="background-color: #D4EDDA; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #2ECC71;">
-                                    <p><strong>Status:</strong> <span style="color: #2ECC71; font-weight: bold;">Approved</span></p>
-                                    <p>The proposal is now ready to be sent to the client. The approver will send the encrypted email with secure link to the client.</p>
+                        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <div style="background-color: #2ECC71; padding: 20px; text-align: center;">
+                                <h1 style="color: white; margin: 0;">Proposal Approved</h1>
+                            </div>
+                            <div style="padding: 30px; background-color: #f9f9f9;">
+                                <p>Dear {client_name or 'Valued Client'},</p>
+                                
+                                <p>Great news! Your proposal "<strong>{title}</strong>" has been approved and is ready for your review.</p>
+                                
+                                <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                                    <h3 style="margin-top: 0; color: #2C3E50;">Proposal Details</h3>
+                                    <p><strong>Title:</strong> {title}</p>
+                                    <p><strong>Status:</strong> <span style="color: #2ECC71;">Approved & Ready for Review</span></p>
                                 </div>
-                                {f'<p><strong>Approver Comments:</strong> {comments}</p>' if comments else ''}
-                                <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
-                                    This is an automated notification from Khonology.
+                                
+                                <div style="text-align: center; margin: 30px 0;">
+                                    <a href="{proposal_url}" 
+                                       style="background-color: #2ECC71; color: white; padding: 15px 30px; 
+                                              text-decoration: none; border-radius: 5px; display: inline-block;
+                                              font-weight: bold;">
+                                        View Proposal
+                                    </a>
+                                </div>
+                                
+                                <p style="color: #7F8C8D; font-size: 12px; margin-top: 30px;">
+                                    This secure link will remain active for 90 days.<br>
+                                    This is an automated message. Please do not reply to this email.
                                 </p>
                             </div>
                         </body>
                         </html>
                         """
-                        email_sent = send_email(
-                            to_email=creator_email,
+                        
+                        send_email(
+                            to_email=client_email,
                             subject=f"Proposal Approved: {title}",
                             html_content=email_body
                         )
-                        if email_sent:
-                            print(f"[EMAIL] ✅ Approval notification sent to creator: {creator_email}")
-                        else:
-                            print(f"[EMAIL] ❌ Failed to send email to creator: {creator_email}")
+                        print(f"[SUCCESS] Email sent to client: {client_email} with collaboration token")
                     except Exception as email_error:
-                        print(f"[EMAIL] ❌ Exception sending email to creator: {email_error}")
+                        print(f"[WARN] Could not send email to client: {email_error}")
                         import traceback
                         traceback.print_exc()
-                
-                # Create in-app notification for creator
-                create_notification(
-                    user_id=creator_user_id,
-                    notification_type='proposal_approved',
-                    title='Proposal Approved',
-                    message=f'Your proposal "{title}" has been approved by {approver_name}.',
-                    proposal_id=proposal_id,
-                    metadata={'approver': approver_name, 'comments': comments} if comments else {'approver': approver_name}
-                )
+                        # Don't fail the approval if email fails
                 
                 return {
-                    'detail': 'Proposal approved successfully',
+                    'detail': 'Proposal approved and sent to client',
                     'status': result[0],
-                    'message': 'The proposal has been approved. You can now send it to the client using the "Send to Client" action.'
+                    'email_sent': bool(client_email and client_email.strip())
                 }, 200
             else:
                 return {'detail': 'Failed to update proposal status'}, 500
@@ -2521,222 +1965,20 @@ def update_proposal_status(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/proposals/<int:proposal_id>/send-to-client")
+@app.post("/proposals/<int:proposal_id>/send_to_client")
 @token_required
 def send_to_client(username, proposal_id):
-    """Send encrypted email with secure link to client (for approvers only)"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            # Get current user's role
-            cursor.execute('SELECT id, role, full_name FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            if not user:
-                return {'detail': 'User not found'}, 404
-            
-            user_id, user_role, full_name = user
-            approver_name = full_name if full_name else username
-            
-            # Check if user is an approver
-            if user_role not in ('approver', 'CEO', 'admin', 'reviewer_approver'):
-                return {'detail': 'Only approvers can send proposals to clients'}, 403
-            
-            # Get proposal details
-            cursor.execute(
-                '''SELECT id, title, client, client_email, owner_id, status 
-                   FROM proposals WHERE id = %s''',
-                (proposal_id,)
-            )
-            proposal = cursor.fetchone()
-            
-            if not proposal:
-                return {'detail': 'Proposal not found'}, 404
-            
-            proposal_id_db, title, client_name, client_email, creator_user_id, current_status = proposal
-            
-            # Check if proposal is approved
-            if current_status not in ('Approved', 'Pending CEO Approval'):
-                return {'detail': f'Proposal must be approved before sending to client. Current status: {current_status}'}, 400
-            
-            # Check if client email is provided
-            if not client_email or not client_email.strip():
-                return {'detail': 'Client email is required to send the proposal'}, 400
-            
-            # Generate secure access token for client onboarding
-            access_token = secrets.token_urlsafe(32)
-            expires_at = datetime.now(timezone.utc) + timedelta(days=90)  # 90 days for client access
-            
-            # Create client onboarding invitation (not collaboration invitation)
-            # This will allow the client to access the proposal through onboarding
-            cursor.execute("""
-                INSERT INTO client_onboarding_invitations 
-                (access_token, invited_email, invited_by, expected_company, status, expires_at)
-                VALUES (%s, %s, %s, %s, 'pending', %s)
-                ON CONFLICT (access_token) 
-                DO UPDATE SET access_token = EXCLUDED.access_token, expires_at = EXCLUDED.expires_at
-                RETURNING id, access_token
-            """, (access_token, client_email, user_id, client_name, expires_at))
-            
-            result = cursor.fetchone()
-            if not result:
-                return {'detail': 'Failed to create client invitation'}, 500
-            
-            invitation_id, onboarding_token = result
-            conn.commit()
-            
-            # Generate onboarding link (using hash-based routing)
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
-            onboarding_url = f"{frontend_url}/#/onboard/{onboarding_token}"
-            
-            # Send email with onboarding link to client
-            try:
-                logo_html = get_logo_html()
-                html_content = f"""
-                <html>
-                <head>
-                    <style>
-                        body {{ font-family: 'Poppins', Arial, sans-serif; background-color: #000000; padding: 40px 20px; }}
-                        .container {{ max-width: 600px; margin: 0 auto; background-color: #1A1A1A; border-radius: 24px; border: 1px solid rgba(233, 41, 58, 0.3); padding: 40px; }}
-                        .security-box {{ background-color: #2A2A2A; border: 2px solid #E9293A; border-radius: 12px; padding: 24px; margin: 30px 0; }}
-                        .token-box {{ background-color: #111111; border: 1px solid #333333; border-radius: 8px; padding: 16px; text-align: center; margin: 20px 0; font-family: 'Courier New', monospace; font-size: 14px; color: #E9293A; word-break: break-all; }}
-                        .footer {{ color: #666; font-size: 12px; text-align: center; margin-top: 30px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        {logo_html}
-                        <h1 style="color: #FFFFFF; text-align: center; margin-bottom: 20px;">🔒 Secure Proposal Access</h1>
-                        <p style="color: #B3B3B3; font-size: 16px; line-height: 1.6;">
-                            Hello! Your proposal "<strong style="color: #FFFFFF;">{title}</strong>" is ready for secure access.
-                        </p>
-                        
-                        <div class="security-box">
-                            <p style="margin: 0 0 15px 0; font-family: 'Poppins', Arial, sans-serif; font-size: 14px; font-weight: 600; color: #E9293A; text-transform: uppercase; letter-spacing: 0.5px;">
-                                🔐 Security Features
-                            </p>
-                            <ul style="margin: 0; padding-left: 20px; color: #B3B3B3; font-size: 14px; line-height: 1.8;">
-                                <li>End-to-end encryption (AES-256)</li>
-                                <li>Secure token-based access</li>
-                                <li>Time-limited access link</li>
-                                <li>No password required (token-based)</li>
-                            </ul>
-                        </div>
-                        
-                        <p style="color: #B3B3B3; font-size: 16px; line-height: 1.6; text-align: center; margin: 30px 0 20px 0;">
-                            Click the button below to access your proposal:
-                        </p>
-                        
-                        <div style="text-align: center; margin: 30px 0;">
-                            <a href="{onboarding_url}" style="display: inline-block; padding: 16px 40px; font-family: 'Poppins', Arial, sans-serif; font-size: 16px; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 8px; background: linear-gradient(135deg, #E9293A 0%, #780A01 100%); box-shadow: 0 4px 20px rgba(233, 41, 58, 0.4);">
-                                Access Proposal →
-                            </a>
-                        </div>
-                        
-                        <p style="color: #B3B3B3; font-size: 14px; line-height: 1.6; margin-top: 20px;">
-                            Or copy and paste this secure link into your browser:
-                        </p>
-                        <p style="color: #E9293A; font-size: 11px; line-height: 1.5; word-break: break-all; text-align: center; background-color: #2A2A2A; padding: 12px; border-radius: 6px; margin: 10px 0 30px 0;">
-                            {onboarding_url}
-                        </p>
-                        
-                        <div class="footer">
-                            <p>© 2025 Khonology. All rights reserved.</p>
-                            <p style="margin-top: 8px; color: #555;">This is a secure, encrypted message. Please do not reply to this email.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-                """
-                
-                email_sent = send_email(
-                    to_email=client_email,
-                    subject=f"Secure Access: {title}",
-                    html_content=html_content
-                )
-                
-                if not email_sent:
-                    print(f"[EMAIL] ❌ Failed to send email to client: {client_email}")
-                    return {'detail': 'Failed to send email to client. Please check email configuration.'}, 500
-                
-                print(f"[EMAIL] ✅ Encrypted email sent to client: {client_email}")
-            except Exception as email_error:
-                print(f"[EMAIL] ❌ Failed to send email to client: {email_error}")
-                import traceback
-                traceback.print_exc()
-                return {'detail': f'Failed to send email: {str(email_error)}'}, 500
-            
-            # Update status to Sent to Client
-            cursor.execute(
-                '''UPDATE proposals SET status = %s, updated_at = NOW() 
-                   WHERE id = %s RETURNING status''',
-                ('Sent to Client', proposal_id)
-            )
-            result = cursor.fetchone()
-            conn.commit()
-            
-            # Get creator's details for notification
-            cursor.execute("SELECT id, email, full_name, username FROM users WHERE id = %s", (creator_user_id,))
-            creator = cursor.fetchone()
-            creator_email = creator[1] if creator and creator[1] else None
-            creator_name = creator[2] if creator and creator[2] else (creator[3] if creator else 'Creator')
-            
-            # Send email to creator (notification that proposal was sent to client)
-            if creator_email:
-                try:
-                    email_body = f"""
-                    <html>
-                    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                            <h2 style="color: #3498DB;">📧 Proposal Sent to Client</h2>
-                            <p>Hello {creator_name},</p>
-                            <p>Your proposal <strong>"{title}"</strong> for <strong>{client_name or 'Client'}</strong> has been sent to the client by <strong>{approver_name}</strong>.</p>
-                            <div style="background-color: #E8F4F8; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #3498DB;">
-                                <p><strong>Status:</strong> <span style="color: #3498DB; font-weight: bold;">Sent to Client</span></p>
-                                <p><strong>Client Email:</strong> {client_email}</p>
-                                <p>The client has received an encrypted email with a secure link to access the proposal.</p>
-                            </div>
-                            <p style="margin-top: 30px; color: #7F8C8D; font-size: 12px;">
-                                This is an automated notification from Khonology.
-                            </p>
-                        </div>
-                    </body>
-                    </html>
-                    """
-                    email_sent = send_email(
-                        to_email=creator_email,
-                        subject=f"Proposal Sent to Client: {title}",
-                        html_content=email_body
-                    )
-                    if email_sent:
-                        print(f"[EMAIL] ✅ Notification sent to creator: {creator_email}")
-                    else:
-                        print(f"[EMAIL] ❌ Failed to send email to creator: {creator_email}")
-                except Exception as email_error:
-                    print(f"[EMAIL] ❌ Exception sending email to creator: {email_error}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Create in-app notification for creator
-            create_notification(
-                user_id=creator_user_id,
-                notification_type='proposal_sent_to_client',
-                title='Proposal Sent to Client',
-                message=f'Your proposal "{title}" has been sent to {client_name or "the client"} by {approver_name}.',
-                proposal_id=proposal_id
-            )
-            
-            return {
-                'detail': 'Proposal sent to client successfully',
-                'status': result[0],
-                'email_sent': True,
-                'client_email': client_email
-            }, 200
-                
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''UPDATE proposals SET status = 'Sent to Client' WHERE id = %s''',
+            (proposal_id,)
+        )
+        conn.commit()
+        release_pg_conn(conn)
+        return {'detail': 'Proposal sent to client'}, 200
     except Exception as e:
-        print(f"❌ Error sending proposal to client: {e}")
-        import traceback
-        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/proposals/<int:proposal_id>/client_decline")
@@ -2768,77 +2010,54 @@ def track_client_view(username, proposal_id):
 @app.get("/proposals/pending_approval")
 @token_required
 def get_pending_approvals(username):
-    """Return proposals that are pending approval (backend used by /approvals)."""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''SELECT id, title, client, owner_id, status, created_at
-                   FROM proposals
-                   WHERE status = 'Submitted'
-                   ORDER BY created_at DESC'''
-            )
-            rows = cursor.fetchall()
-
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT id, title, client, owner_id, status, created_at
+               FROM proposals WHERE status = 'Submitted' ORDER BY created_at DESC'''
+        )
+        rows = cursor.fetchall()
+        release_pg_conn(conn)
         proposals = []
         for row in rows:
-            created_at = row[5]
-            if hasattr(created_at, "isoformat"):
-                created_at = created_at.isoformat()
-            elif created_at is not None:
-                created_at = str(created_at)
-
-            proposals.append(
-                {
-                    'id': row[0],
-                    'title': row[1],
-                    'client': row[2],
-                    'owner_id': row[3],
-                    'status': row[4],
-                    'created_at': created_at,
-                }
-            )
-
-        return {'proposals': proposals}, 200
+            proposals.append({
+                'id': row[0],
+                'title': row[1],
+                'client': row[2],
+                'owner_id': row[3],
+                'status': row[4],
+                'created_at': row[5].isoformat() if row[5] else None
+            })
+            return {'proposals': proposals}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
 @app.get("/proposals/my_proposals")
 @token_required
 def get_my_proposals(username):
-    """Return proposals owned by the current user."""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''SELECT id, title, client, owner_id, status, created_at
-                   FROM proposals
-                   WHERE owner_id = (SELECT id FROM users WHERE username = %s)
-                   ORDER BY created_at DESC''',
-                (username,),
-            )
-            rows = cursor.fetchall()
-
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT id, title, client, owner_id, status, created_at
+               FROM proposals WHERE owner_id = (SELECT id FROM users WHERE username = %s)
+               ORDER BY created_at DESC''',
+            (username,)
+        )
+        rows = cursor.fetchall()
+        release_pg_conn(conn)
         proposals = []
         for row in rows:
-            created_at = row[5]
-            if hasattr(created_at, "isoformat"):
-                created_at = created_at.isoformat()
-            elif created_at is not None:
-                created_at = str(created_at)
-
-            proposals.append(
-                {
-                    'id': row[0],
-                    'title': row[1],
-                    'client': row[2],
-                    'owner_id': row[3],
-                    'status': row[4],
-                    'created_at': created_at,
-                }
-            )
-
-        return {'proposals': proposals}, 200
+            proposals.append({
+                'id': row[0],
+                'title': row[1],
+                'client': row[2],
+                'owner_id': row[3],
+                'status': row[4],
+                'created_at': row[5].isoformat() if row[5] else None
+            })
+            return {'proposals': proposals}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -3063,63 +2282,15 @@ def create_comment(username, proposal_id):
             
             user_id = user['id']
             
-            # Create comment, handling potential out-of-sync sequence on document_comments.id
-            # First, ensure the sequence is properly synchronized
+            # Create comment
             cursor.execute("""
-                SELECT setval(
-                    pg_get_serial_sequence('document_comments', 'id'),
-                    COALESCE((SELECT MAX(id) FROM document_comments), 1),
-                    true
-                )
-            """)
-            conn.commit()
-            
-            insert_sql = """
                 INSERT INTO document_comments 
                 (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id, proposal_id, comment_text, created_by, created_at, 
                           section_index, highlighted_text, status, updated_at
-            """
-
-            try:
-                cursor.execute(
-                    insert_sql,
-                    (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open')
-                )
-            except psycopg2.errors.UniqueViolation as seq_error:
-                # Handle out-of-sync document_comments.id sequence by resetting it and retrying once
-                print(f"⚠️ Sequence issue detected while inserting into document_comments: {seq_error}")
-                try:
-                    conn.rollback()
-                except Exception as rollback_error:
-                    print(f"[WARN] Error during rollback after document_comments sequence issue: {rollback_error}")
-
-                try:
-                    # Reset the sequence based on the current MAX(id)
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        """
-                        SELECT setval(
-                            pg_get_serial_sequence('document_comments', 'id'),
-                            COALESCE((SELECT MAX(id) FROM document_comments), 1),
-                            true
-                        )
-                        """
-                    )
-                    conn.commit()
-                    print("✅ Reset document_comments.id sequence based on MAX(id)")
-
-                    # Retry the insert using a RealDictCursor
-                    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                    cursor.execute(
-                        insert_sql,
-                        (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open')
-                    )
-                except Exception as reset_error:
-                    print(f"❌ Failed to reset document_comments sequence and re-insert: {reset_error}")
-                    raise
-
+            """, (proposal_id, comment_text, user_id, section_index, highlighted_text, 'open'))
+            
             result = cursor.fetchone()
             conn.commit()
             
@@ -3212,10 +2383,10 @@ def get_proposal_comments(proposal_id):
                         "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
                     })
                 return comments
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[ERROR] Error in get_comments: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Proposal Versions endpoints
 @app.post("/api/proposals/<int:proposal_id>/versions")
@@ -3256,11 +2427,23 @@ def create_version(username, proposal_id):
                 'version_number': result[2],
                 'content': result[3],
                 'created_by': result[4],
+                'created_by_name': None,
+                'created_by_email': None,
                 'created_at': result[5].isoformat() if result[5] else None,
                 'change_description': result[6]
             }
             
             print(f"✅ Version {result[2]} created for proposal {proposal_id}")
+            # Try to populate creator name/email
+            try:
+                cursor.execute('SELECT full_name, email FROM users WHERE id = %s', (version['created_by'],))
+                u = cursor.fetchone()
+                if u:
+                    version['created_by_name'] = u[0]
+                    version['created_by_email'] = u[1]
+            except Exception:
+                pass
+
             return version, 201
     except Exception as e:
         print(f"❌ Error creating version: {e}")
@@ -3276,14 +2459,16 @@ def get_versions(username, proposal_id):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
-                   FROM proposal_versions
-                   WHERE proposal_id = %s
-                   ORDER BY version_number DESC''',
+                '''SELECT pv.id, pv.proposal_id, pv.version_number, pv.content, pv.created_by, pv.created_at, pv.change_description,
+                          u.full_name AS created_by_name, u.email AS created_by_email
+                   FROM proposal_versions pv
+                   LEFT JOIN users u ON pv.created_by = u.id
+                   WHERE pv.proposal_id = %s
+                   ORDER BY pv.version_number DESC''',
                 (proposal_id,)
             )
             rows = cursor.fetchall()
-            
+
             versions = []
             for row in rows:
                 versions.append({
@@ -3292,6 +2477,8 @@ def get_versions(username, proposal_id):
                     'version_number': row[2],
                     'content': row[3],
                     'created_by': row[4],
+                    'created_by_name': row[7],
+                    'created_by_email': row[8],
                     'created_at': row[5].isoformat() if row[5] else None,
                     'change_description': row[6]
                 })
@@ -3312,22 +2499,26 @@ def get_version(username, proposal_id, version_number):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT id, proposal_id, version_number, content, created_by, created_at, change_description
-                   FROM proposal_versions
-                   WHERE proposal_id = %s AND version_number = %s''',
+                '''SELECT pv.id, pv.proposal_id, pv.version_number, pv.content, pv.created_by, pv.created_at, pv.change_description,
+                          u.full_name AS created_by_name, u.email AS created_by_email
+                   FROM proposal_versions pv
+                   LEFT JOIN users u ON pv.created_by = u.id
+                   WHERE pv.proposal_id = %s AND pv.version_number = %s''',
                 (proposal_id, version_number)
             )
             row = cursor.fetchone()
-            
+
             if not row:
                 return {'detail': 'Version not found'}, 404
-            
+
             version = {
                 'id': row[0],
                 'proposal_id': row[1],
                 'version_number': row[2],
                 'content': row[3],
                 'created_by': row[4],
+                'created_by_name': row[7],
+                'created_by_email': row[8],
                 'created_at': row[5].isoformat() if row[5] else None,
                 'change_description': row[6]
             }
@@ -3412,53 +2603,32 @@ def ai_improve_content(username):
             return {'detail': 'Content is required'}, 400
         
         # Import AI service
-        try:
-            from ai_service import ai_service
-        except Exception as e:
-            return {'detail': f'AI service not available: {str(e)}. Please check OPENROUTER_API_KEY in .env file.'}, 503
-        
-        # Check if AI service is configured
-        if not ai_service.is_configured():
-            return {'detail': 'OpenRouter API key not configured. Please set OPENROUTER_API_KEY in your .env file.'}, 503
+        from ai_service import ai_service
         
         # Get improvement suggestions
         result = ai_service.improve_content(content, section_type)
         
-        # Validate result structure
-        if not isinstance(result, dict):
-            raise Exception(f"Unexpected result format from AI service: {type(result)}")
-        
-        if 'improved_version' not in result:
-            raise Exception("AI service did not return 'improved_version' in result")
-        
         # Track AI usage
         response_time_ms = int((time.time() - start_time) * 1000)
-        improved_text = result.get('improved_version', '') or ''
-        response_tokens = len(improved_text.split()) if improved_text else 0
-        
         try:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO ai_usage (username, endpoint, prompt_text, section_type, 
+                    INSERT INTO ai_usage (username, endpoint, section_type, 
                                          response_tokens, response_time_ms)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
-                """, (username, 'improve', None, section_type, 
-                      response_tokens, response_time_ms))
+                """, (username, 'improve', section_type, 
+                      len(result.get('improved_version', '').split()), response_time_ms))
                 conn.commit()
                 print(f"📊 AI improve tracked for {username}")
         except Exception as track_error:
             print(f"⚠️ Failed to track AI usage: {track_error}")
-            # Don't fail the request if tracking fails
         
         return result, 200
         
     except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
         print(f"❌ Error improving content: {e}")
-        print(f"❌ Traceback: {error_trace}")
         return {'detail': str(e)}, 500
 
 @app.post("/ai/generate-full-proposal")
@@ -3517,61 +2687,6 @@ def ai_generate_full_proposal(username):
         print(f"❌ Error generating full proposal: {e}")
         return {'detail': str(e)}, 500
 
-@app.get("/ai/status")
-def ai_status():
-    """Check OpenRouter AI service status"""
-    try:
-        from ai_service import ai_service
-        status = ai_service.test_connection()
-        return status, 200 if status.get("status") == "connected" else 503
-    except Exception as e:
-        return {
-            "configured": False,
-            "status": "error",
-            "message": f"AI service initialization failed: {str(e)}"
-        }, 503
-
-def record_proposal_risk_audit(
-    proposal_id: int,
-    triggered_by: str,
-    model_used: str,
-    precheck_summary: dict,
-    ai_summary: dict,
-    combined_summary: dict,
-) -> None:
-    """Persist deterministic + AI assessments for auditing."""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO proposal_risk_audits (
-                    proposal_id,
-                    triggered_by,
-                    model_used,
-                    precheck_summary,
-                    ai_summary,
-                    combined_summary,
-                    overall_risk_level,
-                    risk_score,
-                    can_release
-                ) VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s)
-            """, (
-                proposal_id,
-                triggered_by,
-                model_used,
-                json.dumps(precheck_summary),
-                json.dumps(ai_summary),
-                json.dumps(combined_summary),
-                combined_summary.get("overall_risk_level"),
-                combined_summary.get("risk_score"),
-                combined_summary.get("can_release"),
-            ))
-            conn.commit()
-            print(f"[OK] Stored risk audit for proposal {proposal_id}")
-    except Exception as e:
-        print(f"[WARN] Failed to record risk audit: {e}")
-
-
 @app.post("/ai/analyze-risks")
 @token_required
 def ai_analyze_risks(username):
@@ -3598,47 +2713,10 @@ def ai_analyze_risks(username):
             # Import AI service
             from ai_service import ai_service
             
-            proposal_dict_raw = dict(proposal)
-            proposal_dict = sanitize_for_json(proposal_dict_raw)
-            precheck_summary = run_prechecks(proposal_dict)
-
-            analysis_payload = {
-                "proposal": proposal_dict,
-                "precheck": precheck_summary,
-            }
-
-            try:
-                ai_result = ai_service.analyze_proposal_risks(analysis_payload)
-            except Exception as ai_error:
-                print(f"[WARN] AI analysis failed, falling back to precheck only: {ai_error}")
-                ai_result = {
-                    "overall_risk_level": "unknown",
-                    "can_release": not precheck_summary.get("block_release", True),
-                    "risk_score": precheck_summary.get("risk_score", 0),
-                    "issues": [{
-                        "category": "analysis_error",
-                        "severity": "medium",
-                        "section": "AI Risk Gate",
-                        "description": "OpenRouter analysis was unavailable; relying on deterministic checks.",
-                        "recommendation": "Retry AI analysis once service is restored."
-                    }],
-                    "summary": "AI response unavailable",
-                    "required_actions": ["Retry AI analysis or proceed after manual review"],
-                }
-
-            combined = combine_assessments(precheck_summary, ai_result)
-
-            model_used = getattr(ai_service, "model", "unknown")
-            record_proposal_risk_audit(
-                proposal_id=proposal_id,
-                triggered_by=username,
-                model_used=model_used,
-                precheck_summary=precheck_summary,
-                ai_summary=ai_result,
-                combined_summary=combined,
-            )
-
-            return combined, 200
+            # Analyze risks
+            risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
+            
+            return risk_analysis, 200
         
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")
@@ -3819,10 +2897,10 @@ def invite_collaborator(username, proposal_id):
             user_id = user[0]
             inviter_email = user[1]
             
-            # Check if proposal exists and belongs to user (schema uses owner_id)
+            # Check if proposal exists and belongs to user
             cursor.execute(
-                'SELECT title FROM proposals WHERE id = %s AND owner_id = %s',
-                (proposal_id, user_id)
+                'SELECT title FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
             )
             proposal = cursor.fetchone()
             if not proposal:
@@ -3927,17 +3005,10 @@ def get_collaborators(username, proposal_id):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Resolve username to numeric user_id
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            owner_row = cursor.fetchone()
-            if not owner_row:
-                return {'detail': 'User not found'}, 404
-            owner_id = owner_row['id'] if isinstance(owner_row, dict) else owner_row[0]
-
-            # Verify ownership using owner_id
+            # Verify ownership
             cursor.execute(
-                'SELECT id FROM proposals WHERE id = %s AND owner_id = %s',
-                (proposal_id, owner_id)
+                'SELECT id FROM proposals WHERE id = %s AND user_id = %s',
+                (proposal_id, username)
             )
             if not cursor.fetchone():
                 return {'detail': 'Proposal not found or access denied'}, 404
@@ -3965,6 +3036,113 @@ def get_collaborators(username, proposal_id):
         print(f"❌ Error getting collaborators: {e}")
         return {'detail': str(e)}, 500
 
+
+@app.get("/users/search")
+def users_search():
+    """Search users by username, full name or email.
+
+    This endpoint accepts either a valid Authorization bearer token OR a
+    collaboration token for a specific proposal (collab_token + proposal_id).
+
+    If `proposal_id` is provided and a valid `collab_token` is presented,
+    the results will be restricted to the proposal owner and invited collaborators.
+    If no proposal_id is present, an Authorization header is required.
+    """
+    try:
+        q = request.args.get('q', '')
+        proposal_id = request.args.get('proposal_id')
+        collab_token = request.args.get('collab_token')
+
+        # Determine auth: try Authorization header first
+        authed_username = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers.get('Authorization')
+            if auth_header:
+                parts = auth_header.split(' ')
+                if len(parts) == 2 and parts[0].lower() == 'bearer':
+                    token = parts[1]
+                    authed_username = verify_token(token)
+
+        # If not authed, and proposal_id provided, allow collaboration token validation
+        collab_allowed = False
+        if not authed_username and proposal_id and collab_token:
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, invited_email, permission_level, expires_at
+                        FROM collaboration_invitations
+                        WHERE access_token = %s AND proposal_id = %s
+                    """, (collab_token, proposal_id))
+                    inv = cur.fetchone()
+                    if inv:
+                        expires_at = inv.get('expires_at')
+                        if not expires_at or datetime.now() <= expires_at:
+                            collab_allowed = True
+
+        # If no auth and no valid collab access, require auth
+        if not authed_username and not collab_allowed:
+            return {'detail': 'Authorization required'}, 401
+
+        # If no query provided, and collaboration token is valid for a proposal,
+        # return the proposal owner and invited collaborators as default suggestions.
+        if not q:
+            if proposal_id and collab_allowed:
+                with get_db_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("""
+                            SELECT u.id, u.username, u.full_name, u.email
+                            FROM users u
+                            WHERE u.id = (SELECT owner_id FROM proposals WHERE id = %s)
+                            OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
+                            LIMIT 50
+                        """, (proposal_id, proposal_id))
+                        rows = cur.fetchall()
+                        return [dict(r) for r in rows], 200
+            return [], 200
+
+        like = f"%{q}%"
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if proposal_id:
+                    # Determine which column stores the proposal owner (owner_id or user_id)
+                    cur.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'proposals' AND column_name IN ('owner_id','user_id')
+                    """)
+                    cols = [r['column_name'] if isinstance(r, dict) and 'column_name' in r else (r[0] if r else None) for r in cur.fetchall()]
+                    owner_col = 'owner_id' if 'owner_id' in cols else ('user_id' if 'user_id' in cols else 'owner_id')
+
+                    # Build SQL using the detected owner column name (safe because we only allow known names)
+                    sql = f"""
+                        SELECT u.id, u.username, u.full_name, u.email
+                        FROM users u
+                        WHERE (u.username ILIKE %s OR u.full_name ILIKE %s OR u.email ILIKE %s)
+                        AND (
+                            u.id = (SELECT {owner_col} FROM proposals WHERE id = %s)
+                            OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
+                        )
+                        LIMIT 50
+                    """
+                    cur.execute(sql, (like, like, like, proposal_id, proposal_id))
+                else:
+                    # No proposal filter: only allow when authed
+                    if not authed_username:
+                        return {'detail': 'Authorization required for global search'}, 401
+                    cur.execute("""
+                        SELECT id, username, full_name, email
+                        FROM users
+                        WHERE username ILIKE %s OR full_name ILIKE %s OR email ILIKE %s
+                        LIMIT 50
+                    """, (like, like, like))
+
+                rows = cur.fetchall()
+                return [dict(r) for r in rows], 200
+
+    except Exception as e:
+        print(f"❌ Error searching users: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @app.delete("/api/collaborations/<int:invitation_id>")
 @token_required
 def remove_collaborator(username, invitation_id):
@@ -3981,13 +3159,13 @@ def remove_collaborator(username, invitation_id):
             
             user_id = user[0]
             
-            # Check if user owns the proposal (match by invited_by or proposal owner_id)
+            # Check if user owns the proposal
             cursor.execute("""
                 SELECT ci.id 
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
-                WHERE ci.id = %s AND (ci.invited_by = %s OR p.owner_id = %s)
-            """, (invitation_id, user_id, user_id))
+                WHERE ci.id = %s AND (ci.invited_by = %s OR p.user_id = %s)
+            """, (invitation_id, user_id, username))
             
             if not cursor.fetchone():
                 return {'detail': 'Invitation not found or access denied'}, 404
@@ -4024,6 +3202,7 @@ def get_collaboration_access():
                     ci.expires_at,
                     p.title,
                     p.content,
+                    p.user_id,
                     u.email as owner_email,
                     u.full_name as owner_name
                 FROM collaboration_invitations ci
@@ -4185,7 +3364,13 @@ def add_guest_comment():
             
             result = cursor.fetchone()
             conn.commit()
-            
+
+            # Process @mentions in the comment (guest)
+            try:
+                process_mentions(result['id'], comment_text, guest_user_id, invitation['proposal_id'])
+            except Exception as e:
+                print(f"⚠️ Failed to process mentions for guest comment: {e}")
+
             return {
                 'id': result['id'],
                 'proposal_id': result['proposal_id'],
@@ -4279,13 +3464,13 @@ def get_client_proposal_details(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Get proposal details (schema uses owner_id as foreign key to users.id)
+            # Get proposal details
             cursor.execute("""
                 SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client, p.client_email, p.owner_id,
+                       p.client, p.client_email, p.user_id,
                        u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
-                LEFT JOIN users u ON p.owner_id = u.id
+                LEFT JOIN users u ON p.user_id = u.username
                 WHERE p.id = %s AND p.client_email = %s
             """, (proposal_id, invitation['invited_email']))
             
@@ -4306,23 +3491,15 @@ def get_client_proposal_details(proposal_id):
             comments = cursor.fetchall()
             
             # Get activity log (simplified - you can enhance this)
-            safe_owner_name = proposal.get('owner_name') or proposal.get('owner_email') or 'Owner'
-            safe_client_name = (
-                proposal.get('client_name')
-                or proposal.get('client')
-                or invitation.get('invited_email')
-                or 'Client'
-            )
-
             activity = [
                 {
                     'action': 'Proposal Created',
-                    'description': f'Proposal was created by {safe_owner_name}',
+                    'description': f'Proposal was created by {proposal["owner_name"]}',
                     'timestamp': proposal['created_at'].isoformat() if proposal['created_at'] else None
                 },
                 {
                     'action': 'Sent to Client',
-                    'description': f'Proposal was sent to {safe_client_name}',
+                    'description': f'Proposal was sent to {proposal["client_name"]}',
                     'timestamp': proposal['updated_at'].isoformat() if proposal['updated_at'] else None
                 }
             ]
@@ -4437,7 +3614,7 @@ def client_approve_proposal(proposal_id):
                 UPDATE proposals 
                 SET status = 'Client Approved', updated_at = NOW()
                 WHERE id = %s AND client_email = %s
-                RETURNING id, title, client_name, user_id
+                RETURNING id, title, client, user_id
             """, (proposal_id, invitation['invited_email']))
             
             proposal = cursor.fetchone()
@@ -4560,30 +3737,924 @@ def client_reject_proposal(proposal_id):
         return {'detail': str(e)}, 500
 
 # ============================================================================
-# ROUTES MOVED TO ROLE-BASED FILES
+# COLLABORATION ADVANCED ENDPOINTS - Suggest Mode & Section Locking
 # ============================================================================
-# All routes have been moved to:
-# - api/routes/auth.py (authentication)
-# - api/routes/creator.py (creator routes)
-# - api/routes/client.py (client routes)
-# - api/routes/approver.py (approver routes)
-# - api/routes/collaborator.py (collaborator routes)
-# - api/routes/shared.py (shared utility routes)
-# - api/routes/clients.py (client management)
+
+@app.post("/api/proposals/<int:proposal_id>/suggestions")
+@token_required
+def create_suggestion(username, proposal_id):
+    """Create a suggested change (for reviewers with suggest permission)"""
+    try:
+        data = request.get_json()
+        section_id = data.get('section_id')
+        suggestion_text = data.get('suggestion_text')
+        original_text = data.get('original_text', '')
+        
+        if not suggestion_text:
+            return {'detail': 'Suggestion text is required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user has access to this proposal
+            cursor.execute("""
+                SELECT ci.permission_level
+                FROM collaboration_invitations ci
+                WHERE ci.proposal_id = %s 
+                AND ci.invited_email = %s
+                AND ci.status = 'accepted'
+            """, (proposal_id, current_user['email']))
+            
+            invitation = cursor.fetchone()
+            if not invitation or invitation['permission_level'] not in ['suggest', 'edit']:
+                return {'detail': 'Insufficient permissions'}, 403
+            
+            # Create suggestion
+            cursor.execute("""
+                INSERT INTO suggested_changes 
+                (proposal_id, section_id, suggested_by, suggestion_text, original_text, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, created_at
+            """, (proposal_id, section_id, current_user['id'], suggestion_text, original_text, 'pending'))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            log_activity(
+                proposal_id,
+                current_user['id'],
+                'suggestion_created',
+                f"{current_user.get('full_name', current_user['email'])} suggested a change{' to ' + section_id if section_id else ''}",
+                {'suggestion_id': result['id'], 'section_id': section_id}
+            )
+            
+            # Notify proposal owner and collaborators
+            notify_proposal_collaborators(
+                proposal_id,
+                'suggestion_created',
+                'New Suggestion',
+                f"{current_user.get('full_name', current_user['email'])} suggested a change{' to ' + section_id if section_id else ''}",
+                exclude_user_id=current_user['id'],
+                metadata={'suggestion_id': result['id'], 'section_id': section_id}
+            )
+            
+            print(f"✅ Suggestion created by {current_user['email']} for proposal {proposal_id}")
+            
+            return {
+                'id': result['id'],
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+                'message': 'Suggestion created successfully'
+            }, 201
+            
+    except Exception as e:
+        print(f"❌ Error creating suggestion: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/suggestions")
+@token_required
+def get_suggestions(username, proposal_id):
+    """Get all suggestions for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details (not strictly needed here but for consistency)
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                SELECT sc.*, 
+                       u.full_name as suggested_by_name,
+                       u.email as suggested_by_email,
+                       r.full_name as resolved_by_name
+                FROM suggested_changes sc
+                LEFT JOIN users u ON sc.suggested_by = u.id
+                LEFT JOIN users r ON sc.resolved_by = r.id
+                WHERE sc.proposal_id = %s
+                ORDER BY sc.created_at DESC
+            """, (proposal_id,))
+            
+            suggestions = cursor.fetchall()
+            
+            return {
+                'suggestions': [dict(s) for s in suggestions]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting suggestions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/proposals/<int:proposal_id>/suggestions/<int:suggestion_id>/resolve")
+@token_required
+def resolve_suggestion(username, proposal_id, suggestion_id):
+    """Accept or reject a suggestion (proposal owner only)"""
+    try:
+        data = request.get_json()
+        action = data.get('action')  # 'accept' or 'reject'
+        
+        if action not in ['accept', 'reject']:
+            return {'detail': 'Action must be accept or reject'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user owns the proposal
+            cursor.execute("""
+                SELECT user_id FROM proposals WHERE id = %s
+            """, (proposal_id,))
+            
+            proposal = cursor.fetchone()
+            if not proposal or proposal['user_id'] != username:
+                return {'detail': 'Only proposal owner can resolve suggestions'}, 403
+            
+            # Update suggestion
+            cursor.execute("""
+                UPDATE suggested_changes
+                SET status = %s,
+                    resolved_at = NOW(),
+                    resolved_by = %s,
+                    resolution_action = %s
+                WHERE id = %s AND proposal_id = %s
+                RETURNING id
+            """, ('accepted' if action == 'accept' else 'rejected', 
+                  current_user['id'], action, suggestion_id, proposal_id))
+            
+            result = cursor.fetchone()
+            if not result:
+                return {'detail': 'Suggestion not found'}, 404
+            
+            conn.commit()
+            
+            # Log activity
+            log_activity(
+                proposal_id,
+                current_user['id'],
+                f'suggestion_{action}ed',
+                f"{current_user.get('full_name', current_user['email'])} {action}ed a suggestion",
+                {'suggestion_id': suggestion_id, 'action': action}
+            )
+            
+            # Notify the suggestion creator
+            cursor.execute("SELECT suggested_by FROM suggested_changes WHERE id = %s", (suggestion_id,))
+            suggestion_creator = cursor.fetchone()
+            if suggestion_creator and suggestion_creator['suggested_by'] != current_user['id']:
+                create_notification(
+                    suggestion_creator['suggested_by'],
+                    f'suggestion_{action}ed',
+                    f'Suggestion {action.title()}ed',
+                    f"Your suggestion was {action}ed by {current_user.get('full_name', current_user['email'])}",
+                    proposal_id,
+                    {'suggestion_id': suggestion_id, 'action': action}
+                )
+            
+            print(f"✅ Suggestion {suggestion_id} {action}ed by {current_user['email']}")
+            
+            return {
+                'message': f'Suggestion {action}ed successfully',
+                'suggestion_id': suggestion_id,
+                'action': action
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error resolving suggestion: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/proposals/<int:proposal_id>/sections/<section_id>/lock")
+@token_required
+def lock_section(username, proposal_id, section_id):
+    """Lock a section for editing (soft lock)"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, full_name FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Check if section is already locked
+            cursor.execute("""
+                SELECT locked_by, expires_at, u.full_name
+                FROM section_locks sl
+                LEFT JOIN users u ON sl.locked_by = u.id
+                WHERE proposal_id = %s AND section_id = %s
+                AND (expires_at IS NULL OR expires_at > NOW())
+            """, (proposal_id, section_id))
+            
+            existing_lock = cursor.fetchone()
+            if existing_lock and existing_lock['locked_by'] != current_user['id']:
+                return {
+                    'locked': True,
+                    'locked_by': existing_lock['full_name'],
+                    'message': f"Section is being edited by {existing_lock['full_name']}"
+                }, 409
+            
+            # Create or update lock (expires in 5 minutes)
+            expires_at = datetime.now() + timedelta(minutes=5)
+            cursor.execute("""
+                INSERT INTO section_locks (proposal_id, section_id, locked_by, expires_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (proposal_id, section_id) 
+                DO UPDATE SET locked_by = %s, locked_at = NOW(), expires_at = %s
+                RETURNING id
+            """, (proposal_id, section_id, current_user['id'], expires_at,
+                  current_user['id'], expires_at))
+            
+            conn.commit()
+            
+            return {
+                'locked': True,
+                'locked_by': current_user['full_name'],
+                'expires_at': expires_at.isoformat()
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error locking section: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/proposals/<int:proposal_id>/sections/<section_id>/unlock")
+@token_required
+def unlock_section(username, proposal_id, section_id):
+    """Unlock a section"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                DELETE FROM section_locks
+                WHERE proposal_id = %s AND section_id = %s AND locked_by = %s
+                RETURNING id
+            """, (proposal_id, section_id, current_user['id']))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                return {'message': 'Section unlocked'}, 200
+            else:
+                return {'message': 'No lock found or not owned by you'}, 404
+            
+    except Exception as e:
+        print(f"❌ Error unlocking section: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/sections/locks")
+@token_required
+def get_section_locks(username, proposal_id):
+    """Get all active section locks for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT sl.section_id, sl.locked_by, sl.locked_at, sl.expires_at,
+                       u.full_name as locked_by_name, u.email as locked_by_email
+                FROM section_locks sl
+                LEFT JOIN users u ON sl.locked_by = u.id
+                WHERE sl.proposal_id = %s
+                AND (sl.expires_at IS NULL OR sl.expires_at > NOW())
+            """, (proposal_id,))
+            
+            locks = cursor.fetchall()
+            
+            return {
+                'locks': [dict(lock) for lock in locks]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting section locks: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/notifications")
+@token_required
+def get_notifications(username):
+    """Get all notifications for current user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Get user's notifications
+            cursor.execute("""
+                SELECT n.*, p.title as proposal_title
+                FROM notifications n
+                LEFT JOIN proposals p ON n.proposal_id = p.id
+                WHERE n.user_id = %s
+                ORDER BY n.created_at DESC
+                LIMIT 50
+            """, (current_user['id'],))
+            
+            notifications = cursor.fetchall()
+            
+            # Get unread count
+            cursor.execute("""
+                SELECT COUNT(*) as unread_count
+                FROM notifications
+                WHERE user_id = %s AND is_read = FALSE
+            """, (current_user['id'],))
+            
+            unread_count = cursor.fetchone()['unread_count']
+            
+            return {
+                'notifications': [dict(n) for n in notifications],
+                'unread_count': unread_count
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting notifications: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/notifications/<int:notification_id>/mark-read")
+@token_required
+def mark_notification_read(username, notification_id):
+    """Mark a notification as read"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                UPDATE notifications
+                SET is_read = TRUE, read_at = NOW()
+                WHERE id = %s AND user_id = %s
+            """, (notification_id, current_user['id']))
+            
+            conn.commit()
+            
+            return {'message': 'Notification marked as read'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error marking notification as read: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/notifications/mark-all-read")
+@token_required
+def mark_all_notifications_read(username):
+    """Mark all notifications as read for current user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                UPDATE notifications
+                SET is_read = TRUE, read_at = NOW()
+                WHERE user_id = %s AND is_read = FALSE
+            """, (current_user['id'],))
+            
+            conn.commit()
+            
+            return {'message': 'All notifications marked as read'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error marking all notifications as read: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/mentions")
+@token_required
+def get_user_mentions(username):
+    """Get all mentions for current user"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Get mentions with comment details
+            cursor.execute("""
+                SELECT cm.*, 
+                       dc.comment_text, dc.proposal_id, dc.section_index,
+                       u.full_name as mentioned_by_name, u.email as mentioned_by_email,
+                       p.title as proposal_title
+                FROM comment_mentions cm
+                JOIN document_comments dc ON cm.comment_id = dc.id
+                JOIN users u ON cm.mentioned_by_user_id = u.id
+                LEFT JOIN proposals p ON dc.proposal_id = p.id
+                WHERE cm.mentioned_user_id = %s
+                ORDER BY cm.created_at DESC
+                LIMIT 50
+            """, (current_user['id'],))
+            
+            mentions = cursor.fetchall()
+            
+            # Get unread count
+            cursor.execute("""
+                SELECT COUNT(*) as unread_count
+                FROM comment_mentions
+                WHERE mentioned_user_id = %s AND is_read = FALSE
+            """, (current_user['id'],))
+            
+            unread_count = cursor.fetchone()['unread_count']
+            
+            return {
+                'mentions': [dict(m) for m in mentions],
+                'unread_count': unread_count
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting mentions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/mentions/<int:mention_id>/mark-read")
+@token_required
+def mark_mention_read(username, mention_id):
+    """Mark a mention as read"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            cursor.execute("""
+                UPDATE comment_mentions
+                SET is_read = TRUE
+                WHERE id = %s AND mentioned_user_id = %s
+            """, (mention_id, current_user['id']))
+            
+            conn.commit()
+            
+            return {'message': 'Mention marked as read'}, 200
+            
+    except Exception as e:
+        print(f"❌ Error marking mention as read: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/activity")
+@token_required
+def get_activity_timeline(username, proposal_id):
+    """Get comprehensive activity timeline for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user has access to this proposal
+            cursor.execute("""
+                SELECT p.id FROM proposals p
+                LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
+                WHERE p.id = %s 
+                AND (p.user_id = %s OR ci.invited_email = %s)
+            """, (proposal_id, username, current_user['email']))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get all activities from activity_log table
+            cursor.execute("""
+                SELECT al.*, u.full_name as user_name, u.email as user_email
+                FROM activity_log al
+                LEFT JOIN users u ON al.user_id = u.id
+                WHERE al.proposal_id = %s
+                ORDER BY al.created_at DESC
+                LIMIT 100
+            """, (proposal_id,))
+            
+            activities = cursor.fetchall()
+            
+            return {
+                'activities': [dict(activity) for activity in activities]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting activity timeline: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/versions/compare")
+@token_required
+def compare_proposal_versions(username, proposal_id):
+    """Compare two versions of a proposal and return diff"""
+    try:
+        version1 = request.args.get('version1', type=int)
+        version2 = request.args.get('version2', type=int)
+        
+        if not version1 or not version2:
+            return {'detail': 'Both version1 and version2 parameters are required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user has access to this proposal
+            cursor.execute("""
+                SELECT p.id FROM proposals p
+                LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
+                WHERE p.id = %s 
+                AND (p.user_id = %s OR ci.invited_email = %s)
+            """, (proposal_id, username, current_user['email']))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get both versions
+            cursor.execute("""
+                SELECT id, version_number, content, created_at, created_by,
+                       u.full_name as created_by_name
+                FROM proposal_versions pv
+                LEFT JOIN users u ON pv.created_by = u.id
+                WHERE proposal_id = %s AND version_number IN (%s, %s)
+                ORDER BY version_number
+            """, (proposal_id, version1, version2))
+            
+            versions = cursor.fetchall()
+            
+            if len(versions) != 2:
+                return {'detail': 'One or both versions not found'}, 404
+            
+            # Parse JSON content
+            v1_content = json.loads(versions[0]['content']) if isinstance(versions[0]['content'], str) else versions[0]['content']
+            v2_content = json.loads(versions[1]['content']) if isinstance(versions[1]['content'], str) else versions[1]['content']
+            
+            # Convert to text for comparison
+            v1_text = json.dumps(v1_content, indent=2, sort_keys=True)
+            v2_text = json.dumps(v2_content, indent=2, sort_keys=True)
+            
+            # Generate diff using difflib
+            diff = difflib.unified_diff(
+                v1_text.splitlines(keepends=True),
+                v2_text.splitlines(keepends=True),
+                fromfile=f'Version {version1}',
+                tofile=f'Version {version2}',
+                lineterm=''
+            )
+            
+            # Generate HTML diff for better visualization
+            html_diff = difflib.HtmlDiff()
+            html_diff_output = html_diff.make_table(
+                v1_text.splitlines(),
+                v2_text.splitlines(),
+                fromdesc=f'Version {version1} ({versions[0]["created_at"]})',
+                todesc=f'Version {version2} ({versions[1]["created_at"]})',
+                context=True,
+                numlines=3
+            )
+            
+            # Calculate statistics
+            changes = {
+                'additions': 0,
+                'deletions': 0,
+                'modifications': 0
+            }
+            
+            for line in difflib.unified_diff(v1_text.splitlines(), v2_text.splitlines(), lineterm=''):
+                if line.startswith('+') and not line.startswith('+++'):
+                    changes['additions'] += 1
+                elif line.startswith('-') and not line.startswith('---'):
+                    changes['deletions'] += 1
+            
+            return {
+                'version1': {
+                    'version_number': versions[0]['version_number'],
+                    'created_at': versions[0]['created_at'].isoformat() if versions[0]['created_at'] else None,
+                    'created_by': versions[0]['created_by_name']
+                },
+                'version2': {
+                    'version_number': versions[1]['version_number'],
+                    'created_at': versions[1]['created_at'].isoformat() if versions[1]['created_at'] else None,
+                    'created_by': versions[1]['created_by_name']
+                },
+                'diff': '\n'.join(diff),
+                'html_diff': html_diff_output,
+                'changes': changes
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error comparing versions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+# ============================================================================
+# DOCUSIGN E-SIGNATURE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/proposals/<int:proposal_id>/docusign/send")
+@token_required
+def send_for_signature(username, proposal_id):
+    """Send proposal for DocuSign signature (embedded signing)"""
+    try:
+        if not DOCUSIGN_AVAILABLE:
+            return {'detail': 'DocuSign integration not available. Please install docusign-esign package.'}, 503
+        
+        data = request.get_json()
+        signer_name = data.get('signer_name')
+        signer_email = data.get('signer_email')
+        signer_title = data.get('signer_title', '')
+        return_url = data.get('return_url', 'http://localhost:8081')
+        
+        if not signer_name or not signer_email:
+            return {'detail': 'Signer name and email are required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify user owns the proposal
+            cursor.execute("""
+                SELECT id, title, content FROM proposals 
+                WHERE id = %s AND user_id = %s
+            """, (proposal_id, username))
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Generate PDF from proposal content
+            pdf_content = generate_proposal_pdf(
+                proposal_id=proposal_id,
+                title=proposal['title'],
+                content=proposal.get('content', ''),
+                client_name=proposal.get('client_name'),
+                client_email=proposal.get('client_email')
+            )
+            
+            # Create DocuSign envelope
+            envelope_result = create_docusign_envelope(
+                proposal_id=proposal_id,
+                pdf_bytes=pdf_content,
+                signer_name=signer_name,
+                signer_email=signer_email,
+                signer_title=signer_title,
+                return_url=return_url
+            )
+            
+            # Store signature record
+            cursor.execute("""
+                INSERT INTO proposal_signatures 
+                (proposal_id, envelope_id, signer_name, signer_email, signer_title, 
+                 signing_url, status, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, sent_at
+            """, (proposal_id, envelope_result['envelope_id'], signer_name, signer_email, 
+                  signer_title, envelope_result['signing_url'], 'sent', current_user['id']))
+            
+            signature_record = cursor.fetchone()
+            conn.commit()
+            
+            # Log activity
+            log_activity(
+                proposal_id,
+                current_user['id'],
+                'signature_requested',
+                f"Proposal sent to {signer_name} for signature",
+                {'envelope_id': envelope_result['envelope_id'], 'signer_email': signer_email}
+            )
+            
+            # Update proposal status
+            cursor.execute("""
+                UPDATE proposals 
+                SET status = 'Sent for Signature', updated_at = NOW()
+                WHERE id = %s
+            """, (proposal_id,))
+            conn.commit()
+            
+            print(f"✅ Proposal {proposal_id} sent for signature to {signer_email}")
+            
+            return {
+                'envelope_id': envelope_result['envelope_id'],
+                'signing_url': envelope_result['signing_url'],
+                'signature_id': signature_record['id'],
+                'sent_at': signature_record['sent_at'].isoformat() if signature_record['sent_at'] else None,
+                'message': 'Envelope created successfully'
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error sending for signature: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.get("/api/proposals/<int:proposal_id>/signatures")
+@token_required
+def get_proposal_signatures(username, proposal_id):
+    """Get all signatures for a proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get user details
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify access
+            cursor.execute("""
+                SELECT id FROM proposals 
+                WHERE id = %s AND user_id = %s
+            """, (proposal_id, username))
+            
+            if not cursor.fetchone():
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get signatures
+            cursor.execute("""
+                SELECT ps.*, u.full_name as created_by_name
+                FROM proposal_signatures ps
+                LEFT JOIN users u ON ps.created_by = u.id
+                WHERE ps.proposal_id = %s
+                ORDER BY ps.sent_at DESC
+            """, (proposal_id,))
+            
+            signatures = cursor.fetchall()
+            
+            return {
+                'signatures': [dict(sig) for sig in signatures]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting signatures: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.post("/api/docusign/webhook")
+def docusign_webhook():
+    """Handle DocuSign webhook events"""
+    try:
+        # Get event data
+        event_data = request.get_json()
+        
+        # Validate HMAC signature (if configured)
+        hmac_key = os.getenv('DOCUSIGN_WEBHOOK_HMAC_KEY')
+        if hmac_key:
+            signature = request.headers.get('X-DocuSign-Signature-1')
+            # TODO: Validate signature
+        
+        event = event_data.get('event')
+        envelope_id = event_data.get('envelopeId')
+        
+        if not envelope_id:
+            return {'detail': 'No envelope ID provided'}, 400
+        
+        print(f"📬 DocuSign webhook received: {event} for envelope {envelope_id}")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Find signature record
+            cursor.execute("""
+                SELECT id, proposal_id, signer_email
+                FROM proposal_signatures 
+                WHERE envelope_id = %s
+            """, (envelope_id,))
+            
+            signature = cursor.fetchone()
+            if not signature:
+                print(f"⚠️ Signature record not found for envelope {envelope_id}")
+                return {'message': 'Signature record not found'}, 404
+            
+            # Handle different events
+            if event == 'envelope-completed':
+                # Signature completed
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'completed', signed_at = NOW()
+                    WHERE envelope_id = %s
+                """, (envelope_id,))
+                
+                cursor.execute("""
+                    UPDATE proposals 
+                    SET status = 'Signed', updated_at = NOW()
+                    WHERE id = %s
+                """, (signature['proposal_id'],))
+                
+                log_activity(
+                    signature['proposal_id'],
+                    None,
+                    'signature_completed',
+                    f"Proposal signed by {signature['signer_email']}",
+                    {'envelope_id': envelope_id}
+                )
+                
+                print(f"✅ Envelope {envelope_id} completed")
+                
+            elif event == 'envelope-declined':
+                # Signature declined
+                decline_reason = event_data.get('declineReason', 'No reason provided')
+                
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'declined', declined_at = NOW(), decline_reason = %s
+                    WHERE envelope_id = %s
+                """, (decline_reason, envelope_id))
+                
+                cursor.execute("""
+                    UPDATE proposals 
+                    SET status = 'Signature Declined', updated_at = NOW()
+                    WHERE id = %s
+                """, (signature['proposal_id'],))
+                
+                log_activity(
+                    signature['proposal_id'],
+                    None,
+                    'signature_declined',
+                    f"Signature declined by {signature['signer_email']}: {decline_reason}",
+                    {'envelope_id': envelope_id}
+                )
+                
+                print(f"⚠️ Envelope {envelope_id} declined")
+                
+            elif event == 'envelope-voided':
+                # Envelope voided
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'voided'
+                    WHERE envelope_id = %s
+                """, (envelope_id,))
+                
+                print(f"⚠️ Envelope {envelope_id} voided")
+            
+            conn.commit()
+        
+        return {'message': 'Webhook processed successfully'}, 200
+        
+    except Exception as e:
+        print(f"❌ Error processing DocuSign webhook: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+# ============================================================================
+# END DOCUSIGN ENDPOINTS
 # ============================================================================
 
 # ============================================================================
-# ESSENTIAL ENDPOINTS ONLY
+# END COLLABORATION ADVANCED ENDPOINTS
 # ============================================================================
-# All route definitions have been moved to role-based files.
-# See api/routes/ directory for all endpoints.
-# ============================================================================
-# CLIENT MANAGEMENT ENDPOINTS - MIGRATED TO api/routes/clients.py
-# ============================================================================
-# NOTE: These routes have been migrated to the 'clients' blueprint.
-# The blueprint routes are registered above and will take precedence.
-# TODO: Remove these old route definitions after confirming everything works.
 
+# ============================================================
+# CLIENT MANAGEMENT ENDPOINTS
+# ============================================================
+
+# Send client invitation
 @app.post("/clients/invite")
 @token_required
 def send_client_invitation(username=None):
@@ -4605,7 +4676,7 @@ def send_client_invitation(username=None):
         
         # Generate secure token
         access_token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
+        expires_at = datetime.utcnow() + timedelta(days=expiry_days)
         
         # Get current user ID
         with get_db_connection() as conn:
@@ -4636,40 +4707,60 @@ def send_client_invitation(username=None):
             frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
             onboarding_url = f"{frontend_url}/#/onboard/{token}"
             
-            # Load email template
-            template_path = Path(__file__).parent / 'templates' / 'email' / 'client_invitation.html'
-            try:
-                with open(template_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-            except FileNotFoundError:
-                print(f"[WARN] Template not found at {template_path}, using fallback")
-                logo_html = _get_logo_html()
-                html_content = f"""
-                <html><body style="font-family: 'Poppins', Arial, sans-serif; padding: 40px 20px; background: #000; color: #fff;">
-                    <div style="max-width: 600px; margin: 0 auto; background: #1A1A1A; padding: 40px; border-radius: 24px; border: 1px solid rgba(233, 41, 58, 0.3);">
-                        <div style="text-align: center; margin-bottom: 30px;">
-                            {logo_html}
-                        </div>
-                        <p style="color: #fff; font-size: 16px;">Hello{{ company_name }}!</p>
-                        <p style="color: #B3B3B3; font-size: 16px;">You've been invited to complete your client onboarding with Khonology.</p>
-                        <div style="text-align: center; margin: 30px 0;">
-                            <a href="{{ onboarding_url }}" style="background: linear-gradient(135deg, #E9293A 0%, #780A01 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Start Onboarding →</a>
-                        </div>
-                        <p style="color: #666; font-size: 12px; text-align: center; margin-top: 30px;">© 2025 Khonology. All rights reserved.</p>
-                    </div>
-                </body></html>
-                """
-            
-            # Replace template variables
-            company_name = f", {expected_company}" if expected_company else ""
-            logo_html = _get_logo_html()
-            html_content = html_content.replace('{{ company_name }}', company_name)
-            html_content = html_content.replace('{{ onboarding_url }}', onboarding_url)
-            html_content = html_content.replace('{{ expiry_days }}', str(expiry_days))
-            html_content = html_content.replace('{{ logo_html }}', logo_html)
-            
             # Send email
             subject = "You're Invited to Complete Your Client Onboarding"
+            html_content = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                    .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+                    .button {{ display: inline-block; background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+                    .footer {{ text-align: center; margin-top: 30px; color: #999; font-size: 12px; }}
+                    .info {{ background: #e3f2fd; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>🎉 Welcome to Khonology!</h1>
+                    </div>
+                    <div class="content">
+                        <p>Hello{f", {expected_company}" if expected_company else ""}!</p>
+                        
+                        <p>You've been invited to complete your client onboarding with Khonology. We're excited to start working with you!</p>
+                        
+                        <div class="info">
+                            <strong>⏰ This invitation link expires in {expiry_days} days</strong>
+                        </div>
+                        
+                        <p>Click the button below to get started:</p>
+                        
+                        <center>
+                            <a href="{onboarding_url}" class="button">Complete Onboarding →</a>
+                        </center>
+                        
+                        <p style="margin-top: 30px; font-size: 12px; color: #666;">
+                            Or copy and paste this link into your browser:<br>
+                            <a href="{onboarding_url}">{onboarding_url}</a>
+                        </p>
+                        
+                        <p style="margin-top: 30px;">
+                            If you have any questions, please don't hesitate to reach out.
+                        </p>
+                        
+                        <p>Best regards,<br><strong>The Khonology Team</strong></p>
+                    </div>
+                    <div class="footer">
+                        <p>© 2024 Khonology. All rights reserved.</p>
+                        <p>This is an automated message. Please do not reply to this email.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
             
             print(f"[INVITE] Sending email to {invited_email}...")
             email_sent = send_email(invited_email, subject, html_content)
@@ -4745,10 +4836,10 @@ def resend_invitation(username=None, invitation_id=None):
                 return jsonify({"error": "Invitation not found or already completed"}), 404
             
             # Check if expired
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.now(timezone.utc):
+            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.utcnow():
                 # Generate new token and extend expiry
                 new_token = secrets.token_urlsafe(32)
-                new_expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+                new_expires_at = datetime.utcnow() + timedelta(days=7)
                 
                 cursor.execute("""
                     UPDATE client_onboarding_invitations
@@ -4767,44 +4858,37 @@ def resend_invitation(username=None, invitation_id=None):
             frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
             onboarding_url = f"{frontend_url}/#/onboard/{token}"
             
-            # Calculate remaining days
-            expires_at_dt = datetime.fromisoformat(str(expires_at)) if isinstance(expires_at, str) else expires_at
-            remaining_days = max(1, (expires_at_dt - datetime.now(timezone.utc)).days)
-            
-            # Load email template
-            template_path = Path(__file__).parent / 'templates' / 'email' / 'client_invitation.html'
-            try:
-                with open(template_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-            except FileNotFoundError:
-                print(f"[WARN] Template not found at {template_path}, using fallback")
-                logo_html = _get_logo_html()
-                html_content = f"""
-                <html><body style="font-family: 'Poppins', Arial, sans-serif; padding: 40px 20px; background: #000; color: #fff;">
-                    <div style="max-width: 600px; margin: 0 auto; background: #1A1A1A; padding: 40px; border-radius: 24px; border: 1px solid rgba(233, 41, 58, 0.3);">
-                        <div style="text-align: center; margin-bottom: 30px;">
-                            {logo_html}
-                        </div>
-                        <p style="color: #fff; font-size: 16px;">Hello{{ company_name }}!</p>
-                        <p style="color: #B3B3B3; font-size: 16px;">This is a friendly reminder to complete your client onboarding with Khonology.</p>
-                        <div style="text-align: center; margin: 30px 0;">
-                            <a href="{{ onboarding_url }}" style="background: linear-gradient(135deg, #E9293A 0%, #780A01 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Start Onboarding →</a>
-                        </div>
-                        <p style="color: #666; font-size: 12px; text-align: center; margin-top: 30px;">© 2025 Khonology. All rights reserved.</p>
-                    </div>
-                </body></html>
-                """
-            
-            # Replace template variables
-            company_name = f", {invitation['expected_company']}" if invitation.get('expected_company') else ""
-            logo_html = _get_logo_html()
-            html_content = html_content.replace('{{ company_name }}', company_name)
-            html_content = html_content.replace('{{ onboarding_url }}', onboarding_url)
-            html_content = html_content.replace('{{ expiry_days }}', str(remaining_days))
-            html_content = html_content.replace('{{ logo_html }}', logo_html)
-            
             # Send email
             subject = "Reminder: Complete Your Client Onboarding"
+            html_content = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
+                    .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
+                    .button {{ display: inline-block; background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>⏰ Reminder: Complete Your Onboarding</h1>
+                    </div>
+                    <div class="content">
+                        <p>Hello!</p>
+                        <p>This is a friendly reminder to complete your client onboarding with Khonology.</p>
+                        <center>
+                            <a href="{onboarding_url}" class="button">Complete Onboarding →</a>
+                        </center>
+                        <p>Best regards,<br><strong>The Khonology Team</strong></p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
             send_email(invitation['invited_email'], subject, html_content)
             
             return jsonify({"success": True, "message": "Invitation resent"}), 200
@@ -4839,32 +4923,16 @@ def cancel_invitation(username=None, invitation_id=None):
         print(f"❌ Error cancelling invitation: {e}")
         return jsonify({"error": str(e)}), 500
 
-# ============================================================================
-# ONBOARDING ENDPOINTS - MIGRATED TO api/routes/onboarding.py
-# ============================================================================
-# NOTE: These routes have been migrated to the 'onboarding' blueprint.
-# The blueprint routes are registered above and will take precedence.
-# TODO: Remove these old route definitions after confirming everything works.
-
-# NOTE: Verify email route is handled by the 'onboarding' blueprint
-# This duplicate route has been removed to avoid conflicts
-# Route is defined in: api/routes/onboarding.py
-def _legacy_send_verification_code(token):
-    """Send verification code to email (public endpoint)"""
+# Get onboarding form (PUBLIC - no auth)
+@app.get("/onboard/<token>")
+def get_onboarding_form(token):
+    """Get onboarding form details by token (public endpoint)"""
     try:
-        data = request.json
-        email = data.get('email')
-        
-        if not email:
-            return jsonify({"error": "Email is required"}), 400
-        
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Validate token and get invitation
             cursor.execute("""
-                SELECT id, invited_email, status, expires_at, 
-                       last_code_sent_at, verification_attempts
+                SELECT id, invited_email, expected_company, status, expires_at
                 FROM client_onboarding_invitations
                 WHERE access_token = %s
             """, (token,))
@@ -4877,222 +4945,22 @@ def _legacy_send_verification_code(token):
             if invitation['status'] != 'pending':
                 return jsonify({"error": "This invitation has already been used"}), 400
             
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.now(timezone.utc):
+            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.utcnow():
                 return jsonify({"error": "This invitation has expired"}), 400
             
-            # Verify email matches invitation
-            if email.lower() != invitation['invited_email'].lower():
-                return jsonify({"error": "Email does not match the invitation"}), 400
-            
-            # Rate limiting: max 3 codes per hour
-            if invitation['last_code_sent_at']:
-                last_sent = datetime.fromisoformat(str(invitation['last_code_sent_at']))
-                time_since_last = datetime.now(timezone.utc) - last_sent
-                if time_since_last.total_seconds() < 3600:  # 1 hour
-                    # Check how many codes sent in last hour
-                    cursor.execute("""
-                        SELECT COUNT(*) as count
-                        FROM email_verification_events
-                        WHERE invitation_id = %s 
-                        AND event_type = 'code_sent'
-                        AND created_at > NOW() - INTERVAL '1 hour'
-                    """, (invitation['id'],))
-                    recent_sends = cursor.fetchone()['count']
-                    if recent_sends >= 3:
-                        return jsonify({"error": "Too many verification codes sent. Please try again later."}), 429
-            
-            # Generate 6-digit code
-            verification_code = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
-            
-            # Hash the code (simple hash for now, can upgrade to bcrypt later)
-            import hashlib
-            code_hash = hashlib.sha256(verification_code.encode()).hexdigest()
-            code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
-            
-            # Store hashed code
-            cursor.execute("""
-                UPDATE client_onboarding_invitations
-                SET verification_code_hash = %s,
-                    code_expires_at = %s,
-                    last_code_sent_at = NOW(),
-                    verification_attempts = 0
-                WHERE id = %s
-            """, (code_hash, code_expires_at, invitation['id']))
-            
-            # Log event
-            cursor.execute("""
-                INSERT INTO email_verification_events (invitation_id, email, event_type, event_detail)
-                VALUES (%s, %s, 'code_sent', 'Verification code sent')
-            """, (invitation['id'], email))
-            
-            conn.commit()
-            
-            # Send email with code
-            subject = "Your Khonology Verification Code"
-            html_content = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: 'Poppins', Arial, sans-serif; background-color: #000000; padding: 40px 20px; }}
-                    .container {{ max-width: 600px; margin: 0 auto; background-color: #1A1A1A; border-radius: 24px; border: 1px solid rgba(233, 41, 58, 0.3); padding: 40px; }}
-                    .code-box {{ background-color: #2A2A2A; border: 2px solid #E9293A; border-radius: 12px; padding: 24px; text-align: center; margin: 30px 0; }}
-                    .code {{ font-size: 36px; font-weight: bold; color: #E9293A; letter-spacing: 8px; font-family: 'Courier New', monospace; }}
-                    .footer {{ color: #666; font-size: 12px; text-align: center; margin-top: 30px; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1 style="color: #FFFFFF; text-align: center; margin-bottom: 20px;">Email Verification</h1>
-                    <p style="color: #B3B3B3; font-size: 16px; line-height: 1.6;">
-                        Hello! Please use the verification code below to complete your onboarding:
-                    </p>
-                    <div class="code-box">
-                        <div class="code">{verification_code}</div>
-                    </div>
-                    <p style="color: #B3B3B3; font-size: 14px; line-height: 1.6;">
-                        This code will expire in 15 minutes. If you didn't request this code, please ignore this email.
-                    </p>
-                    <div class="footer">
-                        <p>© 2025 Khonology. All rights reserved.</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            
-            send_email(email, subject, html_content)
-            
             return jsonify({
-                "success": True,
-                "message": "Verification code sent to your email"
+                "invited_email": invitation['invited_email'],
+                "expected_company": invitation['expected_company'],
+                "expires_at": invitation['expires_at'].isoformat()
             }), 200
             
     except Exception as e:
-        print(f"[ERROR] Error sending verification code: {e}")
-        traceback.print_exc()
+        print(f"❌ Error getting onboarding form: {e}")
         return jsonify({"error": str(e)}), 500
 
-# NOTE: Verify code route is handled by the 'onboarding' blueprint
-# This duplicate route has been removed to avoid conflicts
-# Route is defined in: api/routes/onboarding.py
-def _legacy_verify_email_code(token):
-    """Verify email verification code (public endpoint)"""
-    try:
-        data = request.json
-        code = data.get('code')
-        email = data.get('email')
-        
-        if not code or not email:
-            return jsonify({"error": "Code and email are required"}), 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get invitation
-            cursor.execute("""
-                SELECT id, invited_email, verification_code_hash, code_expires_at,
-                       verification_attempts, status, expires_at
-                FROM client_onboarding_invitations
-                WHERE access_token = %s
-            """, (token,))
-            
-            invitation = cursor.fetchone()
-            
-            if not invitation:
-                return jsonify({"error": "Invalid invitation link"}), 404
-            
-            if invitation['status'] != 'pending':
-                return jsonify({"error": "This invitation has already been used"}), 400
-            
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.now(timezone.utc):
-                return jsonify({"error": "This invitation has expired"}), 400
-            
-            # Verify email matches
-            if email.lower() != invitation['invited_email'].lower():
-                return jsonify({"error": "Email does not match the invitation"}), 400
-            
-            # Check if code exists
-            if not invitation['verification_code_hash']:
-                return jsonify({"error": "No verification code found. Please request a new code."}), 400
-            
-            # Check if code expired
-            if invitation['code_expires_at']:
-                if datetime.fromisoformat(str(invitation['code_expires_at'])) < datetime.now(timezone.utc):
-                    cursor.execute("""
-                        INSERT INTO email_verification_events (invitation_id, email, event_type, event_detail)
-                        VALUES (%s, %s, 'code_expired', 'Verification code expired')
-                    """, (invitation['id'], email))
-                    conn.commit()
-                    return jsonify({"error": "Verification code has expired. Please request a new one."}), 400
-            
-            # Check attempts (max 5 attempts)
-            if invitation['verification_attempts'] and invitation['verification_attempts'] >= 5:
-                cursor.execute("""
-                    INSERT INTO email_verification_events (invitation_id, email, event_type, event_detail)
-                    VALUES (%s, %s, 'rate_limited', 'Too many verification attempts')
-                """, (invitation['id'], email))
-                conn.commit()
-                return jsonify({"error": "Too many failed attempts. Please request a new code."}), 429
-            
-            # Verify code
-            import hashlib
-            code_hash = hashlib.sha256(code.encode()).hexdigest()
-            
-            if code_hash != invitation['verification_code_hash']:
-                # Increment attempts
-                cursor.execute("""
-                    UPDATE client_onboarding_invitations
-                    SET verification_attempts = COALESCE(verification_attempts, 0) + 1
-                    WHERE id = %s
-                """, (invitation['id'],))
-                
-                cursor.execute("""
-                    INSERT INTO email_verification_events (invitation_id, email, event_type, event_detail)
-                    VALUES (%s, %s, 'verify_failed', 'Invalid verification code')
-                """, (invitation['id'], email))
-                conn.commit()
-                
-                remaining = 5 - (invitation['verification_attempts'] or 0) - 1
-                return jsonify({
-                    "error": "Invalid verification code",
-                    "remaining_attempts": max(0, remaining)
-                }), 400
-            
-            # Code is valid - mark email as verified
-            cursor.execute("""
-                UPDATE client_onboarding_invitations
-                SET email_verified_at = NOW(),
-                    verification_code_hash = NULL,
-                    code_expires_at = NULL,
-                    verification_attempts = 0
-                WHERE id = %s
-            """, (invitation['id'],))
-            
-            cursor.execute("""
-                INSERT INTO email_verification_events (invitation_id, email, event_type, event_detail)
-                VALUES (%s, %s, 'code_verified', 'Email successfully verified')
-            """, (invitation['id'], email))
-            
-            conn.commit()
-            
-            return jsonify({
-                "success": True,
-                "message": "Email verified successfully"
-            }), 200
-            
-    except Exception as e:
-        print(f"[ERROR] Error verifying code: {e}")
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-# NOTE: Onboarding routes are handled by the 'onboarding' blueprint
-# These duplicate routes have been removed to avoid conflicts
-# Routes are defined in: api/routes/onboarding.py
-
-# NOTE: Submit onboarding route is handled by the 'onboarding' blueprint
-# This duplicate route has been removed to avoid conflicts
-# Route is defined in: api/routes/onboarding.py
-def _legacy_submit_onboarding(token):
+# Submit onboarding (PUBLIC - no auth)
+@app.post("/onboard/<token>")
+def submit_onboarding(token):
     """Submit client onboarding form (public endpoint)"""
     try:
         data = request.json
@@ -5121,18 +4989,8 @@ def _legacy_submit_onboarding(token):
             if invitation['status'] != 'pending':
                 return jsonify({"error": "This invitation has already been used"}), 400
             
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.now(timezone.utc):
+            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.utcnow():
                 return jsonify({"error": "This invitation has expired"}), 400
-            
-            # Check if email is verified
-            cursor.execute("""
-                SELECT email_verified_at
-                FROM client_onboarding_invitations
-                WHERE access_token = %s
-            """, (token,))
-            verified = cursor.fetchone()
-            if not verified or not verified['email_verified_at']:
-                return jsonify({"error": "Email must be verified before submitting the form"}), 403
             
             # Insert client
             cursor.execute("""
@@ -5184,70 +5042,6 @@ def _legacy_submit_onboarding(token):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# Get clients for dropdown selection (simplified format)
-@app.get("/api/clients/for-selection")
-@token_required
-def get_clients_for_selection(username=None):
-    """Get clients in a simplified format optimized for dropdown/selection components"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user ID
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
-                return jsonify({"error": "User not found"}), 404
-            
-            user_id = user_row['id']
-            
-            # Get search parameter
-            search = request.args.get('search', '').strip()
-            
-            if search:
-                cursor.execute("""
-                    SELECT 
-                        id, company_name, contact_person, email, phone
-                    FROM clients
-                    WHERE created_by = %s
-                    AND status = 'active'
-                    AND (
-                        company_name ILIKE %s 
-                        OR contact_person ILIKE %s 
-                        OR email ILIKE %s
-                    )
-                    ORDER BY company_name ASC
-                    LIMIT 50
-                """, (user_id, f'%{search}%', f'%{search}%', f'%{search}%'))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        id, company_name, contact_person, email, phone
-                    FROM clients
-                    WHERE created_by = %s
-                    AND status = 'active'
-                    ORDER BY company_name ASC
-                    LIMIT 100
-                """, (user_id,))
-            
-            clients = cursor.fetchall()
-            
-            # Return simplified format for dropdown
-            clients_list = [{
-                'id': client['id'],
-                'label': f"{client['company_name']} - {client['contact_person']}",
-                'company_name': client['company_name'],
-                'contact_person': client['contact_person'],
-                'email': client['email'],
-                'phone': client.get('phone')
-            } for client in clients]
-            
-            return jsonify(clients_list), 200
-            
-    except Exception as e:
-        print(f"❌ Error fetching clients for selection: {e}")
-        return jsonify({"error": str(e)}), 500
-
 # Get all clients
 @app.get("/clients")
 @token_required
@@ -5265,58 +5059,20 @@ def get_clients(username=None):
             
             user_id = user_row['id']
             
-            # Get all clients - optimized for dropdown selection
-            # Include search parameter if provided
-            search = request.args.get('search', '').strip()
-            
-            if search:
-                cursor.execute("""
-                    SELECT 
-                        id, company_name, contact_person, email, phone,
-                        industry, company_size, location, business_type,
-                        project_needs, budget_range, timeline, additional_info,
-                        status, created_at, updated_at
-                    FROM clients
-                    WHERE created_by = %s
-                    AND (
-                        company_name ILIKE %s 
-                        OR contact_person ILIKE %s 
-                        OR email ILIKE %s
-                    )
-                    ORDER BY company_name ASC
-                    LIMIT 50
-                """, (user_id, f'%{search}%', f'%{search}%', f'%{search}%'))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        id, company_name, contact_person, email, phone,
-                        industry, company_size, location, business_type,
-                        project_needs, budget_range, timeline, additional_info,
-                        status, created_at, updated_at
-                    FROM clients
-                    WHERE created_by = %s
-                    ORDER BY company_name ASC
-                    LIMIT 100
-                """, (user_id,))
+            # Get all clients
+            cursor.execute("""
+                SELECT 
+                    id, company_name, contact_person, email, phone,
+                    industry, company_size, location, business_type,
+                    project_needs, budget_range, timeline, additional_info,
+                    status, created_at, updated_at
+                FROM clients
+                WHERE created_by = %s
+                ORDER BY created_at DESC
+            """, (user_id,))
             
             clients = cursor.fetchall()
-            
-            # Format for dropdown (simplified response)
-            format_type = request.args.get('format', 'full')
-            if format_type == 'dropdown':
-                # Return simplified format for dropdown selection
-                clients_list = [{
-                    'id': client['id'],
-                    'label': f"{client['company_name']} - {client['contact_person']}",
-                    'company_name': client['company_name'],
-                    'contact_person': client['contact_person'],
-                    'email': client['email'],
-                    'phone': client.get('phone')
-                } for client in clients]
-                return jsonify(clients_list), 200
-            else:
-                # Return full client data
-                return jsonify([dict(client) for client in clients]), 200
+            return jsonify([dict(client) for client in clients]), 200
             
     except Exception as e:
         print(f"❌ Error fetching clients: {e}")
@@ -5640,27 +5396,6 @@ def health_check():
     
     return pool_info, 200
 
-# Route listing endpoint for debugging (no auth required)
-@app.get("/routes")
-def list_routes():
-    """List all registered routes for debugging"""
-    routes = []
-    for rule in app.url_map.iter_rules():
-        routes.append({
-            "endpoint": rule.endpoint,
-            "methods": list(rule.methods),
-            "path": rule.rule
-        })
-    
-    # Filter for proposals-related routes
-    proposals_routes = [r for r in routes if "proposal" in r["path"].lower()]
-    
-    return {
-        "total_routes": len(routes),
-        "proposals_routes": proposals_routes,
-        "all_routes": routes
-    }, 200
-
 # Initialize database on app startup
 @app.get("/api/init")
 def initialize_database():
@@ -5671,124 +5406,10 @@ def initialize_database():
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
-# ============================================================================
-# BLUEPRINT REGISTRATION
-# ============================================================================
-try:
-    from api.utils.database import init_database
-    
-    init_database()
-    
-    # Import blueprints with individual error handling
-    blueprints = {}
-    blueprint_names = {
-        'auth_bp': 'Auth routes',
-        'creator_bp': 'Creator routes',
-        'client_bp': 'Client routes',
-        'approver_bp': 'Approver routes',
-        'collaborator_bp': 'Collaborator routes',
-        'clients_bp': 'Client management routes',
-        'shared_bp': 'Shared utility routes'
-    }
-    
-    try:
-        from api.routes import creator_bp, client_bp, approver_bp, collaborator_bp, clients_bp, auth_bp, shared_bp
-        blueprints['auth_bp'] = auth_bp
-        blueprints['creator_bp'] = creator_bp
-        blueprints['client_bp'] = client_bp
-        blueprints['approver_bp'] = approver_bp
-        blueprints['collaborator_bp'] = collaborator_bp
-        blueprints['clients_bp'] = clients_bp
-        blueprints['shared_bp'] = shared_bp
-    except ImportError as import_error:
-        print(f"[WARN] Failed to import blueprints from api.routes: {import_error}")
-        # Try alternative import method
-        try:
-            from api.routes.auth import bp as auth_bp
-            from api.routes.creator import bp as creator_bp
-            from api.routes.client import bp as client_bp
-            from api.routes.approver import bp as approver_bp
-            from api.routes.collaborator import bp as collaborator_bp
-            from api.routes.clients import bp as clients_bp
-            from api.routes.shared import bp as shared_bp
-            blueprints['auth_bp'] = auth_bp
-            blueprints['creator_bp'] = creator_bp
-            blueprints['client_bp'] = client_bp
-            blueprints['approver_bp'] = approver_bp
-            blueprints['collaborator_bp'] = collaborator_bp
-            blueprints['clients_bp'] = clients_bp
-            blueprints['shared_bp'] = shared_bp
-            print("[OK] Successfully imported blueprints using alternative method")
-        except Exception as alt_import_error:
-            print(f"[ERROR] Failed to import blueprints using alternative method: {alt_import_error}")
-            import traceback
-            traceback.print_exc()
-            raise
-    
-    # Register all role-based blueprints with individual error handling
-    registered_count = 0
-    for bp_name, bp_obj in blueprints.items():
-        try:
-            app.register_blueprint(bp_obj)
-            print(f"[OK] Registered {blueprint_names.get(bp_name, bp_name)}")
-            registered_count += 1
-        except Exception as reg_error:
-            print(f"[ERROR] Failed to register {blueprint_names.get(bp_name, bp_name)}: {reg_error}")
-            import traceback
-            traceback.print_exc()
-    
-    print(f"[OK] Successfully registered {registered_count}/{len(blueprints)} blueprints")
-    
-    # Log all registered routes for debugging (focus on auth routes)
-    print("\n[DEBUG] Scanning registered routes...")
-    auth_routes = []
-    firebase_routes = []
-    all_routes_count = 0
-    
-    for rule in app.url_map.iter_rules():
-        all_routes_count += 1
-        route_str = f"  {', '.join(rule.methods)} {rule.rule}"
-        
-        if 'firebase' in rule.rule.lower():
-            firebase_routes.append(route_str)
-            auth_routes.append(route_str)
-        elif 'auth' in rule.rule.lower() or '/register' in rule.rule or '/login' in rule.rule:
-            auth_routes.append(route_str)
-    
-    print(f"[DEBUG] Total routes registered: {all_routes_count}")
-    
-    if auth_routes:
-        print(f"\n[DEBUG] Auth-related routes found ({len(auth_routes)}):")
-        for route in auth_routes:
-            print(route)
-    else:
-        print("\n[WARN] No auth-related routes found!")
-    
-    # Specifically check for /firebase route
-    if firebase_routes:
-        print(f"\n[OK] Firebase routes found ({len(firebase_routes)}):")
-        for route in firebase_routes:
-            print(f"  ✓ {route}")
-    else:
-        print("\n[WARN] No Firebase routes found in registered routes!")
-        print("       This indicates the auth blueprint may not be registered correctly.")
-except Exception as blueprint_error:
-    print(f"[ERROR] Could not register blueprints: {blueprint_error}")
-    import traceback
-    traceback.print_exc()
-
 if __name__ == '__main__':
     # When running with 'python app.py'
     try:
-        # Initialize database before running (outside Flask context)
-        # Call init_pg_schema directly - it doesn't require Flask request context
-        print("🔄 Initializing database schema...")
-        init_pg_schema()
-        print("✅ Database schema initialized successfully")
+        init_db()  # Initialize database before running
     except Exception as e:
-        print(f"⚠️ Warning: Database initialization failed: {e}")
-        # Don't raise - allow app to start even if schema init fails
-        # Schema will be initialized on first request via init_db() if needed
-        import traceback
-        traceback.print_exc()
+        print(f"Warning: Database initialization failed: {e}")
     app.run(debug=True, host='0.0.0.0', port=8000)

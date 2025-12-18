@@ -358,7 +358,7 @@ def update_proposal(username, proposal_id):
                 updates.append('status = %s')
                 params.append(data['status'])
             if 'client_name' in data or 'client' in data:
-                updates.append('client_name = %s')
+                updates.append('client = %s')
                 params.append(data.get('client_name') or data.get('client'))
             if 'client_email' in data:
                 updates.append('client_email = %s')

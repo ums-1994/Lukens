@@ -35,7 +35,7 @@ class Proposal(Base):
     title = Column(String(255), nullable=False)  # Existing column
     content = Column(Text)  # Existing column
     status = Column(String(150))  # Existing column - keeping as string for compatibility
-    client_name = Column(String(150))  # Existing column
+    client = Column(String(150))  # Existing column
     client_email = Column(String(150))  # Existing column
     budget = Column(String(50))  # Existing column
     timeline_days = Column(Integer)  # Existing column
