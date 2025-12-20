@@ -110,6 +110,8 @@ jspm_packages/
 # Firebase service account credentials
 firebase-service-account.json
 **/firebase-service-account.json
+backend/lukens-e17d6-firebase-adminsdk-fbsvc-ea49e5a350.json
+**/*firebase-adminsdk*.json
 
 # DocuSign RSA Keys (NEVER commit these!)
 docusign_private.key

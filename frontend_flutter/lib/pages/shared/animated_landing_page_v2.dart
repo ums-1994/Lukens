@@ -17,6 +17,8 @@ class AnimatedLandingPageV2 extends StatefulWidget {
 class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     with TickerProviderStateMixin {
   late AnimationController _controller;
+  bool _jwtProcessed = false;
+  bool _isRedirecting = false;
   
   // Individual animations with precise timing intervals
   late Animation<double> _backgroundAnim;
@@ -138,6 +140,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
 
   Future<void> _handleJwtLoginFromUrl() async {
     if (!mounted) return;
+    if (_jwtProcessed) return;
 
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
@@ -147,7 +150,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       return;
     }
 
-    String? externalToken = uri.queryParameters['token'];
+    String? externalToken = uri.queryParameters['token'] ?? uri.queryParameters['jwt'];
 
     if (externalToken == null || externalToken.isEmpty) {
       final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
@@ -161,7 +164,11 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     }
 
     try {
-      final loginResult = await AuthService.loginWithJwt(externalToken);
+      setState(() {
+        _isRedirecting = true;
+        _jwtProcessed = true;
+      });
+      final loginResult = await AuthService.loginWithJwt(Uri.decodeComponent(externalToken));
       final userProfile =
           loginResult?['user'] as Map<String, dynamic>?;
       final token = loginResult?['token'] as String?;
@@ -169,6 +176,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       if (!mounted) return;
 
       if (userProfile == null || token == null) {
+        setState(() => _isRedirecting = false);
         return;
       }
 
@@ -201,6 +209,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
 
       if (!mounted) return;
 
+      setState(() => _isRedirecting = false);
       Navigator.pushNamedAndRemoveUntil(
         context,
         dashboardRoute,
@@ -208,6 +217,15 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       );
     } catch (e) {
       print('❌ JWT login from landing page failed: $e');
+      if (mounted) {
+        setState(() => _isRedirecting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Login failed. Invalid token or session.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -257,6 +275,22 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                   );
                 },
               ),
+              if (_isRedirecting)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withOpacity(0.4),
+                    child: const Center(
+                      child: SizedBox(
+                        height: 48,
+                        width: 48,
+                        child: CircularProgressIndicator(
+                          color: Color(0xFFD72638),
+                          strokeWidth: 4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },

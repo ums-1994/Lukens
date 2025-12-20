@@ -29,6 +29,12 @@ def initialize_firebase():
             if os.path.exists(default_path):
                 cred_path = default_path
                 print(f"[FIREBASE] Using default Firebase credentials: {default_path}")
+            else:
+                alt_filename = 'lukens-e17d6-firebase-adminsdk-fbsvc-ea49e5a350.json'
+                alt_path = os.path.join(backend_dir, alt_filename)
+                if os.path.exists(alt_path):
+                    cred_path = alt_path
+                    print(f"[FIREBASE] Using Firebase credentials: {alt_path}")
         
         if cred_path and os.path.exists(cred_path):
             cred = credentials.Certificate(cred_path)

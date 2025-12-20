@@ -3,6 +3,7 @@ JWT token validation and decoding
 """
 import logging
 import os
+import base64
 from typing import Dict, Any
 
 import jwt
@@ -12,6 +13,8 @@ from jwt.exceptions import (
     DecodeError,
     InvalidSignatureError,
 )
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 logger = logging.getLogger(__name__)
@@ -24,13 +27,97 @@ class JWTValidationError(Exception):
 
 def _get_jwt_secret() -> str:
     secret = (
-        os.getenv("KHONOBUZZ_JWT_SECRET")
+        os.getenv("JWT_SECRET_KEY")
+        or os.getenv("KHONOBUZZ_JWT_SECRET")
         or os.getenv("JWT_SECRET")
         or os.getenv("SECRET_KEY")
     )
     if not secret:
         raise JWTValidationError("JWT secret not configured")
     return secret
+
+
+def _get_encryption_key_bytes() -> bytes:
+    key = os.getenv("ENCRYPTION_KEY")
+    if not key:
+        return b""
+    k = key.strip()
+    try:
+        return base64.urlsafe_b64decode(k)
+    except Exception:
+        try:
+            return base64.urlsafe_b64decode(k + "=" * (-len(k) % 4))
+        except Exception:
+            pass
+    if len(k) == 32:
+        return k.encode()
+    if len(k) > 32:
+        return k[:32].encode()
+    return k.ljust(32).encode()
+
+
+def _try_decrypt_with_fernet(token: str) -> str:
+    key_bytes = _get_encryption_key_bytes()
+    if not key_bytes:
+        raise JWTValidationError("Encryption key not configured")
+    fkey = base64.urlsafe_b64encode(key_bytes)
+    try:
+        f = Fernet(fkey)
+        pt = f.decrypt(token.encode(), ttl=None)
+        return pt.decode()
+    except Exception as e:
+        raise JWTValidationError(f"Fernet decryption failed: {e}")
+
+
+def _try_decrypt_with_aesgcm(token: str) -> str:
+    key_bytes = _get_encryption_key_bytes()
+    if not key_bytes:
+        raise JWTValidationError("Encryption key not configured")
+    t = token.strip()
+    parts = []
+    if ":" in t:
+        parts = t.split(":")
+    elif "." in t and t.count(".") != 2:
+        parts = t.split(".")
+    if len(parts) == 3:
+        try:
+            iv = base64.urlsafe_b64decode(parts[0] + "=" * (-len(parts[0]) % 4))
+            ct = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+            tag = base64.urlsafe_b64decode(parts[2] + "=" * (-len(parts[2]) % 4))
+            aes = AESGCM(key_bytes[:32])
+            pt = aes.decrypt(iv, ct + tag, None)
+            return pt.decode()
+        except Exception as e:
+            raise JWTValidationError(f"AES-GCM decryption failed: {e}")
+    try:
+        raw = base64.urlsafe_b64decode(t + "=" * (-len(t) % 4))
+        if len(raw) >= 12 + 16:
+            iv = raw[:12]
+            tag = raw[-16:]
+            ct = raw[12:-16]
+            aes = AESGCM(key_bytes[:32])
+            pt = aes.decrypt(iv, ct + tag, None)
+            return pt.decode()
+    except Exception as e:
+        raise JWTValidationError(f"AES-GCM raw decryption failed: {e}")
+    raise JWTValidationError("Unsupported encrypted token format")
+
+
+def _maybe_decrypt_token(token: str) -> str:
+    if token.count(".") == 2:
+        return token
+    last_error = None
+    for fn in (_try_decrypt_with_fernet, _try_decrypt_with_aesgcm):
+        try:
+            dec = fn(token)
+            if dec.count(".") == 2:
+                return dec
+        except JWTValidationError as e:
+            last_error = e
+            continue
+    if last_error:
+        raise last_error
+    raise JWTValidationError("Token decryption failed or invalid format")
 
 
 def validate_jwt_token(token: str) -> Dict[str, Any]:
@@ -46,11 +133,8 @@ def validate_jwt_token(token: str) -> Dict[str, Any]:
     if not token or not isinstance(token, str):
         raise JWTValidationError("Token is required and must be a string")
 
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise JWTValidationError(
-            f"Invalid token format: expected 3 parts, got {len(parts)}"
-        )
+    if token.count(".") != 2:
+        token = _maybe_decrypt_token(token)
 
     try:
         secret = _get_jwt_secret()
