@@ -17,6 +17,8 @@ from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, 
 from api.utils.email import send_email, send_verification_email
 from api.utils.jwt_validator import JWTValidationError, validate_jwt_token, extract_user_info
 from werkzeug.security import check_password_hash
+import base64
+from cryptography.fernet import Fernet, InvalidToken
 
 bp = Blueprint('auth', __name__)
 
@@ -795,7 +797,85 @@ def verify_email():
                         return Response(html, mimetype='text/html'), 200
 
                     return detail, 200
-
+                
+                print(f"[VERIFY] Token not found, attempting decryption fallback...")
+                decrypted_token = None
+                try:
+                    key = os.getenv('ENCRYPTION_KEY', '')
+                    if key:
+                        fkey = base64.urlsafe_b64encode(key.ljust(32)[:32].encode())
+                        f = Fernet(fkey)
+                        pt = f.decrypt(token.encode())
+                        decrypted = pt.decode().strip()
+                        decrypted_token = decrypted
+                        print(f"[VERIFY] Decrypted token via Fernet")
+                except Exception as e:
+                    print(f"[VERIFY] Fernet decryption failed: {e}")
+                if not decrypted_token:
+                    try:
+                        raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+                        decrypted_token = raw.decode(errors='ignore').strip()
+                        print(f"[VERIFY] Decoded token via base64")
+                    except Exception as e:
+                        print(f"[VERIFY] Base64 decode failed: {e}")
+                if decrypted_token:
+                    try:
+                        cursor.execute(
+                            '''SELECT user_id, email, expires_at, used_at
+                               FROM user_email_verification_tokens
+                               WHERE token = %s''',
+                            (decrypted_token,)
+                        )
+                        token_data = cursor.fetchone()
+                        if not token_data:
+                            cursor.execute(
+                                '''SELECT id, invited_email, expires_at, status, email_verified_at
+                                   FROM client_onboarding_invitations
+                                   WHERE access_token = %s''',
+                                (decrypted_token,)
+                            )
+                            invite = cursor.fetchone()
+                            if invite:
+                                invite_id = invite['id']
+                                invited_email = invite['invited_email']
+                                expires_at = invite['expires_at']
+                                status = invite['status']
+                                email_verified_at = invite['email_verified_at']
+                                print(f"[VERIFY] Invitation token matched after decryption - id: {invite_id}, email: {invited_email}, status: {status}")
+                                now = datetime.now(timezone.utc)
+                                if isinstance(expires_at, str):
+                                    expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                                elif expires_at and expires_at.tzinfo is None:
+                                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                                elif expires_at:
+                                    expires_at = expires_at.astimezone(timezone.utc)
+                                if expires_at and now > expires_at:
+                                    return {'detail': 'This invitation link has expired.'}, 400
+                                if status != 'pending':
+                                    return {'detail': 'This invitation has already been completed or cancelled.'}, 400
+                                if not email_verified_at:
+                                    cursor.execute(
+                                        '''UPDATE client_onboarding_invitations
+                                           SET email_verified_at = CURRENT_TIMESTAMP
+                                           WHERE id = %s''',
+                                        (invite_id,)
+                                    )
+                                    conn.commit()
+                                    print(f"[VERIFY] ✅ Invitation email verified for invite_id: {invite_id}")
+                                detail = {
+                                    'detail': 'Client invitation email verified',
+                                    'email': invited_email,
+                                    'invitation_id': invite_id
+                                }
+                                if request.method == 'GET':
+                                    from api.utils.helpers import get_frontend_url
+                                    frontend_url = get_frontend_url()
+                                    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Email Verified</title></head><body style="font-family: Arial, sans-serif; background:#000; color:#fff; display:flex; align-items:center; justify-content:center; min-height:100vh;"><div style="background:#1A1A1A; border:1px solid rgba(233,41,58,0.3); border-radius:16px; padding:32px; max-width:520px; text-align:center;"><h1>Email Verified</h1><p>The onboarding invitation for <strong>{invited_email}</strong> is verified. You may continue the onboarding process.</p><a href="{frontend_url}/#/onboard?token={decrypted_token}" style="display:inline-block; margin-top:24px; background:#E9293A; color:#fff; padding:12px 24px; text-decoration:none; border-radius:8px;">Continue Onboarding</a></div></body></html>"""
+                                    from flask import Response
+                                    return Response(html, mimetype='text/html'), 200
+                                return detail, 200
+                    except Exception as e:
+                        print(f"[VERIFY] Fallback lookup with decrypted token failed: {e}")
                 print(f"[VERIFY] ERROR: Token not found in any table: {token[:20]}...")
                 return {'detail': 'Invalid verification token'}, 400
             
