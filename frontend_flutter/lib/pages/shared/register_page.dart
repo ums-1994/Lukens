@@ -47,7 +47,141 @@ class _RegisterPageState extends State<RegisterPage>
 
   int _currentFrameIndex = 0;
 
-  final List<String> _roles = ['Manager', 'Admin'];
+  final List<String> _roles = ['Manager', 'Admin', 'Finance'];
+
+  Future<void> _completeAuthWithFirebaseCredential(dynamic firebaseCredential) async {
+    final user = firebaseCredential?.user;
+    if (user == null) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Firebase authentication failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    if (firstName.isNotEmpty || lastName.isNotEmpty) {
+      try {
+        await user.updateDisplayName('$firstName $lastName'.trim());
+      } catch (_) {}
+    }
+
+    final role = _selectedRole.toLowerCase().trim();
+    final firebaseIdToken = await user.getIdToken();
+    if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to get Firebase ID token.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final response = await http.post(
+      Uri.parse('${AuthService.baseUrl}/firebase'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'id_token': firebaseIdToken, 'role': role}),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final error = json.decode(response.body);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error['detail'] ?? 'Backend authentication failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final result = json.decode(response.body);
+    final userProfile = result['user'] as Map<String, dynamic>?;
+    final String authToken = firebaseIdToken;
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (userProfile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registration failed: missing user profile.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final appState = context.read<AppState>();
+    appState.authToken = authToken;
+    appState.currentUser = userProfile;
+
+    AuthService.setUserData(userProfile, authToken);
+
+    final roleService = context.read<RoleService>();
+    await roleService.initializeRoleFromUser(userProfile);
+    await appState.init();
+
+    final rawRole = userProfile['role']?.toString() ?? '';
+    final normalizedRole = rawRole.toLowerCase().trim();
+    final isAdmin = normalizedRole == 'admin' || normalizedRole == 'ceo';
+    final isFinance = normalizedRole == 'finance';
+
+    final dashboardRoute = isFinance
+        ? '/finance_dashboard'
+        : (isAdmin ? '/admin_dashboard' : '/manager_dashboard');
+
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, dashboardRoute);
+  }
+
+  Future<void> _registerWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final cred = await FirebaseService.signInWithGoogle();
+      await _completeAuthWithFirebaseCredential(cred);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-up failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _registerWithMicrosoft() async {
+    setState(() => _isLoading = true);
+    try {
+      final cred = await FirebaseService.signInWithMicrosoft();
+      await _completeAuthWithFirebaseCredential(cred);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Microsoft sign-up failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -702,11 +836,11 @@ class _RegisterPageState extends State<RegisterPage>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildSocialButton(Icons.g_mobiledata),
+                _buildSocialButton(Icons.g_mobiledata, _registerWithGoogle),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.window),
+                _buildSocialButton(Icons.window, _registerWithMicrosoft),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.business),
+                _buildSocialButton(Icons.business, null),
               ],
             ),
             const SizedBox(height: 24),
@@ -844,7 +978,7 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildSocialButton(IconData icon) {
+  Widget _buildSocialButton(IconData icon, VoidCallback? onPressed) {
     return Container(
       width: 48,
       height: 48,
@@ -854,8 +988,13 @@ class _RegisterPageState extends State<RegisterPage>
       ),
       child: IconButton(
         icon: Icon(icon, size: 28, color: Colors.black87),
-        onPressed: () {
-          // TODO: Social login
+        onPressed: onPressed ?? () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Apple sign-in not implemented'),
+              backgroundColor: Colors.grey,
+            ),
+          );
         },
       ),
     );
