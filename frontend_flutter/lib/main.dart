@@ -34,6 +34,7 @@ import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
+import 'pages/shared/animated_landing_page_v2.dart';
 import 'services/auth_service.dart';
 import 'services/role_service.dart';
 import 'api.dart';
@@ -653,7 +654,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     // Always show landing page first when app starts
     // The landing page will handle navigation to login/dashboard based on auth status
-    return const StartupPage();
+    return const AnimatedLandingPageV2();
   }
 }
 
@@ -919,7 +920,7 @@ class _HomeShellState extends State<HomeShell> {
             padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
               color: isActive
-                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                  ? const Color(0xFF1E3A8A).withOpacity(0.3)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
               border: isActive

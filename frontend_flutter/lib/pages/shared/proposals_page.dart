@@ -573,7 +573,7 @@ class _ProposalsPageState extends State<ProposalsPage>
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 height: 1,
-                color: PremiumTheme.glassWhiteBorder.withValues(alpha: 0.6),
+                color: PremiumTheme.glassWhiteBorder.withOpacity(0.6),
               ),
             const SizedBox(height: 12),
             _buildNavItem(
@@ -623,25 +623,25 @@ class _ProposalsPageState extends State<ProposalsPage>
                 prefixIcon: const Icon(Icons.search),
                 hintText: 'Search proposals...',
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
+                fillColor: Colors.white.withOpacity(0.05),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.12),
+                    color: Colors.white.withOpacity(0.12),
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: Colors.white.withOpacity(0.08),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: PremiumTheme.purple.withValues(alpha: 0.8),
+                    color: PremiumTheme.purple.withOpacity(0.8),
                   ),
                 ),
                 prefixIconColor: Colors.white70,
@@ -711,25 +711,25 @@ class _ProposalsPageState extends State<ProposalsPage>
                         ),
                         hintStyle: const TextStyle(color: Colors.white54),
                         filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.05),
+                        fillColor: Colors.white.withOpacity(0.05),
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.12),
+                            color: Colors.white.withOpacity(0.12),
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.08),
+                            color: Colors.white.withOpacity(0.08),
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                            color: PremiumTheme.purple.withValues(alpha: 0.8),
+                            color: PremiumTheme.purple.withOpacity(0.8),
                           ),
                         ),
                       ),
@@ -739,10 +739,10 @@ class _ProposalsPageState extends State<ProposalsPage>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
+                      color: Colors.white.withOpacity(0.04),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.08),
+                        color: Colors.white.withOpacity(0.08),
                       ),
                     ),
                     child: DropdownButtonHideUnderline(
@@ -830,7 +830,7 @@ class _ProposalsPageState extends State<ProposalsPage>
               physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
               separatorBuilder: (context, index) => Divider(
-                  height: 1, color: Colors.white.withValues(alpha: 0.08)),
+                  height: 1, color: Colors.white.withOpacity(0.08)),
               itemBuilder: (context, index) {
                 final proposal = filtered[index];
                 return ProposalItem(
@@ -875,7 +875,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withOpacity(0.08),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -930,7 +930,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
+                      color: Colors.black.withOpacity(0.08),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -1092,8 +1092,8 @@ class ProposalItem extends StatelessWidget {
     }
 
     final Color statusBgColor = statusColor == Colors.white70
-        ? Colors.white.withValues(alpha: 0.08)
-        : statusColor.withValues(alpha: 0.2);
+        ? Colors.white.withOpacity(0.08)
+        : statusColor.withOpacity(0.2);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12.0),

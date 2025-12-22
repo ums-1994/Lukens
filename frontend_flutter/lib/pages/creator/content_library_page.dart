@@ -1239,8 +1239,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                               margin:
                                   const EdgeInsets.symmetric(horizontal: 16),
                               height: 1,
-                              color: PremiumTheme.glassWhiteBorder
-                                  .withValues(alpha: 0.6),
+          color: PremiumTheme.glassWhiteBorder
+                                  .withOpacity(0.6),
                             ),
                           const SizedBox(height: 12),
                           // Logout button
@@ -1271,7 +1271,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                               gradient: LinearGradient(
                                 colors: [
                                   const Color(0xFFC10D00),
-                                  const Color(0xFFC10D00).withValues(alpha: 0.0),
+                                  const Color(0xFFC10D00).withOpacity(0.0),
                                 ],
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
@@ -1288,7 +1288,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
                                     color: const Color(0xFFC10D00)
-                                        .withValues(alpha: 0.25),
+                                        .withOpacity(0.25),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(Icons.library_books,
@@ -1415,27 +1415,27 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                           color: Colors.white54),
                                       filled: true,
                                       fillColor:
-                                          Colors.white.withValues(alpha: 0.05),
+                                          Colors.white.withOpacity(0.05),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
+                                          borderSide: BorderSide(
                                           color: Colors.white
-                                              .withValues(alpha: 0.12),
-                                        ),
+                                              .withOpacity(0.12),
+                                          ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
+                                          borderSide: BorderSide(
                                           color: Colors.white
-                                              .withValues(alpha: 0.08),
-                                        ),
+                                              .withOpacity(0.08),
+                                          ),
                                       ),
                                       focusedBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
+                                          borderSide: BorderSide(
                                           color: PremiumTheme.purple
-                                              .withValues(alpha: 0.8),
-                                        ),
+                                              .withOpacity(0.8),
+                                          ),
                                       ),
                                     ),
                                   ),
@@ -1445,11 +1445,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 12),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.04),
+                                    color: Colors.white.withOpacity(0.04),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color:
-                                          Colors.white.withValues(alpha: 0.08),
+                                          Colors.white.withOpacity(0.08),
                                     ),
                                   ),
                                   child: DropdownButtonHideUnderline(
@@ -1481,10 +1481,10 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 12),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: Colors.white.withOpacity(0.05),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.08),
+                                color: Colors.white.withOpacity(0.08),
                               ),
                             ),
                             child: Row(
@@ -1580,16 +1580,16 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                               onTap: () => setState(() =>
                                                   currentFolderId = item["id"]),
                                               child: Container(
-                                                decoration: BoxDecoration(
+                                              decoration: BoxDecoration(
+                                                color: Colors.white
+                                                    .withOpacity(0.06),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                                border: Border.all(
                                                   color: Colors.white
-                                                      .withValues(alpha: 0.06),
-                                                  borderRadius:
-                                                      BorderRadius.circular(16),
-                                                  border: Border.all(
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.1),
-                                                  ),
+                                                      .withOpacity(0.1),
                                                 ),
+                                              ),
                                                 child: Column(
                                                   mainAxisAlignment:
                                                       MainAxisAlignment.center,
@@ -1663,12 +1663,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                             child: Container(
                                               decoration: BoxDecoration(
                                                 color: Colors.white
-                                                    .withValues(alpha: 0.04),
+                                                    .withOpacity(0.04),
                                                 borderRadius:
                                                     BorderRadius.circular(16),
                                                 border: Border.all(
                                                   color: Colors.white
-                                                      .withValues(alpha: 0.08),
+                                                      .withOpacity(0.08),
                                                 ),
                                               ),
                                               child: Column(
@@ -1721,8 +1721,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                                     return Container(
                                                                       color: Colors
                                                                           .white
-                                                                          .withValues(
-                                                                              alpha: 0.04),
+                                                                          .withOpacity(
+                                                                              0.04),
                                                                       child:
                                                                           const Center(
                                                                         child:
@@ -1744,9 +1744,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                               : Container(
                                                                   color: Colors
                                                                       .white
-                                                                      .withValues(
-                                                                          alpha:
-                                                                              0.04),
+                                                                      .withOpacity(
+                                                                          0.04),
                                                                   child: Center(
                                                                     child:
                                                                         Column(
@@ -2047,11 +2046,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             decoration: BoxDecoration(
               color: isActive ? const Color(0xFFC10D00) : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isActive
-                    ? const Color(0xFFC10D00)
-                    : Colors.white.withValues(alpha: 0.4),
-              ),
+            border: Border.all(
+              color: isActive
+                  ? const Color(0xFFC10D00)
+                  : Colors.white.withOpacity(0.4),
+            ),
             ),
             child: Text(
               label,
@@ -2423,7 +2422,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         icon: const Icon(Icons.upload_file),
         label: const Text("Import Template"),
         style: ElevatedButton.styleFrom(
-          backgroundColor: PremiumTheme.purple.withValues(alpha: 0.6),
+          backgroundColor: PremiumTheme.purple.withOpacity(0.6),
           foregroundColor: Colors.white,
         ),
       ),
@@ -3453,7 +3452,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           decoration: BoxDecoration(
             color: isActive
-                ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                ? const Color(0xFF1E3A8A).withOpacity(0.3)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: isActive
@@ -3633,7 +3632,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               height: 42,
               decoration: BoxDecoration(
                 color: isActive
-                    ? const Color(0xFFC10D00).withValues(alpha: 0.3)
+                    ? const Color(0xFFC10D00).withOpacity(0.3)
                     : Colors.transparent,
                 shape: BoxShape.circle,
                 border: Border.all(
@@ -3671,13 +3670,13 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: isActive
-                ? const Color(0xFFC10D00).withValues(alpha: 0.25)
-                : Colors.white.withValues(alpha: 0.03),
+                ? const Color(0xFFC10D00).withOpacity(0.25)
+                : Colors.white.withOpacity(0.03),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isActive
                   ? const Color(0xFFC10D00)
-                  : PremiumTheme.glassWhiteBorder.withValues(alpha: 0.7),
+                  : PremiumTheme.glassWhiteBorder.withOpacity(0.7),
               width: isActive ? 1.5 : 1,
             ),
           ),
@@ -3688,8 +3687,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 height: 42,
                 decoration: BoxDecoration(
                   color: isActive
-                      ? const Color(0xFFC10D00).withValues(alpha: 0.3)
-                      : Colors.white.withValues(alpha: 0.04),
+                      ? const Color(0xFFC10D00).withOpacity(0.3)
+                      : Colors.white.withOpacity(0.04),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive

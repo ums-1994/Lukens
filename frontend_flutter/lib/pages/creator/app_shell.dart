@@ -164,8 +164,8 @@ class _AppShellState extends State<AppShell> {
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
           padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isActive
+            decoration: BoxDecoration(
+              color: isActive
                 ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),

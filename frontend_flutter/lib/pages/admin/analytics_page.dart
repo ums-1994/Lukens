@@ -232,8 +232,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.black.withValues(alpha: 0.85),
-                      Colors.black.withValues(alpha: 0.75),
+                      Colors.black.withOpacity(0.85),
+                      Colors.black.withOpacity(0.75),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -248,7 +248,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF06B6D4).withValues(alpha: 0.1),
+                        color: const Color(0xFF06B6D4).withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -271,7 +271,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       'Choose your preferred export format',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity(0.7),
                       ),
                     ),
                     const SizedBox(height: 32),
@@ -665,7 +665,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.black.withValues(alpha: 0.3),
+                    Colors.black.withOpacity(0.3),
                     Colors.transparent,
                   ],
                   begin: Alignment.topCenter,
@@ -1019,7 +1019,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withOpacity(0.08),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -1074,7 +1074,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
+                      color: Colors.black.withOpacity(0.08),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -1116,7 +1116,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
+            color: Colors.white.withOpacity(0.05),
             border: Border.all(color: const Color(0x33FFFFFF)),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -1159,7 +1159,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
+            color: Colors.white.withOpacity(0.05),
             border: Border.all(color: const Color(0x33FFFFFF)),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -1208,8 +1208,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.white.withValues(alpha: 0.1),
-                Colors.white.withValues(alpha: 0.05),
+                Colors.white.withOpacity(0.1),
+                Colors.white.withOpacity(0.05),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -1285,8 +1285,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.white.withValues(alpha: 0.1),
-                Colors.white.withValues(alpha: 0.05),
+                Colors.white.withOpacity(0.1),
+                Colors.white.withOpacity(0.05),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -1402,7 +1402,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   radius: 5,
                   color: const Color(0xFF06B6D4),
                   strokeWidth: 2,
-                  strokeColor: Colors.black.withValues(alpha: 0.3),
+                  strokeColor: Colors.black.withOpacity(0.3),
                 );
               },
             ),
@@ -1412,8 +1412,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  const Color(0xFF06B6D4).withValues(alpha: 0.3),
-                  const Color(0xFF06B6D4).withValues(alpha: 0.0),
+                  const Color(0xFF06B6D4).withOpacity(0.3),
+                  const Color(0xFF06B6D4).withOpacity(0.0),
                 ],
               ),
             ),
@@ -1602,7 +1602,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     if (sections.isEmpty) {
       sections.add(
         PieChartSectionData(
-          color: Colors.white.withValues(alpha: 0.2),
+          color: Colors.white.withOpacity(0.2),
           value: 100,
           title: 'No data',
           radius: 70,
@@ -1644,8 +1644,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.white.withValues(alpha: 0.1),
-                Colors.white.withValues(alpha: 0.05),
+                Colors.white.withOpacity(0.1),
+                Colors.white.withOpacity(0.05),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -1733,10 +1733,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: data.statusColor.withValues(alpha: 0.15),
+              color: data.statusColor.withOpacity(0.15),
               borderRadius: BorderRadius.circular(6),
               border:
-                  Border.all(color: data.statusColor.withValues(alpha: 0.4)),
+                  Border.all(color: data.statusColor.withOpacity(0.4)),
             ),
             child: Text(
               data.status,

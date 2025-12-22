@@ -66,7 +66,7 @@ class SectionWidget extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(8),
             color: isSelected
-                ? const Color(0xFF00BCD4).withValues(alpha: 0.03)
+                ? const Color(0xFF00BCD4).withOpacity(0.03)
                 : Colors.transparent,
           ),
           child: Column(

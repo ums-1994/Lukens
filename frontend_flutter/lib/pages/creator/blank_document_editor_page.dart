@@ -2430,7 +2430,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               decoration: BoxDecoration(
                                 color: isCurrentVersion
                                     ? const Color(0xFF00BCD4)
-                                        .withValues(alpha: 0.1)
+                                        .withOpacity(0.1)
                                     : Colors.white,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
@@ -3409,7 +3409,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withOpacity(0.08),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -3459,7 +3459,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
+                      color: Colors.black.withOpacity(0.08),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -3643,9 +3643,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           horizontal: 12,
                           vertical: 10,
                         ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFF00BCD4).withValues(alpha: 0.1)
+                          decoration: BoxDecoration(
+                            color: isSelected
+                              ? const Color(0xFF00BCD4).withOpacity(0.1)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(6),
                           border: isSelected
@@ -3682,7 +3682,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                   decoration: BoxDecoration(
                                     color: section.isCoverPage
                                         ? const Color(0xFF00BCD4)
-                                            .withValues(alpha: 0.1)
+                                            .withOpacity(0.1)
                                         : Colors.grey[100],
                                     borderRadius: BorderRadius.circular(4),
                                   ),
@@ -4214,12 +4214,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             borderRadius: BorderRadius.circular(4),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
+                color: Colors.black.withOpacity(0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 5),
               ),
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
+                color: Colors.black.withOpacity(0.08),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -4292,13 +4292,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: const Color(0xFF00BCD4),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF00BCD4).withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF00BCD4).withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
               ),
               child: const Icon(
                 Icons.add,
@@ -4961,7 +4961,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
             borderRadius: BorderRadius.circular(4),
             color: isSelected
-                ? const Color(0xFF00BCD4).withValues(alpha: 0.03)
+                ? const Color(0xFF00BCD4).withOpacity(0.03)
                 : Colors.transparent,
           ),
           child: Column(
@@ -6407,7 +6407,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ),
                       borderRadius: BorderRadius.circular(8),
                       color: isDragging
-                          ? const Color(0xFF00BCD4).withValues(alpha: 0.05)
+                          ? const Color(0xFF00BCD4).withOpacity(0.05)
                           : Colors.grey[50],
                     ),
                     child: Column(
@@ -7112,7 +7112,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
                             color:
-                                const Color(0xFF00BCD4).withValues(alpha: 0.3)),
+                                const Color(0xFF00BCD4).withOpacity(0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -7988,7 +7988,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                   boxShadow: [
                                     BoxShadow(
                                       color:
-                                          Colors.black.withValues(alpha: 0.15),
+                                          Colors.black.withOpacity(0.15),
                                       blurRadius: 20,
                                       offset: const Offset(0, 5),
                                     ),

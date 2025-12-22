@@ -89,7 +89,7 @@ class SectionsSidebar extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? const Color(0xFF00BCD4).withValues(alpha: 0.1)
+                              ? const Color(0xFF00BCD4).withOpacity(0.1)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(6),
                           border: isSelected
@@ -126,7 +126,7 @@ class SectionsSidebar extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     color: section.isCoverPage
                                         ? const Color(0xFF00BCD4)
-                                            .withValues(alpha: 0.1)
+                                            .withOpacity(0.1)
                                         : Colors.grey[100],
                                     borderRadius: BorderRadius.circular(4),
                                   ),

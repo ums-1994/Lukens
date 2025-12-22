@@ -44,8 +44,8 @@ class AppSideNav extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
+              Colors.black.withValues(alpha: 0.3),
+              Colors.black.withValues(alpha: 0.2),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
@@ -215,14 +215,14 @@ class AppSideNav extends StatelessWidget {
         boxShadow: active
             ? [
                 BoxShadow(
-                  color: const Color(0xFFE74C3C).withValues(alpha: 0.25),
+                  color: const Color(0xFFE74C3C).withOpacity(0.25),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
               ]
             : [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
+                  color: Colors.black.withOpacity(0.08),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),

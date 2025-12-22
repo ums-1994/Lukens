@@ -1230,21 +1230,13 @@ class _CollaborationPageState extends State<CollaborationPage> {
         children: [
 
           Container(
-
             width: 40,
-
             height: 40,
-
             decoration: BoxDecoration(
-
               color: color.withValues(alpha: 0.1),
-
               borderRadius: BorderRadius.circular(8),
-
             ),
-
             child: Icon(icon, color: color, size: 20),
-
           ),
 
           const SizedBox(width: 12),

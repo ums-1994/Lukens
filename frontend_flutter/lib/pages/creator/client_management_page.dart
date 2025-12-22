@@ -262,9 +262,9 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
+            color: Colors.white.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            border: Border.all(color: Colors.white.withOpacity(0.2)),
           ),
           child: TextField(
             controller: controller,
@@ -648,7 +648,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withOpacity(0.08),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -703,7 +703,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
+                      color: Colors.black.withOpacity(0.08),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -801,7 +801,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             gradient: LinearGradient(
               colors: [
                 const Color(0xFFC10D00),
-                const Color(0xFFC10D00).withValues(alpha: 0.0),
+                const Color(0xFFC10D00).withOpacity(0.0),
               ],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
@@ -813,7 +813,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
+                color: Colors.black.withOpacity(0.2),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -823,8 +823,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             children: [
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC10D00).withValues(alpha: 0.25),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFC10D00).withOpacity(0.25),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(Icons.people, color: Colors.white, size: 32),
@@ -889,10 +889,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: Colors.white.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                     border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        Border.all(color: Colors.white.withOpacity(0.2)),
                   ),
                   child: TextField(
                     onChanged: (value) => setState(() => _searchQuery = value),
@@ -913,10 +913,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: Colors.white.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                     border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        Border.all(color: Colors.white.withOpacity(0.2)),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -948,7 +948,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 onPressed: _loadData,
                 icon: const Icon(Icons.refresh, color: Colors.white),
                 style: IconButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                  backgroundColor: Colors.white.withOpacity(0.1),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.all(16),
@@ -1023,7 +1023,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     Text(
                       '$activeClients active',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity(0.7),
                         fontSize: 12,
                       ),
                     ),
@@ -1074,7 +1074,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     Text(
                       '$completedInvites completed',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity(0.7),
                         fontSize: 12,
                       ),
                     ),
@@ -1136,7 +1136,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     Text(
                       'new clients',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity(0.7),
                         fontSize: 12,
                       ),
                     ),
@@ -1166,7 +1166,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
                       color: _selectedTab == 'clients'
-                          ? const Color(0xFFC10D00).withValues(alpha: 0.25)
+                          ? const Color(0xFFC10D00).withOpacity(0.25)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                       border: _selectedTab == 'clients'
@@ -1205,7 +1205,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
                       color: _selectedTab == 'invitations'
-                          ? const Color(0xFFC10D00).withValues(alpha: 0.25)
+                          ? const Color(0xFFC10D00).withOpacity(0.25)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                       border: _selectedTab == 'invitations'
@@ -1308,7 +1308,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withOpacity(0.1),
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(20),
                     topRight: Radius.circular(20),
@@ -1376,7 +1376,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       decoration: BoxDecoration(
         border: Border(
           bottom:
-              BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+              BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
         ),
       ),
       child: Row(
@@ -1403,8 +1403,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: status == 'active'
-                    ? PremiumTheme.success.withValues(alpha: 0.2)
-                    : PremiumTheme.warning.withValues(alpha: 0.2),
+                    ? PremiumTheme.success.withOpacity(0.2)
+                    : PremiumTheme.warning.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: status == 'active'
@@ -1522,7 +1522,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withOpacity(0.1),
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(20),
                     topRight: Radius.circular(20),
@@ -1600,7 +1600,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       decoration: BoxDecoration(
         border: Border(
           bottom:
-              BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+              BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
         ),
       ),
       child: Row(
@@ -1626,8 +1626,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: emailVerified
-                    ? PremiumTheme.success.withValues(alpha: 0.2)
-                    : _getStatusColor(status).withValues(alpha: 0.2),
+                    ? PremiumTheme.success.withOpacity(0.2)
+                    : _getStatusColor(status).withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                     color: emailVerified
