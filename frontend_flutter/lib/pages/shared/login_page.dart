@@ -22,6 +22,137 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   bool _isLoading = false;
   bool _passwordVisible = false;
 
+  Future<void> _completeLoginWithFirebaseCredential(dynamic firebaseCredential) async {
+    final user = firebaseCredential?.user;
+    if (user == null) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Firebase authentication failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final firebaseIdToken = await user.getIdToken();
+    if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to get Firebase ID token.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final response = await http.post(
+      Uri.parse('${AuthService.baseUrl}/firebase'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'id_token': firebaseIdToken}),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final error = json.decode(response.body);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error['detail'] ?? 'Backend authentication failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final result = json.decode(response.body);
+    final userProfile = result['user'] as Map<String, dynamic>?;
+    final String authToken = firebaseIdToken;
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (userProfile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Login failed: missing user profile.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final appState = context.read<AppState>();
+    appState.authToken = authToken;
+    appState.currentUser = userProfile;
+
+    AuthService.setUserData(userProfile, authToken);
+
+    final roleService = context.read<RoleService>();
+    await roleService.initializeRoleFromUser(userProfile);
+    await appState.init();
+
+    final rawRole = userProfile['role']?.toString() ?? '';
+    final userRole = rawRole.toLowerCase().trim();
+    String dashboardRoute;
+
+    final isAdmin = userRole == 'admin' || userRole == 'ceo';
+    final isFinance = userRole == 'finance';
+
+    if (isFinance) {
+      dashboardRoute = '/finance_dashboard';
+    } else if (isAdmin) {
+      dashboardRoute = '/admin_dashboard';
+    } else {
+      dashboardRoute = '/manager_dashboard';
+    }
+
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, dashboardRoute);
+  }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final cred = await FirebaseService.signInWithGoogle();
+      await _completeLoginWithFirebaseCredential(cred);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-in failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loginWithMicrosoft() async {
+    setState(() => _isLoading = true);
+    try {
+      final cred = await FirebaseService.signInWithMicrosoft();
+      await _completeLoginWithFirebaseCredential(cred);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Microsoft sign-in failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   late final AnimationController _frameController;
   late final AnimationController _parallaxController;
   late final AnimationController _fadeInController;

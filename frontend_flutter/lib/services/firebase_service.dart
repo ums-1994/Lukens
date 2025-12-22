@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class FirebaseService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -255,5 +256,35 @@ class FirebaseService {
     } catch (e) {
       print('Error reloading user: $e');
     }
+  }
+
+  // Google sign-in for web using popup
+  static Future<UserCredential?> signInWithGoogle() async {
+    if (!kIsWeb) {
+      throw UnsupportedError('Google sign-in with popup is only supported on web');
+    }
+
+    return await _safeExecute(() async {
+      final GoogleAuthProvider provider = GoogleAuthProvider();
+      provider.addScope('email');
+      provider.addScope('profile');
+      
+      return await _auth.signInWithPopup(provider);
+    });
+  }
+
+  // Microsoft sign-in for web using popup
+  static Future<UserCredential?> signInWithMicrosoft() async {
+    if (!kIsWeb) {
+      throw UnsupportedError('Microsoft sign-in with popup is only supported on web');
+    }
+
+    return await _safeExecute(() async {
+      final OAuthProvider provider = OAuthProvider('microsoft.com');
+      provider.addScope('email');
+      provider.addScope('profile');
+      
+      return await _auth.signInWithPopup(provider);
+    });
   }
 }
