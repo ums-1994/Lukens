@@ -2175,7 +2175,7 @@ class _DashboardPageState extends State<DashboardPage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Financial Manager Dashboard',
+          'Manager Dashboard',
           style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,

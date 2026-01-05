@@ -199,10 +199,10 @@ class MyApp extends StatelessWidget {
           }
 
           // Handle client proposals route
-        if (settings.name == '/client/proposals' ||
-            (settings.name != null &&
-                settings.name!.startsWith('/client/proposals'))) {
-          print('🔍 Client proposals route detected: ${settings.name}');
+          if (settings.name == '/client/proposals' ||
+              (settings.name != null &&
+                  settings.name!.startsWith('/client/proposals'))) {
+            print('🔍 Client proposals route detected: ${settings.name}');
 
             // Extract token from URL
             final currentUrl = web.window.location.href;
@@ -313,6 +313,8 @@ class MyApp extends StatelessWidget {
                 proposalId: args['id']?.toString(),
                 proposalTitle: args['title']?.toString(),
                 readOnly: args['readOnly'] ?? false,
+                requireVersionDescription:
+                    args['requireVersionDescription'] ?? false,
               );
             }
 
@@ -422,8 +424,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
       // Fallback: try to extract from hash or full URL
       if (externalToken == null || externalToken.isEmpty) {
-        final hashMatch =
-            RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+        final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
         if (hashMatch != null) {
           externalToken = hashMatch.group(1);
         }
@@ -433,10 +434,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
         print(
             '✅ Detected Khonobuzz JWT login - token: ${externalToken.substring(0, 10)}...');
         try {
-          final loginResult =
-              await AuthService.loginWithJwt(externalToken);
-          final userProfile =
-              loginResult?['user'] as Map<String, dynamic>?;
+          final loginResult = await AuthService.loginWithJwt(externalToken);
+          final userProfile = loginResult?['user'] as Map<String, dynamic>?;
           final token = loginResult?['token'] as String?;
 
           if (userProfile != null && token != null && mounted) {

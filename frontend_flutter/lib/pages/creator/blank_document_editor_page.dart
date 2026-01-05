@@ -27,6 +27,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final bool readOnly; // For approver view-only mode
   final bool
       isCollaborator; // For collaborator mode - hide navigation, show only editor
+  final bool requireVersionDescription;
 
   const BlankDocumentEditorPage({
     super.key,
@@ -36,6 +37,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.aiGeneratedSections,
     this.readOnly = false, // Default to editable
     this.isCollaborator = false, // Default to false
+    this.requireVersionDescription = false,
   });
 
   @override
@@ -224,6 +226,62 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     } catch (e) {
       print('❌ Error initializing auth: $e');
     }
+  }
+
+  Future<String?> _promptForChangeDescription() async {
+    final controller = TextEditingController();
+    String? errorText;
+
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Describe your changes'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Please provide a short description of the changes you made. '
+                    'This will be stored with the new version.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Updated pricing section and risks',
+                      errorText: errorText,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final text = controller.text.trim();
+                    if (text.isEmpty) {
+                      setState(() {
+                        errorText = 'Change description is required.';
+                      });
+                      return;
+                    }
+                    Navigator.pop(context, text);
+                  },
+                  child: const Text('Save Version'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _loadLibraryImages() async {
@@ -2038,8 +2096,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Save to backend
       await _saveToBackend();
 
-      // Create a new version
-      _createVersion('Auto-saved');
+      // For stricter approver sessions, auto-save should NOT create
+      // a new version without an explicit description. Just persist
+      // the latest content.
+      if (!widget.requireVersionDescription) {
+        // Create a new version only in normal creator/editor flows
+        _createVersion('Auto-saved');
+      }
 
       setState(() {
         _lastSaved = DateTime.now();
@@ -2054,7 +2117,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               children: [
                 const Icon(Icons.check_circle, color: Colors.white, size: 18),
                 const SizedBox(width: 8),
-                Text('Auto-saved • Version $_currentVersionNumber'),
+                Text(
+                  widget.requireVersionDescription
+                      ? 'Auto-saved (no new version created)'
+                      : 'Auto-saved · Version $_currentVersionNumber',
+                ),
               ],
             ),
             backgroundColor: Colors.green,
@@ -2655,13 +2722,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Future<void> _saveDocument() async {
+    String changeDescription = 'Manual save';
+    if (widget.requireVersionDescription) {
+      final desc = await _promptForChangeDescription();
+      if (!mounted) return;
+      if (desc == null || desc.trim().isEmpty) {
+        // User cancelled or left description empty; do not create a version.
+        return;
+      }
+      changeDescription = desc.trim();
+    }
+
     setState(() => _isSaving = true);
     try {
       // Save to backend
       await _saveToBackend();
 
       // Create a new version for manual save
-      _createVersion('Manual save');
+      _createVersion(changeDescription);
 
       setState(() {
         _lastSaved = DateTime.now();
@@ -2753,13 +2831,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Future<void> _saveAndClose() async {
+    String changeDescription = 'Manual save';
+    if (widget.requireVersionDescription) {
+      final desc = await _promptForChangeDescription();
+      if (!mounted) return;
+      if (desc == null || desc.trim().isEmpty) {
+        // User cancelled or left description empty; do not save/close.
+        return;
+      }
+      changeDescription = desc.trim();
+    }
+
     setState(() => _isSaving = true);
     try {
       // Save to backend
       await _saveToBackend();
 
       // Create a new version
-      _createVersion('Manual save');
+      _createVersion(changeDescription);
 
       setState(() {
         _lastSaved = DateTime.now();

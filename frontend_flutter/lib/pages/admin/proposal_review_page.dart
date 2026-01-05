@@ -173,10 +173,28 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+
+        // Backend may return either a raw list of versions or an object
+        // containing a `versions` field. Handle both for robustness.
+        List<Map<String, dynamic>> versions = [];
+        if (data is List) {
+          versions = List<Map<String, dynamic>>.from(data);
+        } else if (data is Map && data['versions'] is List) {
+          versions = List<Map<String, dynamic>>.from(data['versions']);
+        }
+
+        // Normalize field names so the UI can always use `description`.
+        versions = versions.map((v) {
+          final normalized = Map<String, dynamic>.from(v);
+          if (normalized['description'] == null &&
+              normalized['change_description'] != null) {
+            normalized['description'] = normalized['change_description'];
+          }
+          return normalized;
+        }).toList();
+
         setState(() {
-          _versions = List<Map<String, dynamic>>.from(
-            data['versions'] ?? [],
-          );
+          _versions = versions;
         });
       }
     } catch (e) {
@@ -526,6 +544,27 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     }
   }
 
+  void _openInEditor() {
+    if (_proposal == null) return;
+
+    final id = widget.proposalId;
+    if (id.isEmpty) return;
+
+    Navigator.pushNamed(
+      context,
+      '/compose',
+      arguments: {
+        'id': id,
+        'title':
+            _proposal!['title'] ?? widget.proposalTitle ?? 'Untitled Proposal',
+        // Explicitly allow editing for approvers while they are reviewing
+        'readOnly': false,
+        // Enforce mandatory change descriptions for new versions
+        'requireVersionDescription': true,
+      },
+    );
+  }
+
   String _formatContent(dynamic content) {
     if (content == null) return 'No content available';
     if (content is String) {
@@ -564,6 +603,11 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         ),
         actions: [
           if (_proposal != null) ...[
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.white),
+              onPressed: _openInEditor,
+              tooltip: 'Edit in Editor',
+            ),
             IconButton(
               icon: const Icon(Icons.history, color: Colors.white),
               onPressed: () => setState(() => _showVersions = !_showVersions),
