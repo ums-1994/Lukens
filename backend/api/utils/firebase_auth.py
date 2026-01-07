@@ -3,20 +3,48 @@ Firebase Authentication utilities
 Verifies Firebase ID tokens from the frontend
 """
 import os
-import firebase_admin
-from firebase_admin import credentials, auth
+try:
+    import firebase_admin
+    from firebase_admin import credentials, auth
+except Exception:
+    firebase_admin = None
+    credentials = None
+    auth = None
 from functools import wraps
 from flask import request, jsonify
 
 # Initialize Firebase Admin SDK
 _firebase_app = None
+_last_verify_error = None
+
+
+def get_last_verify_error():
+    return _last_verify_error
+
+
+def _get_project_id_from_env():
+    return (
+        os.getenv('FIREBASE_PROJECT_ID')
+        or os.getenv('GOOGLE_CLOUD_PROJECT')
+        or os.getenv('GCLOUD_PROJECT')
+    )
+
+
+def _get_project_id_from_service_account_info(cred_info):
+    if not isinstance(cred_info, dict):
+        return None
+    return cred_info.get('project_id')
 
 def initialize_firebase():
     """Initialize Firebase Admin SDK"""
     global _firebase_app
-    
+
     if _firebase_app is not None:
         return _firebase_app
+
+    if firebase_admin is None or credentials is None:
+        print("⚠️ Firebase Admin SDK not available (firebase_admin not installed)")
+        return None
     
     try:
         # Try to get credentials from environment variable (service account JSON)
@@ -30,9 +58,20 @@ def initialize_firebase():
                 cred_path = default_path
                 print(f"📁 Using default Firebase credentials: {default_path}")
         
+        project_id = None
+
         if cred_path and os.path.exists(cred_path):
+            try:
+                import json
+                with open(cred_path, 'r', encoding='utf-8') as f:
+                    cred_info = json.load(f)
+                project_id = _get_project_id_from_service_account_info(cred_info)
+            except Exception:
+                project_id = None
+
             cred = credentials.Certificate(cred_path)
-            _firebase_app = firebase_admin.initialize_app(cred)
+            options = {'projectId': project_id} if project_id else None
+            _firebase_app = firebase_admin.initialize_app(cred, options=options)
             print(f"✅ Firebase Admin SDK initialized from: {cred_path}")
         else:
             # Try to use default credentials (for Google Cloud environments)
@@ -41,13 +80,21 @@ def initialize_firebase():
             if service_account_json:
                 import json
                 cred_info = json.loads(service_account_json)
+                project_id = _get_project_id_from_service_account_info(cred_info)
                 cred = credentials.Certificate(cred_info)
-                _firebase_app = firebase_admin.initialize_app(cred)
+                options = {'projectId': project_id} if project_id else None
+                _firebase_app = firebase_admin.initialize_app(cred, options=options)
                 print("✅ Firebase Admin SDK initialized from environment variable")
             else:
                 # Try default credentials (for local development with gcloud auth)
                 try:
-                    _firebase_app = firebase_admin.initialize_app()
+                    project_id = _get_project_id_from_env()
+                    if not project_id:
+                        print("⚠️ Firebase Admin SDK not initialized: project ID not set")
+                        print("   Set FIREBASE_PROJECT_ID (or GOOGLE_CLOUD_PROJECT) for local development")
+                        return None
+
+                    _firebase_app = firebase_admin.initialize_app(options={'projectId': project_id})
                     print("✅ Firebase Admin SDK initialized with default credentials")
                 except Exception as e:
                     print(f"⚠️ Firebase Admin SDK not initialized: {e}")
@@ -70,7 +117,14 @@ def verify_firebase_token(id_token):
     Returns:
         dict: Decoded token with user info (uid, email, etc.) or None if invalid
     """
+    global _last_verify_error
     try:
+        _last_verify_error = None
+        if auth is None:
+            print("⚠️ Firebase Admin SDK not available, cannot verify token")
+            _last_verify_error = 'firebase_admin not installed'
+            return None
+
         if _firebase_app is None:
             initialize_firebase()
         
@@ -87,17 +141,19 @@ def verify_firebase_token(id_token):
         decoded_token = auth.verify_id_token(id_token)
         print(f"✅ Firebase ID token verified successfully")
         return decoded_token
-    except auth.InvalidIdTokenError as e:
-        print(f"❌ Invalid Firebase ID token: {str(e)}")
-        return None
-    except auth.ExpiredIdTokenError as e:
-        print(f"❌ Expired Firebase ID token: {str(e)}")
-        return None
-    except ValueError as e:
-        # Token format errors
-        print(f"⚠️ Token format error (likely not a Firebase token): {str(e)}")
-        return None
     except Exception as e:
+        _last_verify_error = f"{type(e).__name__}: {str(e)}"
+        invalid_cls = getattr(auth, 'InvalidIdTokenError', None)
+        expired_cls = getattr(auth, 'ExpiredIdTokenError', None)
+        if invalid_cls and isinstance(e, invalid_cls):
+            print(f"❌ Invalid Firebase ID token: {str(e)}")
+            return None
+        if expired_cls and isinstance(e, expired_cls):
+            print(f"❌ Expired Firebase ID token: {str(e)}")
+            return None
+        if isinstance(e, ValueError):
+            print(f"⚠️ Token format error (likely not a Firebase token): {str(e)}")
+            return None
         print(f"❌ Error verifying Firebase token: {type(e).__name__}: {str(e)}")
         return None
 

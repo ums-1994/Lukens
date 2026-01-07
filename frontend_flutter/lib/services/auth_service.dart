@@ -6,9 +6,6 @@ import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'dart:html' as html;
 
 class AuthService {
-<<<<<<< HEAD
-  static const String baseUrl = 'https://lukens-backend.onrender.com';
-=======
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
     if (kIsWeb) {
@@ -44,16 +41,15 @@ class AuthService {
             !hostname.contains('localhost');
         
         if (isProduction) {
-          print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
+          print('🌐 Using production API URL: http://127.0.0.1:8000');
+          return 'http://127.0.0.1:8000';
         }
       }
     }
-    // Default to Render backend (production)
-    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to local backend
+    print('🌐 Using local API URL: http://127.0.0.1:8000');
+    return 'http://127.0.0.1:8000';
   }
->>>>>>> origin/Cleaned_Code
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 

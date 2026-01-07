@@ -66,7 +66,11 @@ app = Flask(__name__)
 allowed_origins_list = [
     'http://localhost:8081',
     'http://localhost:8080',
+    'http://localhost:8082',
+    'http://localhost:8083',
     'http://127.0.0.1:8081',
+    'http://127.0.0.1:8082',
+    'http://127.0.0.1:8083',
     'http://localhost:3000',
     'https://sowbuilder.netlify.app',
 ]
@@ -75,9 +79,14 @@ CORS(app,
      supports_credentials=True,
      origins=allowed_origins_list,
      methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-     allow_headers=['Content-Type', 'Authorization', 'Collab-Token'],
+     allow_headers=['Content-Type', 'Authorization', 'Collab-Token', 'X-Requested-With'],
      expose_headers=['Content-Type', 'Authorization'],
      automatic_options=True)  # Automatically handle OPTIONS requests
+
+@app.before_request
+def handle_preflight():
+    if request.method == 'OPTIONS':
+        return ('', 200)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -1622,11 +1631,12 @@ try:
         'approver_bp': 'Approver routes',
         'collaborator_bp': 'Collaborator routes',
         'clients_bp': 'Client management routes',
-        'shared_bp': 'Shared utility routes'
+        'shared_bp': 'Shared utility routes',
+        'finance_bp': 'Finance routes'
     }
     
     try:
-        from api.routes import creator_bp, client_bp, approver_bp, collaborator_bp, clients_bp, auth_bp, shared_bp
+        from api.routes import creator_bp, client_bp, approver_bp, collaborator_bp, clients_bp, auth_bp, shared_bp, finance_bp
         blueprints['auth_bp'] = auth_bp
         blueprints['creator_bp'] = creator_bp
         blueprints['client_bp'] = client_bp
@@ -1634,6 +1644,7 @@ try:
         blueprints['collaborator_bp'] = collaborator_bp
         blueprints['clients_bp'] = clients_bp
         blueprints['shared_bp'] = shared_bp
+        blueprints['finance_bp'] = finance_bp
     except ImportError as import_error:
         print(f"[WARN] Failed to import blueprints from api.routes: {import_error}")
         # Try alternative import method
@@ -1645,6 +1656,7 @@ try:
             from api.routes.collaborator import bp as collaborator_bp
             from api.routes.clients import bp as clients_bp
             from api.routes.shared import bp as shared_bp
+            from api.routes.finance import bp as finance_bp
             blueprints['auth_bp'] = auth_bp
             blueprints['creator_bp'] = creator_bp
             blueprints['client_bp'] = client_bp
@@ -1652,6 +1664,7 @@ try:
             blueprints['collaborator_bp'] = collaborator_bp
             blueprints['clients_bp'] = clients_bp
             blueprints['shared_bp'] = shared_bp
+            blueprints['finance_bp'] = finance_bp
             print("[OK] Successfully imported blueprints using alternative method")
         except Exception as alt_import_error:
             print(f"[ERROR] Failed to import blueprints using alternative method: {alt_import_error}")

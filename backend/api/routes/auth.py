@@ -2,7 +2,7 @@
 Authentication routes - Registration, login, password reset, user profile
 Supports both Firebase authentication and legacy JWT tokens
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 import os
 import json
 import traceback
@@ -13,7 +13,7 @@ import psycopg2.extras
 from api.utils.database import get_db_connection, _pg_conn, release_pg_conn
 from api.utils.decorators import token_required
 from api.utils.auth import verify_token, get_valid_tokens, generate_token, hash_password, verify_password, save_tokens
-from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, firebase_token_required, initialize_firebase
+from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, firebase_token_required, initialize_firebase, get_last_verify_error
 from api.utils.email import send_email, send_verification_email
 from werkzeug.security import check_password_hash
 
@@ -383,11 +383,23 @@ def firebase_auth():
         
         # Get role from request (for new registrations)
         requested_role = data.get('role', 'user')
+
+        firebase_app = initialize_firebase()
+        if firebase_app is None:
+            return {
+                'detail': 'Firebase Admin SDK is not initialized on the backend',
+                'hint': 'Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON and restart the backend'
+            }, 503
         
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)
         if not decoded_token:
-            return {'detail': 'Invalid or expired Firebase token'}, 401
+            resp = {'detail': 'Invalid or expired Firebase token'}
+            if current_app.debug:
+                err = get_last_verify_error()
+                if err:
+                    resp['firebase_error'] = err
+            return resp, 401
         
         # Extract user info from Firebase token
         firebase_user = get_user_from_token(decoded_token)
@@ -417,11 +429,12 @@ def firebase_auth():
                 username = user[1]
                 user_role = user[4]  # Get role from database
                 
-                # Normalize role: map variations to standard roles (admin or manager)
-                # Only two roles: admin and manager
+                # Normalize role: map variations to standard roles
                 role_lower = user_role.lower().strip() if user_role else 'user'
                 if role_lower in ['admin', 'ceo']:
                     normalized_role = 'admin'
+                elif role_lower in ['finance', 'financial', 'financial manager']:
+                    normalized_role = 'finance'
                 elif role_lower in ['manager', 'financial manager', 'creator', 'user']:
                     normalized_role = 'manager'
                 else:
@@ -469,11 +482,12 @@ def firebase_auth():
                     counter += 1
                 
                 # Use requested role if provided, otherwise default to 'manager'
-                # Only two roles: admin and manager
                 normalized_role = requested_role.lower().strip() if requested_role else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
-                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
+                elif normalized_role in ['finance', 'financial', 'financial manager']:
+                    role_to_use = 'finance'
+                elif normalized_role in ['manager', 'creator', 'user']:
                     role_to_use = 'manager'
                 else:
                     # Default to manager for unknown roles
@@ -490,11 +504,7 @@ def firebase_auth():
                     '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id, username, email, full_name, role, department, is_active''',
-<<<<<<< HEAD
-                    (username, email, '', name, role_to_use, True, firebase_user.get('email_verified', False))
-=======
-                    (username, email, dummy_password_hash, name, role_to_use, True, firebase_user.get('email_verified', False))
->>>>>>> origin/Cleaned_Code
+(username, email, dummy_password_hash, name, role_to_use, True, firebase_user.get('email_verified', False))
                 )
                 user = cursor.fetchone()
                 user_id = user[0]

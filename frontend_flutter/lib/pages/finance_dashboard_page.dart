@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math' as math;
 import '../api.dart';
 import '../services/auth_service.dart';
 import '../theme/premium_theme.dart';
@@ -17,13 +18,18 @@ class FinanceDashboardPage extends StatefulWidget {
 
 class _FinanceDashboardPageState extends State<FinanceDashboardPage>
     with TickerProviderStateMixin {
+  List<Map<String, dynamic>> _allProposals = [];
   List<Map<String, dynamic>> _pendingProposals = [];
   List<Map<String, dynamic>> _approvedProposals = [];
   List<Map<String, dynamic>> _rejectedProposals = [];
   bool _isLoading = true;
+  String? _loadError;
   String? _selectedProposalId;
   Map<String, dynamic>? _selectedProposal;
   final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  String _statusFilter = 'All';
+  DateTimeRange? _dateRange;
   bool _approvedExpanded = true;
   bool _rejectedExpanded = false;
 
@@ -33,15 +39,157 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
     _loadFinanceData();
   }
 
+  @override
+  void dispose() {
+    _commentController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _normalizeStatus(String statusRaw) {
+    final s = statusRaw.toLowerCase().trim();
+    if (s == 'pending finance approval' || s == 'pending_finance' || s == 'pending') {
+      return 'pending';
+    }
+    if (s == 'finance approved' || s == 'finance_approved' || s == 'approved') {
+      return 'approved';
+    }
+    if (s == 'finance rejected' || s == 'finance_rejected' || s == 'rejected') {
+      return 'rejected';
+    }
+    return 'other';
+  }
+
+  DateTime? _extractDate(Map<String, dynamic> proposal) {
+    final candidates = [
+      proposal['created_at'],
+      proposal['createdAt'],
+      proposal['created'],
+      proposal['submitted_at'],
+      proposal['updated_at'],
+      proposal['updatedAt'],
+    ];
+
+    for (final c in candidates) {
+      if (c == null) continue;
+      if (c is DateTime) return c;
+      final s = c.toString();
+      final dt = DateTime.tryParse(s);
+      if (dt != null) return dt;
+    }
+    return null;
+  }
+
+  double _extractAmount(Map<String, dynamic> proposal) {
+    final keys = [
+      'amount',
+      'total',
+      'value',
+      'proposal_value',
+      'proposalValue',
+      'total_amount',
+      'totalAmount',
+      'price',
+    ];
+
+    for (final k in keys) {
+      final v = proposal[k];
+      if (v == null) continue;
+      if (v is num) return v.toDouble();
+      final raw = v.toString();
+      final cleaned = raw.replaceAll(RegExp(r'[^0-9.\-]'), '');
+      final parsed = double.tryParse(cleaned);
+      if (parsed != null) return parsed;
+    }
+    return 0;
+  }
+
+  String _formatMoney(double amount) {
+    if (amount <= 0) return '--';
+    final rounded = amount.round();
+    final s = rounded.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final idxFromEnd = s.length - i;
+      buf.write(s[i]);
+      if (idxFromEnd > 1 && idxFromEnd % 3 == 1) {
+        buf.write(',');
+      }
+    }
+    return '\$${buf.toString()}';
+  }
+
+  bool _matchesFilters(Map<String, dynamic> proposal) {
+    final title = (proposal['title'] ?? '').toString().toLowerCase();
+    final client = (proposal['client_name'] ?? proposal['client'] ?? '').toString().toLowerCase();
+    final query = _searchController.text.toLowerCase().trim();
+    if (query.isNotEmpty && !(title.contains(query) || client.contains(query))) {
+      return false;
+    }
+
+    final normalized = _normalizeStatus((proposal['status'] ?? '').toString());
+    if (_statusFilter != 'All' && normalized != _statusFilter.toLowerCase()) {
+      return false;
+    }
+
+    if (_dateRange != null) {
+      final dt = _extractDate(proposal);
+      if (dt == null) return false;
+      final start = DateTime(_dateRange!.start.year, _dateRange!.start.month, _dateRange!.start.day);
+      final end = DateTime(_dateRange!.end.year, _dateRange!.end.month, _dateRange!.end.day, 23, 59, 59);
+      if (dt.isBefore(start) || dt.isAfter(end)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  List<Map<String, dynamic>> _filtered(List<Map<String, dynamic>> list) {
+    return list.where(_matchesFilters).toList();
+  }
+
+  double _sumAmount(List<Map<String, dynamic>> proposals) {
+    double sum = 0;
+    for (final p in proposals) {
+      sum += _extractAmount(p);
+    }
+    return sum;
+  }
+
+  double _avgAmount(List<Map<String, dynamic>> proposals) {
+    final amounts = proposals
+        .map(_extractAmount)
+        .where((a) => a > 0)
+        .toList();
+    if (amounts.isEmpty) return 0;
+    final total = amounts.fold<double>(0, (a, b) => a + b);
+    return total / amounts.length;
+  }
+
   Future<void> _loadFinanceData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     
     try {
       final token = AuthService.token;
-      if (token == null) return;
+      if (token == null) {
+        setState(() {
+          _allProposals = [];
+          _pendingProposals = [];
+          _approvedProposals = [];
+          _rejectedProposals = [];
+          _loadError = 'You are not logged in. Please sign in again.';
+        });
+        return;
+      }
+
+      final apiBaseUrl = AuthService.baseUrl;
 
       final response = await http.get(
-        Uri.parse('$baseUrl/api/finance/proposals'),
+        Uri.parse('$apiBaseUrl/api/finance/proposals'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -52,23 +200,51 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
         final data = json.decode(response.body);
         final proposals = List<Map<String, dynamic>>.from(data['proposals'] ?? []);
 
+        _allProposals = proposals;
+
         _pendingProposals = proposals.where((p) {
-          final status = (p['status'] ?? '').toString().toLowerCase();
-          return status == 'pending finance approval';
+          final status = _normalizeStatus((p['status'] ?? '').toString());
+          return status == 'pending';
         }).toList();
 
         _approvedProposals = proposals.where((p) {
-          final status = (p['status'] ?? '').toString().toLowerCase();
-          return status == 'finance approved';
+          final status = _normalizeStatus((p['status'] ?? '').toString());
+          return status == 'approved';
         }).toList();
 
         _rejectedProposals = proposals.where((p) {
-          final status = (p['status'] ?? '').toString().toLowerCase();
-          return status == 'finance rejected';
+          final status = _normalizeStatus((p['status'] ?? '').toString());
+          return status == 'rejected';
         }).toList();
+
+        if (_selectedProposalId != null) {
+          final match = proposals.firstWhere(
+            (p) => p['id']?.toString() == _selectedProposalId,
+            orElse: () => <String, dynamic>{},
+          );
+          if (match.isNotEmpty) {
+            _selectedProposal = match;
+          }
+        }
+      } else {
+        setState(() {
+          _allProposals = [];
+          _pendingProposals = [];
+          _approvedProposals = [];
+          _rejectedProposals = [];
+          _loadError =
+              'Failed to load proposals (${response.statusCode}).';
+        });
       }
     } catch (e) {
       print('Error loading finance data: $e');
+      setState(() {
+        _allProposals = [];
+        _pendingProposals = [];
+        _approvedProposals = [];
+        _rejectedProposals = [];
+        _loadError = 'Failed to load proposals. Please try again.';
+      });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -83,13 +259,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
       final token = AuthService.token;
       if (token == null) return;
 
+      final apiBaseUrl = AuthService.baseUrl;
+
       final isApprove = action == 'approved';
       final path = isApprove
           ? '/api/finance/proposals/${_selectedProposalId}/approve'
           : '/api/finance/proposals/${_selectedProposalId}/reject';
 
       final response = await http.post(
-        Uri.parse('$baseUrl$path'),
+        Uri.parse('$apiBaseUrl$path'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -107,6 +285,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
           ),
         );
         await _loadFinanceData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Update failed (${response.statusCode})'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -123,7 +308,22 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
     final app = context.watch<AppState>();
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 900;
-    
+    final isDesktop = size.width >= 1100;
+
+    final filteredPending = _filtered(_pendingProposals);
+    final filteredApproved = _filtered(_approvedProposals);
+    final filteredRejected = _filtered(_rejectedProposals);
+
+    final pendingSum = _sumAmount(filteredPending);
+    final approvedSum = _sumAmount(filteredApproved);
+    final rejectedSum = _sumAmount(filteredRejected);
+    final avgDeal = _avgAmount(_filtered(_allProposals));
+
+    final totalDecided = filteredApproved.length + filteredRejected.length;
+    final approvalRate = totalDecided == 0
+        ? 0.0
+        : (filteredApproved.length / totalDecided).clamp(0.0, 1.0);
+
     final userRole = 'Finance';
     final userName = app.currentUser?['full_name'] ?? 'Finance User';
 
@@ -160,6 +360,11 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          tooltip: 'Refresh',
+                          onPressed: _isLoading ? null : _loadFinanceData,
+                          icon: const Icon(Icons.refresh, color: Colors.white),
+                        ),
                         ClipOval(
                           child: Image.asset(
                             'assets/images/User_Profile.png',
@@ -225,7 +430,35 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator(color: PremiumTheme.teal))
-                  : SingleChildScrollView(
+                  : _loadError != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _loadError!,
+                                  textAlign: TextAlign.center,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: Colors.white.withOpacity(0.85),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                ElevatedButton.icon(
+                                  onPressed: _loadFinanceData,
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('Retry'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: PremiumTheme.teal,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : SingleChildScrollView(
                       controller: ScrollController(),
                       child: Padding(
                         padding: const EdgeInsets.all(24),
@@ -238,13 +471,89 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
                                 color: PremiumTheme.textSecondary,
                               ),
                             ),
+                            const SizedBox(height: 16),
+
+                            _buildKpiRow(
+                              pendingCount: filteredPending.length,
+                              approvedCount: filteredApproved.length,
+                              rejectedCount: filteredRejected.length,
+                              pendingSum: pendingSum,
+                              approvedSum: approvedSum,
+                              rejectedSum: rejectedSum,
+                              avgDeal: avgDeal,
+                            ),
+                            const SizedBox(height: 16),
+
+                            _buildFiltersCard(),
+                            const SizedBox(height: 16),
+
+                            _buildChartsRow(
+                              pendingSum: pendingSum,
+                              approvedSum: approvedSum,
+                              rejectedSum: rejectedSum,
+                              approvalRate: approvalRate,
+                            ),
                             const SizedBox(height: 24),
 
-                            _buildProposalTable(_pendingProposals, 'Pending Financial Review', Colors.orange),
+                            Builder(
+                              builder: (context) {
+                                void openProposal(Map<String, dynamic> proposal) {
+                                  _selectProposal(proposal);
+                                  if (isDesktop) return;
+                                  _showProposalDetails(proposal);
+                                }
+
+                                final leftColumn = Column(
+                                  children: [
+                                    _buildProposalSection(
+                                      proposals: filteredPending,
+                                      title: 'Pending Review',
+                                      subtitle: 'Awaiting finance approval',
+                                      color: Colors.orange,
+                                      icon: Icons.hourglass_top,
+                                      onOpen: openProposal,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _buildProposalSection(
+                                      proposals: filteredApproved,
+                                      title: 'Approved',
+                                      subtitle: 'Recently approved proposals',
+                                      color: Colors.green,
+                                      icon: Icons.check_circle,
+                                      onOpen: openProposal,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    _buildProposalSection(
+                                      proposals: filteredRejected,
+                                      title: 'Rejected',
+                                      subtitle: 'Recently rejected proposals',
+                                      color: Colors.red,
+                                      icon: Icons.cancel,
+                                      onOpen: openProposal,
+                                    ),
+                                  ],
+                                );
+
+                                if (!isDesktop) {
+                                  return leftColumn;
+                                }
+
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(flex: 7, child: leftColumn),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      flex: 5,
+                                      child: _buildDetailsPanel(),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+
                             const SizedBox(height: 24),
-                            _buildProposalTable(_approvedProposals, 'Approved Proposals', Colors.green),
-                            const SizedBox(height: 24),
-                            _buildProposalTable(_rejectedProposals, 'Rejected Proposals', Colors.red),
+                            const Footer(),
                           ],
                         ),
                       ),
@@ -256,84 +565,814 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
     );
   }
 
-  Widget _buildProposalTable(List<Map<String, dynamic>> proposals, String title, Color color) {
-    if (proposals.isEmpty) {
-      return Card(
-        margin: const EdgeInsets.all(16),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
+  void _selectProposal(Map<String, dynamic> proposal) {
+    setState(() {
+      _selectedProposal = proposal;
+      _selectedProposalId = proposal['id']?.toString();
+      _commentController.text = '';
+    });
+  }
+
+  Widget _buildKpiRow({
+    required int pendingCount,
+    required int approvedCount,
+    required int rejectedCount,
+    required double pendingSum,
+    required double approvedSum,
+    required double rejectedSum,
+    required double avgDeal,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 900;
+        final kpis = [
+          _KpiData(
+            label: 'Pending',
+            value: pendingCount,
+            subValue: _formatMoney(pendingSum),
+            icon: Icons.hourglass_top,
+            color: Colors.orange,
+          ),
+          _KpiData(
+            label: 'Approved',
+            value: approvedCount,
+            subValue: _formatMoney(approvedSum),
+            icon: Icons.check_circle,
+            color: Colors.green,
+          ),
+          _KpiData(
+            label: 'Rejected',
+            value: rejectedCount,
+            subValue: _formatMoney(rejectedSum),
+            icon: Icons.cancel,
+            color: Colors.red,
+          ),
+          _KpiData(
+            label: 'Avg Deal',
+            value: 0,
+            subValue: _formatMoney(avgDeal),
+            icon: Icons.trending_up,
+            color: PremiumTheme.teal,
+          ),
+        ];
+
+        if (isNarrow) {
+          return Column(
             children: [
-              Icon(
-                title.contains('Pending') ? Icons.hourglass_empty : 
-                title.contains('Approved') ? Icons.check_circle : 
-                Icons.cancel,
-                size: 48,
-                color: Colors.grey[400],
+              Row(
+                children: [
+                  Expanded(child: _buildKpiCard(kpis[0])),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildKpiCard(kpis[1])),
+                ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                'No ${title.toLowerCase()} yet.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: _buildKpiCard(kpis[2])),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildKpiCard(kpis[3])),
+                ],
               ),
             ],
-          ),
-        ),
-      );
-    }
+          );
+        }
 
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        return Row(
+          children: [
+            Expanded(child: _buildKpiCard(kpis[0])),
+            const SizedBox(width: 12),
+            Expanded(child: _buildKpiCard(kpis[1])),
+            const SizedBox(width: 12),
+            Expanded(child: _buildKpiCard(kpis[2])),
+            const SizedBox(width: 12),
+            Expanded(child: _buildKpiCard(kpis[3])),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildKpiCard(_KpiData data) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: PremiumTheme.darkBg2.withOpacity(0.55),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: data.color.withOpacity(0.15),
+              border: Border.all(color: data.color.withOpacity(0.25)),
             ),
+            child: Icon(data.icon, color: data.color),
           ),
-          DataTable(
-            columns: const [
-              DataColumn(label: Text('Proposal Name')),
-              DataColumn(label: Text('Client')),
-              DataColumn(label: Text('Status')),
-              DataColumn(label: Text('Action')),
-            ],
-            rows: proposals.map((proposal) {
-              final proposalName = proposal['title'] ?? 'Untitled';
-              final clientName = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
-              final status = proposal['status'] ?? 'Unknown';
-
-              return DataRow(
-                cells: [
-                  DataCell(Text(proposalName)),
-                  DataCell(Text(clientName)),
-                  DataCell(_buildStatusBadge(status)),
-                  DataCell(
-                    ElevatedButton(
-                      onPressed: () => _showProposalDetails(proposal),
-                      child: const Text('View'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  data.label,
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: PremiumTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (data.value > 0)
+                  Text(
+                    data.value.toString(),
+                    style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                  )
+                else
+                  Text(
+                    data.subValue ?? '--',
+                    style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                  ),
+                if (data.value > 0 && (data.subValue ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    data.subValue!,
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: PremiumTheme.textSecondary,
                     ),
                   ),
                 ],
-              );
-            }).toList(),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFiltersCard() {
+    final dateLabel = _dateRange == null
+        ? 'Any date'
+        : '${_dateRange!.start.year}-${_dateRange!.start.month.toString().padLeft(2, '0')}-${_dateRange!.start.day.toString().padLeft(2, '0')} '
+            '→ ${_dateRange!.end.year}-${_dateRange!.end.month.toString().padLeft(2, '0')}-${_dateRange!.end.day.toString().padLeft(2, '0')}';
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: PremiumTheme.darkBg2.withOpacity(0.55),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 900;
+
+          final search = TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Search proposals or clients…',
+              prefixIcon: const Icon(Icons.search),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.04),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+            ),
+          );
+
+          final status = DropdownButtonFormField<String>(
+            value: _statusFilter,
+            dropdownColor: PremiumTheme.darkBg1,
+            items: const [
+              DropdownMenuItem(value: 'All', child: Text('All statuses')),
+              DropdownMenuItem(value: 'Pending', child: Text('Pending')),
+              DropdownMenuItem(value: 'Approved', child: Text('Approved')),
+              DropdownMenuItem(value: 'Rejected', child: Text('Rejected')),
+            ],
+            onChanged: (v) => setState(() => _statusFilter = v ?? 'All'),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.04),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+            ),
+          );
+
+          final date = OutlinedButton.icon(
+            onPressed: () async {
+              final picked = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2020, 1, 1),
+                lastDate: DateTime.now().add(const Duration(days: 365)),
+                initialDateRange: _dateRange,
+              );
+              if (picked == null) return;
+              setState(() => _dateRange = picked);
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: BorderSide(color: Colors.white.withOpacity(0.12)),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.date_range),
+            label: Text(dateLabel, overflow: TextOverflow.ellipsis),
+          );
+
+          final clear = TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _searchController.text = '';
+                _statusFilter = 'All';
+                _dateRange = null;
+              });
+            },
+            icon: const Icon(Icons.clear),
+            label: const Text('Clear'),
+          );
+
+          if (isNarrow) {
+            return Column(
+              children: [
+                search,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: status),
+                    const SizedBox(width: 12),
+                    Expanded(child: date),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Align(alignment: Alignment.centerRight, child: clear),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(flex: 6, child: search),
+              const SizedBox(width: 12),
+              Expanded(flex: 3, child: status),
+              const SizedBox(width: 12),
+              Expanded(flex: 5, child: date),
+              const SizedBox(width: 8),
+              clear,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildChartsRow({
+    required double pendingSum,
+    required double approvedSum,
+    required double rejectedSum,
+    required double approvalRate,
+  }) {
+    final series = _buildWeeklySeries();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 900;
+        final left = _buildWeeklyChartCard(series);
+        final right = _buildApprovalRateCard(approvalRate, pendingSum, approvedSum, rejectedSum);
+
+        if (isNarrow) {
+          return Column(
+            children: [
+              left,
+              const SizedBox(height: 12),
+              right,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: left),
+            const SizedBox(width: 12),
+            Expanded(child: right),
+          ],
+        );
+      },
+    );
+  }
+
+  List<_ChartPoint> _buildWeeklySeries() {
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 7 * 5));
+    final points = <_ChartPoint>[];
+
+    for (int i = 0; i < 6; i++) {
+      final weekStart = DateTime(start.year, start.month, start.day).add(Duration(days: 7 * i));
+      final weekEnd = weekStart.add(const Duration(days: 7));
+      double total = 0;
+      int count = 0;
+
+      for (final p in _allProposals) {
+        final dt = _extractDate(p);
+        if (dt == null) continue;
+        if (dt.isBefore(weekStart) || !dt.isBefore(weekEnd)) continue;
+        if (!_matchesFilters(p)) continue;
+        final amt = _extractAmount(p);
+        if (amt > 0) total += amt;
+        count += 1;
+      }
+
+      final value = total > 0 ? total : count.toDouble();
+      final label = '${weekStart.month}/${weekStart.day}';
+      points.add(_ChartPoint(label: label, value: value));
+    }
+
+    return points;
+  }
+
+  Widget _buildWeeklyChartCard(List<_ChartPoint> points) {
+    final maxValue = points.isEmpty
+        ? 0.0
+        : points.map((p) => p.value).reduce((a, b) => math.max(a, b));
+    final hasMoney = points.any((p) => p.value >= 1000);
+    final subtitle = hasMoney
+        ? 'Weekly volume (sum)'
+        : 'Weekly volume (count)';
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: PremiumTheme.darkBg2.withOpacity(0.55),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Weekly Volume', style: PremiumTheme.titleMedium),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: PremiumTheme.bodyMedium.copyWith(color: PremiumTheme.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 160,
+            child: CustomPaint(
+              painter: _BarChartPainter(
+                points: points,
+                maxValue: maxValue,
+                color: PremiumTheme.teal,
+              ),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApprovalRateCard(
+    double approvalRate,
+    double pendingSum,
+    double approvedSum,
+    double rejectedSum,
+  ) {
+    final pct = (approvalRate * 100).round();
+    final totalSum = pendingSum + approvedSum + rejectedSum;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: PremiumTheme.darkBg2.withOpacity(0.55),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Approval Rate', style: PremiumTheme.titleMedium),
+          const SizedBox(height: 2),
+          Text(
+            'Approved vs rejected (filtered)',
+            style: PremiumTheme.bodyMedium.copyWith(color: PremiumTheme.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              SizedBox(
+                width: 76,
+                height: 76,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: approvalRate,
+                      strokeWidth: 10,
+                      color: Colors.green,
+                      backgroundColor: Colors.white.withOpacity(0.08),
+                    ),
+                    Text(
+                      '$pct%',
+                      style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _metricRow('Approved', _formatMoney(approvedSum), Colors.green),
+                    const SizedBox(height: 6),
+                    _metricRow('Pending', _formatMoney(pendingSum), Colors.orange),
+                    const SizedBox(height: 6),
+                    _metricRow('Rejected', _formatMoney(rejectedSum), Colors.red),
+                    if (totalSum > 0) ...[
+                      const SizedBox(height: 10),
+                      LinearProgressIndicator(
+                        value: (approvedSum / totalSum).clamp(0.0, 1.0),
+                        minHeight: 8,
+                        color: Colors.green,
+                        backgroundColor: Colors.white.withOpacity(0.08),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricRow(String label, String value, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: PremiumTheme.bodyMedium.copyWith(color: PremiumTheme.textSecondary),
+          ),
+        ),
+        Text(
+          value,
+          style: PremiumTheme.bodyMedium.copyWith(
+            color: Colors.white.withOpacity(0.9),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProposalSection({
+    required List<Map<String, dynamic>> proposals,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required IconData icon,
+    required void Function(Map<String, dynamic>) onOpen,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: PremiumTheme.darkBg2.withOpacity(0.55),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: color.withOpacity(0.15),
+                  border: Border.all(color: color.withOpacity(0.25)),
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: PremiumTheme.titleMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: PremiumTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: Colors.white.withOpacity(0.06),
+                ),
+                child: Text(
+                  proposals.length.toString(),
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.white.withOpacity(0.9),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (proposals.isEmpty)
+            _buildEmptySectionState(color: color)
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: proposals.length,
+              separatorBuilder: (_, __) => Divider(
+                height: 16,
+                color: Colors.white.withOpacity(0.08),
+              ),
+              itemBuilder: (context, index) {
+                final proposal = proposals[index];
+                return _buildProposalRow(proposal, onOpen);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptySectionState({required Color color}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white.withOpacity(0.04),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: color.withOpacity(0.15),
+              border: Border.all(color: color.withOpacity(0.25)),
+            ),
+            child: Icon(Icons.inbox_outlined, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Nothing to review here yet.',
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textSecondary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _loadFinanceData,
+            child: const Text('Refresh'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProposalRow(
+    Map<String, dynamic> proposal,
+    void Function(Map<String, dynamic>) onOpen,
+  ) {
+    final proposalName = (proposal['title'] ?? 'Untitled').toString();
+    final clientName = (proposal['client_name'] ?? proposal['client'] ?? 'Unknown').toString();
+    final status = (proposal['status'] ?? 'Unknown').toString();
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => onOpen(proposal),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    proposalName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withOpacity(0.92),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    clientName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: PremiumTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            _buildStatusBadge(status),
+            const SizedBox(width: 12),
+            OutlinedButton(
+              onPressed: () => onOpen(proposal),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: const Text('Open'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsPanel() {
+    final proposal = _selectedProposal;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: PremiumTheme.darkBg2.withOpacity(0.55),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: proposal == null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Review Panel', style: PremiumTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text(
+                  'Select a proposal from the list to review and approve/reject.',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: PremiumTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Center(
+                    child: Icon(
+                      Icons.rule_folder_outlined,
+                      color: Colors.white.withOpacity(0.25),
+                      size: 64,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        (proposal['title'] ?? 'Proposal').toString(),
+                        style: PremiumTheme.titleMedium,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildStatusBadge((proposal['status'] ?? 'Unknown').toString()),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  (proposal['client_name'] ?? proposal['client'] ?? 'Unknown').toString(),
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: PremiumTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _commentController,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    labelText: 'Finance comment',
+                    labelStyle: TextStyle(color: PremiumTheme.textSecondary),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.04),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: PremiumTheme.teal.withOpacity(0.7)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _selectedProposalId == null
+                            ? null
+                            : () => _handleFinanceAction('approved'),
+                        icon: const Icon(Icons.check),
+                        label: const Text('Approve'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _selectedProposalId == null
+                            ? null
+                            : () => _handleFinanceAction('rejected'),
+                        icon: const Icon(Icons.close),
+                        label: const Text('Reject'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _selectedProposal = null;
+                      _selectedProposalId = null;
+                      _commentController.text = '';
+                    });
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: BorderSide(color: Colors.white.withOpacity(0.12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.clear),
+                  label: const Text('Clear selection'),
+                ),
+              ],
+            ),
     );
   }
 
@@ -393,10 +1432,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
   }
 
   void _showProposalDetails(Map<String, dynamic> proposal) {
-    setState(() {
-      _selectedProposal = proposal;
-      _selectedProposalId = proposal['id']?.toString();
-    });
+    _selectProposal(proposal);
 
     showDialog(
       context: context,
@@ -481,5 +1517,125 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage>
         ),
       ),
     );
+  }
+}
+
+class _KpiData {
+  final String label;
+  final int value;
+  final String? subValue;
+  final IconData icon;
+  final Color color;
+
+  const _KpiData({
+    required this.label,
+    required this.value,
+    this.subValue,
+    required this.icon,
+    required this.color,
+  });
+}
+
+class _ChartPoint {
+  final String label;
+  final double value;
+
+  const _ChartPoint({
+    required this.label,
+    required this.value,
+  });
+}
+
+class _BarChartPainter extends CustomPainter {
+  final List<_ChartPoint> points;
+  final double maxValue;
+  final Color color;
+
+  const _BarChartPainter({
+    required this.points,
+    required this.maxValue,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bgPaint = Paint()
+      ..color = Colors.white.withOpacity(0.06)
+      ..style = PaintingStyle.fill;
+
+    final barPaint = Paint()
+      ..color = color.withOpacity(0.85)
+      ..style = PaintingStyle.fill;
+
+    final gridPaint = Paint()
+      ..color = Colors.white.withOpacity(0.06)
+      ..strokeWidth = 1;
+
+    final radius = Radius.circular(10);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, radius),
+      bgPaint,
+    );
+
+    final safeMax = maxValue <= 0 ? 1.0 : maxValue;
+    final paddingTop = 10.0;
+    final paddingBottom = 26.0;
+    final paddingX = 10.0;
+    final chartHeight = math.max(0.0, size.height - paddingTop - paddingBottom);
+    final chartWidth = math.max(0.0, size.width - 2 * paddingX);
+
+    for (int i = 1; i <= 3; i++) {
+      final y = paddingTop + chartHeight * (i / 3.0);
+      canvas.drawLine(Offset(paddingX, y), Offset(paddingX + chartWidth, y), gridPaint);
+    }
+
+    if (points.isEmpty) return;
+
+    final n = points.length;
+    final slot = chartWidth / n;
+    final barW = math.max(8.0, slot * 0.45);
+
+    for (int i = 0; i < n; i++) {
+      final p = points[i];
+      final t = (p.value / safeMax).clamp(0.0, 1.0);
+      final h = chartHeight * t;
+      final xCenter = paddingX + slot * (i + 0.5);
+      final rect = Rect.fromLTWH(
+        xCenter - barW / 2,
+        paddingTop + (chartHeight - h),
+        barW,
+        h,
+      );
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(8));
+      canvas.drawRRect(rrect, barPaint);
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: p.label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.75),
+            fontSize: 10,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout(maxWidth: slot);
+
+      tp.paint(
+        canvas,
+        Offset(
+          xCenter - tp.width / 2,
+          paddingTop + chartHeight + 6,
+        ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BarChartPainter oldDelegate) {
+    return oldDelegate.points != points ||
+        oldDelegate.maxValue != maxValue ||
+        oldDelegate.color != color;
   }
 }

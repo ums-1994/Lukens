@@ -7,10 +7,17 @@ bp = Blueprint('finance', __name__, url_prefix='/api/finance')
 
 @bp.get('/dashboard')
 @token_required
-def finance_dashboard(username):
+def finance_dashboard(username, user_id=None, email=None):
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+        cursor.execute(
+            '''SELECT role
+               FROM users
+               WHERE (%s IS NOT NULL AND email = %s) OR username = %s
+               ORDER BY CASE WHEN role IN ('finance', 'admin') THEN 0 ELSE 1 END, id DESC
+               LIMIT 1''',
+            (email, email, username),
+        )
         result = cursor.fetchone()
         if not result or result[0] not in ('finance', 'admin'):
             return jsonify({'detail': 'Finance access required'}), 403
@@ -23,7 +30,14 @@ def list_finance_proposals(username, user_id=None, email=None):
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+        cursor.execute(
+            '''SELECT role
+               FROM users
+               WHERE (%s IS NOT NULL AND email = %s) OR username = %s
+               ORDER BY CASE WHEN role IN ('finance', 'admin') THEN 0 ELSE 1 END, id DESC
+               LIMIT 1''',
+            (email, email, username),
+        )
         result = cursor.fetchone()
         if not result or result[0] not in ('finance', 'admin'):
             return jsonify({'detail': 'Finance access required'}), 403
@@ -52,12 +66,19 @@ def list_finance_proposals(username, user_id=None, email=None):
 
     return jsonify({'proposals': proposals})
 
-def _update_finance_status(proposal_id, new_status, username, reason=None):
+def _update_finance_status(proposal_id, new_status, username, reason=None, email=None):
     """Internal helper to update proposal status for finance actions."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        cursor.execute('SELECT role, id FROM users WHERE username = %s', (username,))
+        cursor.execute(
+            '''SELECT role, id
+               FROM users
+               WHERE (%s IS NOT NULL AND email = %s) OR username = %s
+               ORDER BY CASE WHEN role IN ('finance', 'admin') THEN 0 ELSE 1 END, id DESC
+               LIMIT 1''',
+            (email, email, username),
+        )
         result = cursor.fetchone()
         if not result or result[0] not in ('finance', 'admin'):
             return {'detail': 'Finance access required'}, 403
@@ -104,6 +125,7 @@ def approve_proposal_finance(username, proposal_id, user_id=None, email=None):
         'Finance Approved',
         username,
         reason=reason,
+        email=email,
     )
     return jsonify(payload), status_code
 
@@ -117,5 +139,6 @@ def reject_proposal_finance(username, proposal_id, user_id=None, email=None):
         'Finance Rejected',
         username,
         reason=reason,
+        email=email,
     )
     return jsonify(payload), status_code
