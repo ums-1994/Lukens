@@ -184,6 +184,35 @@ def init_pg_schema():
         except Exception as e:
             print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
 
+        # Proposal risk audits table (AI Risk Gate)
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_risk_audits (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        triggered_by VARCHAR(255),
+        model_used VARCHAR(255),
+        precheck_summary JSONB,
+        ai_summary JSONB,
+        combined_summary JSONB,
+        overall_risk_level VARCHAR(50),
+        risk_score INTEGER,
+        can_release BOOLEAN,
+        decision_action VARCHAR(50) DEFAULT 'analyze',
+        override_applied BOOLEAN DEFAULT false,
+        override_reason TEXT,
+        override_by VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
+        # Add missing columns for older databases (safe migrations)
+        try:
+            cursor.execute("ALTER TABLE proposal_risk_audits ADD COLUMN IF NOT EXISTS decision_action VARCHAR(50) DEFAULT 'analyze'")
+            cursor.execute("ALTER TABLE proposal_risk_audits ADD COLUMN IF NOT EXISTS override_applied BOOLEAN DEFAULT false")
+            cursor.execute("ALTER TABLE proposal_risk_audits ADD COLUMN IF NOT EXISTS override_reason TEXT")
+            cursor.execute("ALTER TABLE proposal_risk_audits ADD COLUMN IF NOT EXISTS override_by VARCHAR(255)")
+        except Exception as e:
+            print(f"[WARN] Could not apply proposal_risk_audits migrations: {e}")
+
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
         id SERIAL PRIMARY KEY,

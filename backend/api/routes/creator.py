@@ -11,6 +11,8 @@ from datetime import datetime
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
+from api.utils.risk_checks import run_prechecks, combine_assessments
+from api.utils.risk_audit import record_proposal_risk_audit, get_latest_risk_audit
 
 bp = Blueprint('creator', __name__, url_prefix='')
 
@@ -695,37 +697,114 @@ def submit_for_review(username=None, proposal_id=None):
 def send_for_approval(username=None, proposal_id=None):
     """Send proposal for approval"""
     try:
+        data = request.get_json(force=True, silent=True) or {}
+        override_reason = (data.get('override_reason') or '').strip() or None
+
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # Get user ID from username (try multiple times in case user was just created)
-            user_row = None
-            for attempt in range(3):
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user_row = cursor.fetchone()
-                if user_row:
-                    break
-                # If user not found and this is the first attempt, wait a bit (user might have just been created)
-                if attempt == 0:
-                    import time
-                    time.sleep(0.1)  # Small delay to allow transaction to commit
-            
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
+            user_row = cursor.fetchone()
             if not user_row:
-                print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                print(f"❌ User lookup failed for username: {username}")
                 return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
-            
-            # Check if proposal exists and belongs to user
-            cursor.execute('SELECT id FROM proposals WHERE id = %s AND owner_id = %s', (proposal_id, user_id))
-            proposal = cursor.fetchone()
-            if not proposal:
+            user_id, user_role = user_row
+            user_role_norm = str(user_role).lower()
+
+            cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
+            owner_row = cursor.fetchone()
+            if not owner_row:
+                return {'detail': 'Proposal not found'}, 404
+            owner_id = owner_row[0]
+
+            # Allow owner, or admin/ceo to act
+            if user_id != owner_id and user_role_norm not in {'admin', 'ceo'}:
                 return {'detail': 'Proposal not found or access denied'}, 404
-            
+
+            allow_override_roles = {'admin', 'ceo'}
+            override_applied = False
+            precheck_summary = {}
+            ai_summary = {}
+            combined_summary = None
+            model_used = None
+
+            try:
+                cursor_dict = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cursor_dict.execute('SELECT * FROM proposals WHERE id = %s', (proposal_id,))
+                proposal_dict = cursor_dict.fetchone()
+                if not proposal_dict:
+                    return {'detail': 'Proposal not found'}, 404
+
+                precheck_summary = run_prechecks(dict(proposal_dict))
+
+                from ai_service import ai_service
+                model_used = getattr(ai_service, 'model', None) or 'unknown'
+                ai_summary = ai_service.analyze_proposal_risks(dict(proposal_dict))
+                combined_summary = combine_assessments(precheck_summary, ai_summary)
+
+                overall_level = (combined_summary.get('overall_risk_level') or '').lower()
+                can_release = combined_summary.get('can_release')
+                is_blocked = (overall_level in {'high', 'critical'}) or (can_release is False)
+
+                if is_blocked:
+                    if user_role_norm in allow_override_roles and override_reason:
+                        override_applied = True
+                    else:
+                        try:
+                            record_proposal_risk_audit(
+                                conn,
+                                proposal_id=proposal_id,
+                                triggered_by=username,
+                                model_used=model_used,
+                                precheck_summary=precheck_summary,
+                                ai_summary=ai_summary,
+                                combined_summary=combined_summary,
+                                decision_action='send-for-approval',
+                                override_applied=False,
+                                override_reason=None,
+                                override_by=None,
+                            )
+                            conn.commit()
+                        except Exception as audit_err:
+                            print(f"[WARN] Failed to write proposal_risk_audits for proposal {proposal_id}: {audit_err}")
+
+                        return {
+                            'detail': 'Proposal blocked by AI Risk Gate. Admin/CEO override required.',
+                            'blocked': True,
+                            'requires_override': True,
+                            'analysis': combined_summary,
+                        }, 400
+            except Exception as risk_err:
+                print(f"[WARN] RiskGate pre-approval check failed: {risk_err}")
+                traceback.print_exc()
+                return {
+                    'detail': 'Unable to run AI Risk Gate. Please retry later.',
+                    'blocked': True,
+                }, 503
+
             # Update status to "Pending CEO Approval" (more descriptive than "In Review")
             cursor.execute(
                 '''UPDATE proposals SET status = 'Pending CEO Approval', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
                 (proposal_id,)
             )
+
+            if combined_summary is not None:
+                try:
+                    record_proposal_risk_audit(
+                        conn,
+                        proposal_id=proposal_id,
+                        triggered_by=username,
+                        model_used=model_used,
+                        precheck_summary=precheck_summary,
+                        ai_summary=ai_summary,
+                        combined_summary=combined_summary,
+                        decision_action='send-for-approval',
+                        override_applied=override_applied,
+                        override_reason=override_reason if override_applied else None,
+                        override_by=username if override_applied else None,
+                    )
+                except Exception as audit_err:
+                    print(f"[WARN] Failed to write proposal_risk_audits for proposal {proposal_id}: {audit_err}")
             conn.commit()
             return {'detail': 'Proposal sent for approval', 'status': 'Pending CEO Approval'}, 200
     except Exception as e:
@@ -739,9 +818,18 @@ def send_for_approval(username=None, proposal_id=None):
 def send_to_client(username=None, proposal_id=None):
     """Send proposal to client"""
     try:
+        data = request.get_json(force=True, silent=True) or {}
+        override_reason = (data.get('override_reason') or '').strip() or None
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
+
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
+            sender_user = cursor.fetchone()
+            if not sender_user:
+                return {'detail': 'User not found'}, 404
+            sender_role_norm = str(sender_user.get('role')).lower()
+
             cursor.execute(
                 """
                 SELECT id, title, client as client_name, '' as client_email, owner_id as user_id
@@ -753,15 +841,65 @@ def send_to_client(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
-            # Run compound risk gate check
-            risk_result = evaluate_compound_risk(dict(proposal))
-            if risk_result.get('blocked'):
+
+            allow_override_roles = {'admin', 'ceo'}
+            override_applied = False
+            precheck_summary = {}
+            ai_summary = {}
+            combined_summary = None
+            model_used = None
+            try:
+                cursor_dict = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cursor_dict.execute('SELECT * FROM proposals WHERE id = %s', (proposal_id,))
+                proposal_dict = cursor_dict.fetchone()
+                if not proposal_dict:
+                    return {'detail': 'Proposal not found'}, 404
+
+                precheck_summary = run_prechecks(dict(proposal_dict))
+                from ai_service import ai_service
+                model_used = getattr(ai_service, 'model', None) or 'unknown'
+                ai_summary = ai_service.analyze_proposal_risks(dict(proposal_dict))
+                combined_summary = combine_assessments(precheck_summary, ai_summary)
+
+                overall_level = (combined_summary.get('overall_risk_level') or '').lower()
+                can_release = combined_summary.get('can_release')
+                is_blocked = (overall_level in {'high', 'critical'}) or (can_release is False)
+
+                if is_blocked:
+                    if sender_role_norm in allow_override_roles and override_reason:
+                        override_applied = True
+                    else:
+                        try:
+                            record_proposal_risk_audit(
+                                conn,
+                                proposal_id=proposal_id,
+                                triggered_by=username,
+                                model_used=model_used,
+                                precheck_summary=precheck_summary,
+                                ai_summary=ai_summary,
+                                combined_summary=combined_summary,
+                                decision_action='send-to-client',
+                                override_applied=False,
+                                override_reason=None,
+                                override_by=None,
+                            )
+                            conn.commit()
+                        except Exception as audit_err:
+                            print(f"[WARN] Failed to write proposal_risk_audits for proposal {proposal_id}: {audit_err}")
+
+                        return {
+                            'detail': 'Proposal blocked by AI Risk Gate. Admin/CEO override required.',
+                            'blocked': True,
+                            'requires_override': True,
+                            'analysis': combined_summary,
+                        }, 400
+            except Exception as risk_err:
+                print(f"[WARN] RiskGate check failed in send-to-client: {risk_err}")
+                traceback.print_exc()
                 return {
-                    'detail': 'Proposal blocked by risk gate',
-                    'risk_score': risk_result.get('score'),
-                    'flags': risk_result.get('flags', []),
-                    'message': 'This proposal has too many risk factors. Please address the issues before sending to client.'
-                }, 400                
+                    'detail': 'Unable to run AI Risk Gate. Please retry later.',
+                    'blocked': True,
+                }, 503
             
             cursor.execute(
                 "SELECT id, full_name, username, email FROM users WHERE username = %s",
@@ -778,6 +916,25 @@ def send_to_client(username=None, proposal_id=None):
                 """UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
                 (new_status, proposal_id)
             )
+
+            if combined_summary is not None:
+                try:
+                    record_proposal_risk_audit(
+                        conn,
+                        proposal_id=proposal_id,
+                        triggered_by=username,
+                        model_used=model_used,
+                        precheck_summary=precheck_summary,
+                        ai_summary=ai_summary,
+                        combined_summary=combined_summary,
+                        decision_action='send-to-client',
+                        override_applied=override_applied,
+                        override_reason=override_reason if override_applied else None,
+                        override_by=username if override_applied else None,
+                    )
+                except Exception as audit_err:
+                    print(f"[WARN] Failed to write proposal_risk_audits for proposal {proposal_id}: {audit_err}")
+
             conn.commit()
             
             # Send email to client
@@ -1245,17 +1402,49 @@ def ai_analyze_risks(username=None):
             
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
-            
-            # Import AI service
+
+            proposal_dict = dict(proposal)
+            precheck_summary = run_prechecks(proposal_dict)
+
             from ai_service import ai_service
-            
-            # Analyze risks
-            risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
-            
-            return risk_analysis, 200
+            model_used = getattr(ai_service, 'model', None) or 'unknown'
+            ai_summary = ai_service.analyze_proposal_risks(proposal_dict)
+            combined = combine_assessments(precheck_summary, ai_summary)
+
+            try:
+                record_proposal_risk_audit(
+                    conn,
+                    proposal_id=proposal_id,
+                    triggered_by=username,
+                    model_used=model_used,
+                    precheck_summary=precheck_summary,
+                    ai_summary=ai_summary,
+                    combined_summary=combined,
+                    decision_action='analyze',
+                )
+                conn.commit()
+            except Exception as audit_err:
+                print(f"[WARN] Failed to write proposal_risk_audits for proposal {proposal_id}: {audit_err}")
+
+            return combined, 200
         
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/api/proposals/<int:proposal_id>/risk-audit/latest")
+@token_required
+def get_latest_risk_audit_route(username=None, proposal_id=None):
+    try:
+        with get_db_connection() as conn:
+            row = get_latest_risk_audit(conn, proposal_id)
+            if not row:
+                return {'detail': 'No risk audits found for proposal'}, 404
+            return row, 200
+    except Exception as e:
+        print(f"❌ Error fetching latest risk audit for proposal {proposal_id}: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.get("/ai/analytics/summary")
