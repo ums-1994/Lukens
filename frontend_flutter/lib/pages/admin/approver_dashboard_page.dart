@@ -216,6 +216,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 _buildHeroSection(),
+                                const SizedBox(height: 16),
+                                _buildStatusOverviewRow(),
                                 const SizedBox(height: 24),
                                 Expanded(
                                   child: CustomScrollbar(
@@ -227,7 +229,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                             CrossAxisAlignment.start,
                                         children: [
                                           _buildSection(
-                                            '⏳ Pending CEO Approval',
+                                            '⏳ Proposals for Review',
                                             _isLoading
                                                 ? const Center(
                                                     child:
@@ -341,7 +343,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Pending CEO Approval',
+                  'Approvals Overview',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -351,8 +353,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 const SizedBox(height: 6),
                 Text(
                   _pendingApprovals.isEmpty
-                      ? 'No proposals pending your approval.'
-                      : '${_pendingApprovals.length} proposal${_pendingApprovals.length == 1 ? '' : 's'} awaiting your review and approval.',
+                      ? 'No proposals currently in your review pipeline.'
+                      : '${_pendingApprovals.length} proposal${_pendingApprovals.length == 1 ? '' : 's'} across all review stages.',
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
@@ -617,6 +619,186 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     });
   }
 
+  Map<String, int> _getStageCounts() {
+    final stages = <String, int>{
+      'Pending Review': 0,
+      'Sent to Client': 0,
+      'Client Approved': 0,
+      'Archived': 0,
+    };
+
+    for (final proposal in _pendingApprovals) {
+      final stage = _mapStatusToStage(proposal['status']?.toString());
+      stages[stage] = (stages[stage] ?? 0) + 1;
+    }
+
+    return stages;
+  }
+
+  Map<String, List<Map<String, dynamic>>> _groupProposalsByStage() {
+    final groups = <String, List<Map<String, dynamic>>>{
+      'Pending Review': [],
+      'Sent to Client': [],
+      'Client Approved': [],
+      'Archived': [],
+    };
+
+    for (final proposal in _pendingApprovals) {
+      final stage = _mapStatusToStage(proposal['status']?.toString());
+      groups[stage]!.add(proposal);
+    }
+
+    return groups;
+  }
+
+  String _mapStatusToStage(String? rawStatus) {
+    if (rawStatus == null || rawStatus.trim().isEmpty) {
+      return 'Pending Review';
+    }
+
+    final lower = rawStatus.toLowerCase();
+
+    // Closed/terminal statuses
+    if (lower.contains('archived') || lower.contains('declined')) {
+      return 'Archived';
+    }
+
+    if (lower.contains('client approved') ||
+        lower.contains('client signed') ||
+        lower == 'signed') {
+      return 'Client Approved';
+    }
+
+    // Sent out to client
+    if (lower.contains('sent to client') || lower.contains('released')) {
+      return 'Sent to Client';
+    }
+
+    // Internal pending review (creator/finance/admin)
+    if (lower.contains('pending ceo') ||
+        lower.contains('pending approval') ||
+        lower.contains('submitted') ||
+        lower.contains('review') ||
+        lower == 'draft' ||
+        lower.contains('approved')) {
+      return 'Pending Review';
+    }
+
+    return 'Pending Review';
+  }
+
+  Color _getStageColor(String stage) {
+    switch (stage) {
+      case 'Pending Review':
+        return PremiumTheme.orange;
+      case 'Sent to Client':
+        return const Color(0xFF3498DB);
+      case 'Client Approved':
+        return const Color(0xFF1ABC9C);
+      case 'Archived':
+        return Colors.grey;
+      default:
+        return PremiumTheme.orange;
+    }
+  }
+
+  IconData _getStageIcon(String stage) {
+    switch (stage) {
+      case 'Pending Review':
+        return Icons.pending_actions;
+      case 'Sent to Client':
+        return Icons.send;
+      case 'Client Approved':
+        return Icons.thumb_up_alt;
+      case 'Archived':
+        return Icons.archive;
+      default:
+        return Icons.pending_actions;
+    }
+  }
+
+  Widget _buildStatusOverviewRow() {
+    final counts = _getStageCounts();
+    final stages = [
+      'Pending Review',
+      'Sent to Client',
+      'Client Approved',
+      'Archived',
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 900;
+        final cards = stages.map((stage) {
+          final count = counts[stage] ?? 0;
+          final color = _getStageColor(stage);
+          final icon = _getStageIcon(stage);
+
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              child: GlassContainer(
+                borderRadius: 20,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            icon,
+                            size: 18,
+                            color: color,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          count.toString(),
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: color,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      stage,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList();
+
+        if (isNarrow) {
+          return Column(
+            children: [
+              Row(children: cards.sublist(0, 3)),
+              Row(children: cards.sublist(3)),
+            ],
+          );
+        }
+
+        return Row(children: cards);
+      },
+    );
+  }
+
   Widget _buildPendingApprovalsList() {
     if (_pendingApprovals.isEmpty) {
       return Padding(
@@ -627,7 +809,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             Icon(Icons.pending_actions, size: 54, color: PremiumTheme.orange),
             SizedBox(height: 12),
             Text(
-              'No proposals pending approval',
+              'No proposals in your review pipeline',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.white70,
@@ -638,8 +820,52 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       );
     }
 
+    final grouped = _groupProposalsByStage();
+    final stagesInOrder = [
+      'Pending Review',
+      'Sent to Client',
+      'Client Approved',
+      'Archived',
+    ];
+
+    final List<Widget> children = [];
+
+    for (final stage in stagesInOrder) {
+      final proposalsForStage = grouped[stage] ?? [];
+      if (proposalsForStage.isEmpty) continue;
+
+      if (children.isNotEmpty) {
+        children.add(const SizedBox(height: 16));
+      }
+
+      children.add(
+        Row(
+          children: [
+            Icon(
+              _getStageIcon(stage),
+              size: 18,
+              color: _getStageColor(stage),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              stage,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
+
+      children.add(const SizedBox(height: 8));
+      children.addAll(proposalsForStage.map(_buildPendingApprovalCard));
+    }
+
     return Column(
-      children: _pendingApprovals.map(_buildPendingApprovalCard).toList(),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
     );
   }
 
@@ -649,6 +875,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         : null;
     final value = proposal['budget'];
     final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
+    final stage = _mapStatusToStage(proposal['status']?.toString());
+    final badgeColor = _getStageColor(stage);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -673,19 +901,19 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.orange.withOpacity(0.2),
+                    color: badgeColor.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: PremiumTheme.orange.withOpacity(0.3),
+                      color: badgeColor.withOpacity(0.3),
                       width: 1,
                     ),
                   ),
                   child: Text(
-                    'Pending Approval',
+                    stage,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: PremiumTheme.orange,
+                      color: badgeColor,
                     ),
                   ),
                 ),

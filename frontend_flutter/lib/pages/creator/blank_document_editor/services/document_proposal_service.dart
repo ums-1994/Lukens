@@ -157,7 +157,7 @@ class DocumentProposalService {
       print('🔄 Loading collaborators for proposal $proposalId...');
       final response = await http.get(
         Uri.parse(
-            '${ApiService.baseUrl}/api/proposals/$proposalId/collaborators'),
+            'http://localhost:8000/api/proposals/$proposalId/collaborators'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -210,7 +210,7 @@ class DocumentProposalService {
   ) async {
     try {
       final response = await http.delete(
-        Uri.parse('${ApiService.baseUrl}/api/collaborations/$invitationId'),
+        Uri.parse('http://localhost:8000/api/collaborations/$invitationId'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -230,7 +230,7 @@ class DocumentProposalService {
   ) async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/content?category=Images'),
+        Uri.parse('http://localhost:8000/content?category=Images'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',

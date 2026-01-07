@@ -479,6 +479,85 @@ def delete_invitation(username=None, invitation_id=None):
         return jsonify({"error": str(exc)}), 500
 
 
+@bp.post("/clients")
+@token_required
+def create_client(username=None):
+    """Create or update a client manually (internal onboarding by finance/users)"""
+    try:
+        data = request.json or {}
+
+        required_fields = ["company_name", "contact_person", "email"]
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"error": "User not found"}), 404
+
+            user_id = user_row["id"]
+
+            cursor.execute(
+                """
+                INSERT INTO clients (
+                    company_name, contact_person, email, phone,
+                    industry, company_size, location, business_type,
+                    project_needs, budget_range, timeline, additional_info,
+                    status, created_by
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
+                ON CONFLICT (email) DO UPDATE SET
+                    company_name = EXCLUDED.company_name,
+                    contact_person = EXCLUDED.contact_person,
+                    phone = EXCLUDED.phone,
+                    industry = EXCLUDED.industry,
+                    company_size = EXCLUDED.company_size,
+                    location = EXCLUDED.location,
+                    business_type = EXCLUDED.business_type,
+                    project_needs = EXCLUDED.project_needs,
+                    budget_range = EXCLUDED.budget_range,
+                    timeline = EXCLUDED.timeline,
+                    additional_info = EXCLUDED.additional_info,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id, company_name, contact_person, email, phone, status, created_at, updated_at
+                """,
+                (
+                    data.get("company_name"),
+                    data.get("contact_person"),
+                    data.get("email"),
+                    data.get("phone"),
+                    data.get("industry"),
+                    data.get("company_size"),
+                    data.get("location"),
+                    data.get("business_type"),
+                    data.get("project_needs"),
+                    data.get("budget_range"),
+                    data.get("timeline"),
+                    data.get("additional_info"),
+                    user_id,
+                ),
+            )
+
+            client = cursor.fetchone()
+            conn.commit()
+
+            result = dict(client)
+            for key, value in result.items():
+                if isinstance(value, datetime):
+                    result[key] = value.isoformat()
+
+            return jsonify({"success": True, "client": result}), 201
+
+    except Exception as exc:
+        print(f"[ERROR] Error creating client: {exc}")
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
 @bp.get("/clients")
 @token_required
 def get_clients(username=None):

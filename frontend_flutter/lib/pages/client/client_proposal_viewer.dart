@@ -76,7 +76,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       }
 
       if (decoded is Map) {
-        final map = Map<String, dynamic>.from(decoded as Map);
+        final map = Map<String, dynamic>.from(decoded);
         return _parseSectionsFromContent(map);
       }
 

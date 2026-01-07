@@ -28,7 +28,8 @@ class ClientService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
-      print('Error fetching clients: ${response.statusCode} - ${response.body}');
+      print(
+          'Error fetching clients: ${response.statusCode} - ${response.body}');
       return [];
     } catch (e) {
       print('Error fetching clients: $e');
@@ -37,7 +38,8 @@ class ClientService {
   }
 
   /// Get a single client by ID
-  static Future<Map<String, dynamic>?> getClient(String token, int clientId) async {
+  static Future<Map<String, dynamic>?> getClient(
+      String token, int clientId) async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/clients/$clientId'),
@@ -54,8 +56,65 @@ class ClientService {
     }
   }
 
+  /// Manually create or update a client (internal onboarding)
+  static Future<Map<String, dynamic>?> createClient({
+    required String token,
+    required String companyName,
+    required String contactPerson,
+    required String email,
+    String? phone,
+    String? industry,
+    String? companySize,
+    String? location,
+    String? businessType,
+    String? projectNeeds,
+    String? budgetRange,
+    String? timeline,
+    String? additionalInfo,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'company_name': companyName,
+        'contact_person': contactPerson,
+        'email': email,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        if (industry != null && industry.isNotEmpty) 'industry': industry,
+        if (companySize != null && companySize.isNotEmpty)
+          'company_size': companySize,
+        if (location != null && location.isNotEmpty) 'location': location,
+        if (businessType != null && businessType.isNotEmpty)
+          'business_type': businessType,
+        if (projectNeeds != null && projectNeeds.isNotEmpty)
+          'project_needs': projectNeeds,
+        if (budgetRange != null && budgetRange.isNotEmpty)
+          'budget_range': budgetRange,
+        if (timeline != null && timeline.isNotEmpty) 'timeline': timeline,
+        if (additionalInfo != null && additionalInfo.isNotEmpty)
+          'additional_info': additionalInfo,
+      };
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/clients'),
+        headers: _getHeaders(token),
+        body: json.encode(body),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        return data['client'] as Map<String, dynamic>? ?? data;
+      }
+
+      print('Error creating client: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error creating client: $e');
+      return null;
+    }
+  }
+
   /// Update client status
-  static Future<bool> updateClientStatus(String token, int clientId, String status) async {
+  static Future<bool> updateClientStatus(
+      String token, int clientId, String status) async {
     try {
       final response = await http.patch(
         Uri.parse('$baseUrl/clients/$clientId/status'),
@@ -88,11 +147,11 @@ class ClientService {
         'expected_company': companyName,
         'expiry_days': expiryDays,
       };
-      
+
       print('[ClientService] POST $url');
       print('[ClientService] Body: $body');
       print('[ClientService] Token length: ${token.length}');
-      
+
       final response = await http.post(
         Uri.parse(url),
         headers: _getHeaders(token),
@@ -105,7 +164,8 @@ class ClientService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
-      print('[ClientService] Error sending invitation: ${response.statusCode} - ${response.body}');
+      print(
+          '[ClientService] Error sending invitation: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('[ClientService] Exception sending invitation: $e');
@@ -147,7 +207,8 @@ class ClientService {
   }
 
   /// Send email verification code for an invitation (admin action)
-  static Future<bool> sendVerificationCode(String token, int invitationId) async {
+  static Future<bool> sendVerificationCode(
+      String token, int invitationId) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/clients/invitations/$invitationId/send-code'),
@@ -195,7 +256,8 @@ class ClientService {
   // ============================================================
 
   /// Get notes for a client
-  static Future<List<dynamic>> getClientNotes(String token, int clientId) async {
+  static Future<List<dynamic>> getClientNotes(
+      String token, int clientId) async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/clients/$clientId/notes'),
@@ -275,7 +337,8 @@ class ClientService {
   // ============================================================
 
   /// Get proposals linked to a client
-  static Future<List<dynamic>> getClientProposals(String token, int clientId) async {
+  static Future<List<dynamic>> getClientProposals(
+      String token, int clientId) async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/clients/$clientId/proposals'),
@@ -335,5 +398,3 @@ class ClientService {
     }
   }
 }
-
-
