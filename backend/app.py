@@ -68,11 +68,9 @@ from api.routes.auth import bp as auth_bp
 from api.routes.proposals import bp as proposals_bp
 from api.routes.creator import bp as creator_bp
 from api.routes.shared import bp as shared_bp
-from api.routes.shared import docusign_webhook as shared_docusign_webhook
 from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
-from api.routes.approver import bp as approver_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -81,7 +79,6 @@ app.register_blueprint(shared_bp, url_prefix='/api')
 app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
-app.register_blueprint(approver_bp)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -411,6 +408,10 @@ def init_pg_schema():
 def init_db():
     """Initialize PostgreSQL schema on first request"""
     global _db_initialized
+    # Skip initialization for CORS preflight requests to avoid non-2xx responses
+    # which will cause browsers to block the request due to failed preflight.
+    if request.method == 'OPTIONS':
+        return {}, 200
     if _db_initialized:
         return
     
@@ -3484,42 +3485,15 @@ def get_client_proposal_details(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Determine which owner column exists on the proposals table
-            cursor.execute(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_name = 'proposals'
-                """
-            )
-            rows = cursor.fetchall()
-            column_names = set()
-            for row in rows:
-                name = row['column_name'] if isinstance(row, dict) else (row[0] if row else None)
-                if name:
-                    column_names.add(name)
-
-            if 'user_id' in column_names:
-                owner_select_expr = 'p.user_id'
-                user_join_clause = 'LEFT JOIN users u ON p.user_id = u.username'
-            elif 'owner_id' in column_names:
-                owner_select_expr = 'p.owner_id'
-                user_join_clause = 'LEFT JOIN users u ON p.owner_id = u.id'
-            else:
-                owner_select_expr = 'NULL'
-                user_join_clause = 'LEFT JOIN users u ON 1 = 0'
-
             # Get proposal details
-            query = f"""
+            cursor.execute("""
                 SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client, p.client_email, {owner_select_expr} AS user_id,
+                       p.client, p.client_email, p.user_id,
                        u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
-                {user_join_clause}
+                LEFT JOIN users u ON p.user_id = u.username
                 WHERE p.id = %s AND p.client_email = %s
-            """
-
-            cursor.execute(query, (proposal_id, invitation['invited_email']))
+            """, (proposal_id, invitation['invited_email']))
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -4586,7 +4560,108 @@ def get_proposal_signatures(username, proposal_id):
 @app.post("/api/docusign/webhook")
 def docusign_webhook():
     """Handle DocuSign webhook events"""
-    return shared_docusign_webhook()
+    try:
+        # Get event data
+        event_data = request.get_json()
+        
+        # Validate HMAC signature (if configured)
+        hmac_key = os.getenv('DOCUSIGN_WEBHOOK_HMAC_KEY')
+        if hmac_key:
+            signature = request.headers.get('X-DocuSign-Signature-1')
+            # TODO: Validate signature
+        
+        event = event_data.get('event')
+        envelope_id = event_data.get('envelopeId')
+        
+        if not envelope_id:
+            return {'detail': 'No envelope ID provided'}, 400
+        
+        print(f"📬 DocuSign webhook received: {event} for envelope {envelope_id}")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Find signature record
+            cursor.execute("""
+                SELECT id, proposal_id, signer_email
+                FROM proposal_signatures 
+                WHERE envelope_id = %s
+            """, (envelope_id,))
+            
+            signature = cursor.fetchone()
+            if not signature:
+                print(f"⚠️ Signature record not found for envelope {envelope_id}")
+                return {'message': 'Signature record not found'}, 404
+            
+            # Handle different events
+            if event == 'envelope-completed':
+                # Signature completed
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'completed', signed_at = NOW()
+                    WHERE envelope_id = %s
+                """, (envelope_id,))
+                
+                cursor.execute("""
+                    UPDATE proposals 
+                    SET status = 'Signed', updated_at = NOW()
+                    WHERE id = %s
+                """, (signature['proposal_id'],))
+                
+                log_activity(
+                    signature['proposal_id'],
+                    None,
+                    'signature_completed',
+                    f"Proposal signed by {signature['signer_email']}",
+                    {'envelope_id': envelope_id}
+                )
+                
+                print(f"✅ Envelope {envelope_id} completed")
+                
+            elif event == 'envelope-declined':
+                # Signature declined
+                decline_reason = event_data.get('declineReason', 'No reason provided')
+                
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'declined', declined_at = NOW(), decline_reason = %s
+                    WHERE envelope_id = %s
+                """, (decline_reason, envelope_id))
+                
+                cursor.execute("""
+                    UPDATE proposals 
+                    SET status = 'Signature Declined', updated_at = NOW()
+                    WHERE id = %s
+                """, (signature['proposal_id'],))
+                
+                log_activity(
+                    signature['proposal_id'],
+                    None,
+                    'signature_declined',
+                    f"Signature declined by {signature['signer_email']}: {decline_reason}",
+                    {'envelope_id': envelope_id}
+                )
+                
+                print(f"⚠️ Envelope {envelope_id} declined")
+                
+            elif event == 'envelope-voided':
+                # Envelope voided
+                cursor.execute("""
+                    UPDATE proposal_signatures 
+                    SET status = 'voided'
+                    WHERE envelope_id = %s
+                """, (envelope_id,))
+                
+                print(f"⚠️ Envelope {envelope_id} voided")
+            
+            conn.commit()
+        
+        return {'message': 'Webhook processed successfully'}, 200
+        
+    except Exception as e:
+        print(f"❌ Error processing DocuSign webhook: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 # ============================================================================
 # END DOCUSIGN ENDPOINTS
