@@ -77,6 +77,11 @@ CORS(
     },
 )
 
+@app.route("/", methods=["OPTIONS"])
+@app.route("/<path:remaining>", methods=["OPTIONS"])
+def handle_options_preflight(remaining=None):
+    return {}, 200
+
 # Register API blueprints
 from api.routes.auth import bp as auth_bp
 from api.routes.proposals import bp as proposals_bp
@@ -1161,6 +1166,8 @@ def send_password_reset_email(email, reset_token):
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            return {}, 200
         token = None
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
