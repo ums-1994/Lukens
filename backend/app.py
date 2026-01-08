@@ -61,7 +61,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+CORS(
+    app,
+    supports_credentials=True,
+    resources={
+        r"/*": {
+            "origins": [
+                "https://proposals2025.netlify.app",
+                "http://localhost:5173",
+                "http://localhost:5000",
+            ]
+        }
+    },
+)
 
 # Register API blueprints
 from api.routes.auth import bp as auth_bp

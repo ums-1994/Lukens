@@ -363,6 +363,10 @@ def test_auth_blueprint():
     """Test route to verify auth blueprint is registered"""
     return {'status': 'ok', 'message': 'Auth blueprint is working'}, 200
 
+@bp.route("/firebase", methods=['OPTIONS'])
+def options_firebase():
+    return {}, 200
+
 @bp.post("/firebase")
 def firebase_auth():
     """
