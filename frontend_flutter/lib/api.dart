@@ -289,7 +289,7 @@ class AppState extends ChangeNotifier {
 
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/api/api/notifications"),
+        Uri.parse("$baseUrl/api/notifications"),
         headers: _headers,
       );
 
