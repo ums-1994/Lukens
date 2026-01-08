@@ -1393,6 +1393,7 @@ def get_user_profile(username):
 
 # Content library endpoints
 
+@app.get("/api/content")
 @app.get("/content")
 @token_required
 def get_content(username):
@@ -1419,6 +1420,7 @@ def get_content(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.post("/api/content")
 @app.post("/content")
 @token_required
 def create_content(username):
@@ -1441,6 +1443,7 @@ def create_content(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.put("/api/content/<int:content_id>")
 @app.put("/content/<int:content_id>")
 @token_required
 def update_content(username, content_id):
@@ -1475,6 +1478,7 @@ def update_content(username, content_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.delete("/api/content/<int:content_id>")
 @app.delete("/content/<int:content_id>")
 @token_required
 def delete_content(username, content_id):
@@ -1488,6 +1492,7 @@ def delete_content(username, content_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.post("/api/content/<int:content_id>/restore")
 @app.post("/content/<int:content_id>/restore")
 @token_required
 def restore_content(username, content_id):
@@ -1501,6 +1506,7 @@ def restore_content(username, content_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.delete("/api/content/<int:content_id>/permanent")
 @app.delete("/content/<int:content_id>/permanent")
 @token_required
 def permanently_delete_content(username, content_id):
@@ -1514,6 +1520,7 @@ def permanently_delete_content(username, content_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.get("/api/content/trash")
 @app.get("/content/trash")
 @token_required
 def get_trash(username):
@@ -1542,6 +1549,7 @@ def get_trash(username):
 
 # Proposal endpoints
 
+@app.get("/api/proposals")
 @app.get("/proposals")
 @token_required
 def get_proposals(username):
@@ -1586,6 +1594,7 @@ def get_proposals(username):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@app.post("/api/proposals")
 @app.post("/proposals")
 @token_required
 def create_proposal(username):
@@ -1643,6 +1652,7 @@ def create_proposal(username):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@app.put("/api/proposals/<int:proposal_id>")
 @app.put("/proposals/<int:proposal_id>")
 @token_required
 def update_proposal(username, proposal_id):
@@ -1691,6 +1701,7 @@ def update_proposal(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@app.delete("/api/proposals/<int:proposal_id>")
 @app.delete("/proposals/<int:proposal_id>")
 @token_required
 def delete_proposal(username, proposal_id):
@@ -1704,6 +1715,7 @@ def delete_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.get("/api/proposals/<int:proposal_id>")
 @app.get("/proposals/<int:proposal_id>")
 @token_required
 def get_proposal(username, proposal_id):
@@ -1736,6 +1748,7 @@ def get_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.post("/api/proposals/<int:proposal_id>/submit")
 @app.post("/proposals/<int:proposal_id>/submit")
 @token_required
 def submit_for_review(username, proposal_id):
