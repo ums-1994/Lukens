@@ -225,7 +225,7 @@ class _RegisterPageState extends State<RegisterPage>
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Syncing user to backend database...');
       final response = await http.post(
-        Uri.parse('${AuthService.baseUrl}/firebase'),
+        Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'id_token': firebaseIdToken,
