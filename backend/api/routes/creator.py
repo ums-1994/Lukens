@@ -270,8 +270,33 @@ def send_for_approval(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
-            # Check if proposal exists and belongs to user
-            cursor.execute('SELECT id FROM proposals WHERE id = %s AND owner_id = %s', (proposal_id, user_id))
+            # Determine ownership column based on actual schema (owner_id vs user_id)
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row[0] for row in cursor.fetchall()]
+
+            owner_col = None
+            if 'owner_id' in existing_columns:
+                owner_col = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_col = 'user_id'
+
+            if not owner_col:
+                print("⚠️ No owner_id or user_id column found in proposals table when sending for approval")
+                return {
+                    'detail': 'Proposals table is missing owner column; cannot verify ownership'
+                }, 500
+
+            # Check if proposal exists and belongs to user (cast owner column to text for type safety)
+            cursor.execute(
+                f"SELECT id FROM proposals WHERE id = %s AND {owner_col}::text = %s",
+                (proposal_id, str(user_id)),
+            )
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
