@@ -389,15 +389,38 @@ def update_proposal(username, proposal_id):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
+
+            # Determine ownership column based on actual schema
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row[0] for row in cursor.fetchall()]
+
+            owner_col = None
+            if 'owner_id' in existing_columns:
+                owner_col = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_col = 'user_id'
+
+            if not owner_col:
+                print("⚠️ No owner_id or user_id column found in proposals table when updating")
+                return jsonify({'detail': 'Proposals table is missing owner column'}), 500
+
             # Verify ownership
             user_id = resolve_user_id(cursor, username)
             if not user_id:
                 return jsonify({'detail': f"User '{username}' not found"}), 400
-            
-            cursor.execute("SELECT owner_id FROM proposals WHERE id = %s", (proposal_id,))
+
+            cursor.execute(
+                f"SELECT {owner_col} FROM proposals WHERE id = %s",
+                (proposal_id,),
+            )
             proposal = cursor.fetchone()
-            if not proposal or proposal[0] != user_id:
+            if not proposal or str(proposal[0]) != str(user_id):
                 return jsonify({'detail': 'Proposal not found or access denied'}), 404
             
             updates = ['updated_at = NOW()']
@@ -419,16 +442,23 @@ def update_proposal(username, proposal_id):
             if 'status' in data:
                 updates.append('status = %s')
                 params.append(data['status'])
-            if 'client_name' in data or 'client' in data:
-                updates.append('client = %s')
+            # Determine client / metadata columns safely based on schema
+            client_col = None
+            if 'client' in existing_columns:
+                client_col = 'client'
+            elif 'client_name' in existing_columns:
+                client_col = 'client_name'
+
+            if client_col and ('client_name' in data or 'client' in data):
+                updates.append(f"{client_col} = %s")
                 params.append(data.get('client_name') or data.get('client'))
-            if 'client_email' in data:
+            if 'client_email' in data and 'client_email' in existing_columns:
                 updates.append('client_email = %s')
                 params.append(data['client_email'])
-            if 'budget' in data:
+            if 'budget' in data and 'budget' in existing_columns:
                 updates.append('budget = %s')
                 params.append(data['budget'])
-            if 'timeline_days' in data:
+            if 'timeline_days' in data and 'timeline_days' in existing_columns:
                 updates.append('timeline_days = %s')
                 params.append(data['timeline_days'])
             

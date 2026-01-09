@@ -4070,7 +4070,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Collaboration button
+          // Collaboration / Share button
           OutlinedButton.icon(
             onPressed: () => _showCollaborationDialog(),
             icon: Icon(
@@ -4117,12 +4117,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
-          // More Actions menu (Archive, etc.)
+          // More Actions menu (Share, Archive, etc.)
           if (_savedProposalId != null)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, size: 20),
               onSelected: (value) async {
                 switch (value) {
+                  case 'share':
+                    _showCollaborationDialog();
+                    break;
                   case 'archive':
                     await _archiveProposal();
                     break;
@@ -4134,6 +4137,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               itemBuilder: (context) {
                 final isArchived = _proposalStatus?.toLowerCase() == 'archived';
                 return [
+                  const PopupMenuItem(
+                    value: 'share',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_add_alt_1_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text('Share / Collaborate'),
+                      ],
+                    ),
+                  ),
                   if (!isArchived)
                     const PopupMenuItem(
                       value: 'archive',
