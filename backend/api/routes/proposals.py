@@ -102,27 +102,88 @@ def create_proposal(username=None, user_id=None, email=None):
             client_email = data.get('client_email')
             
             # Insert
-            cursor.execute("""
-                INSERT INTO proposals 
-                (title, content, status, client, client_email, owner_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, title, content, status, client, client_email, owner_id, created_at, updated_at
-            """, (title, content, status, client_name, client_email, user_id))
+            cursor.execute(
+                """
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row[0] for row in cursor.fetchall()]
+
+            insert_cols = ['title', 'content', 'status']
+            values = [title, content, status]
+
+            if 'client' in existing_columns:
+                insert_cols.append('client')
+                values.append(client_name)
+            elif 'client_name' in existing_columns:
+                insert_cols.append('client_name')
+                values.append(client_name)
+
+            if 'client_email' in existing_columns:
+                insert_cols.append('client_email')
+                values.append(client_email)
+
+            if 'owner_id' in existing_columns:
+                insert_cols.append('owner_id')
+                values.append(user_id)
+            elif 'user_id' in existing_columns:
+                insert_cols.append('user_id')
+                values.append(user_id)
+
+            placeholders = ', '.join(['%s'] * len(insert_cols))
+            columns_sql = ', '.join(insert_cols)
+
+            cursor.execute(
+                f"INSERT INTO proposals ({columns_sql}) VALUES ({placeholders}) RETURNING *",
+                values,
+            )
             
             row = cursor.fetchone()
             conn.commit()
-            
+
+            column_names = [desc[0] for desc in cursor.description]
+            row_dict = dict(zip(column_names, row))
+
             new_proposal = {
-                'id': row[0],
-                'title': row[1],
-                'content': row[2],
-                'status': row[3],
-                'client_name': row[4],
-                'client_email': row[5],
-                'owner_id': row[6],
-                'created_at': row[7].isoformat() if row[7] else None,
-                'updated_at': row[8].isoformat() if row[8] else None
+                'id': row_dict.get('id'),
+                'title': row_dict.get('title', title),
+                'content': row_dict.get('content', content),
+                'status': row_dict.get('status', status),
             }
+
+            if 'client' in row_dict:
+                new_proposal['client_name'] = row_dict.get('client') or ''
+                new_proposal['client'] = row_dict.get('client') or ''
+            elif 'client_name' in row_dict:
+                new_proposal['client_name'] = row_dict.get('client_name') or ''
+                new_proposal['client'] = row_dict.get('client_name') or ''
+            else:
+                new_proposal['client_name'] = client_name
+                new_proposal['client'] = client_name
+
+            new_proposal['client_email'] = row_dict.get('client_email') or client_email
+
+            if 'owner_id' in row_dict:
+                new_proposal['owner_id'] = row_dict.get('owner_id')
+                new_proposal['user_id'] = row_dict.get('owner_id')
+            elif 'user_id' in row_dict:
+                new_proposal['owner_id'] = row_dict.get('user_id')
+                new_proposal['user_id'] = row_dict.get('user_id')
+            else:
+                new_proposal['owner_id'] = user_id
+                new_proposal['user_id'] = user_id
+
+            created_at_val = row_dict.get('created_at')
+            updated_at_val = row_dict.get('updated_at')
+            new_proposal['created_at'] = (
+                created_at_val.isoformat() if hasattr(created_at_val, 'isoformat') and created_at_val else None
+            )
+            new_proposal['updated_at'] = (
+                updated_at_val.isoformat() if hasattr(updated_at_val, 'isoformat') and updated_at_val else None
+            )
+            new_proposal['updatedAt'] = new_proposal['updated_at']
             
             print(f"✅ Proposal created: {new_proposal['id']}")
             return jsonify(new_proposal), 201
