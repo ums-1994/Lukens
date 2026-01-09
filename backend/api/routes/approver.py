@@ -34,27 +34,77 @@ def get_pending_approvals(username=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Detect actual proposals table schema so we can support
+            # environments with either client/client_name and owner_id/user_id.
             cursor.execute(
-                '''SELECT id, title, content, client, '' as client_email, owner_id as user_id, status, created_at, updated_at, NULL as budget
-                   FROM proposals 
-                   WHERE status = 'Pending CEO Approval' 
-                      OR status = 'In Review' 
-                      OR status = 'Submitted'
-                   ORDER BY updated_at DESC, created_at DESC'''
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
             )
+            cols = cursor.fetchall()
+            existing_columns = [
+                (c['column_name'] if isinstance(c, dict) else c[0]) for c in cols
+            ]
+
+            # Build column expressions that only reference existing columns
+            if 'client' in existing_columns:
+                client_expr = 'client'
+            elif 'client_name' in existing_columns:
+                client_expr = 'client_name'
+            else:
+                client_expr = "NULL::text"
+
+            if 'client_email' in existing_columns:
+                client_email_expr = 'client_email'
+            else:
+                client_email_expr = "NULL::text"
+
+            if 'owner_id' in existing_columns:
+                owner_expr = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_expr = 'user_id'
+            else:
+                owner_expr = "NULL::text"
+
+            if 'budget' in existing_columns:
+                budget_expr = 'budget'
+            else:
+                budget_expr = 'NULL::numeric'
+
+            query = f'''
+                SELECT 
+                    id,
+                    title,
+                    content,
+                    {client_expr} AS client,
+                    {client_email_expr} AS client_email,
+                    {owner_expr} AS user_id,
+                    status,
+                    created_at,
+                    updated_at,
+                    {budget_expr} AS budget
+                FROM proposals
+                WHERE status IN ('Pending CEO Approval', 'In Review', 'Submitted')
+                ORDER BY updated_at DESC, created_at DESC
+            '''
+
+            cursor.execute(query)
             rows = cursor.fetchall()
             proposals = []
             for row in rows:
                 proposals.append({
                     'id': row['id'],
                     'title': row['title'],
-                    'content': row.get('content'),  # Include content field
+                    'content': row.get('content'),
                     'client': row.get('client') or 'Unknown',
-                    'client_name': row.get('client') or 'Unknown',  # Map client to client_name for compatibility
-                    'client_email': row.get('client_email') or '',  # Empty string since column doesn't exist
+                    'client_name': row.get('client') or 'Unknown',
+                    'client_email': (row.get('client_email') or '') if isinstance(row, dict) else '',
                     'owner_id': row.get('user_id'),
                     'status': row['status'],
-                    'budget': None,  # Budget column doesn't exist in Render schema
+                    'budget': row.get('budget'),
                     'created_at': row['created_at'].isoformat() if row['created_at'] else None,
                     'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
                 })
@@ -85,15 +135,52 @@ def approve_proposal(username=None, proposal_id=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get proposal details (including client_email if available)
+
+            # Detect proposals table schema for client / owner / email columns
             cursor.execute(
-                '''SELECT p.id, p.title, p.client, 
-                          p.owner_id as user_id, p.content, p.client_email 
-                   FROM proposals p
-                   WHERE p.id = %s''',
-                (proposal_id,)
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
             )
+            cols = cursor.fetchall()
+            existing_columns = [
+                (c['column_name'] if isinstance(c, dict) else c[0]) for c in cols
+            ]
+
+            if 'client' in existing_columns:
+                client_expr = 'p.client'
+            elif 'client_name' in existing_columns:
+                client_expr = 'p.client_name'
+            else:
+                client_expr = "NULL::text"
+
+            if 'owner_id' in existing_columns:
+                owner_expr = 'p.owner_id'
+            elif 'user_id' in existing_columns:
+                owner_expr = 'p.user_id'
+            else:
+                owner_expr = "NULL::text"
+
+            if 'client_email' in existing_columns:
+                client_email_expr = 'p.client_email'
+            else:
+                client_email_expr = "NULL::text"
+
+            # Get proposal details (including client_email if available)
+            query = f'''
+                SELECT 
+                    p.id, 
+                    p.title, 
+                    {client_expr} AS client,
+                    {owner_expr} AS user_id,
+                    p.content,
+                    {client_email_expr} AS client_email
+                FROM proposals p
+                WHERE p.id = %s
+            '''
+            cursor.execute(query, (proposal_id,))
             proposal = cursor.fetchone()
             
             if not proposal:
@@ -470,9 +557,34 @@ def reject_proposal(username=None, proposal_id=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Get proposal (use owner_id as the creator/owner)
-            cursor.execute('SELECT id, title, owner_id FROM proposals WHERE id = %s', (proposal_id,))
+
+            # Determine ownership column (owner_id vs user_id)
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row[0] for row in cursor.fetchall()]
+
+            owner_col = None
+            if 'owner_id' in existing_columns:
+                owner_col = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_col = 'user_id'
+
+            if not owner_col:
+                print("⚠️ No owner_id or user_id column found in proposals table when rejecting")
+                return {
+                    'detail': 'Proposals table is missing owner column; cannot determine creator for rejection.'
+                }, 500
+
+            # Get proposal (use resolved owner column as the creator/owner)
+            cursor.execute(
+                f'SELECT id, title, {owner_col} FROM proposals WHERE id = %s',
+                (proposal_id,),
+            )
             proposal = cursor.fetchone()
             
             if not proposal:

@@ -90,6 +90,7 @@ from api.routes.shared import bp as shared_bp
 from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
+from api.routes.approver import bp as approver_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -98,6 +99,7 @@ app.register_blueprint(shared_bp, url_prefix='/api')
 app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
+app.register_blueprint(approver_bp, url_prefix='/api')
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
