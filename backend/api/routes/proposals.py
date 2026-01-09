@@ -218,11 +218,12 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('created_at')
                 if 'updated_at' in existing_columns:
                     select_cols.append('updated_at')
-                
+
+                # Handle legacy schemas where user_id may be stored as VARCHAR
                 query = f'''SELECT {', '.join(select_cols)}
-                   FROM proposals WHERE user_id = %s
+                   FROM proposals WHERE user_id::text = %s::text
                      ORDER BY created_at DESC'''
-                cursor.execute(query, (user_id,))
+                cursor.execute(query, (str(user_id),))
             else:
                 print(f"⚠️ No owner_id or user_id column found in proposals table")
                 return jsonify([]), 200

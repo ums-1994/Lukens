@@ -1556,7 +1556,7 @@ def get_trash(username):
 
 # Proposal endpoints
 
-@app.get("/api/proposals")
+@app.get("/legacy/proposals")
 @app.get("/proposals")
 @token_required
 def get_proposals(username):
@@ -1601,7 +1601,7 @@ def get_proposals(username):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/proposals")
+@app.post("/legacy/proposals")
 @app.post("/proposals")
 @token_required
 def create_proposal(username):
@@ -1659,7 +1659,7 @@ def create_proposal(username):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.put("/api/proposals/<int:proposal_id>")
+@app.put("/legacy/proposals/<int:proposal_id>")
 @app.put("/proposals/<int:proposal_id>")
 @token_required
 def update_proposal(username, proposal_id):
@@ -1708,7 +1708,7 @@ def update_proposal(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.delete("/api/proposals/<int:proposal_id>")
+@app.delete("/legacy/proposals/<int:proposal_id>")
 @app.delete("/proposals/<int:proposal_id>")
 @token_required
 def delete_proposal(username, proposal_id):
@@ -1722,7 +1722,7 @@ def delete_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>")
+@app.get("/legacy/proposals/<int:proposal_id>")
 @app.get("/proposals/<int:proposal_id>")
 @token_required
 def get_proposal(username, proposal_id):
@@ -1755,7 +1755,7 @@ def get_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/proposals/<int:proposal_id>/submit")
+@app.post("/legacy/proposals/<int:proposal_id>/submit")
 @app.post("/proposals/<int:proposal_id>/submit")
 @token_required
 def submit_for_review(username, proposal_id):
@@ -1796,7 +1796,7 @@ def submit_for_review(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/proposals/<int:proposal_id>/send-for-approval")
+@app.post("/legacy/proposals/<int:proposal_id>/send-for-approval")
 @token_required
 def send_for_approval(username, proposal_id):
     """Send proposal for CEO approval"""
@@ -2444,7 +2444,7 @@ def get_proposal_comments(proposal_id):
         raise HTTPException(status_code=500, detail=str(e))
 
 # Proposal Versions endpoints
-@app.post("/api/proposals/<int:proposal_id>/versions")
+@app.post("/legacy/proposals/<int:proposal_id>/versions")
 @token_required
 def create_version(username, proposal_id):
     """Create a new version of a proposal"""
@@ -2506,7 +2506,7 @@ def create_version(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>/versions")
+@app.get("/legacy/proposals/<int:proposal_id>/versions")
 @token_required
 def get_versions(username, proposal_id):
     """Get all versions of a proposal"""
@@ -2546,7 +2546,7 @@ def get_versions(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>/versions/<int:version_number>")
+@app.get("/legacy/proposals/<int:proposal_id>/versions/<int:version_number>")
 @token_required
 def get_version(username, proposal_id, version_number):
     """Get a specific version of a proposal"""
@@ -2928,7 +2928,7 @@ def submit_ai_feedback(username):
 # COLLABORATION ENDPOINTS
 # ============================================================
 
-@app.post("/api/proposals/<int:proposal_id>/invite")
+@app.post("/legacy/proposals/<int:proposal_id>/invite")
 @token_required
 def invite_collaborator(username, proposal_id):
     """Invite a collaborator to view and comment on a proposal"""
@@ -3795,7 +3795,7 @@ def client_reject_proposal(proposal_id):
 # COLLABORATION ADVANCED ENDPOINTS - Suggest Mode & Section Locking
 # ============================================================================
 
-@app.post("/api/proposals/<int:proposal_id>/suggestions")
+@app.post("/legacy/proposals/<int:proposal_id>/suggestions")
 @token_required
 def create_suggestion(username, proposal_id):
     """Create a suggested change (for reviewers with suggest permission)"""
@@ -3873,7 +3873,7 @@ def create_suggestion(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>/suggestions")
+@app.get("/legacy/proposals/<int:proposal_id>/suggestions")
 @token_required
 def get_suggestions(username, proposal_id):
     """Get all suggestions for a proposal"""
@@ -4080,7 +4080,7 @@ def unlock_section(username, proposal_id, section_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>/sections/locks")
+@app.get("/legacy/proposals/<int:proposal_id>/sections/locks")
 @token_required
 def get_section_locks(username, proposal_id):
     """Get all active section locks for a proposal"""
@@ -4108,7 +4108,7 @@ def get_section_locks(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/notifications")
+@app.get("/legacy/notifications")
 @token_required
 def get_notifications(username):
     """Get all notifications for current user"""
@@ -4153,7 +4153,7 @@ def get_notifications(username):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/notifications/<int:notification_id>/mark-read")
+@app.post("/legacy/notifications/<int:notification_id>/mark-read")
 @token_required
 def mark_notification_read(username, notification_id):
     """Mark a notification as read"""
@@ -4182,7 +4182,7 @@ def mark_notification_read(username, notification_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/notifications/mark-all-read")
+@app.post("/legacy/notifications/mark-all-read")
 @token_required
 def mark_all_notifications_read(username):
     """Mark all notifications as read for current user"""
@@ -4290,7 +4290,7 @@ def mark_mention_read(username, mention_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>/activity")
+@app.get("/legacy/proposals/<int:proposal_id>/activity")
 @token_required
 def get_activity_timeline(username, proposal_id):
     """Get comprehensive activity timeline for a proposal"""
@@ -4336,7 +4336,7 @@ def get_activity_timeline(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>/versions/compare")
+@app.get("/legacy/proposals/<int:proposal_id>/versions/compare")
 @token_required
 def compare_proposal_versions(username, proposal_id):
     """Compare two versions of a proposal and return diff"""
@@ -4448,7 +4448,7 @@ def compare_proposal_versions(username, proposal_id):
 # DOCUSIGN E-SIGNATURE ENDPOINTS
 # ============================================================================
 
-@app.post("/api/proposals/<int:proposal_id>/docusign/send")
+@app.post("/legacy/proposals/<int:proposal_id>/docusign/send")
 @token_required
 def send_for_signature(username, proposal_id):
     """Send proposal for DocuSign signature (embedded signing)"""
@@ -4548,7 +4548,7 @@ def send_for_signature(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/proposals/<int:proposal_id>/signatures")
+@app.get("/legacy/proposals/<int:proposal_id>/signatures")
 @token_required
 def get_proposal_signatures(username, proposal_id):
     """Get all signatures for a proposal"""

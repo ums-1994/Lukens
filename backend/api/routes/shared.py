@@ -88,7 +88,7 @@ def search_users_for_mentions():
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/notifications")
+@bp.get("/notifications")
 @token_required
 def get_notifications(username=None, user_id=None, email=None):
     """Get all notifications for the current user"""
@@ -194,7 +194,7 @@ def get_notifications(username=None, user_id=None, email=None):
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/notifications/<int:notification_id>/mark-read")
+@bp.post("/notifications/<int:notification_id>/mark-read")
 @token_required
 def mark_notification_read(username=None, user_id=None, email=None, notification_id=None):
     """Mark a notification as read"""
@@ -245,7 +245,7 @@ def mark_notification_read(username=None, user_id=None, email=None, notification
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/notifications/mark-all-read")
+@bp.post("/notifications/mark-all-read")
 @token_required
 def mark_all_notifications_read(username=None, user_id=None, email=None):
     """Mark all notifications as read for the current user"""
