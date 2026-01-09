@@ -24,54 +24,58 @@ def create_proposal(username=None, user_id=None, email=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Robust user lookup with retries (ported from creator.py)
-            # This handles eventual consistency where the user might not be visible immediately after creation
+
+            # If token_required already provided a numeric user_id, trust it directly.
+            # The Firebase flow guarantees this id comes from a committed INSERT
+            # even if this connection can't see the users row yet due to
+            # eventual consistency. We don't need to re-look it up.
             found_user_id = None
             import time
-            
-            # Strategy: Try user_id first (if provided), then email, then username
-            lookup_strategies = []
+
             if user_id:
-                lookup_strategies.append(('user_id', user_id))
-            if email:
-                lookup_strategies.append(('email', email))
-            if username:
-                lookup_strategies.append(('username', username))
-            
-            max_retries = 30
-            retry_delay = 0.2
-            
-            for attempt in range(max_retries):
-                for strategy_type, strategy_value in lookup_strategies:
-                    try:
-                        if strategy_type == 'user_id':
-                            cursor.execute('SELECT id FROM users WHERE id = %s', (strategy_value,))
-                        elif strategy_type == 'email':
-                            cursor.execute('SELECT id FROM users WHERE email = %s', (strategy_value,))
-                        elif strategy_type == 'username':
-                            cursor.execute('SELECT id FROM users WHERE username = %s', (strategy_value,))
-                        
-                        user_row = cursor.fetchone()
-                        if user_row:
-                            found_user_id = user_row[0]
-                            print(f"✅ Found user_id {found_user_id} using {strategy_type}: {strategy_value} (attempt {attempt + 1})")
-                            break
-                    except Exception as e:
-                        print(f"⚠️ Error looking up by {strategy_type}: {e}")
-                
-                if found_user_id:
-                    break
-                
-                if attempt < max_retries - 1:
-                    print(f"⚠️ User not found yet, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
-                    time.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 1.3, 1.0)
-            
-            if not found_user_id:
-                print(f"❌ User lookup failed after {max_retries} attempts for username: {username}, email: {email}, user_id: {user_id}")
-                return jsonify({'detail': f"User not found after {max_retries} retries"}), 400
-            
+                found_user_id = user_id
+                print(f"🔍 Using user_id from decorator: {found_user_id} (trusting decorator verification)")
+            else:
+                # Robust user lookup with retries (ported from creator.py)
+                # This handles cases where legacy/dev flows call this route
+                # without a trusted user_id from the decorator.
+                lookup_strategies = []
+                if email:
+                    lookup_strategies.append(('email', email))
+                if username:
+                    lookup_strategies.append(('username', username))
+
+                max_retries = 30
+                retry_delay = 0.2
+
+                for attempt in range(max_retries):
+                    for strategy_type, strategy_value in lookup_strategies:
+                        try:
+                            if strategy_type == 'email':
+                                cursor.execute('SELECT id FROM users WHERE email = %s', (strategy_value,))
+                            elif strategy_type == 'username':
+                                cursor.execute('SELECT id FROM users WHERE username = %s', (strategy_value,))
+
+                            user_row = cursor.fetchone()
+                            if user_row:
+                                found_user_id = user_row[0]
+                                print(f"✅ Found user_id {found_user_id} using {strategy_type}: {strategy_value} (attempt {attempt + 1})")
+                                break
+                        except Exception as e:
+                            print(f"⚠️ Error looking up by {strategy_type}: {e}")
+
+                    if found_user_id:
+                        break
+
+                    if attempt < max_retries - 1:
+                        print(f"⚠️ User not found yet, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
+                        time.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.3, 1.0)
+
+                if not found_user_id:
+                    print(f"❌ User lookup failed after {max_retries} attempts for username: {username}, email: {email}, user_id: {user_id}")
+                    return jsonify({'detail': f"User not found after {max_retries} retries"}), 400
+
             user_id = found_user_id
                 
             # Extract fields
