@@ -247,28 +247,38 @@ def submit_for_review(username=None, proposal_id=None):
 @bp.post("/proposals/<int:proposal_id>/send-for-approval")
 @bp.post("/api/proposals/<int:proposal_id>/send-for-approval")
 @token_required
-def send_for_approval(username=None, proposal_id=None):
+def send_for_approval(username=None, proposal_id=None, user_id=None, email=None):
     """Send proposal for approval"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # Get user ID from username (try multiple times in case user was just created)
-            user_row = None
-            for attempt in range(3):
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user_row = cursor.fetchone()
-                if user_row:
-                    break
-                # If user not found and this is the first attempt, wait a bit (user might have just been created)
-                if attempt == 0:
-                    import time
-                    time.sleep(0.1)  # Small delay to allow transaction to commit
-            
-            if not user_row:
-                print(f"❌ User lookup failed after 3 attempts for username: {username}")
-                return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
+            # Prefer user_id supplied by the Firebase token_required decorator.
+            # This avoids re-querying the users table, which can fail under
+            # the Render visibility issues you're seeing.
+            effective_user_id = None
+            if user_id:
+                effective_user_id = user_id
+                print(f"🔍 Using user_id from decorator for send_for_approval: {effective_user_id}")
+            else:
+                # Fallback: Get user ID from username (try multiple times in case user was just created)
+                user_row = None
+                for attempt in range(3):
+                    cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        break
+                    # If user not found and this is the first attempt, wait a bit (user might have just been created)
+                    if attempt == 0:
+                        import time
+                        time.sleep(0.1)  # Small delay to allow transaction to commit
+                
+                if not user_row:
+                    print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                    return {'detail': 'User not found'}, 404
+                effective_user_id = user_row[0]
+
+            user_id = effective_user_id
             
             # Determine ownership column based on actual schema (owner_id vs user_id)
             cursor.execute(
@@ -484,9 +494,9 @@ def get_upload_signature(username=None):
 # VERSION MANAGEMENT ROUTES
 # ============================================================================
 
-@bp.post("/api/proposals/<int:proposal_id>/versions")
+@bp.post("/proposals/<int:proposal_id>/versions")
 @token_required
-def create_version(username=None, proposal_id=None):
+def create_version(username=None, proposal_id=None, user_id=None, email=None):
     """Create a new version of a proposal"""
     try:
         data = request.get_json()
@@ -495,10 +505,17 @@ def create_version(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Get user ID from username
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
-            user_id = user_row[0] if user_row else None
+            # Determine user ID: prefer the value supplied by token_required,
+            # fall back to a lookup by username if needed.
+            if user_id:
+                effective_user_id = user_id
+                print(f"🔍 Using user_id from decorator for create_version: {effective_user_id}")
+            else:
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user_row = cursor.fetchone()
+                effective_user_id = user_row[0] if user_row else None
+
+            user_id = effective_user_id
             
             # Get next version number if not provided
             if 'version_number' not in data:
@@ -577,7 +594,7 @@ def create_version(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/api/proposals/<int:proposal_id>/versions")
+@bp.get("/proposals/<int:proposal_id>/versions")
 @token_required
 def get_versions(username=None, proposal_id=None):
     """Get all versions of a proposal"""
@@ -611,7 +628,7 @@ def get_versions(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/api/proposals/<int:proposal_id>/versions/<int:version_number>")
+@bp.get("/proposals/<int:proposal_id>/versions/<int:version_number>")
 @token_required
 def get_version(username=None, proposal_id=None, version_number=None):
     """Get a specific version of a proposal"""

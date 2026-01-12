@@ -14,6 +14,11 @@ from api.utils.database import get_db_connection
 DEV_BYPASS_ENABLED = os.getenv('DEV_BYPASS_AUTH', 'false').lower() == 'true'
 DEV_DEFAULT_USERNAME = os.getenv('DEV_DEFAULT_USERNAME', 'admin')
 
+# Simple in-memory cache to avoid re-creating the same Firebase user
+# on every request when the database has eventual-consistency issues.
+# Keyed by email, value is (user_id, username).
+USER_CACHE_BY_EMAIL = {}
+
 
 def token_required(f):
     """
@@ -61,7 +66,30 @@ def token_required(f):
                     email = firebase_user['email']
                     uid = firebase_user['uid']
                     name = firebase_user.get('name') or email.split('@')[0]
-                    
+
+                    # Fast path: if we've already seen this email in this worker,
+                    # reuse the cached user_id/username instead of hitting the DB
+                    # again or re-creating the user.
+                    cached = USER_CACHE_BY_EMAIL.get(email)
+                    if cached:
+                        cached_user_id, cached_username = cached
+                        print(
+                            f"[FIREBASE] Using cached user: {cached_username} "
+                            f"(email: {email}, user_id: {cached_user_id})"
+                        )
+                        import inspect
+                        sig = inspect.signature(f)
+                        clean_kwargs = {
+                            k: v
+                            for k, v in kwargs.items()
+                            if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                        }
+                        if 'user_id' in sig.parameters:
+                            clean_kwargs['user_id'] = cached_user_id
+                        if 'email' in sig.parameters:
+                            clean_kwargs['email'] = email
+                        return f(username=cached_username, *args, **clean_kwargs)
+
                     # Get user from database using email, or create user if not found
                     # Always use email as the primary lookup since it's unique and comes from Firebase
                     with get_db_connection() as conn:
@@ -94,10 +122,17 @@ def token_required(f):
                                 print(f"[FIREBASE] WARNING: user_id {user_id} not found on verification, this shouldn't happen!")
                                 # This is a serious error, but continue anyway
                             
+                            # Cache for subsequent requests in this worker
+                            USER_CACHE_BY_EMAIL[email] = (user_id, username)
+
                             # Pass username, user_id, and email to functions
                             import inspect
                             sig = inspect.signature(f)
-                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']}
+                            clean_kwargs = {
+                                k: v
+                                for k, v in kwargs.items()
+                                if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                            }
                             if 'user_id' in sig.parameters:
                                 clean_kwargs['user_id'] = user_id
                             if 'email' in sig.parameters:
@@ -279,10 +314,17 @@ def token_required(f):
                             # Increased delay for Render's eventual consistency
                             import time
                             time.sleep(0.25)  # Increased from 100ms to 250ms for Render
-                            
+
+                            # Cache for subsequent requests in this worker
+                            USER_CACHE_BY_EMAIL[email] = (user_id, username)
+
                             import inspect
                             sig = inspect.signature(f)
-                            clean_kwargs = {k: v for k, v in kwargs.items() if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']}
+                            clean_kwargs = {
+                                k: v
+                                for k, v in kwargs.items()
+                                if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                            }
                             if 'user_id' in sig.parameters:
                                 clean_kwargs['user_id'] = user_id
                             if 'email' in sig.parameters:

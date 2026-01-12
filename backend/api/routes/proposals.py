@@ -208,32 +208,60 @@ def get_proposals(username=None, user_id=None, email=None):
             
             print(f"🔍 Looking for proposals for user {username} (user_id: {user_id}, email: {email})")
             
-            # Robust user lookup (similar to create_proposal but simpler since read doesn't need to wait for write visibility as critically)
-            found_user_id = None
-            
-            # 1. Trust decorator user_id if provided
+            # Prefer the user_id provided by the Firebase-aware token_required decorator.
+            # That decorator either looked up the existing user or auto-created them
+            # and returns a trusted numeric user_id, even if this connection can't
+            # yet see the row due to Render's eventual-consistency behaviour.
+            resolved_user_id = None
+            import time
+
             if user_id:
-                try:
-                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                    if cursor.fetchone():
-                        found_user_id = user_id
-                except Exception:
-                    pass
-            
-            # 2. Try email
-            if not found_user_id and email:
-                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
-                row = cursor.fetchone()
-                if row:
-                    found_user_id = row[0]
-            
-            # 3. Try username (fallback)
-            if not found_user_id and username:
-                found_user_id = resolve_user_id(cursor, username)
-            
-            user_id = found_user_id
+                resolved_user_id = user_id
+                print(f"🔍 Using user_id from decorator: {resolved_user_id} (trusting decorator verification)")
+            else:
+                # Fallback for legacy/dev flows where user_id isn't passed through
+                lookup_strategies = []
+                if email:
+                    lookup_strategies.append(("email", email))
+                if username:
+                    lookup_strategies.append(("username", username))
+
+                max_retries = 10
+                retry_delay = 0.2
+
+                for attempt in range(max_retries):
+                    for strategy_type, strategy_value in lookup_strategies:
+                        try:
+                            if strategy_type == "email":
+                                cursor.execute("SELECT id FROM users WHERE email = %s", (strategy_value,))
+                            elif strategy_type == "username":
+                                cursor.execute("SELECT id FROM users WHERE username = %s", (strategy_value,))
+
+                            row = cursor.fetchone()
+                            if row:
+                                resolved_user_id = row[0]
+                                print(
+                                    f"✅ Found user_id {resolved_user_id} using {strategy_type}: {strategy_value} "
+                                    f"(attempt {attempt + 1})"
+                                )
+                                break
+                        except Exception as e:
+                            print(f"⚠️ Error looking up by {strategy_type}: {e}")
+
+                    if resolved_user_id:
+                        break
+
+                    if attempt < max_retries - 1:
+                        print(
+                            f"⚠️ Could not resolve user yet, waiting {retry_delay}s before "
+                            f"retry {attempt + 2}/{max_retries}..."
+                        )
+                        time.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.3, 1.0)
+
+            user_id = resolved_user_id
             if not user_id:
-                print(f"⚠️ Could not resolve numeric ID for {username}, returning empty list")
+                print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
                 return jsonify([]), 200
             
             # Check what columns exist in proposals table
@@ -385,7 +413,7 @@ def get_proposals(username=None, user_id=None, email=None):
 
 @bp.put("/proposals/<int:proposal_id>")
 @token_required
-def update_proposal(username, proposal_id):
+def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
     """Update a proposal"""
     try:
         data = request.get_json()
@@ -415,9 +443,20 @@ def update_proposal(username, proposal_id):
                 return jsonify({'detail': 'Proposals table is missing owner column'}), 500
 
             # Verify ownership
-            user_id = resolve_user_id(cursor, username)
-            if not user_id:
+            resolved_user_id = None
+            # Prefer user_id supplied by the Firebase token_required decorator
+            if user_id:
+                resolved_user_id = user_id
+                print(f"🔍 Using user_id from decorator for update: {resolved_user_id}")
+            else:
+                # Fallback for legacy/dev flows: resolve from username/email
+                identifier = username or email
+                resolved_user_id = resolve_user_id(cursor, identifier)
+
+            if not resolved_user_id:
                 return jsonify({'detail': f"User '{username}' not found"}), 400
+
+            user_id = resolved_user_id
 
             cursor.execute(
                 f"SELECT {owner_col} FROM proposals WHERE id = %s",

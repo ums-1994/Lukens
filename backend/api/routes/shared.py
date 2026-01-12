@@ -367,7 +367,7 @@ def mark_mention_read(username=None, mention_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/activity")
+@bp.get("/proposals/<int:proposal_id>/activity")
 @token_required
 def get_activity_timeline(username=None, proposal_id=None):
     """Get activity timeline for a proposal"""
@@ -397,7 +397,7 @@ def get_activity_timeline(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/versions/compare")
+@bp.get("/proposals/<int:proposal_id>/versions/compare")
 @token_required
 def compare_proposal_versions(username=None, proposal_id=None):
     """Compare two versions of a proposal"""
