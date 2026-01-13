@@ -9,6 +9,13 @@ class AuthService {
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        final hostname = web.window.location.hostname;
+        if (hostname == 'localhost' || hostname == '127.0.0.1') {
+          const localUrl = 'http://127.0.0.1:8000';
+          print('🌐 Using local API URL (web dev): $localUrl');
+          return localUrl;
+        }
+
         // Try to get from window.APP_CONFIG.API_URL
         final config = js_util.getProperty(js_util.globalThis, 'APP_CONFIG');
         if (config != null) {
@@ -29,18 +36,6 @@ class AuthService {
         }
       } catch (e) {
         print('⚠️ Could not read API URL from config: $e');
-      }
-    }
-    // Check if we're in production (not localhost)
-    if (kIsWeb) {
-      final hostname = web.window.location.hostname;
-      final isProduction = hostname.contains('netlify.app') ||
-          hostname.contains('onrender.com') ||
-          !hostname.contains('localhost');
-
-      if (isProduction) {
-        print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
       }
     }
     // Default to Render backend (production)

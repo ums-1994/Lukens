@@ -417,18 +417,55 @@ def firebase_auth():
                 user_id = user[0]
                 username = user[1]
                 user_role = user[4]  # Get role from database
+
+                requested_role_normalized = (
+                    requested_role.lower().strip() if requested_role else None
+                )
+                if requested_role_normalized in ['admin', 'ceo']:
+                    requested_role_normalized = 'admin'
+                elif requested_role_normalized in ['financial manager', 'finance']:
+                    requested_role_normalized = 'financial manager'
+                elif requested_role_normalized in ['manager', 'creator', 'user']:
+                    requested_role_normalized = 'manager'
+                else:
+                    requested_role_normalized = None
                 
                 # Normalize role: map variations to standard roles (admin or manager)
                 # Only two roles: admin and manager
                 role_lower = user_role.lower().strip() if user_role else 'user'
                 if role_lower in ['admin', 'ceo']:
                     normalized_role = 'admin'
-                elif role_lower in ['manager', 'financial manager', 'creator', 'user']:
+                elif role_lower in ['financial manager', 'finance']:
+                    normalized_role = 'financial manager'
+                elif role_lower in ['manager', 'creator', 'user']:
                     normalized_role = 'manager'
                 else:
                     # Default to manager for unknown roles
                     normalized_role = 'manager'
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
+
+                # If the client provides a role hint (from registration / Firestore),
+                # allow upgrading the stored role so future logins stay correct.
+                # We only upgrade from manager -> financial manager/admin (never downgrade).
+                try:
+                    if requested_role_normalized and requested_role_normalized != normalized_role:
+                        can_upgrade = (
+                            normalized_role == 'manager'
+                            and requested_role_normalized in ['financial manager', 'admin']
+                        )
+                        if can_upgrade:
+                            cursor.execute(
+                                '''UPDATE users SET role = %s WHERE id = %s''',
+                                (requested_role_normalized, user_id)
+                            )
+                            conn.commit()
+                            normalized_role = requested_role_normalized
+                            print(
+                                f'✅ Upgraded user role for {email}: now "{normalized_role}" (was "{role_lower}")'
+                            )
+                except Exception as role_update_err:
+                    conn.rollback()
+                    print(f"⚠️ Failed to upgrade role for {email}: {role_update_err}")
                 
                 print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
                 
@@ -479,7 +516,9 @@ def firebase_auth():
                 normalized_role = requested_role.lower().strip() if requested_role else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
-                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
+                elif normalized_role in ['financial manager']:
+                    role_to_use = 'financial manager'
+                elif normalized_role in ['manager', 'creator', 'user']:
                     role_to_use = 'manager'
                 else:
                     # Default to manager for unknown roles

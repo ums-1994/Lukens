@@ -10,6 +10,13 @@ class ApiService {
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        final hostname = html.window.location.hostname;
+        if (hostname == 'localhost' || hostname == '127.0.0.1') {
+          const localUrl = 'http://127.0.0.1:8000';
+          print('🌐 ApiService: Using local API URL (web dev): $localUrl');
+          return localUrl;
+        }
+
         // Try to get from window.APP_CONFIG.API_URL
         final config = js.context['APP_CONFIG'];
         if (config != null) {
@@ -30,21 +37,6 @@ class ApiService {
         }
       } catch (e) {
         print('⚠️ ApiService: Could not read API URL from config: $e');
-      }
-    }
-    // Check if we're in production (not localhost)
-    if (kIsWeb) {
-      final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
-
-        if (isProduction) {
-          print(
-              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
       }
     }
     // Default to Render backend (production)

@@ -47,7 +47,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -56,6 +56,7 @@ from werkzeug.utils import secure_filename
 from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 
 # Load environment variables
 load_dotenv()
@@ -68,6 +69,8 @@ CORS(
         r"/*": {
             "origins": [
                 "https://proposals2025.netlify.app",
+                r"^http://localhost(:\d+)?$",
+                r"^http://127\.0\.0\.1(:\d+)?$",
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
@@ -92,6 +95,7 @@ from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 from api.routes.approver import bp as approver_bp
+from api.routes.finance import bp as finance_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -101,6 +105,7 @@ app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
+app.register_blueprint(finance_bp, url_prefix='/api')
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -146,13 +151,31 @@ def get_pg_pool():
     if _pg_pool is None:
         import psycopg2.pool
         try:
-            db_config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'proposal_db'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'port': int(os.getenv('DB_PORT', '5432'))
-            }
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                parsed = urlparse(database_url)
+                db_config = {
+                    'host': parsed.hostname or os.getenv('DB_HOST', 'localhost'),
+                    'database': (parsed.path or '').lstrip('/') or os.getenv('DB_NAME', 'proposal_db'),
+                    'user': parsed.username or os.getenv('DB_USER', 'postgres'),
+                    'password': parsed.password or os.getenv('DB_PASSWORD', ''),
+                    'port': int(parsed.port or os.getenv('DB_PORT', '5432')),
+                }
+            else:
+                db_config = {
+                    'host': os.getenv('DB_HOST', 'localhost'),
+                    'database': os.getenv('DB_NAME', 'proposal_db'),
+                    'user': os.getenv('DB_USER', 'postgres'),
+                    'password': os.getenv('DB_PASSWORD', ''),
+                    'port': int(os.getenv('DB_PORT', '5432'))
+                }
+
+            ssl_mode = os.getenv('DB_SSLMODE', 'prefer')
+            if 'render.com' in (db_config.get('host') or '').lower() or os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
+                ssl_mode = 'require'
+                db_config['sslmode'] = ssl_mode
+                print(f"[*] Using SSL mode: {ssl_mode} for external connection")
+
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
                 minconn=1,
@@ -432,7 +455,7 @@ def init_db():
     global _db_initialized
     # Skip initialization for CORS preflight requests to avoid non-2xx responses
     # which will cause browsers to block the request due to failed preflight.
-    if request.method == 'OPTIONS':
+    if has_request_context() and request.method == 'OPTIONS':
         return {}, 200
     if _db_initialized:
         return

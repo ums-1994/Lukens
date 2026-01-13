@@ -6,6 +6,7 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 from contextlib import contextmanager
+from urllib.parse import urlparse, unquote
 
 # PostgreSQL connection pool
 _pg_pool = None
@@ -17,13 +18,24 @@ def get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         try:
-            db_config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'proposal_db'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'port': int(os.getenv('DB_PORT', '5432')),
-            }
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                parsed = urlparse(database_url)
+                db_config = {
+                    'host': parsed.hostname or os.getenv('DB_HOST', 'localhost'),
+                    'database': (parsed.path or '').lstrip('/') or os.getenv('DB_NAME', 'proposal_db'),
+                    'user': unquote(parsed.username or '') or os.getenv('DB_USER', 'postgres'),
+                    'password': unquote(parsed.password or '') or os.getenv('DB_PASSWORD', ''),
+                    'port': int(parsed.port or os.getenv('DB_PORT', '5432')),
+                }
+            else:
+                db_config = {
+                    'host': os.getenv('DB_HOST', 'localhost'),
+                    'database': os.getenv('DB_NAME', 'proposal_db'),
+                    'user': os.getenv('DB_USER', 'postgres'),
+                    'password': os.getenv('DB_PASSWORD', ''),
+                    'port': int(os.getenv('DB_PORT', '5432')),
+                }
             
             # Add SSL mode for external connections (like Render)
             # Check if host contains 'render.com' or SSL is explicitly required

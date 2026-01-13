@@ -26,6 +26,21 @@ class FirebaseService {
   // Get auth state changes stream
   static Stream<User?> get authStateChanges => _auth.authStateChanges();
 
+  static Future<String?> getUserRoleFromFirestore({required String uid}) async {
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      final data = doc.data();
+      if (data == null) return null;
+      final role = data['role'];
+      if (role == null) return null;
+      final roleStr = role.toString().trim();
+      return roleStr.isEmpty ? null : roleStr;
+    } catch (e) {
+      print('Error reading user role from Firestore: $e');
+      return null;
+    }
+  }
+
   // Sign up with email and password
   static Future<UserCredential?> signUpWithEmailAndPassword({
     required String email,

@@ -25,7 +25,7 @@ class _RegisterPageState extends State<RegisterPage>
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  String _selectedRole = 'Manager';
+  String _selectedRole = 'CEO';
   bool _isLoading = false;
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
@@ -47,7 +47,12 @@ class _RegisterPageState extends State<RegisterPage>
 
   int _currentFrameIndex = 0;
 
-  final List<String> _roles = ['Manager', 'Admin'];
+  final List<String> _roles = ['CEO', 'Finance', 'Admin'];
+  static const Map<String, String> _roleDisplayToBackend = {
+    'CEO': 'manager',
+    'Finance': 'financial manager',
+    'Admin': 'admin',
+  };
 
   @override
   void initState() {
@@ -145,8 +150,7 @@ class _RegisterPageState extends State<RegisterPage>
       final password = _passwordController.text;
       final firstName = _firstNameController.text.trim();
       final lastName = _lastNameController.text.trim();
-      final role =
-          _selectedRole.toLowerCase(); // Convert to lowercase for backend
+      final role = _roleDisplayToBackend[_selectedRole] ?? 'manager';
 
       // Step 1: Create user in Firebase
       print('🔥 Creating user in Firebase...');
@@ -164,6 +168,21 @@ class _RegisterPageState extends State<RegisterPage>
       } catch (e) {
         print('❌ Firebase registration error: $e');
         firebaseError = e.toString();
+      }
+
+      // FirebaseService.signUpWithEmailAndPassword may return null for certain
+      // web errors (instead of throwing). If signup didn't produce a user,
+      // attempt sign-in to unblock flows where the account already exists.
+      if (firebaseCredential == null || firebaseCredential.user == null) {
+        print('🔁 Signup did not return a user; attempting Firebase sign-in...');
+        try {
+          firebaseCredential = await FirebaseService.signInWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
+        } catch (e) {
+          print('❌ Firebase sign-in after signup failure failed: $e');
+        }
       }
 
       if (firebaseCredential == null || firebaseCredential.user == null) {
@@ -288,6 +307,9 @@ class _RegisterPageState extends State<RegisterPage>
           if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
             dashboardRoute = '/approver_dashboard';
             print('✅ Routing to Approval Dashboard');
+          } else if (userRole == 'financial manager' || role == 'financial manager') {
+            dashboardRoute = '/finance_dashboard';
+            print('✅ Routing to Finance Dashboard');
           } else {
             dashboardRoute = '/creator_dashboard';
             print('✅ Routing to Creator Dashboard');

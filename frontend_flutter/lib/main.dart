@@ -34,10 +34,13 @@ import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
+import 'pages/finance/finance_dashboard_page.dart';
 import 'services/auth_service.dart';
 import 'services/role_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,6 +65,45 @@ Future<void> main() async {
   } catch (e) {
     // Ignore if already initialized or not required
   }
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+  };
+
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    final message = details.exceptionAsString();
+    return Material(
+      color: Colors.black,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: DefaultTextStyle(
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontFamily: 'monospace',
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Flutter Error',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(message),
+                const SizedBox(height: 12),
+                Text(details.stack?.toString() ?? ''),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  };
   // Restore persisted auth session on startup (web)
   AuthService.restoreSessionFromStorage();
   runApp(const MyApp());
@@ -79,6 +121,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Lukens',
+        navigatorKey: appNavigatorKey,
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
@@ -302,6 +345,7 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const DashboardPage(),
           '/dashboard': (context) => const DashboardPage(),
           '/creator_dashboard': (context) => const DashboardPage(),
+          '/finance_dashboard': (context) => const FinanceDashboardPage(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
@@ -452,14 +496,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
             String dashboardRoute;
 
             final isAdmin = userRole == 'admin' || userRole == 'ceo';
+            final isFinance = userRole == 'financial manager';
             final isManager = userRole == 'manager' ||
-                userRole == 'financial manager' ||
                 userRole == 'creator' ||
                 userRole == 'user';
 
             if (isAdmin) {
               dashboardRoute = '/approver_dashboard';
               print('✅ Khonobuzz: Routing to Admin Dashboard');
+            } else if (isFinance) {
+              dashboardRoute = '/finance_dashboard';
+              print('✅ Khonobuzz: Routing to Finance Dashboard');
             } else if (isManager) {
               dashboardRoute = '/creator_dashboard';
               print('✅ Khonobuzz: Routing to Creator Dashboard (Manager)');
@@ -700,6 +747,8 @@ class _HomeShellState extends State<HomeShell> {
       if (backendRole == 'admin' || backendRole == 'ceo') {
         // Admin → Approver Dashboard
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
+      } else if (backendRole == 'financial manager') {
+        Navigator.pushReplacementNamed(context, '/finance_dashboard');
       } else {
         // Manager → Creator Dashboard
         Navigator.pushReplacementNamed(context, '/creator_dashboard');
