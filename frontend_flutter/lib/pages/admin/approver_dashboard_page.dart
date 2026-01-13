@@ -28,7 +28,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
-  String _currentPage = 'Proposals for Review';
+  String _currentPage = 'Dashboard';
+  int _highRiskCount = 0;
+  int _approvedThisMonthCount = 0;
+  int _sentToClientCount = 0;
+  int _clientApprovedCount = 0;
+  List<Map<String, dynamic>> _recentApprovals = [];
 
   @override
   void initState() {
@@ -147,9 +152,80 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             '⚠️ Failed to fetch pending approvals: ${pendingResponse.statusCode}');
       }
 
+      int highRiskCount = 0;
+      int approvedThisMonthCount = 0;
+      int sentToClientCount = 0;
+      int clientApprovedCount = 0;
+      List<Map<String, dynamic>> recentApprovals = [];
+
+      try {
+        final allProposals = await ApiService.getProposals(token);
+        final now = DateTime.now();
+        final startOfMonth = DateTime(now.year, now.month, 1);
+        final startOfNextMonth = now.month == 12
+            ? DateTime(now.year + 1, 1, 1)
+            : DateTime(now.year, now.month + 1, 1);
+
+        for (final raw in allProposals) {
+          if (raw is! Map) continue;
+          final proposal = Map<String, dynamic>.from(raw);
+
+          final riskScore = _parseDouble(proposal['risk_score']);
+          final riskLevel =
+              (proposal['risk_level'] ?? '').toString().toLowerCase();
+          if ((riskScore != null && riskScore >= 70) ||
+              riskLevel == 'high' ||
+              riskLevel == 'critical') {
+            highRiskCount++;
+          }
+
+          final status = (proposal['status'] ?? '').toString().toLowerCase();
+
+          if (status == 'released') {
+            sentToClientCount++;
+          }
+          if (status == 'signed') {
+            clientApprovedCount++;
+          }
+
+          final isApproved = status == 'signed' ||
+              status == 'client signed' ||
+              status == 'approved' ||
+              status == 'completed';
+          if (isApproved) {
+            final updatedRaw = proposal['updated_at'] ?? proposal['updatedAt'];
+            final updatedAt = _parseDate(updatedRaw);
+            if (updatedAt != null &&
+                !updatedAt.isBefore(startOfMonth) &&
+                updatedAt.isBefore(startOfNextMonth)) {
+              approvedThisMonthCount++;
+            }
+          }
+        }
+
+        recentApprovals = List<Map<String, dynamic>>.from(pending);
+        recentApprovals.sort((a, b) {
+          final aDate = _parseDate(a['updated_at'] ?? a['updatedAt']) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = _parseDate(b['updated_at'] ?? b['updatedAt']) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+        if (recentApprovals.length > 5) {
+          recentApprovals = recentApprovals.sublist(0, 5);
+        }
+      } catch (e) {
+        print('⚠️ Error computing approver metrics: $e');
+      }
+
       if (mounted) {
         setState(() {
           _pendingApprovals = pending;
+          _highRiskCount = highRiskCount;
+          _approvedThisMonthCount = approvedThisMonthCount;
+          _sentToClientCount = sentToClientCount;
+          _clientApprovedCount = clientApprovedCount;
+          _recentApprovals = recentApprovals;
           _isLoading = false;
         });
       }
@@ -215,7 +291,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                _buildHeroSection(),
+                                _buildDashboardWelcome(),
+                                const SizedBox(height: 24),
+                                _buildSummaryCardsRow(),
+                                const SizedBox(height: 16),
+                                _buildSecondaryCardsRow(),
                                 const SizedBox(height: 24),
                                 Expanded(
                                   child: CustomScrollbar(
@@ -226,6 +306,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
+                                          _buildSection(
+                                            'Recent Proposals',
+                                            _buildRecentProposalsTable(),
+                                          ),
+                                          const SizedBox(height: 24),
                                           _buildSection(
                                             '⏳ Pending CEO Approval',
                                             _isLoading
@@ -251,6 +336,143 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRecentProposalsTable() {
+    if (_recentApprovals.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'No recent proposals requiring your review.',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        _buildRecentTableHeader(),
+        const SizedBox(height: 12),
+        ..._recentApprovals.map(_buildRecentProposalRow).toList(),
+      ],
+    );
+  }
+
+  Widget _buildRecentTableHeader() {
+    final headerStyle = PremiumTheme.labelMedium.copyWith(
+      color: Colors.white70,
+      letterSpacing: 1.0,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Expanded(flex: 4, child: Text('PROPOSAL', style: headerStyle)),
+          Expanded(flex: 3, child: Text('CLIENT', style: headerStyle)),
+          Expanded(flex: 2, child: Text('DATE', style: headerStyle)),
+          Expanded(flex: 2, child: Text('STATUS', style: headerStyle)),
+          const SizedBox(width: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentProposalRow(Map<String, dynamic> proposal) {
+    final submittedDate = proposal['updated_at'] != null
+        ? DateTime.tryParse(proposal['updated_at'].toString())
+        : null;
+    final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
+    final status = proposal['status']?.toString() ?? 'Pending';
+    final dateLabel = submittedDate != null
+        ? DateFormat('dd MMM yyyy').format(submittedDate)
+        : '—';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              proposal['title'] ?? 'Untitled Proposal',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              client,
+              style: PremiumTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              dateLabel,
+              style: PremiumTheme.bodyMedium,
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _buildStatusPill(status),
+          ),
+          SizedBox(
+            width: 80,
+            child: TextButton(
+              onPressed: () => _openProposal(proposal),
+              child: const Text('Review'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusPill(String status) {
+    final lower = status.toLowerCase();
+    Color bg;
+    Color fg;
+
+    if (lower.contains('pending')) {
+      bg = PremiumTheme.orange.withOpacity(0.15);
+      fg = PremiumTheme.orange;
+    } else if (lower.contains('approved') || lower.contains('signed')) {
+      bg = PremiumTheme.success.withOpacity(0.15);
+      fg = PremiumTheme.success;
+    } else if (lower.contains('rejected') ||
+        lower.contains('declined') ||
+        lower.contains('lost')) {
+      bg = PremiumTheme.error.withOpacity(0.15);
+      fg = PremiumTheme.error;
+    } else {
+      bg = Colors.white.withOpacity(0.08);
+      fg = Colors.white70;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: fg,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -309,6 +531,93 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               ],
             ),
           ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDashboardWelcome() {
+    final user = AuthService.currentUser ?? {};
+    final rawName = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email'] ??
+        'Approver';
+    final firstName = rawName.toString().split(' ').first;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Welcome back, $firstName',
+          style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Here is what needs your attention today.',
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCardsRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: PremiumStatCard(
+            title: 'Pending Approvals',
+            value: _pendingApprovals.length.toString(),
+            subtitle: 'Awaiting review',
+            icon: Icons.pending_actions,
+            gradient: PremiumTheme.blueGradient,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: PremiumStatCard(
+            title: 'High Risk Items',
+            value: _highRiskCount.toString(),
+            subtitle: 'Flagged by risk analysis',
+            icon: Icons.warning_amber_rounded,
+            gradient: PremiumTheme.redGradient,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: PremiumStatCard(
+            title: 'Approved This Month',
+            value: _approvedThisMonthCount.toString(),
+            subtitle: 'Client-approved',
+            icon: Icons.check_circle_outline,
+            gradient: PremiumTheme.tealGradient,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSecondaryCardsRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: PremiumStatCard(
+            title: 'Sent to Client',
+            value: _sentToClientCount.toString(),
+            subtitle: 'Released to client',
+            icon: Icons.send,
+            gradient: PremiumTheme.blueGradient,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: PremiumStatCard(
+            title: 'Client Approved',
+            value: _clientApprovedCount.toString(),
+            subtitle: 'Client signed',
+            icon: Icons.thumb_up_alt_outlined,
+            gradient: PremiumTheme.tealGradient,
+          ),
         ),
       ],
     );
@@ -452,41 +761,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
                 _currentPage == 'Dashboard', context),
             _buildNavItem(
-                'Proposals for Review',
+                'Approvals',
                 'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Proposals for Review',
+                _currentPage == 'Approvals',
                 context),
-            _buildNavItem(
-                'Governance & Risk',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Governance & Risk',
-                context),
-            _buildNavItem(
-                'Template Management',
-                'assets/images/content_library.png',
-                _currentPage == 'Template Management',
-                context),
-            _buildNavItem(
-                'Content Library',
-                'assets/images/content_library.png',
-                _currentPage == 'Content Library',
-                context),
-            _buildNavItem(
-                'Client Management',
-                'assets/images/collaborations.png',
-                _currentPage == 'Client Management',
-                context),
-            _buildNavItem('User Management', 'assets/images/collaborations.png',
-                _currentPage == 'User Management', context),
-            _buildNavItem(
-                'Approved Proposals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approved Proposals',
-                context),
-            _buildNavItem('Audit Logs', 'assets/images/analytics.png',
-                _currentPage == 'Audit Logs', context),
-            _buildNavItem('Settings', 'assets/images/analytics.png',
-                _currentPage == 'Settings', context),
+            _buildNavItem('History', 'assets/images/analytics.png',
+                _currentPage == 'History', context),
             const SizedBox(height: 20),
             if (!_isSidebarCollapsed)
               Container(
@@ -495,8 +775,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 color: const Color(0xFF2C3E50),
               ),
             const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
+            _buildNavItem('Settings', 'assets/images/analytics.png',
+                _currentPage == 'Settings', context),
+            _buildNavItem('Sign Out', 'assets/images/Logout_KhonoBuzz.png',
+                false, context),
             const SizedBox(height: 20),
           ],
         ),
@@ -1040,6 +1322,24 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return 0;
   }
 
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value);
+    }
+    return null;
+  }
+
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String && value.trim().isNotEmpty) {
+      return double.tryParse(value.trim());
+    }
+    return null;
+  }
+
   String _formatCurrency(double value) {
     if (value == 0) return 'R0';
     return _currencyFormatter.format(value);
@@ -1050,62 +1350,22 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
-      case 'Proposals for Review':
-        // Already on approval dashboard - this is the main page
+      case 'Approvals':
+        // Approvals use the same approver dashboard view
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
-      case 'Governance & Risk':
-        // TODO: Navigate to governance panel
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Governance & Risk Panel - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        break;
-      case 'Template Management':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'User Management':
-        // TODO: Navigate to user management
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('User Management - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        break;
-      case 'Approved Proposals':
+      case 'History':
         Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
-      case 'Audit Logs':
-        // TODO: Navigate to audit logs
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Audit Logs - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        break;
       case 'Settings':
-        // TODO: Navigate to admin settings
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Admin Settings - Coming soon'),
+            content: Text('Settings - Coming soon'),
             backgroundColor: Colors.orange,
           ),
         );
         break;
-      case 'Approval Dashboard':
-        // Already here
-        break;
-      case 'Logout':
+      case 'Sign Out':
         AuthService.logout();
         Navigator.pushNamedAndRemoveUntil(
             context, '/login', (Route<dynamic> route) => false);
