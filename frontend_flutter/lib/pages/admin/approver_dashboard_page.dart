@@ -307,17 +307,17 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                             CrossAxisAlignment.start,
                                         children: [
                                           _buildSection(
-                                            'Recent Proposals',
-                                            _buildRecentProposalsTable(),
-                                          ),
-                                          const SizedBox(height: 24),
-                                          _buildSection(
-                                            '⏳ Pending CEO Approval',
+                                            'Proposals Awaiting Your Approval',
                                             _isLoading
                                                 ? const Center(
                                                     child:
                                                         CircularProgressIndicator())
                                                 : _buildPendingApprovalsList(),
+                                          ),
+                                          const SizedBox(height: 24),
+                                          _buildSection(
+                                            'Recent Proposals',
+                                            _buildRecentProposalsTable(),
                                           ),
                                         ],
                                       ),
@@ -492,12 +492,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Admin Dashboard',
+              'Approver Dashboard',
               style: PremiumTheme.titleLarge,
             ),
             const SizedBox(height: 4),
             const Text(
-              'Review proposals, manage governance, and oversee system operations',
+              'Review and approve proposals assigned to you',
               style: TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ],

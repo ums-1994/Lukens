@@ -70,6 +70,7 @@ CORS(
                 "https://proposals2025.netlify.app",
                 "http://localhost:5173",
                 "http://localhost:5000",
+                "http://localhost:8081",
             ],
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
