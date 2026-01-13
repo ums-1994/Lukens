@@ -3,9 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum UserRole {
   creator,
+  finance,
   approver,
   admin,
-  finance,
 }
 
 class RoleService extends ChangeNotifier {
@@ -21,21 +21,21 @@ class RoleService extends ChangeNotifier {
   // Available roles for the current user (can be expanded based on permissions)
   List<UserRole> get availableRoles => [
         UserRole.creator,
-        UserRole.approver,
         UserRole.finance,
+        UserRole.approver,
         // UserRole.admin, // Uncomment when admin features are ready
       ];
 
   String getRoleName(UserRole role) {
     switch (role) {
       case UserRole.creator:
-        return 'Manager';
+        return 'CEO';
+      case UserRole.finance:
+        return 'Finance';
       case UserRole.approver:
         return 'Admin';
       case UserRole.admin:
         return 'Admin';
-      case UserRole.finance:
-        return 'Finance';
     }
   }
 
@@ -46,12 +46,12 @@ class RoleService extends ChangeNotifier {
     switch (role) {
       case UserRole.creator:
         return '✍️';
+      case UserRole.finance:
+        return '💰';
       case UserRole.approver:
         return '✅';
       case UserRole.admin:
         return '👑';
-      case UserRole.finance:
-        return '💰';
     }
   }
 
@@ -59,12 +59,12 @@ class RoleService extends ChangeNotifier {
     switch (role) {
       case UserRole.creator:
         return 'Create and manage proposals';
+      case UserRole.finance:
+        return 'Manage financial proposals and analytics';
       case UserRole.approver:
         return 'Review and approve proposals';
       case UserRole.admin:
         return 'System administration and approvals';
-      case UserRole.finance:
-        return 'Review pricing and financials for proposals';
     }
   }
 
@@ -79,10 +79,7 @@ class RoleService extends ChangeNotifier {
       return UserRole.approver;
     }
 
-    // Finance roles → Finance Dashboard
-    if (role == 'finance' ||
-        role == 'finance manager' ||
-        role == 'financial manager') {
+    if (role == 'finance' || role == 'finance manager' || role == 'financial manager') {
       return UserRole.finance;
     }
 
@@ -132,6 +129,8 @@ class RoleService extends ChangeNotifier {
       if (savedRole != null) {
         if (savedRole.contains('creator')) {
           _currentRole = UserRole.creator;
+        } else if (savedRole.contains('finance')) {
+          _currentRole = UserRole.finance;
         } else if (savedRole.contains('approver')) {
           _currentRole = UserRole.approver;
         } else if (savedRole.contains('admin')) {
@@ -152,13 +151,21 @@ class RoleService extends ChangeNotifier {
   }
 
   bool isCreator() => _currentRole == UserRole.creator;
+  bool isFinance() => _currentRole == UserRole.finance;
   bool isApprover() => _currentRole == UserRole.approver;
   bool isAdmin() => _currentRole == UserRole.admin;
-  bool isFinance() => _currentRole == UserRole.finance;
 
   // Check if user has access to a feature based on role
   bool canCreateProposals() => isCreator() || isAdmin();
   bool canApproveProposals() => isApprover() || isAdmin();
   bool canAccessAdmin() => isAdmin();
+  bool canAccessFinance() => isFinance() || isAdmin();
+
+  // Finance-specific permissions
+  bool canReviewFinancials() => isFinance() || isAdmin();
   bool canEditPricing() => isFinance() || isAdmin();
+
+  // General editing permissions (templates/content/proposals)
+  bool canEditContentLibrary() => isCreator() || isAdmin();
+  bool canEditTemplates() => isCreator() || isAdmin();
 }

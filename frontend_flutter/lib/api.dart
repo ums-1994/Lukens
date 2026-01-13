@@ -1,37 +1,13 @@
 import 'dart:convert';
-import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 
 // Get API URL from JavaScript config or use default
 String get baseUrl {
-  if (kIsWeb) {
-    try {
-      // Try to get from window.APP_CONFIG.API_URL
-      final config = js.context['APP_CONFIG'];
-      if (config != null) {
-        final configObj = config as js.JsObject;
-        final apiUrl = configObj['API_URL'];
-        if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-          return apiUrl.toString().replaceAll('"', '');
-        }
-      }
-      // Fallback: try window.REACT_APP_API_URL
-      final envUrl = js.context['REACT_APP_API_URL'];
-      if (envUrl != null && envUrl.toString().isNotEmpty) {
-        return envUrl.toString().replaceAll('"', '');
-      }
-    } catch (e) {
-      print('⚠️ Could not read API URL from config: $e');
-    }
-  }
-  // Default URLs based on environment
-  if (kDebugMode) {
-    return 'http://localhost:8000';
-  }
-  // Production default (Render backend URL)
-  return 'https://lukens-wp8w.onrender.com';
+  // IMPORTANT: Keep AppState calls consistent with AuthService/ApiService baseUrl
+  // to avoid fetching auth from one backend and data from another.
+  return AuthService.baseUrl;
 }
 
 class AppState extends ChangeNotifier {

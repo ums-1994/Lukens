@@ -136,12 +136,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       print(
           '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
 
+      String? roleHint;
+      try {
+        final uid = firebaseCredential.user?.uid;
+        if (uid != null && uid.isNotEmpty) {
+          roleHint = await FirebaseService.getUserRoleFromFirestore(uid: uid);
+          if (roleHint != null) {
+            print('🔎 Role hint from Firestore: "$roleHint"');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Failed to load role hint from Firestore: $e');
+      }
+
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Sending Firebase token to backend...');
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken}),
+        body: json.encode({
+          'id_token': firebaseIdToken,
+          if (roleHint != null) 'role': roleHint,
+        }),
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
