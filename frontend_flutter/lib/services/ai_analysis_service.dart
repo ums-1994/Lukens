@@ -3,11 +3,7 @@ import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class AIAnalysisService {
-<<<<<<< HEAD
-  static const String _baseUrl = 'https://lukens-backend.onrender.com';
-=======
   static String get _baseUrl => ApiService.baseUrl;
->>>>>>> origin/Cleaned_Code
   static String? _authToken;
 
   // Set authentication token
@@ -174,12 +170,18 @@ class AIAnalysisService {
   // Legacy method for backward compatibility
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
-<<<<<<< HEAD
-    // If proposal has an ID, use the new risk analysis
-    if (proposalData.containsKey('id')) {
-      return await analyzeProposalRisks(proposalData['id'].toString());
+    // If proposal has an ID and it's not 'draft', try the risk analysis endpoint.
+    if (proposalData.containsKey('id') &&
+        proposalData['id'] != null &&
+        proposalData['id'].toString() != 'draft') {
+      try {
+        return await analyzeProposalRisks(proposalData['id'].toString());
+      } catch (e) {
+        print('AI Risk Analysis failed, falling back to basic analysis: $e');
+      }
     }
 
+    // Fallback: legacy AI analysis endpoint for unsaved proposals or when risk analysis fails.
     try {
       final headers = {
         'Content-Type': 'application/json',
@@ -196,18 +198,6 @@ class AIAnalysisService {
       }
     } catch (e) {
       print('AI Analysis Error: $e');
-=======
-    // If proposal has an ID and it's not 'draft', use the new risk analysis
-    if (proposalData.containsKey('id') &&
-        proposalData['id'] != null &&
-        proposalData['id'].toString() != 'draft') {
-      try {
-        return await analyzeProposalRisks(proposalData['id'].toString());
-      } catch (e) {
-        print('AI Risk Analysis failed, falling back to basic analysis: $e');
-        // Fall through to basic analysis
-      }
->>>>>>> origin/Cleaned_Code
     }
 
     // For unsaved proposals or when API fails, use basic analysis

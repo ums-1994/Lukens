@@ -3,11 +3,7 @@ import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class SmtpAuthService {
-<<<<<<< HEAD
-  static const String baseUrl = 'https://lukens-backend.onrender.com';
-=======
   static String get baseUrl => ApiService.baseUrl;
->>>>>>> origin/Cleaned_Code
 
   // Register user with SMTP email verification
   static Future<Map<String, dynamic>?> registerUser({

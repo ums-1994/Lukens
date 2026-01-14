@@ -86,12 +86,16 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
           initial['estimatedValue']?.toString() ?? '';
       _proposalData['timeline'] = initial['timeline']?.toString() ?? '';
 
-<<<<<<< HEAD
-      _controllers['clientName'] = TextEditingController();
-      _controllers['clientEmail'] = TextEditingController();
-      _controllers['projectType'] = TextEditingController();
-      _controllers['estimatedValue'] = TextEditingController();
-      _controllers['timeline'] = TextEditingController();
+      _controllers['clientName'] =
+          TextEditingController(text: _proposalData['clientName']);
+      _controllers['clientEmail'] =
+          TextEditingController(text: _proposalData['clientEmail']);
+      _controllers['projectType'] =
+          TextEditingController(text: _proposalData['projectType']);
+      _controllers['estimatedValue'] =
+          TextEditingController(text: _proposalData['estimatedValue']);
+      _controllers['timeline'] =
+          TextEditingController(text: _proposalData['timeline']);
 
       final app = context.read<AppState>();
       if (widget.proposalId.isNotEmpty) {
@@ -99,15 +103,22 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
         if (fetched != null) {
           _proposalData.addAll(fetched);
           _controllers['clientName']?.text =
-              (fetched['client_name'] ?? '').toString();
+              (fetched['client_name'] ?? _proposalData['clientName'] ?? '')
+                  .toString();
           _controllers['clientEmail']?.text =
-              (fetched['client_email'] ?? '').toString();
+              (fetched['client_email'] ?? _proposalData['clientEmail'] ?? '')
+                  .toString();
           _controllers['projectType']?.text =
-              (fetched['project_type'] ?? '').toString();
+              (fetched['project_type'] ?? _proposalData['projectType'] ?? '')
+                  .toString();
           _controllers['estimatedValue']?.text =
-              (fetched['budget'] ?? '').toString();
+              (fetched['budget'] ?? _proposalData['estimatedValue'] ?? '')
+                  .toString();
           _controllers['timeline']?.text =
-              (fetched['timeline'] ?? fetched['timeline_days'] ?? '')
+              (fetched['timeline'] ??
+                      fetched['timeline_days'] ??
+                      _proposalData['timeline'] ??
+                      '')
                   .toString();
 
           final sections = fetched['sections'] as List?;
@@ -131,18 +142,6 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
           setState(() {});
         }
       }
-=======
-      _controllers['clientName'] =
-          TextEditingController(text: _proposalData['clientName']);
-      _controllers['clientEmail'] =
-          TextEditingController(text: _proposalData['clientEmail']);
-      _controllers['projectType'] =
-          TextEditingController(text: _proposalData['projectType']);
-      _controllers['estimatedValue'] =
-          TextEditingController(text: _proposalData['estimatedValue']);
-      _controllers['timeline'] =
-          TextEditingController(text: _proposalData['timeline']);
->>>>>>> origin/Cleaned_Code
     } finally {
       setState(() => _isLoading = false);
     }

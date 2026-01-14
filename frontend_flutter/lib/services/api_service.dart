@@ -6,9 +6,6 @@ import 'package:http/http.dart' as http;
 import 'dart:html' as html;
 
 class ApiService {
-<<<<<<< HEAD
-  static const String baseUrl = 'https://lukens-backend.onrender.com';
-=======
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
     if (kIsWeb) {
@@ -53,7 +50,6 @@ class ApiService {
     print('🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
->>>>>>> origin/Cleaned_Code
 
   // Get headers with Firebase token
   static Map<String, String> _getHeaders(String? token) {

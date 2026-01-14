@@ -987,8 +987,8 @@ class _ProposalsPageState extends State<ProposalsPage>
         // Already on proposals page
         break;
       case 'Templates':
-        // Templates functionality - redirect to content library for now
-        Navigator.pushReplacementNamed(context, '/content_library');
+        // Navigate to Templates page
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');

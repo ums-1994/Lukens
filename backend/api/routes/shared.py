@@ -518,7 +518,6 @@ def get_proposal_signatures(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-<<<<<<< HEAD
 @bp.post("/api/proposals/<proposal_id>/docusign/refresh-status")
 @token_required
 def refresh_docusign_status(username=None, proposal_id=None):
@@ -531,24 +530,10 @@ def refresh_docusign_status(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-=======
-@bp.get("/api/proposals/<int:proposal_id>/signed-document")
-@token_required
-def get_signed_document(username=None, proposal_id=None):
-    """Get the signed document PDF from DocuSign for a signed proposal"""
-    try:
-        if not DOCUSIGN_AVAILABLE:
-            return {'detail': 'DocuSign SDK not installed'}, 503
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
->>>>>>> origin/Cleaned_Code
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
-<<<<<<< HEAD
 
             cursor.execute("""
                 SELECT id, owner_id, status
@@ -674,181 +659,197 @@ def get_signed_document(username=None, proposal_id=None):
 
     except Exception as e:
         print(f"❌ Error refreshing DocuSign status: {e}")
-=======
-            
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/api/proposals/<int:proposal_id>/signed-document")
+@token_required
+def get_signed_document(username=None, proposal_id=None):
+    """Get the signed document PDF from DocuSign for a signed proposal"""
+    try:
+        if not DOCUSIGN_AVAILABLE:
+            return {'detail': 'DocuSign SDK not installed'}, 503
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+
+            cursor.execute(
+                """
+                SELECT id, owner_id
+                FROM proposals
+                WHERE id = %s OR id::text = %s
+                """,
+                (proposal_id, str(proposal_id)),
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            if proposal['owner_id'] != current_user['id']:
+                return {'detail': 'Access denied'}, 403
+
             # Get the signed signature record (check for 'signed' status or any completed status)
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT envelope_id, status, signed_at
                 FROM proposal_signatures
                 WHERE proposal_id = %s AND (status = 'signed' OR status = 'completed')
                 ORDER BY signed_at DESC, sent_at DESC
                 LIMIT 1
-            """, (proposal_id,))
-            
+                """,
+                (proposal_id,),
+            )
             signature = cursor.fetchone()
             if not signature:
                 # Check if there are any signatures at all
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT envelope_id, status, signed_at
                     FROM proposal_signatures
                     WHERE proposal_id = %s
                     ORDER BY sent_at DESC
                     LIMIT 1
-                """, (proposal_id,))
+                    """,
+                    (proposal_id,),
+                )
                 any_signature = cursor.fetchone()
                 if any_signature:
                     return {
                         'detail': f'Proposal has signature record but status is "{any_signature.get("status")}", not "signed". Envelope ID: {any_signature.get("envelope_id")}'
                     }, 400
                 return {'detail': 'No signature record found for this proposal'}, 404
-            
+
             envelope_id = signature.get('envelope_id')
             if not envelope_id:
                 return {'detail': 'No envelope ID found for this signed proposal'}, 404
-            
-            # Ensure envelope_id is a string and strip whitespace
-            envelope_id = str(envelope_id).strip()
-            if not envelope_id or envelope_id.lower() == 'none':
-                return {'detail': 'Invalid envelope ID format'}, 400
-            
-            print(f"📄 Retrieving signed document for proposal {proposal_id}")
-            print(f"📄 Envelope ID: {envelope_id}")
-            print(f"📄 Signature status: {signature.get('status')}")
-            print(f"📄 Signed at: {signature.get('signed_at')}")
-            
-            # Get DocuSign access token
-            from api.utils.docusign_utils import get_docusign_jwt_token
-            from docusign_esign import ApiClient, EnvelopesApi
-            from docusign_esign.client.api_exception import ApiException
-            
-            access_token = get_docusign_jwt_token()
-            account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
-            base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv('DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi')
-            
-            print(f"📄 Account ID: {account_id}")
-            print(f"📄 Base path: {base_path}")
-            
-            # Create API client - use the same pattern as envelope creation
-            api_client = ApiClient()
-            api_client.host = base_path  # Set host to base_path (matches working code)
-            api_client.set_default_header("Authorization", f"Bearer {access_token}")
-            
-            # Verify the API client is properly configured
-            print(f"📄 API Client host: {api_client.host}")
-            
-            # Get the signed document
-            envelopes_api = EnvelopesApi(api_client)
-            
-            # First, try to get document list to verify envelope exists
+
+        # Ensure envelope_id is a string and strip whitespace
+        envelope_id = str(envelope_id).strip()
+        if not envelope_id or envelope_id.lower() == 'none':
+            return {'detail': 'Invalid envelope ID format'}, 400
+
+        print(f"📄 Retrieving signed document for proposal {proposal_id}")
+        print(f"📄 Envelope ID: {envelope_id}")
+        print(f"📄 Signature status: {signature.get('status')}")
+        print(f"📄 Signed at: {signature.get('signed_at')}")
+
+        # Get DocuSign access token
+        from api.utils.docusign_utils import get_docusign_jwt_token
+        from docusign_esign.client.api_exception import ApiException
+
+        access_token = get_docusign_jwt_token()
+        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+        base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv('DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi')
+
+        print(f"📄 Account ID: {account_id}")
+        print(f"📄 Base path: {base_path}")
+
+        api_client = ApiClient()
+        api_client.host = base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        print(f"📄 API Client host: {api_client.host}")
+
+        envelopes_api = EnvelopesApi(api_client)
+
+        try:
+            envelope_info = envelopes_api.get_envelope(account_id, envelope_id)
+            print(f"✅ Envelope found: {envelope_info.envelope_id}, Status: {envelope_info.status}")
+        except ApiException as e:
+            print(f"❌ Error getting envelope info: {e}")
+            print(f"   Error body: {e.body if hasattr(e, 'body') else 'N/A'}")
+            return {'detail': f'DocuSign envelope not found or invalid: {str(e)}'}, 404
+
+        try:
+            docs_list = envelopes_api.list_documents(account_id, envelope_id)
+            document_id = None
+
+            if hasattr(docs_list, 'envelope_documents') and docs_list.envelope_documents:
+                for doc in docs_list.envelope_documents:
+                    doc_id = str(doc.document_id) if hasattr(doc, 'document_id') else None
+                    if doc_id and doc_id != 'certificate':
+                        document_id = doc_id
+                        doc_name = getattr(doc, 'name', 'N/A')
+                        print(f"📄 Using document ID: {document_id} (name: {doc_name})")
+                        break
+
+                if not document_id and docs_list.envelope_documents:
+                    first_doc = docs_list.envelope_documents[0]
+                    document_id = str(first_doc.document_id) if hasattr(first_doc, 'document_id') else None
+                    print(f"📄 Using first available document ID: {document_id}")
+
+            if not document_id:
+                print("📄 No document ID found in list, defaulting to '1'")
+                document_id = '1'
+
+            print(f"📄 Retrieving document with ID: {document_id} (type: {type(document_id)})")
+            print(f"📄 Account ID: {account_id}, Envelope ID: {envelope_id}")
+
             try:
-                envelope_info = envelopes_api.get_envelope(account_id, envelope_id)
-                print(f"✅ Envelope found: {envelope_info.envelope_id}, Status: {envelope_info.status}")
-            except ApiException as e:
-                print(f"❌ Error getting envelope info: {e}")
-                print(f"   Error body: {e.body if hasattr(e, 'body') else 'N/A'}")
-                return {'detail': f'DocuSign envelope not found or invalid: {str(e)}'}, 404
-            
-            # Get the signed document
-            try:
-                # First, get the list of documents to find the main document
-                docs_list = envelopes_api.list_documents(account_id, envelope_id)
-                document_id = None
-                
-                if hasattr(docs_list, 'envelope_documents') and docs_list.envelope_documents:
-                    # Find the main document (usually the first one that's not 'certificate')
-                    for doc in docs_list.envelope_documents:
-                        doc_id = str(doc.document_id) if hasattr(doc, 'document_id') else None
-                        if doc_id and doc_id != 'certificate':
-                            document_id = doc_id
-                            doc_name = getattr(doc, 'name', 'N/A')
-                            print(f"📄 Using document ID: {document_id} (name: {doc_name})")
-                            break
-                    
-                    # If no non-certificate document found, use the first one
-                    if not document_id and docs_list.envelope_documents:
-                        first_doc = docs_list.envelope_documents[0]
-                        document_id = str(first_doc.document_id) if hasattr(first_doc, 'document_id') else None
-                        print(f"📄 Using first available document ID: {document_id}")
-                
-                # If we still don't have a document ID, default to '1' (common DocuSign document ID)
-                if not document_id:
-                    print("📄 No document ID found in list, defaulting to '1'")
-                    document_id = '1'
-                
-                print(f"📄 Retrieving document with ID: {document_id} (type: {type(document_id)})")
-                print(f"📄 Account ID: {account_id}, Envelope ID: {envelope_id}")
-                
-                # Try using REST API directly for more control
-                try:
-                    import requests
-                    use_requests = True
-                except ImportError:
-                    use_requests = False
-                    print("📄 requests library not available, using SDK method only")
-                
-                if use_requests:
-                    doc_url = f"{base_path}/v2.1/accounts/{account_id}/envelopes/{envelope_id}/documents/{document_id}"
-                    print(f"📄 Document URL: {doc_url}")
-                    
-                    headers = {
-                        "Authorization": f"Bearer {access_token}",
-                        "Accept": "application/pdf"
-                    }
-                    
-                    response = requests.get(doc_url, headers=headers)
-                    if response.status_code == 200:
-                        document_pdf = response.content
-                        print(f"✅ Document retrieved successfully via REST API, size: {len(document_pdf)} bytes")
-                    else:
-                        print(f"❌ REST API error: {response.status_code}")
-                        print(f"   Response: {response.text[:500]}")
-                        raise Exception(f"REST API returned {response.status_code}: {response.text[:200]}")
-                else:
-                    # Use SDK method
-                    document_pdf = envelopes_api.get_document(
-                        account_id,
-                        envelope_id,
-                        str(document_id)
-                    )
-                    print(f"✅ Document retrieved successfully via SDK, size: {len(document_pdf) if document_pdf else 0} bytes")
-            except ApiException as e:
-                print(f"❌ Error getting document: {e}")
-                print(f"   Error body: {e.body if hasattr(e, 'body') else 'N/A'}")
-                # Try getting documents list to see what's available
-                try:
-                    docs = envelopes_api.list_documents(account_id, envelope_id)
-                    doc_ids = [doc.document_id for doc in docs.envelope_documents] if hasattr(docs, 'envelope_documents') else []
-                    print(f"   Available documents: {doc_ids}")
-                except:
-                    pass
-                return {'detail': f'Error retrieving document from DocuSign: {str(e)}'}, 500
-            
-            # Return the PDF as a response
-            from flask import Response
-            return Response(
-                document_pdf,
-                mimetype='application/pdf',
-                headers={
-                    'Content-Disposition': f'inline; filename="signed_proposal_{proposal_id}.pdf"',
-                    'Content-Type': 'application/pdf',
+                import requests
+                use_requests = True
+            except ImportError:
+                use_requests = False
+                print("📄 requests library not available, using SDK method only")
+
+            if use_requests:
+                doc_url = f"{base_path}/v2.1/accounts/{account_id}/envelopes/{envelope_id}/documents/{document_id}"
+                print(f"📄 Document URL: {doc_url}")
+
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/pdf"
                 }
-            ), 200
-            
-    except ApiException as e:
-        print(f"❌ DocuSign API error: {e}")
-        return {'detail': f'DocuSign API error: {str(e)}'}, 500
+
+                response = requests.get(doc_url, headers=headers)
+                if response.status_code == 200:
+                    document_pdf = response.content
+                    print(f"✅ Document retrieved successfully via REST API, size: {len(document_pdf)} bytes")
+                else:
+                    print(f"❌ REST API error: {response.status_code}")
+                    print(f"   Response: {response.text[:500]}")
+                    raise Exception(f"REST API returned {response.status_code}: {response.text[:200]}")
+            else:
+                document_pdf = envelopes_api.get_document(
+                    account_id,
+                    envelope_id,
+                    str(document_id)
+                )
+                print(f"✅ Document retrieved successfully via SDK, size: {len(document_pdf) if document_pdf else 0} bytes")
+
+        except ApiException as e:
+            print(f"❌ Error getting document: {e}")
+            print(f"   Error body: {e.body if hasattr(e, 'body') else 'N/A'}")
+            try:
+                docs = envelopes_api.list_documents(account_id, envelope_id)
+                doc_ids = [doc.document_id for doc in docs.envelope_documents] if hasattr(docs, 'envelope_documents') else []
+                print(f"   Available documents: {doc_ids}")
+            except Exception:
+                pass
+            return {'detail': f'Error retrieving document from DocuSign: {str(e)}'}, 500
+
+        from flask import Response
+        return Response(
+            document_pdf,
+            mimetype='application/pdf',
+            headers={
+                'Content-Disposition': f'inline; filename="signed_proposal_{proposal_id}.pdf"',
+                'Content-Type': 'application/pdf',
+            }
+        ), 200
+
     except Exception as e:
         print(f"❌ Error getting signed document: {e}")
->>>>>>> origin/Cleaned_Code
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
 
-<<<<<<< HEAD
-@bp.post("/api/proposals/<proposal_id>/suggestions")
-=======
 @bp.post("/api/proposals/<int:proposal_id>/suggestions")
->>>>>>> origin/Cleaned_Code
 @token_required
 def create_suggestion(username=None, proposal_id=None):
     """Create a suggested change (for reviewers with suggest permission)"""

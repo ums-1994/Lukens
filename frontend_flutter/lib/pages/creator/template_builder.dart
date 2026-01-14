@@ -106,7 +106,6 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
 
     try {
       if (widget.templateId != null) {
-<<<<<<< HEAD
         final app = context.read<AppState>();
         final response = await app.fetchTemplateById(widget.templateId!);
         if (response != null) {
@@ -130,46 +129,6 @@ class _TemplateBuilderState extends State<TemplateBuilder> {
         setState(() {
           _templateData = _templateData.copyWith(
               dynamicFields: List<DynamicField>.from(_defaultDynamicFields));
-=======
-        await Future.delayed(const Duration(seconds: 1));
-
-        final mockTemplate = TemplateData(
-          name: 'Standard Consulting Proposal',
-          description: 'Comprehensive proposal template for enterprise clients',
-          templateType: 'proposal',
-          sections: [
-            TemplateSection(
-              key: 'section_1',
-              title: 'Executive Summary',
-              required: true,
-              defaultContent:
-                  'This proposal outlines our approach to delivering exceptional value...',
-              order: 0,
-            ),
-            TemplateSection(
-              key: 'section_2',
-              title: 'Company Profile',
-              required: true,
-              defaultContent: 'Our company brings extensive expertise in...',
-              order: 1,
-            ),
-          ],
-          dynamicFields: _defaultDynamicFields,
-          isPublic: false,
-          tags: 'consulting, technology, enterprise',
-        );
-
-        setState(() {
-          _templateData = mockTemplate;
-          _nameController.text = mockTemplate.name;
-          _descriptionController.text = mockTemplate.description;
-          _tagsController.text = mockTemplate.tags;
-        });
-      } else {
-        setState(() {
-          _templateData =
-              _templateData.copyWith(dynamicFields: _defaultDynamicFields);
->>>>>>> origin/Cleaned_Code
         });
       }
     } catch (e) {

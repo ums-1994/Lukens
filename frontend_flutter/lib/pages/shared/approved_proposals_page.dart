@@ -8,11 +8,7 @@ import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
-<<<<<<< HEAD
-import '../../widgets/role_switcher.dart';
 import '../../widgets/app_side_nav.dart';
-=======
->>>>>>> origin/Cleaned_Code
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -926,7 +922,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');

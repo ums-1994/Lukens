@@ -77,6 +77,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Sidebar state
   bool _isSidebarCollapsed = false;
+  bool _showSectionsSidebar = true;
+
+  // Signature panel state
+  final List<String> _signatures = [];
+  String _signatureSearchQuery = '';
 
   List<Map<String, dynamic>> _comments = [];
   late TextEditingController _commentController;
@@ -102,14 +107,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   dynamic _savedProposalId; // Store the actual backend proposal ID (int or UUID)
   String? _authToken;
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
-<<<<<<< HEAD
-  Map<String, dynamic>? _readiness;
-  List<Map<String, dynamic>> _readinessChecks = [];
-  bool _isLoadingReadiness = false;
-=======
-  Map<String, dynamic>?
+Map<String, dynamic>?
       _proposalData; // Store full proposal data for GovernancePanel
->>>>>>> origin/Cleaned_Code
 
   @override
   void initState() {
@@ -2240,17 +2239,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         print('🔍 Create proposal result: $result');
 
         if (result != null && result['id'] != null) {
-<<<<<<< HEAD
-          final rawId = result['id'];
-          final idAsString = rawId.toString();
-          if (idAsString.isEmpty) {
-            print('⚠️ Proposal creation returned empty ID value');
-            throw Exception('Backend did not return a proposal ID');
-          }
-          setState(() {
-            // Store the ID exactly as returned (works for both integers and UUIDs)
-            _savedProposalId = idAsString;
-=======
           final newProposalId = result['id'] is int
               ? result['id']
               : int.tryParse(result['id'].toString());
@@ -2258,19 +2246,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             _savedProposalId = newProposalId;
             // Store proposal data for GovernancePanel
             _proposalData = Map<String, dynamic>.from(result);
->>>>>>> origin/Cleaned_Code
           });
           print('✅ Proposal created with ID: $_savedProposalId');
           print(
               '💾 Proposal ID saved in state - future saves will UPDATE this proposal');
-<<<<<<< HEAD
-          await _loadProposalReadiness(_savedProposalId);
-=======
           // Reload full proposal data to ensure we have everything
           if (newProposalId != null) {
             await _loadProposalFromDatabase(newProposalId);
           }
->>>>>>> origin/Cleaned_Code
         } else {
           print('⚠️ Proposal creation returned null or no ID');
           print('🔍 Full result: $result');
@@ -2987,28 +2970,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     return Scaffold(
-<<<<<<< HEAD
-      backgroundColor: const Color(0xFFF5F7FA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopHeader(isReadOnly),
-            if (!isReadOnly) _buildToolbar(),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!isReadOnly) _buildLeftSidebar(),
-                  Expanded(child: _buildDocumentCanvas(isReadOnly)),
-                  if (!isReadOnly) _buildRightSidebar(),
-                  if (_showCommentsPanel) _buildCommentsPanel(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-=======
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
@@ -3023,7 +2984,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 : Column(
                     children: [
                       // Top header
-                      _buildTopHeader(),
+                      _buildTopHeader(isReadOnly),
                       // Formatting toolbar (hide in read-only mode)
                       if (!isReadOnly) _buildToolbar(),
                       // Main document area
@@ -3165,7 +3126,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         ),
       ],
->>>>>>> origin/Cleaned_Code
     );
   }
 
@@ -3545,13 +3505,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
   }
 
-<<<<<<< HEAD
   void _shareDocument() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Share workflow coming soon'),
-        duration: Duration(seconds: 2),
-=======
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Save the proposal before sharing'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    _showCollaborationDialog();
+  }
+
   bool _isAdminUser() {
     if (!mounted) return false;
     try {
@@ -3733,32 +3699,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ],
           ),
         ),
->>>>>>> origin/Cleaned_Code
       ),
     );
   }
 
-<<<<<<< HEAD
-  Widget _buildTopHeader(bool isReadOnly) {
-    final minutesSinceSave = _lastSaved == null
-        ? null
-        : DateTime.now().difference(_lastSaved!).inMinutes;
-    final autosaveLabel = _hasUnsavedChanges
-        ? 'Saving...'
-        : minutesSinceSave == null
-            ? 'Autosave ready'
-            : minutesSinceSave == 0
-                ? 'Saved moments ago'
-                : 'Saved ${minutesSinceSave}m ago';
-    final currencies = [
-      'Rand (ZAR)',
-      'US Dollar (USD)',
-      'Euro (EUR)',
-      'British Pound (GBP)',
-      'Indian Rupee (INR)',
-    ];
-
-=======
   void _navigateToPage(String pageName) {
     final isAdmin = _isAdminUser();
 
@@ -3804,12 +3748,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Templates - Coming soon'),
-            backgroundColor: Color(0xFF00BCD4),
-          ),
-        );
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Approved Proposals':
         Navigator.pushReplacementNamed(context, '/approved_proposals');
@@ -3850,8 +3789,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     });
   }
 
-  Widget _buildSectionsSidebar() {
->>>>>>> origin/Cleaned_Code
+  Widget _buildTopHeader(bool isReadOnly) {
+    final minutesSinceSave = _lastSaved == null
+        ? null
+        : DateTime.now().difference(_lastSaved!).inMinutes;
+    final autosaveLabel = _hasUnsavedChanges
+        ? 'Saving...'
+        : minutesSinceSave == null
+            ? 'Autosave ready'
+            : minutesSinceSave == 0
+                ? 'Saved moments ago'
+                : 'Saved ${minutesSinceSave}m ago';
+    final currencies = [
+      'Rand (ZAR)',
+      'US Dollar (USD)',
+      'Euro (EUR)',
+      'British Pound (GBP)',
+      'Indian Rupee (INR)',
+    ];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
       decoration: BoxDecoration(
@@ -4057,8 +4012,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ],
           ),
-<<<<<<< HEAD
-=======
           const SizedBox(width: 16),
           // Save status with version info
           GestureDetector(
@@ -4319,15 +4272,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ),
           ),
->>>>>>> origin/Cleaned_Code
         ],
       ),
     );
   }
 
-
   Widget _buildToolbar() {
-<<<<<<< HEAD
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -4603,9 +4553,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
       ),
     );
-=======
-    return const SizedBox.shrink();
->>>>>>> origin/Cleaned_Code
   }
 
   Widget _buildSmallDropdown(
@@ -5261,69 +5208,121 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-<<<<<<< HEAD
   Widget _buildReadOnlyTable(DocumentTable table) {
     final isPriceTable = table.type == 'price';
-    final headers = table.cells.isNotEmpty ? table.cells.first : [];
-    final rows = table.cells.length > 1 ? table.cells.sublist(1) : [];
+    final headers = table.cells.isNotEmpty ? table.cells.first : <String>[];
+    final rows = table.cells.length > 1 ? table.cells.sublist(1) : <List<String>>[];
 
-=======
-  Widget _buildSectionContent(int index) {
-    final section = _sections[index];
-    final isHovered = _hoveredSectionIndex == index;
-    final isSelected = _selectedSectionIndex == index;
-    return SectionWidget(
-      section: section,
-      isHovered: isHovered,
-      isSelected: isSelected,
-      readOnly: widget.readOnly,
-      canDelete: _sections.length > 1,
-      onHoverChanged: (hovered) {
-        setState(() {
-          _hoveredSectionIndex = hovered ? index : -1;
-        });
-      },
-      onTap: () {
-        setState(() => _selectedSectionIndex = index);
-      },
-      onInsertBelow: () => _insertSection(index),
-      onInsertFromLibrary: () {
-        setState(() {
-          _selectedSectionIndex = index;
-        });
-        _addFromLibrary();
-      },
-      onShowAIAssistant: () {
-        setState(() {
-          _selectedSectionIndex = index;
-        });
-        _showAIAssistantDialog();
-      },
-      onDuplicate: () => _duplicateSection(index),
-      onDelete: () => _deleteSection(index),
-      getContentTextStyle: _getContentTextStyle,
-      getTextAlignment: _getTextAlignment,
-      onReorderTables: (int oldIndex, int newIndex) {
-        setState(() {
-          if (newIndex > oldIndex) {
-            newIndex -= 1;
-          }
-          final table = section.tables.removeAt(oldIndex);
-          section.tables.insert(newIndex, table);
-        });
-      },
-      buildInteractiveTable: (int tableIndex, DocumentTable table) =>
-          _buildInteractiveTable(
-        index,
-        tableIndex,
-        table,
-        key: ValueKey('table_${index}_$tableIndex'),
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      onRemoveInlineImage: (imageIndex) {
-        setState(() {
-          _sections[index].inlineImages.removeAt(imageIndex);
-        });
-      },
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: isPriceTable
+                  ? const Color(0xFF0EA5E9).withValues(alpha: 0.08)
+                  : Colors.grey[100],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
+            ),
+            child: Row(
+              children: headers.asMap().entries.map((entry) {
+                final index = entry.key;
+                final header = entry.value;
+                return Expanded(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        right: BorderSide(
+                          color: Colors.grey[200]!,
+                          width: index == headers.length - 1 ? 0 : 1,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      header,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isPriceTable
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          ...rows.map((row) {
+            return Row(
+              children: row.asMap().entries.map((entry) {
+                final index = entry.key;
+                final cell = entry.value;
+                return Expanded(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: Colors.grey[200]!),
+                        right: BorderSide(
+                          color: Colors.grey[200]!,
+                          width: index == row.length - 1 ? 0 : 1,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      cell,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          }),
+          if (isPriceTable) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _buildPriceSummaryRow('Subtotal', table.getSubtotal()),
+                  _buildPriceSummaryRow(
+                    'VAT (${(table.vatRate * 100).toStringAsFixed(0)}%)',
+                    table.getVAT(),
+                  ),
+                  _buildPriceSummaryRow(
+                    'Total',
+                    table.getTotal(),
+                    emphasize: true,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -5577,7 +5576,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Widget _buildTableContainer(int sectionIndex, int tableIndex,
       DocumentTable table, String currencySymbol,
       {Key? key}) {
->>>>>>> origin/Cleaned_Code
+    final isPriceTable = table.type == 'price';
+    final headers = table.cells.isNotEmpty ? table.cells.first : <String>[];
+    final rows = table.cells.length > 1 ? table.cells.sublist(1) : <List<String>>[];
+
     return Container(
       margin: const EdgeInsets.only(top: 12),
       decoration: BoxDecoration(
@@ -5773,15 +5775,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-<<<<<<< HEAD
   void _handleBlockSelected(String type) {
     switch (type) {
-      case 'text':
-      case 'image':
-      case 'video':
-      case 'table':
-      case 'shape':
-=======
+      case 'pricing':
+        _addPricingTable();
+        break;
+      case 'library':
+        _addFromLibrary();
+        break;
+      default:
+        _insertContentIntoSection(type, '');
+        break;
+    }
+  }
+
   void _insertSignatureIntoSection(String signatureName) {
     if (_sections.isEmpty) return;
 
@@ -5803,97 +5810,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  Widget _buildRightSidebar() {
-    return Container(
-      width: 300,
-      color: Colors.white,
-      child: Column(
-        children: [
-          // Panel tabs/icons at the top
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildPanelTabIcon(Icons.tune, 'templates', 'Templates'),
-                _buildPanelTabIcon(Icons.add_box_outlined, 'build', 'Build'),
-                _buildPanelTabIcon(
-                    Icons.cloud_upload_outlined, 'upload', 'Upload'),
-                _buildPanelTabIcon(Icons.edit_note, 'signature', 'Signature'),
-                _buildAIAnalysisIcon(),
-              ],
-            ),
-          ),
-          // Panel content
-          Expanded(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: _buildPanelContent(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPanelTabIcon(IconData icon, String panelName, String tooltip) {
-    bool isActive = _selectedPanel == panelName;
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              _selectedPanel = panelName;
-            });
-          },
-          customBorder: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Icon(
-              icon,
-              size: 22,
-              color: isActive ? const Color(0xFF00BCD4) : Colors.grey[600],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPanelContent() {
-    switch (_selectedPanel) {
-      case 'templates':
-        return _buildTemplatesPanel();
-      case 'build':
-        return _buildBuildPanel();
-      case 'upload':
-        return _buildUploadPanel();
->>>>>>> origin/Cleaned_Code
-      case 'signature':
-      case 'section_header':
-      case 'page_break':
-        _insertContentIntoSection(type, '');
-        break;
-      case 'pricing':
-        _addPricingTable();
-        break;
-      case 'library':
-        _addFromLibrary();
-        break;
-    }
-  }
-
-<<<<<<< HEAD
-=======
   Widget _buildTemplatesPanel() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -7713,7 +7629,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
->>>>>>> origin/Cleaned_Code
   Widget _buildCommentsPanel() {
     // Get root comments (comments without parent_id)
     final rootComments =

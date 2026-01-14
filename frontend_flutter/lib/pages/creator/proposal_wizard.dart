@@ -338,7 +338,6 @@ class _ProposalWizardState extends State<ProposalWizard>
               ),
       );
       _formData['templateType'] = template.templateType;
-<<<<<<< HEAD
       _formData['templateKey'] = template.templateKey ?? template.id;
       _selectedTemplate = template;
 
@@ -362,12 +361,6 @@ class _ProposalWizardState extends State<ProposalWizard>
         }
       }
       _formData['moduleContents'] = contents;
-=======
-      // When a template is selected, make all content modules available
-      final allModuleIds =
-          _contentModules.map((m) => m['id'] as String).toList();
-      _formData['selectedModules'] = allModuleIds;
->>>>>>> origin/Cleaned_Code
     });
   }
 
@@ -452,10 +445,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     // Later steps (governance, risk, internal/client sign-off) should not block navigation
     // even if optional metadata fields are incomplete.
     switch (_currentStep) {
-<<<<<<< HEAD
-      case 0: // Compose - Template Selection
-        return _formData['templateId'].toString().isNotEmpty;
-=======
       case 0: // Compose - require core setup before moving on
         return _isComposeStepValid();
       case 1: // Govern - require AI governance results
@@ -466,7 +455,6 @@ class _ProposalWizardState extends State<ProposalWizard>
         return _isInternalApproved;
       case 4: // Client Sign-off - Review
         return true; // review/confirm step
->>>>>>> origin/Cleaned_Code
       default:
         return true;
     }
@@ -478,7 +466,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     try {
       final app = context.read<AppState>();
 
-<<<<<<< HEAD
       // Create proposal in backend
       final extraData = {
         'client_name': _formData['clientName'],
@@ -505,21 +492,6 @@ class _ProposalWizardState extends State<ProposalWizard>
       }
 
       _proposalId = created['id']?.toString();
-=======
-      // Create proposal in backend so that downstream flows have a real ID
-      final created = await app.createProposal(
-        _formData['opportunityName'],
-        _formData['clientName'],
-        templateKey: _formData['templateId']?.toString().isNotEmpty == true
-            ? _formData['templateId'].toString()
-            : null,
-      );
-
-      final proposalId = (created != null && created['id'] != null)
-          ? created['id'].toString()
-          : 'draft-${DateTime.now().millisecondsSinceEpoch}';
-
-      _proposalId = proposalId;
 
       // Build initial proposal data to seed EnhancedCompose
       final Map<String, String> moduleContents =
@@ -542,20 +514,14 @@ class _ProposalWizardState extends State<ProposalWizard>
           (_formData['proposalTitle']?.toString().isNotEmpty ?? false)
               ? _formData['proposalTitle'].toString()
               : _formData['opportunityName'];
->>>>>>> origin/Cleaned_Code
 
       // Navigate to enhanced compose page
       Navigator.pushReplacementNamed(
         context,
         '/enhanced-compose',
         arguments: {
-<<<<<<< HEAD
           'proposalId': _proposalId ?? '',
           'proposalTitle': _formData['opportunityName'],
-=======
-          'proposalId': proposalId,
-          'proposalTitle': proposalTitle,
->>>>>>> origin/Cleaned_Code
           'templateType': _formData['templateType'],
           'selectedModules': _formData['selectedModules'],
           'initialData': initialData,
@@ -2333,28 +2299,10 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
 
     final status = _governanceResults['status'] ?? 'PENDING';
-<<<<<<< HEAD
-    final num scoreValue = _governanceResults['score'] is num
-        ? _governanceResults['score']
-        : 0;
-    final scoreText = scoreValue.toStringAsFixed(0);
-    final issuesRaw = (_governanceResults['issues'] as List?) ?? [];
-    final actions =
-        List<String>.from(_governanceResults['required_actions'] ?? []);
-    final issues = issuesRaw
-        .map((issue) => issue is Map<String, dynamic>
-            ? (issue['description'] ??
-                issue['section'] ??
-                issue.toString())
-            : issue.toString())
-        .toList();
-    final passed = status == 'PASSED';
-=======
     final score = _governanceResults['score'] ?? 0;
     final checks = _governanceResults['checks'] ?? [];
     final issues = List.from(_governanceResults['issues'] ?? const []);
     final passed = status == 'Ready';
->>>>>>> origin/Cleaned_Code
 
     Color statusColor = PremiumTheme.success;
     if (status == 'Blocked') statusColor = PremiumTheme.error;
@@ -3015,18 +2963,7 @@ class _ProposalWizardState extends State<ProposalWizard>
 
     try {
       final app = context.read<AppState>();
-<<<<<<< HEAD
-      final payload = _buildAnalysisPayload();
-      final result = await app.analyzeProposalAI(payload);
-      if (result != null) {
-        setState(() {
-          _governanceResults =
-              Map<String, dynamic>.from(result['governance'] ?? {});
-          _riskAssessment =
-              Map<String, dynamic>.from(result['analysis'] ?? {});
-        });
-      }
-=======
+
       if (app.authToken != null) {
         AIAnalysisService.setAuthToken(app.authToken!);
       }
@@ -3091,32 +3028,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
   }
 
-<<<<<<< HEAD
-  Map<String, dynamic> _buildAnalysisPayload() {
-    final modules = List<String>.from(_formData['selectedModules'] ?? []);
-    final moduleContents =
-        Map<String, String>.from(_formData['moduleContents'] ?? {});
-    final sections = modules
-        .map((moduleId) => {
-              'key': moduleId,
-              'title': _moduleLabel(moduleId),
-              'content': moduleContents[moduleId] ?? ''
-            })
-        .toList();
-    return {
-      'proposal_id': _proposalId,
-      'title': _formData['opportunityName'],
-      'client_name': _formData['clientName'],
-      'client_email': _formData['clientEmail'],
-      'project_type': _formData['projectType'],
-      'estimated_value': _formData['estimatedValue'],
-      'timeline': _formData['timeline'],
-      'selected_modules': modules,
-      'module_contents': moduleContents,
-      'sections': sections,
-    };
-=======
-  Map<String, dynamic> _buildProposalDataForAI() {
+Map<String, dynamic> _buildProposalDataForAI() {
     final selectedModules =
         List<String>.from(_formData['selectedModules'] ?? const []);
     final moduleContents =

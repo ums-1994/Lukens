@@ -359,14 +359,9 @@ def add_guest_comment():
                     INSERT INTO users (username, email, password_hash, full_name, role, is_active)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
-<<<<<<< HEAD
-                """, (invited_email, invited_email, f'Guest ({invited_email})', 'collaborator', True))
+                """, (invited_email, invited_email, f'guest:{invited_email}', f'Guest ({invited_email})', 'collaborator', True))
                 row = cursor.fetchone()
                 user_id = row['id'] if isinstance(row, dict) else row[0]
-=======
-                """, (invited_email, invited_email, '', f'Guest ({invited_email})', 'collaborator', True))
-                user_id = cursor.fetchone()['id']
->>>>>>> origin/Cleaned_Code
             
             # Add comment
             cursor.execute("""
