@@ -214,6 +214,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                                     controller: _scrollController,
                                     child: SingleChildScrollView(
                                       controller: _scrollController,
+                                      physics:
+                                          const AlwaysScrollableScrollPhysics(),
                                       child: Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,

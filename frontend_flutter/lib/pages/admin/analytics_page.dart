@@ -11,6 +11,7 @@ import 'package:web/web.dart' as web;
 
 import '../../api.dart';
 import '../../services/asset_service.dart';
+import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 
@@ -635,6 +636,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return name ?? 'User';
   }
 
+  bool _isAdminUser() {
+    final user = AuthService.currentUser;
+    final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
+    return backendRole == 'admin' || backendRole == 'ceo';
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -642,6 +649,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final metrics = _buildMetricCards(analytics);
     final userName = _getUserName(app.currentUser);
     final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : 'U';
+    final isAdminUser = _isAdminUser();
     return Scaffold(
       body: Container(
         color: Colors.transparent,
@@ -776,39 +784,69 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             ),
                           ),
                           const SizedBox(height: 12),
-                          _buildNavItem('Dashboard',
-                              'assets/images/Dahboard.png', false, context),
-                          _buildNavItem('My Proposals',
-                              'assets/images/My_Proposals.png', false, context),
-                          _buildNavItem(
+                          if (isAdminUser) ...[
+                            _buildNavItem(
+                              'Dashboard',
+                              'assets/images/Dahboard.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Approvals',
+                              'assets/images/Time Allocation_Approval_Blue.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Analytics',
+                              'assets/images/analytics.png',
+                              true,
+                              context,
+                            ),
+                          ] else ...[
+                            _buildNavItem(
+                              'Dashboard',
+                              'assets/images/Dahboard.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'My Proposals',
+                              'assets/images/My_Proposals.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
                               'Templates',
                               'assets/images/content_library.png',
                               false,
-                              context),
-                          _buildNavItem(
-                            'Content Library',
-                            'assets/images/content_library.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Client Management',
-                            'assets/images/collaborations.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Approved Proposals',
-                            'assets/images/Time Allocation_Approval_Blue.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Analytics (My Pipeline)',
-                            'assets/images/analytics.png',
-                            true,
-                            context,
-                          ),
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Content Library',
+                              'assets/images/content_library.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Client Management',
+                              'assets/images/collaborations.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Approved Proposals',
+                              'assets/images/Time Allocation_Approval_Blue.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Analytics (My Pipeline)',
+                              'assets/images/analytics.png',
+                              true,
+                              context,
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           if (!_isSidebarCollapsed)
                             Container(
@@ -1728,30 +1766,72 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
-        break;
-      case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Approved Proposals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
-        break;
-      case 'Analytics (My Pipeline)':
-        break;
-      case 'Logout':
-        Navigator.pushReplacementNamed(context, '/login');
-        break;
+    final isAdminUser = _isAdminUser();
+
+    if (isAdminUser) {
+      switch (label) {
+        case 'Dashboard':
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+          break;
+        case 'Approvals':
+          Navigator.pushReplacementNamed(context, '/admin_approvals');
+          break;
+        case 'My Proposals':
+          Navigator.pushReplacementNamed(context, '/proposals');
+          break;
+        case 'Templates':
+          Navigator.pushReplacementNamed(context, '/content_library');
+          break;
+        case 'Content Library':
+          Navigator.pushReplacementNamed(context, '/content_library');
+          break;
+        case 'Client Management':
+          Navigator.pushReplacementNamed(context, '/client_management');
+          break;
+        case 'Analytics':
+          // Already on analytics for admin
+          break;
+        case 'Approved Proposals':
+          Navigator.pushReplacementNamed(context, '/admin_approvals');
+          break;
+        case 'Analytics (My Pipeline)':
+          // Already here (legacy label)
+          break;
+        case 'Logout':
+          AuthService.logout();
+          Navigator.pushNamedAndRemoveUntil(
+              context, '/login', (Route<dynamic> route) => false);
+          break;
+      }
+    } else {
+      switch (label) {
+        case 'Dashboard':
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+          break;
+        case 'My Proposals':
+          Navigator.pushReplacementNamed(context, '/proposals');
+          break;
+        case 'Templates':
+          Navigator.pushReplacementNamed(context, '/content_library');
+          break;
+        case 'Content Library':
+          Navigator.pushReplacementNamed(context, '/content_library');
+          break;
+        case 'Client Management':
+          Navigator.pushReplacementNamed(context, '/client_management');
+          break;
+        case 'Approved Proposals':
+          Navigator.pushReplacementNamed(context, '/approved_proposals');
+          break;
+        case 'Analytics (My Pipeline)':
+          // Already here
+          break;
+        case 'Logout':
+          AuthService.logout();
+          Navigator.pushNamedAndRemoveUntil(
+              context, '/login', (Route<dynamic> route) => false);
+          break;
+      }
     }
   }
 }

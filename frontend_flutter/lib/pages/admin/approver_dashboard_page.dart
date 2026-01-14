@@ -166,10 +166,33 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             ? DateTime(now.year + 1, 1, 1)
             : DateTime(now.year, now.month + 1, 1);
 
+        // Combine pending approvals and general proposals into a single list
+        // so that admins who don't author proposals still see recent items.
+        final List<Map<String, dynamic>> combined = [];
+        final Set<String> seenIds = {};
+
+        void addCombined(Map<String, dynamic> proposal) {
+          final id = proposal['id']?.toString();
+          if (id != null) {
+            if (seenIds.contains(id)) return;
+            seenIds.add(id);
+          }
+          combined.add(proposal);
+        }
+
+        // Seed with pending approvals from the dedicated endpoint
+        for (final proposal in pending) {
+          addCombined(Map<String, dynamic>.from(proposal));
+        }
+
+        // Add any additional proposals returned by the generic /api/proposals
         for (final raw in allProposals) {
           if (raw is! Map) continue;
-          final proposal = Map<String, dynamic>.from(raw);
+          addCombined(Map<String, dynamic>.from(raw));
+        }
 
+        // Compute dashboard metrics from the combined set
+        for (final proposal in combined) {
           final riskScore = _parseDouble(proposal['risk_score']);
           final riskLevel =
               (proposal['risk_level'] ?? '').toString().toLowerCase();
@@ -203,7 +226,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           }
         }
 
-        recentApprovals = List<Map<String, dynamic>>.from(pending);
+        // Build recent approvals list from the combined proposals
+        recentApprovals = List<Map<String, dynamic>>.from(combined);
         recentApprovals.sort((a, b) {
           final aDate = _parseDate(a['updated_at'] ?? a['updatedAt']) ??
               DateTime.fromMillisecondsSinceEpoch(0);
@@ -282,49 +306,58 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   Expanded(
                     child: Row(
                       children: [
-                        _buildSidebar(context),
+                        Material(
+                          child: _buildSidebar(context),
+                        ),
                         const SizedBox(width: 24),
                         Expanded(
                           child: GlassContainer(
                             borderRadius: 32,
                             padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _buildDashboardWelcome(),
-                                const SizedBox(height: 24),
-                                _buildSummaryCardsRow(),
-                                const SizedBox(height: 16),
-                                _buildSecondaryCardsRow(),
-                                const SizedBox(height: 24),
-                                Expanded(
-                                  child: CustomScrollbar(
-                                    controller: _scrollController,
-                                    child: SingleChildScrollView(
-                                      controller: _scrollController,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _buildSection(
-                                            'Proposals Awaiting Your Approval',
-                                            _isLoading
-                                                ? const Center(
-                                                    child:
-                                                        CircularProgressIndicator())
-                                                : _buildPendingApprovalsList(),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _buildDashboardWelcome(),
+                                    const SizedBox(height: 24),
+                                    _buildSummaryCardsRow(),
+                                    const SizedBox(height: 16),
+                                    _buildSecondaryCardsRow(),
+                                    const SizedBox(height: 24),
+                                    Expanded(
+                                      child: CustomScrollbar(
+                                        controller: _scrollController,
+                                        child: SingleChildScrollView(
+                                          controller: _scrollController,
+                                          physics:
+                                              const AlwaysScrollableScrollPhysics(),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              _buildSection(
+                                                'Proposals Awaiting Your Approval',
+                                                _isLoading
+                                                    ? const Center(
+                                                        child:
+                                                            CircularProgressIndicator())
+                                                    : _buildPendingApprovalsList(),
+                                              ),
+                                              const SizedBox(height: 24),
+                                              _buildSection(
+                                                'Recent Proposals',
+                                                _buildRecentProposalsTable(),
+                                              ),
+                                            ],
                                           ),
-                                          const SizedBox(height: 24),
-                                          _buildSection(
-                                            'Recent Proposals',
-                                            _buildRecentProposalsTable(),
-                                          ),
-                                        ],
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ],
+                                  ],
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -583,16 +616,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             gradient: PremiumTheme.redGradient,
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: PremiumStatCard(
-            title: 'Approved This Month',
-            value: _approvedThisMonthCount.toString(),
-            subtitle: 'Client-approved',
-            icon: Icons.check_circle_outline,
-            gradient: PremiumTheme.tealGradient,
-          ),
-        ),
       ],
     );
   }
@@ -793,64 +816,17 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Tooltip(
           message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border:
-                isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() => _currentPage = label);
+                _navigateToPage(context, label);
+              },
+              borderRadius: BorderRadius.circular(30),
+              child: Container(
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
@@ -860,6 +836,13 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                         : const Color(0xFFCBD5E1),
                     width: isActive ? 2 : 1,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 padding: const EdgeInsets.all(6),
                 child: ClipOval(
@@ -867,21 +850,67 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                       fit: BoxFit.contain),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            setState(() => _currentPage = label);
+            _navigateToPage(context, label);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              border:
+                  isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isActive
+                          ? const Color(0xFFE74C3C)
+                          : const Color(0xFFCBD5E1),
+                      width: isActive ? 2 : 1,
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(6),
+                  child: ClipOval(
+                    child: AssetService.buildImageWidget(assetPath,
+                        fit: BoxFit.contain),
                   ),
                 ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                      fontSize: 14,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                if (isActive)
+                  const Icon(Icons.arrow_forward_ios,
+                      size: 12, color: Colors.white),
+              ],
+            ),
           ),
         ),
       ),
@@ -1351,11 +1380,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
-        // Approvals use the same approver dashboard view
-        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        // Go to the dedicated admin approvals view
+        Navigator.pushReplacementNamed(context, '/admin_approvals');
         break;
       case 'History':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        // History of approvals also uses the admin approvals view
+        Navigator.pushReplacementNamed(context, '/admin_approvals');
         break;
       case 'Settings':
         ScaffoldMessenger.of(context).showSnackBar(

@@ -7,7 +7,7 @@ class PremiumTheme {
   static const darkBg1 = Color(0xFF0F1419);
   static const darkBg2 = Color(0xFF1A2332);
   static const darkBg3 = Color(0xFF243447);
-  
+
   // Accent colors
   static const teal = Color(0xFF20E3B2);
   static const tealDark = Color(0xFF17B897);
@@ -15,63 +15,63 @@ class PremiumTheme {
   static const purple = Color(0xFF9D4EDD);
   static const pink = Color(0xFFE91E63);
   static const orange = Color(0xFFFF6B35);
-  
+
   // Status colors
   static const success = Color(0xFF2ECC71);
   static const warning = Color(0xFFFFA726);
   static const error = Color(0xFFEF5350);
   static const info = Color(0xFF42A5F5);
-  
+
   // Text colors
   static const textPrimary = Color(0xFFFFFFFF);
   static const textSecondary = Color(0xFFB0BEC5);
   static const textTertiary = Color(0xFF78909C);
-  
+
   // Glass effect colors
   static const glassWhite = Color(0x1AFFFFFF);
   static const glassWhiteBorder = Color(0x33FFFFFF);
-  
+
   // Gradients
   static const tealGradient = LinearGradient(
     colors: [Color(0xFF20E3B2), Color(0xFF17B897)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  
+
   static const blueGradient = LinearGradient(
     colors: [Color(0xFF42A5F5), Color(0xFF1E88E5)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  
+
   static const purpleGradient = LinearGradient(
     colors: [Color(0xFF9D4EDD), Color(0xFF7209B7)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  
+
   static const redGradient = LinearGradient(
     colors: [Color(0xFFEF5350), Color(0xFFE53935)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  
+
   static const orangeGradient = LinearGradient(
     colors: [Color(0xFFFF6B35), Color(0xFFFF8C42)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  
+
   // Background gradient for pages
   static BoxDecoration get backgroundGradient => const BoxDecoration(
-    gradient: LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [darkBg1, darkBg2, darkBg3],
-      stops: [0.0, 0.5, 1.0],
-    ),
-  );
-  
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [darkBg1, darkBg2, darkBg3],
+          stops: [0.0, 0.5, 1.0],
+        ),
+      );
+
   // Glass card decoration
   static BoxDecoration glassCard({
     double borderRadius = 20,
@@ -110,7 +110,7 @@ class PremiumTheme {
       ],
     );
   }
-  
+
   // Stat card with gradient
   static BoxDecoration statCard(Gradient gradient, {double borderRadius = 20}) {
     return BoxDecoration(
@@ -125,7 +125,7 @@ class PremiumTheme {
       ],
     );
   }
-  
+
   // Text styles
   static const displayLarge = TextStyle(
     fontSize: 48,
@@ -133,38 +133,38 @@ class PremiumTheme {
     color: textPrimary,
     letterSpacing: -1,
   );
-  
+
   static const displayMedium = TextStyle(
     fontSize: 36,
     fontWeight: FontWeight.bold,
     color: textPrimary,
     letterSpacing: -0.5,
   );
-  
+
   static const titleLarge = TextStyle(
     fontSize: 24,
     fontWeight: FontWeight.bold,
     color: textPrimary,
   );
-  
+
   static const titleMedium = TextStyle(
     fontSize: 20,
     fontWeight: FontWeight.w600,
     color: textPrimary,
   );
-  
+
   static const bodyLarge = TextStyle(
     fontSize: 16,
     fontWeight: FontWeight.normal,
     color: textSecondary,
   );
-  
+
   static const bodyMedium = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.normal,
     color: textSecondary,
   );
-  
+
   static const labelMedium = TextStyle(
     fontSize: 12,
     fontWeight: FontWeight.w500,
@@ -182,7 +182,7 @@ class GlassContainer extends StatelessWidget {
   final EdgeInsets? padding;
   final double? width;
   final double? height;
-  
+
   const GlassContainer({
     super.key,
     required this.child,
@@ -193,7 +193,7 @@ class GlassContainer extends StatelessWidget {
     this.width,
     this.height,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
@@ -224,7 +224,7 @@ class PremiumStatCard extends StatelessWidget {
   final IconData? icon;
   final Gradient gradient;
   final VoidCallback? onTap;
-  
+
   const PremiumStatCard({
     super.key,
     required this.title,
@@ -234,7 +234,7 @@ class PremiumStatCard extends StatelessWidget {
     required this.gradient,
     this.onTap,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -269,7 +269,7 @@ class PremiumStatCard extends StatelessWidget {
                   ),
               ],
             ),
-            const Spacer(),
+            const SizedBox(height: 16),
             Text(
               value,
               style: PremiumTheme.displayMedium.copyWith(
@@ -298,14 +298,14 @@ class CriticalIssueCard extends StatelessWidget {
   final String title;
   final String message;
   final VoidCallback? onTap;
-  
+
   const CriticalIssueCard({
     super.key,
     required this.title,
     required this.message,
     this.onTap,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -353,4 +353,3 @@ class CriticalIssueCard extends StatelessWidget {
     );
   }
 }
-
