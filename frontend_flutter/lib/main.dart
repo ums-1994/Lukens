@@ -20,6 +20,7 @@ import 'pages/creator/client_management_page.dart';
 import 'pages/admin/approver_dashboard_page.dart';
 import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
+import 'pages/finance_manager/finance_dashboard_v2.dart';
 import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
 import 'pages/shared/register_page.dart';
@@ -358,6 +359,7 @@ class MyApp extends StatelessWidget {
           },
           '/approvals': (context) => const ApproverDashboardPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
+          '/finance_dashboard': (context) => FinanceDashboardPage(),
           '/approved_proposals': (context) => const ApprovedProposalsPage(),
           '/admin_approvals': (context) => const AdminApprovalsPage(),
           '/proposal_review': (context) {
@@ -454,14 +456,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
             String dashboardRoute;
 
             final isAdmin = userRole == 'admin' || userRole == 'ceo';
+            final isFinance = userRole == 'finance' ||
+                userRole == 'finance manager' ||
+                userRole == 'financial manager';
             final isManager = userRole == 'manager' ||
-                userRole == 'financial manager' ||
                 userRole == 'creator' ||
                 userRole == 'user';
 
             if (isAdmin) {
               dashboardRoute = '/approver_dashboard';
               print('✅ Khonobuzz: Routing to Admin Dashboard');
+            } else if (isFinance) {
+              dashboardRoute = '/finance_dashboard';
+              print('✅ Khonobuzz: Routing to Finance Dashboard');
             } else if (isManager) {
               dashboardRoute = '/creator_dashboard';
               print('✅ Khonobuzz: Routing to Creator Dashboard (Manager)');

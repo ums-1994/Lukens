@@ -47,7 +47,7 @@ class _RegisterPageState extends State<RegisterPage>
 
   int _currentFrameIndex = 0;
 
-  final List<String> _roles = ['Manager', 'Admin'];
+  final List<String> _roles = ['Manager', 'Finance Manager', 'Admin'];
 
   @override
   void initState() {
@@ -145,8 +145,9 @@ class _RegisterPageState extends State<RegisterPage>
       final password = _passwordController.text;
       final firstName = _firstNameController.text.trim();
       final lastName = _lastNameController.text.trim();
-      final role =
-          _selectedRole.toLowerCase(); // Convert to lowercase for backend
+      final role = _selectedRole == 'Finance Manager'
+          ? 'finance manager'
+          : _selectedRole.toLowerCase(); // Convert to lowercase for backend
 
       // Step 1: Create user in Firebase
       print('🔥 Creating user in Firebase...');
@@ -285,9 +286,23 @@ class _RegisterPageState extends State<RegisterPage>
           print('🔍 Requested role: "$role"');
 
           // Check both the backend role and the requested role
-          if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
+          final requestedRole = role.toLowerCase().trim();
+          final isAdmin = userRole == 'admin' ||
+              userRole == 'ceo' ||
+              requestedRole == 'admin';
+          final isFinance = userRole == 'finance' ||
+              userRole == 'finance manager' ||
+              userRole == 'financial manager' ||
+              requestedRole == 'finance' ||
+              requestedRole == 'finance manager' ||
+              requestedRole == 'financial manager';
+
+          if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
             print('✅ Routing to Approval Dashboard');
+          } else if (isFinance) {
+            dashboardRoute = '/finance_dashboard';
+            print('✅ Routing to Finance Dashboard');
           } else {
             dashboardRoute = '/creator_dashboard';
             print('✅ Routing to Creator Dashboard');

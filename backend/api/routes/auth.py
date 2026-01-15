@@ -418,12 +418,13 @@ def firebase_auth():
                 username = user[1]
                 user_role = user[4]  # Get role from database
                 
-                # Normalize role: map variations to standard roles (admin or manager)
-                # Only two roles: admin and manager
+                # Normalize role: map variations to standard roles
                 role_lower = user_role.lower().strip() if user_role else 'user'
                 if role_lower in ['admin', 'ceo']:
                     normalized_role = 'admin'
-                elif role_lower in ['manager', 'financial manager', 'creator', 'user']:
+                elif role_lower in ['finance', 'finance manager', 'financial manager']:
+                    normalized_role = 'finance'
+                elif role_lower in ['manager', 'creator', 'user']:
                     normalized_role = 'manager'
                 else:
                     # Default to manager for unknown roles
@@ -475,11 +476,12 @@ def firebase_auth():
                     counter += 1
                 
                 # Use requested role if provided, otherwise default to 'manager'
-                # Only two roles: admin and manager
                 normalized_role = requested_role.lower().strip() if requested_role else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
-                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
+                elif normalized_role in ['finance', 'finance manager', 'financial manager']:
+                    role_to_use = 'finance'
+                elif normalized_role in ['manager', 'creator', 'user']:
                     role_to_use = 'manager'
                 else:
                     # Default to manager for unknown roles

@@ -193,14 +193,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           // Map all role variations to admin or manager
           final isAdmin = userRole == 'admin' || userRole == 'ceo';
+          final isFinance = userRole == 'finance' ||
+              userRole == 'finance manager' ||
+              userRole == 'financial manager';
           final isManager = userRole == 'manager' ||
-              userRole == 'financial manager' ||
               userRole == 'creator' ||
               userRole == 'user';
 
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
             print('✅ Routing to Admin Dashboard');
+          } else if (isFinance) {
+            dashboardRoute = '/finance_dashboard';
+            print('✅ Routing to Finance Dashboard');
           } else if (isManager) {
             dashboardRoute = '/creator_dashboard';
             print('✅ Routing to Creator Dashboard (Manager)');
