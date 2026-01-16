@@ -478,11 +478,14 @@ def firebase_auth():
                     counter += 1
                 
                 # Use requested role if provided, otherwise default to 'manager'
-                # Only two roles: admin and manager
+                # Supported roles: 'admin', 'manager', 'finance_manager'
                 normalized_role = requested_role.lower().strip() if requested_role else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
-                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
+                elif normalized_role in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
+                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
+                    role_to_use = 'finance_manager'
+                elif normalized_role in ['manager', 'creator', 'user']:
                     role_to_use = 'manager'
                 else:
                     # Default to manager for unknown roles
