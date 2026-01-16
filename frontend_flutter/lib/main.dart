@@ -458,7 +458,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
             final isAdmin = userRole == 'admin' || userRole == 'ceo';
             final isFinance = userRole == 'finance' ||
                 userRole == 'finance manager' ||
-                userRole == 'financial manager';
+                userRole == 'financial manager' ||
+                userRole == 'finance_manager' ||
+                userRole == 'financial_manager';
             final isManager = userRole == 'manager' ||
                 userRole == 'creator' ||
                 userRole == 'user';

@@ -418,16 +418,18 @@ def firebase_auth():
                 username = user[1]
                 user_role = user[4]  # Get role from database
                 
-                # Normalize role: map variations to standard roles
+                # Normalize role: map variations to standardized roles
+                # Supported normalized roles: 'admin', 'manager', 'finance_manager'
                 role_lower = user_role.lower().strip() if user_role else 'user'
                 if role_lower in ['admin', 'ceo']:
                     normalized_role = 'admin'
-                elif role_lower in ['finance', 'finance manager', 'financial manager']:
-                    normalized_role = 'finance'
+                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager']:
+                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
+                    normalized_role = 'finance_manager'
                 elif role_lower in ['manager', 'creator', 'user']:
                     normalized_role = 'manager'
                 else:
-                    # Default to manager for unknown roles
+                    # Default to manager for unknown roles but log it for visibility
                     normalized_role = 'manager'
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
                 
@@ -476,12 +478,11 @@ def firebase_auth():
                     counter += 1
                 
                 # Use requested role if provided, otherwise default to 'manager'
+                # Only two roles: admin and manager
                 normalized_role = requested_role.lower().strip() if requested_role else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
-                elif normalized_role in ['finance', 'finance manager', 'financial manager']:
-                    role_to_use = 'finance'
-                elif normalized_role in ['manager', 'creator', 'user']:
+                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
                     role_to_use = 'manager'
                 else:
                     # Default to manager for unknown roles

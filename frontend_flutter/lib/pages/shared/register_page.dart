@@ -293,9 +293,13 @@ class _RegisterPageState extends State<RegisterPage>
           final isFinance = userRole == 'finance' ||
               userRole == 'finance manager' ||
               userRole == 'financial manager' ||
+              userRole == 'finance_manager' ||
+              userRole == 'financial_manager' ||
               requestedRole == 'finance' ||
               requestedRole == 'finance manager' ||
-              requestedRole == 'financial manager';
+              requestedRole == 'financial manager' ||
+              requestedRole == 'finance_manager' ||
+              requestedRole == 'financial_manager';
 
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';

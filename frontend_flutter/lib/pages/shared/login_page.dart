@@ -185,38 +185,32 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           // Only two roles: admin and manager
           final rawRole = userProfile['role']?.toString() ?? '';
           final userRole = rawRole.toLowerCase().trim();
-          String dashboardRoute;
+
+          // Use RoleService mapping as the source of truth
+          final currentRole = roleService.currentRole;
 
           print('🔍 Login: Raw role from backend: "$rawRole"');
           print('🔍 Login: Normalized role: "$userRole"');
+          print('🔍 Login: Frontend mapped role: $currentRole');
           print('🔍 Login: Full userProfile: $userProfile');
 
-          // Map all role variations to admin or manager
-          final isAdmin = userRole == 'admin' || userRole == 'ceo';
-          final isFinance = userRole == 'finance' ||
-              userRole == 'finance manager' ||
-              userRole == 'financial manager';
-          final isManager = userRole == 'manager' ||
-              userRole == 'creator' ||
-              userRole == 'user';
+          String dashboardRoute;
 
-          if (isAdmin) {
+          if (currentRole == UserRole.approver ||
+              currentRole == UserRole.admin) {
             dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Admin Dashboard');
-          } else if (isFinance) {
+            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
+          } else if (currentRole == UserRole.finance) {
             dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard');
-          } else if (isManager) {
-            dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard (Manager)');
+            print('✅ Routing to Finance Dashboard (from RoleService)');
           } else {
-            // Default to manager dashboard for unknown roles
+            // Default to creator/manager dashboard for all other roles
             dashboardRoute = '/creator_dashboard';
-            print(
-                '⚠️ Unknown role "$userRole", defaulting to Creator Dashboard (Manager)');
+            print('✅ Routing to Creator Dashboard (from RoleService)');
           }
 
-          print('🔀 Redirecting user with role "$userRole" to $dashboardRoute');
+          print(
+              '🔀 Redirecting user with normalized role "$userRole" to $dashboardRoute');
 
           Navigator.pushNamedAndRemoveUntil(
             context,

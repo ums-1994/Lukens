@@ -1,4 +1,4 @@
-"""Script to fix user roles in database - only admin and manager allowed"""
+"""Script to fix user roles in database - allow admin, manager and finance_manager"""
 import os
 from dotenv import load_dotenv
 
@@ -33,11 +33,19 @@ def fix_user_roles():
             # Update all roles to standardize them
             print("\n🔄 Updating roles...")
             
-            # Map Financial Manager, Manager (capitalized), creator, user, etc. to manager
+            # Map common variations to 'manager', but preserve/standardize Financial Manager to 'finance_manager'
             cursor.execute("""
-                UPDATE users 
-                SET role = 'manager' 
-                WHERE LOWER(role) IN ('financial manager', 'manager', 'creator', 'user', 'business developer')
+                UPDATE users
+                SET role = 'finance_manager'
+                WHERE LOWER(role) IN ('financial manager', 'finance manager', 'finance_manager', 'financial_manager')
+            """)
+            fm_count = cursor.rowcount
+            print(f"  Updated {fm_count} users to 'finance_manager'")
+
+            cursor.execute("""
+                UPDATE users
+                SET role = 'manager'
+                WHERE LOWER(role) IN ('manager', 'creator', 'user', 'business developer')
             """)
             manager_count = cursor.rowcount
             print(f"  Updated {manager_count} users to 'manager'")
