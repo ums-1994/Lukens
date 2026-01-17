@@ -384,6 +384,10 @@ def firebase_auth():
         
         # Get role from request (for new registrations)
         requested_role = data.get('role', 'user')
+        print(f'🔍 Backend received role from request: "{requested_role}"')
+        print(f'🔍 Full request data keys: {list(data.keys())}')
+        if 'role' in data:
+            print(f'🔍 Role value type: {type(data.get("role"))}, value: {repr(data.get("role"))}')
         
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)
