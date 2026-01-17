@@ -186,19 +186,21 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        _token = data['access_token'];
-        // Create a basic user object since backend doesn't return user data in login
-        _currentUser = {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        // Backend may return either 'token' or 'access_token' and may include a 'user' object
+        final token = data['token'] ?? data['access_token'];
+        final user = data['user'] ?? data['user_profile'] ?? {
           'email': email,
           'username': email,
-          'role': 'Business Developer'
         };
+
+        if (token != null) _token = token as String;
+        _currentUser = Map<String, dynamic>.from(user as Map);
         _persistSession();
+
         return {
-          'access_token': data['access_token'],
-          'token_type': data['token_type'],
-          'user': _currentUser
+          'token': token,
+          'user': _currentUser,
         };
       } else {
         final error = json.decode(response.body);
