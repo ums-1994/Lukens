@@ -27,11 +27,8 @@ String get baseUrl {
     }
   }
   // Default URLs based on environment
-  if (kDebugMode) {
-    return 'http://localhost:8000';
-  }
-  // Production default (Render backend URL)
-  return 'https://lukens-wp8w.onrender.com';
+  // Always default to local backend for development/testing
+  return 'http://localhost:8000';
 }
 
 class AppState extends ChangeNotifier {

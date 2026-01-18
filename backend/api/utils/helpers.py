@@ -82,10 +82,10 @@ def resolve_user_id(cursor, identifier):
 def get_frontend_url():
     """
     Get the frontend URL from environment variables with proper fallback.
-    Returns production URL by default, not localhost.
+    Returns localhost by default for local development.
     """
     import os
-    frontend_url = os.getenv('FRONTEND_URL') or os.getenv('REACT_APP_API_URL') or 'https://sowbuilders.netlify.app'
+    frontend_url = os.getenv('FRONTEND_URL') or os.getenv('REACT_APP_API_URL') or 'http://localhost:3000'
     # Remove trailing slash and ensure it's the base URL (not API URL)
     frontend_url = frontend_url.rstrip('/').replace('/api', '').replace('/backend', '')
     return frontend_url

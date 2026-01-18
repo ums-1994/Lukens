@@ -32,25 +32,9 @@ class ApiService {
         print('⚠️ ApiService: Could not read API URL from config: $e');
       }
     }
-    // Check if we're in production (not localhost)
-    if (kIsWeb) {
-      final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
-
-        if (isProduction) {
-          print(
-              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
-      }
-    }
-    // Default to Render backend (production)
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to local backend URL
+    print('🌐 ApiService: Using local API URL: http://localhost:8000');
+    return 'http://localhost:8000';
   }
 
   // Get headers with Firebase token
