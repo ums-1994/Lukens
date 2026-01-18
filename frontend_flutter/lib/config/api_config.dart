@@ -4,7 +4,7 @@ import 'dart:js' as js;
 /// Centralized API configuration for the Flutter application
 class ApiConfig {
   // Production URLs
-  static const String _productionBackendUrl = 'https://lukens-wp8w.onrender.com';
+  static const String _productionBackendUrl = 'https://backend-sow.onrender.com';
   static const String _productionFrontendUrl = 'https://frontend-sow.onrender.com';
   
   // Development URLs

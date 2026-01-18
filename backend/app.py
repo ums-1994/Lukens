@@ -73,7 +73,7 @@ CORS(
                 "http://localhost:8081",
                 "http://localhost:3000",  # Flutter web default
                 "http://127.0.0.1:3000",  # Flutter web alternative
-                "https://lukens-wp8w.onrender.com",  # Backend itself (for direct access)
+                "https://backend-sow.onrender.com",  # Backend itself (for direct access)
                 "https://*.onrender.com",  # Allow any Render.com frontend
             ],
             "allow_headers": ["Content-Type", "Authorization"],

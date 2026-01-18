@@ -7,7 +7,7 @@ import json
 
 def test_env_vars():
     """Test if environment variables are properly configured"""
-    backend_url = "https://lukens-wp8w.onrender.com"
+    backend_url = "https://backend-sow.onrender.com"
     
     # Test the basic auth endpoint to see if it's working
     print("=== Testing basic auth endpoint ===")

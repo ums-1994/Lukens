@@ -21,7 +21,7 @@ window.APP_CONFIG = {
     const isRender = window.location.hostname.includes('onrender.com');
     const isProduction = isRender || window.location.hostname !== 'localhost';
     const defaultUrl = isProduction 
-        ? 'https://lukens-wp8w.onrender.com' 
+        ? 'https://backend-sow.onrender.com' 
         : 'http://localhost:8000';
     console.log('🌐 Environment detection:');
     console.log('  - isRender:', isRender);

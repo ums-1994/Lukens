@@ -15,7 +15,7 @@ TEST_TOKEN = "gAAAAABpbJUVzi5i48UxVLE482MF2g3Y9h5h7liF4jrJsx2ml1yVrKfM7k-zASENOo
 
 def test_endpoint():
     """Test the JWT login endpoint with debugging"""
-    backend_url = "https://lukens-wp8w.onrender.com"
+    backend_url = "https://backend-sow.onrender.com"
     endpoint = f"{backend_url}/api/khonobuzz/jwt-login"
     
     print(f"Testing endpoint: {endpoint}")
