@@ -8,10 +8,12 @@ import psycopg2.extensions
 from functools import wraps
 from flask import request
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token
+from api.utils.auth import verify_token
 from api.utils.database import get_db_connection
 
 
 DEV_BYPASS_ENABLED = os.getenv('DEV_BYPASS_AUTH', 'false').lower() == 'true'
+FIREBASE_AUTH_ENABLED = os.getenv('FIREBASE_AUTH_ENABLED', 'false').lower() == 'true'
 DEV_DEFAULT_USERNAME = os.getenv('DEV_DEFAULT_USERNAME', 'admin')
 
 # Simple in-memory cache to avoid re-creating the same Firebase user
@@ -53,12 +55,17 @@ def token_required(f):
             print('[ERROR] No token found in Authorization header')
             return {'detail': 'Token is missing'}, 401
 
+        # Accept backend-generated token first (local auth)
+        backend_username = verify_token(token)
+        if backend_username:
+            return f(username=backend_username, *args, **kwargs)
+
         # Try Firebase token first (only if token looks like a Firebase JWT)
         # Firebase ID tokens are JWTs with 3 parts separated by dots
         token_parts = token.split('.')
         is_firebase_token_format = len(token_parts) == 3
         
-        if is_firebase_token_format:
+        if FIREBASE_AUTH_ENABLED and is_firebase_token_format:
             decoded_token = verify_firebase_token(token)
             if decoded_token:
                 firebase_user = get_user_from_token(decoded_token)
@@ -341,14 +348,12 @@ def token_required(f):
                 print('[ERROR] Firebase token validation failed - invalid or expired token')
                 return {'detail': 'Invalid or expired token'}, 401
         else:
-            # Token doesn't look like a Firebase JWT, reject it (no legacy fallback)
             if DEV_BYPASS_ENABLED:
                 print(
                     "[DEV] Non-Firebase token provided. Using development bypass for user "
                     f"'{DEV_DEFAULT_USERNAME}'. Set DEV_BYPASS_AUTH=false to disable."
                 )
                 return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
-            print('[ERROR] Token is not a valid Firebase ID token (legacy tokens disabled)')
             return {'detail': 'Invalid or unsupported token type'}, 401
 
     return decorated

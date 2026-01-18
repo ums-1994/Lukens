@@ -8,6 +8,14 @@ from firebase_admin import credentials, auth
 from functools import wraps
 from flask import request, jsonify
 
+FIREBASE_AUTH_ENABLED = os.getenv('FIREBASE_AUTH_ENABLED', 'false').lower() == 'true'
+FIREBASE_LOGS_ENABLED = os.getenv('FIREBASE_LOGS_ENABLED', 'false').lower() == 'true'
+
+
+def _fb_log(msg: str):
+    if FIREBASE_LOGS_ENABLED:
+        print(msg)
+
 # Initialize Firebase Admin SDK
 _firebase_app = None
 
@@ -28,12 +36,12 @@ def initialize_firebase():
             default_path = os.path.join(backend_dir, 'firebase-service-account.json')
             if os.path.exists(default_path):
                 cred_path = default_path
-                print(f"[FIREBASE] Using default Firebase credentials: {default_path}")
+                _fb_log(f"[FIREBASE] Using default Firebase credentials: {default_path}")
         
         if cred_path and os.path.exists(cred_path):
             cred = credentials.Certificate(cred_path)
             _firebase_app = firebase_admin.initialize_app(cred)
-            print(f"[FIREBASE] Firebase Admin SDK initialized from: {cred_path}")
+            _fb_log(f"[FIREBASE] Firebase Admin SDK initialized from: {cred_path}")
         else:
             # Try to use default credentials (for Google Cloud environments)
             # Or use service account JSON from environment variable
@@ -43,18 +51,18 @@ def initialize_firebase():
                 cred_info = json.loads(service_account_json)
                 cred = credentials.Certificate(cred_info)
                 _firebase_app = firebase_admin.initialize_app(cred)
-                print("[FIREBASE] Firebase Admin SDK initialized from environment variable")
+                _fb_log("[FIREBASE] Firebase Admin SDK initialized from environment variable")
             else:
                 # Try default credentials (for local development with gcloud auth)
                 try:
                     _firebase_app = firebase_admin.initialize_app()
-                    print("[FIREBASE] Firebase Admin SDK initialized with default credentials")
+                    _fb_log("[FIREBASE] Firebase Admin SDK initialized with default credentials")
                 except Exception as e:
-                    print(f"[FIREBASE] WARNING: Firebase Admin SDK not initialized: {e}")
-                    print("   Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON")
+                    _fb_log(f"[FIREBASE] WARNING: Firebase Admin SDK not initialized: {e}")
+                    _fb_log("   Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON")
                     return None
     except Exception as e:
-        print(f"[FIREBASE] ERROR: Error initializing Firebase Admin SDK: {e}")
+        _fb_log(f"[FIREBASE] ERROR: Error initializing Firebase Admin SDK: {e}")
         return None
     
     return _firebase_app
@@ -70,35 +78,39 @@ def verify_firebase_token(id_token):
     Returns:
         dict: Decoded token with user info (uid, email, etc.) or None if invalid
     """
+    # Short-circuit entirely when disabled
+    if not FIREBASE_AUTH_ENABLED:
+        return None
+
     try:
         if _firebase_app is None:
             initialize_firebase()
         
         if _firebase_app is None:
-            print("[FIREBASE] WARNING: Firebase not initialized, cannot verify token")
+            _fb_log("[FIREBASE] WARNING: Firebase not initialized, cannot verify token")
             return None
         
         # Check if token looks like a Firebase ID token (JWT format: three parts separated by dots)
         if not id_token or len(id_token.split('.')) != 3:
-            print(f"[FIREBASE] WARNING: Token doesn't look like a Firebase ID token (JWT format required)")
+            _fb_log(f"[FIREBASE] WARNING: Token doesn't look like a Firebase ID token (JWT format required)")
             return None
         
         # Verify the ID token
         decoded_token = auth.verify_id_token(id_token)
-        print(f"✅ Firebase ID token verified successfully")
+        _fb_log(f"✅ Firebase ID token verified successfully")
         return decoded_token
     except auth.InvalidIdTokenError as e:
-        print(f"[FIREBASE] ERROR: Invalid Firebase ID token: {str(e)}")
+        _fb_log(f"[FIREBASE] ERROR: Invalid Firebase ID token: {str(e)}")
         return None
     except auth.ExpiredIdTokenError as e:
-        print(f"[FIREBASE] ERROR: Expired Firebase ID token: {str(e)}")
+        _fb_log(f"[FIREBASE] ERROR: Expired Firebase ID token: {str(e)}")
         return None
     except ValueError as e:
         # Token format errors
-        print(f"[FIREBASE] WARNING: Token format error (likely not a Firebase token): {str(e)}")
+        _fb_log(f"[FIREBASE] WARNING: Token format error (likely not a Firebase token): {str(e)}")
         return None
     except Exception as e:
-        print(f"[FIREBASE] ERROR: Error verifying Firebase token: {type(e).__name__}: {str(e)}")
+        _fb_log(f"[FIREBASE] ERROR: Error verifying Firebase token: {type(e).__name__}: {str(e)}")
         return None
 
 
