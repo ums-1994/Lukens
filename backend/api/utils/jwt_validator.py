@@ -3,7 +3,7 @@ JWT token validation and decoding
 """
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import jwt
 from jwt.exceptions import (
