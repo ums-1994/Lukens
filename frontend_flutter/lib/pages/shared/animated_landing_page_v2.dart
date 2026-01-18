@@ -18,6 +18,7 @@ class AnimatedLandingPageV2 extends StatefulWidget {
 class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     with TickerProviderStateMixin {
   late AnimationController _controller;
+  final TextEditingController _jwtController = TextEditingController();
   
   // Individual animations with precise timing intervals
   late Animation<double> _backgroundAnim;
@@ -216,7 +217,77 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
   void dispose() {
     _controller.dispose();
     _glowController.dispose();
+    _jwtController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleJwtLogin() async {
+    final token = _jwtController.text.trim();
+    if (token.isEmpty) return;
+
+    try {
+      final loginResult = await AuthService.loginWithJwt(token);
+      final userProfile = loginResult?['user'] as Map<String, dynamic>?;
+      final authToken = loginResult?['token'] as String?;
+
+      if (!mounted) return;
+
+      if (userProfile == null || authToken == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid or expired token'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final appState = context.read<AppState>();
+      appState.authToken = authToken;
+      appState.currentUser = userProfile;
+
+      final roleService = context.read<RoleService>();
+      await roleService.initializeRoleFromUser(userProfile);
+
+      await appState.init();
+
+      final rawRole = userProfile['role']?.toString() ?? '';
+      final userRole = rawRole.toLowerCase().trim();
+      String dashboardRoute;
+
+      final isAdmin = userRole == 'admin' || userRole == 'ceo';
+      final isManager = userRole == 'manager' ||
+          userRole == 'financial manager' ||
+          userRole == 'creator' ||
+          userRole == 'user';
+
+      if (isAdmin) {
+        dashboardRoute = '/approver_dashboard';
+      } else if (isManager) {
+        dashboardRoute = '/creator_dashboard';
+      } else {
+        dashboardRoute = '/creator_dashboard';
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        dashboardRoute,
+        (route) => false,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -440,68 +511,120 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
             // CTA Buttons
             Opacity(
               opacity: _buttonsAnim.value,
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Get Started button with glow
+                  Row(
+                    children: [
+                      // Get Started button with glow
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(50),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFD72638).withOpacity(_glowAnim.value),
+                              blurRadius: 30,
+                              spreadRadius: 5,
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/register');
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFD72638),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 56,
+                              vertical: 18,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(50),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'Get Started',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 40),
+
+                      // Learn More button
+                      TextButton(
+                        onPressed: () {
+                          // Navigate or scroll to features
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 18,
+                          ),
+                        ),
+                        child: const Text(
+                          'Learn More',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  // JWT Token Input
+                  const SizedBox(height: 30),
                   Container(
+                    width: 500,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(50),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFD72638).withOpacity(_glowAnim.value),
-                          blurRadius: 30,
-                          spreadRadius: 5,
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _jwtController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              hintText: 'Paste JWT token here',
+                              hintStyle: TextStyle(color: Colors.white54),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              border: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E88E5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          margin: const EdgeInsets.all(8),
+                          child: TextButton(
+                            onPressed: _handleJwtLogin,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            ),
+                            child: const Text(
+                              'Open',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
                         ),
                       ],
-                    ),
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/register');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFD72638),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 56,
-                          vertical: 18,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(50),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: const Text(
-                        'Get Started',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 40),
-
-                  // Learn More button
-                  TextButton(
-                    onPressed: () {
-                      // Navigate or scroll to features
-                    },
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 18,
-                      ),
-                    ),
-                    child: const Text(
-                      'Learn More',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w400,
-                        letterSpacing: 0.5,
-                      ),
                     ),
                   ),
                 ],

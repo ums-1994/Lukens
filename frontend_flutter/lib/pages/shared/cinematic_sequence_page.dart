@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:provider/provider.dart';
+import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
+import '../../api.dart';
 
 class CinematicSequencePage extends StatefulWidget {
   const CinematicSequencePage({super.key});
@@ -15,6 +19,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   late final AnimationController _ctaController;
   late final AnimationController _parallaxController;
   late final AnimationController _frameController;
+
+  final TextEditingController _jwtController = TextEditingController();
 
   // Background images for cinematic sequence (clean geometric look)
   final List<String> _backgroundImages = [
@@ -102,7 +108,69 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     _underlineController.dispose();
     _ctaController.dispose();
     _parallaxController.dispose();
+    _jwtController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleJwtLogin() async {
+    final token = _jwtController.text.trim();
+    if (token.isEmpty) return;
+
+    try {
+      final loginResult = await AuthService.loginWithJwt(token);
+      final userProfile = loginResult?['user'] as Map<String, dynamic>?;
+      final authToken = loginResult?['token'] as String?;
+
+      if (!mounted) return;
+
+      if (userProfile == null || authToken == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid or expired token'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final appState = context.read<AppState>();
+      appState.authToken = authToken;
+      appState.currentUser = userProfile;
+
+      final roleService = context.read<RoleService>();
+      await roleService.initializeRoleFromUser(userProfile);
+
+      await appState.init();
+
+      final rawRole = userProfile['role']?.toString() ?? '';
+      final userRole = rawRole.toLowerCase().trim();
+
+      final isAdmin = userRole == 'admin' || userRole == 'ceo';
+      final isManager = userRole == 'manager' ||
+          userRole == 'financial manager' ||
+          userRole == 'creator' ||
+          userRole == 'user';
+
+      final dashboardRoute = isAdmin
+          ? '/approver_dashboard'
+          : (isManager ? '/creator_dashboard' : '/creator_dashboard');
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        dashboardRoute,
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('JWT login failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -349,40 +417,89 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
         scale: Tween<double>(begin: 0.95, end: 1.0).animate(
           CurvedAnimation(parent: _ctaController, curve: Curves.easeOut),
         ),
-        child: Wrap(
-          spacing: isMobile ? 16 : 32,
-          runSpacing: 16,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Get Started button with gradient
-            AnimatedBuilder(
-              animation: _parallaxController,
-              builder: (context, child) {
-                final glowIntensity = 0.6 + (math.sin(_parallaxController.value * 2 * math.pi) * 0.3);
-                return Container(
+            Wrap(
+              spacing: isMobile ? 16 : 32,
+              runSpacing: 16,
+              children: [
+                AnimatedBuilder(
+                  animation: _parallaxController,
+                  builder: (context, child) {
+                    final glowIntensity = 0.6 +
+                        (math.sin(_parallaxController.value * 2 * math.pi) *
+                            0.3);
+                    return Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(50),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFFE9293A),
+                            Color(0xFF780A01),
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFE9293A)
+                                .withOpacity(glowIntensity),
+                            blurRadius: 24,
+                            spreadRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton(
+                        onPressed: () =>
+                            Navigator.pushNamed(context, '/register'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isMobile ? 32 : 48,
+                            vertical: isMobile ? 16 : 20,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(50),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          'Get Started',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: isMobile ? 16 : 20,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(50),
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        Color(0xFFE9293A), // #E9293A
-                        Color(0xFF780A01), // #780A01
+                        Color(0xFFFFFFFF),
+                        Color(0xFFB0B6BB),
                       ],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFE9293A).withOpacity(glowIntensity),
-                        blurRadius: 24,
-                        spreadRadius: 4,
-                      ),
-                    ],
                   ),
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pushNamed(context, '/register'),
+                    onPressed: () {
+                      // TODO: Navigate to learn more page
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
-                      foregroundColor: Colors.white,
+                      foregroundColor: Colors.black,
                       padding: EdgeInsets.symmetric(
                         horizontal: isMobile ? 32 : 48,
                         vertical: isMobile ? 16 : 20,
@@ -393,7 +510,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                       elevation: 0,
                     ),
                     child: Text(
-                      'Get Started',
+                      'Learn More',
                       style: TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: isMobile ? 16 : 20,
@@ -402,49 +519,65 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                       ),
                     ),
                   ),
-                );
-              },
+                ),
+              ],
             ),
-
-            // Learn More button with grey/silver gradient
+            const SizedBox(height: 24),
             Container(
+              width: isMobile ? double.infinity : 500,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(50),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFFFFFF), // #FFFFFF
-                    Color(0xFFB0B6BB), // #B0B6BB
-                  ],
-                ),
+                color: Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
               ),
-              child: ElevatedButton(
-                onPressed: () {
-                  // TODO: Navigate to learn more page
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  foregroundColor: Colors.black,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 32 : 48,
-                    vertical: isMobile ? 16 : 20,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _jwtController,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: const InputDecoration(
+                        hintText: 'Paste JWT token here',
+                        hintStyle:
+                            TextStyle(color: Colors.white54, fontSize: 14),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                      maxLines: 1,
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(50),
+                  Container(
+                    margin: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextButton(
+                      onPressed: _handleJwtLogin,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isMobile ? 16 : 24,
+                          vertical: 10,
+                        ),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text(
+                        'Open',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ),
-                  elevation: 0,
-                ),
-                child: Text(
-                  'Learn More',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: isMobile ? 16 : 20,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+                ],
               ),
             ),
           ],

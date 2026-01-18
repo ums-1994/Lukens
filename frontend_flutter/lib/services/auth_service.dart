@@ -1,8 +1,9 @@
 import 'dart:convert';
-import 'dart:js_util' as js_util;
+import 'dart:js' as js;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
+import 'jwt_service.dart';
 
 class AuthService {
   // Get API URL from JavaScript config or use default
@@ -10,9 +11,9 @@ class AuthService {
     if (kIsWeb) {
       try {
         // Try to get from window.APP_CONFIG.API_URL
-        final config = js_util.getProperty(js_util.globalThis, 'APP_CONFIG');
+        final config = js.context['APP_CONFIG'];
         if (config != null) {
-          final apiUrl = js_util.getProperty(config, 'API_URL');
+          final apiUrl = (config as dynamic)['API_URL'];
           if (apiUrl != null && apiUrl.toString().isNotEmpty) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
             print('🌐 Using API URL from APP_CONFIG: $url');
@@ -20,8 +21,7 @@ class AuthService {
           }
         }
         // Fallback: try window.REACT_APP_API_URL
-        final envUrl =
-            js_util.getProperty(js_util.globalThis, 'REACT_APP_API_URL');
+        final envUrl = js.context['REACT_APP_API_URL'];
         if (envUrl != null && envUrl.toString().isNotEmpty) {
           final url = envUrl.toString().replaceAll('"', '').trim();
           print('🌐 Using API URL from REACT_APP_API_URL: $url');
@@ -232,8 +232,44 @@ class AuthService {
     }
   }
 
-  // Login using external Khonobuzz JWT token
+  // Login using external JWT token with local decryption
   static Future<Map<String, dynamic>?> loginWithJwt(String jwtToken) async {
+    try {
+      print('🔑 Attempting to decrypt JWT token locally...');
+      
+      // First try to decrypt the token locally
+      final userData = JwtService.getUserFromToken(jwtToken);
+      
+      if (userData == null) {
+        throw Exception('Failed to decrypt JWT token or token is invalid');
+      }
+      
+      print('✅ JWT token decrypted successfully');
+      print('👤 User email: ${userData['email']}');
+      print('🔑 User role: ${userData['role']}');
+      
+      // Create a session token for the app (you might want to generate a new token)
+      final sessionToken = _generateSessionToken(userData);
+      
+      // Set user data
+      setUserData(userData, sessionToken);
+      
+      return {
+        'user': userData,
+        'token': sessionToken,
+      };
+      
+    } catch (e) {
+      print('❌ JWT decryption failed: $e');
+      
+      // Fallback to backend verification if local decryption fails
+      print('🔄 Falling back to backend verification...');
+      return await _loginWithJwtBackend(jwtToken);
+    }
+  }
+  
+  // Fallback method for backend JWT verification
+  static Future<Map<String, dynamic>?> _loginWithJwtBackend(String jwtToken) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/khonobuzz/jwt-login'),
@@ -258,9 +294,24 @@ class AuthService {
             error['detail'] ?? 'External JWT login failed with status ${response.statusCode}');
       }
     } catch (e) {
-      print('External JWT login error: $e');
+      print('❌ Backend JWT verification failed: $e');
       rethrow;
     }
+  }
+  
+  // Generate a simple session token (in production, use proper JWT generation)
+  static String _generateSessionToken(Map<String, dynamic> userData) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final payload = {
+      'sub': userData['id'],
+      'email': userData['email'],
+      'role': userData['role'],
+      'iat': timestamp,
+      'exp': (DateTime.now().millisecondsSinceEpoch ~/ 1000) + 3600, // 1 hour expiry
+    };
+    
+    // Simple encoding (in production, use proper JWT signing)
+    return base64.encode(utf8.encode(json.encode(payload)));
   }
 
   // Resend verification email
