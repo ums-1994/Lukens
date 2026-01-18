@@ -599,6 +599,13 @@ def khonobuzz_jwt_login():
         try:
             decoded = validate_jwt_token(token)
             user_info = extract_user_info(decoded)
+            
+            # Log the detected role and roles for debugging
+            print(f"🔑 KHONOBUZZ JWT decoded successfully")
+            print(f"👤 User email: {user_info.get('email')}")
+            print(f"📋 User roles: {user_info.get('roles')}")
+            print(f"🎯 Determined role: {user_info.get('role')}")
+            
         except JWTValidationError as e:
             return {'detail': str(e)}, 401
 
@@ -623,7 +630,7 @@ def khonobuzz_jwt_login():
                 user_id = user[0]
                 username = user[1]
                 full_name = user[3] or email.split('@')[0]
-                role_value = user[4] or 'manager'
+                role_value = user_info.get('role', 'manager')  # Use determined role from JWT
                 department = user[5]
                 is_active = user[6]
             else:
@@ -637,9 +644,9 @@ def khonobuzz_jwt_login():
                     username = f"{base_username}{counter}"
                     counter += 1
 
-                full_name = decoded.get('name') or decoded.get('full_name') or email.split('@')[0]
-                role_value = decoded.get('role') or 'manager'
-                department = decoded.get('department')
+                full_name = user_info.get('full_name') or user_info.get('name') or email.split('@')[0]
+                role_value = user_info.get('role', 'manager')  # Use determined role from JWT
+                department = user_info.get('department')
                 is_active = True
 
                 cursor.execute(

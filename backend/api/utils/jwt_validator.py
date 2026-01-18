@@ -93,11 +93,13 @@ def validate_jwt_token(token: str) -> Dict[str, Any]:
 
 def extract_user_info(decoded_token: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Extract user information from decoded JWT token
+    Extract user information from decoded JWT token from KHONOBUZZ
 
     Handles multiple field name variations:
     - user_id, uid, sub, userId (for user ID)
     - email, user_email, email_address (for email)
+    - full_name, name (for user's full name)
+    - roles (array of role strings from KHONOBUZZ)
     """
     user_id = (
         decoded_token.get("user_id")
@@ -112,6 +114,15 @@ def extract_user_info(decoded_token: Dict[str, Any]) -> Dict[str, Any]:
         or decoded_token.get("email_address")
     )
 
+    full_name = (
+        decoded_token.get("full_name")
+        or decoded_token.get("name")
+    )
+
+    # Extract roles array and determine primary role
+    roles = decoded_token.get("roles", [])
+    role = _determine_primary_role(roles)
+
     if not user_id:
         raise JWTValidationError(
             "Token missing required field: user_id (or uid/sub). "
@@ -123,5 +134,42 @@ def extract_user_info(decoded_token: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "user_id": str(user_id),
         "email": email_str,
+        "full_name": str(full_name) if full_name else email_str.split('@')[0],
+        "role": role,
+        "roles": roles,  # Keep original roles array
     }
+
+
+def _determine_primary_role(roles: List[str]) -> str:
+    """
+    Determine the primary role from KHONOBUZZ roles array.
+    Priority: Admin > Manager > Creator > User
+    """
+    if not roles or not isinstance(roles, list):
+        return "user"
+    
+    # Check for admin role first (highest priority)
+    if "Proposal & SOW Builder - Admin" in roles:
+        logger.info("Admin role detected: Proposal & SOW Builder - Admin")
+        return "admin"
+    
+    # Check for manager roles
+    if any(role in roles for role in [
+        "Proposal & SOW Builder - Manager",
+        "Skills Heatmap - Manager"
+    ]):
+        logger.info("Manager role detected")
+        return "manager"
+    
+    # Check for creator roles
+    if any(role in roles for role in [
+        "Proposal & SOW Builder - Creator",
+        "PDH - Employee"
+    ]):
+        logger.info("Creator role detected")
+        return "creator"
+    
+    # Default to user role
+    logger.info("Default user role assigned")
+    return "user"
 

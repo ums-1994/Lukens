@@ -71,6 +71,8 @@ CORS(
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
+                "http://localhost:3000",  # Flutter web default
+                "http://127.0.0.1:3000",  # Flutter web alternative
             ],
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],

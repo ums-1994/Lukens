@@ -144,16 +144,32 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
       final rawRole = userProfile['role']?.toString() ?? '';
       final userRole = rawRole.toLowerCase().trim();
+      
+      // Log the detected role for debugging
+      print('🔑 User role from JWT: $userRole');
+      print('👤 User email: ${userProfile['email']}');
+      print('📋 User roles array: ${userProfile['roles']}');
 
-      final isAdmin = userRole == 'admin' || userRole == 'ceo';
-      final isManager = userRole == 'manager' ||
-          userRole == 'financial manager' ||
-          userRole == 'creator' ||
-          userRole == 'user';
+      // KHONOBUZZ role-based routing
+      final isAdmin = userRole == 'admin';
+      final isManager = userRole == 'manager';
+      final isCreator = userRole == 'creator';
+      final isUser = userRole == 'user';
 
-      final dashboardRoute = isAdmin
-          ? '/approver_dashboard'
-          : (isManager ? '/creator_dashboard' : '/creator_dashboard');
+      String dashboardRoute;
+      if (isAdmin) {
+        dashboardRoute = '/approver_dashboard';
+        print('🎯 Routing to Admin Dashboard (/approver_dashboard)');
+      } else if (isManager) {
+        dashboardRoute = '/creator_dashboard'; // Manager uses creator dashboard
+        print('🎯 Routing to Manager Dashboard (/creator_dashboard)');
+      } else if (isCreator) {
+        dashboardRoute = '/creator_dashboard';
+        print('🎯 Routing to Creator Dashboard (/creator_dashboard)');
+      } else {
+        dashboardRoute = '/creator_dashboard'; // Default for regular users
+        print('🎯 Routing to Default Dashboard (/creator_dashboard)');
+      }
 
       if (!mounted) return;
 

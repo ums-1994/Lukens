@@ -1,8 +1,7 @@
 class JwtConfig {
-  // JWT Configuration - These should match your backend .env values
-  // IMPORTANT: Replace these with your actual JWT secret and encryption key
-  static const String jwtSecret = 'your-super-secret-jwt-key-change-this-in-production';
-  static const String encryptionKey = 'your-encryption-key-32-chars-long';
+  // JWT Configuration - These match your backend .env values
+  static const String jwtSecret = 'PudwjIQa-kMPoQ8KCE9OqN3-HnIu2P12Dkf2U6rFH8I=';
+  static const String encryptionKey = '50g5j-Pa1SXyyABDbrghP0Spo1lZnQIGoWAIZBM_zZ0=';
   
   // Alternative: Load from environment variables (more secure)
   // You can set these in your build process or runtime environment

@@ -8,23 +8,35 @@ class JwtService {
   /// Decrypt and validate JWT token
   static Map<String, dynamic>? decryptToken(String token) {
     try {
+      print('🔑 Parsing JWT token...');
+      
+      // Check if token has the correct format (3 parts separated by dots)
+      final parts = token.split('.');
+      if (parts.length != 3) {
+        print('❌ Invalid JWT format: Expected 3 parts, got ${parts.length}');
+        return null;
+      }
+      
       // First decode the JWT to get the payload
       final payload = Jwt.parseJwt(token);
+      print('✅ JWT payload decoded successfully');
       
       // Verify the token signature (simplified version)
-      // In a real implementation, you'd verify against the secret
       if (!_verifyTokenSignature(token)) {
+        print('❌ JWT signature verification failed');
         throw Exception('Invalid token signature');
       }
       
       // Check if token is expired
       if (Jwt.isExpired(token)) {
+        print('❌ JWT token has expired');
         throw Exception('Token has expired');
       }
       
+      print('✅ JWT token validation successful');
       return payload;
     } catch (e) {
-      print('JWT decryption error: $e');
+      print('❌ JWT decryption error: $e');
       return null;
     }
   }
@@ -72,15 +84,46 @@ class JwtService {
     final payload = decryptToken(token);
     if (payload == null) return null;
     
-    // Extract user information from payload
+    // Extract user information from KHONOBUZZ JWT payload
+    final roles = payload['roles'] as List<dynamic>? ?? [];
+    final userRole = _determineUserRole(roles);
+    
     return {
-      'id': payload['sub'] ?? payload['user_id'],
-      'email': payload['email'] ?? payload['sub'],
-      'role': payload['role'] ?? 'user',
-      'name': payload['name'] ?? payload['full_name'] ?? 'User',
+      'id': payload['user_id'] ?? payload['sub'],
+      'email': payload['email'] ?? '',
+      'full_name': payload['full_name'] ?? payload['name'] ?? 'User',
+      'role': userRole,
+      'roles': roles, // Keep original roles array for reference
       'exp': payload['exp'],
       'iat': payload['iat'],
     };
+  }
+  
+  /// Determine user role based on KHONOBUZZ roles array
+  static String _determineUserRole(List<dynamic> roles) {
+    // Check for admin role first (highest priority)
+    if (roles.contains('Proposal & SOW Builder - Admin')) {
+      print('👑 Admin role detected: Proposal & SOW Builder - Admin');
+      return 'admin';
+    }
+    
+    // Check for manager roles
+    if (roles.contains('Proposal & SOW Builder - Manager') ||
+        roles.contains('Skills Heatmap - Manager')) {
+      print('👔 Manager role detected');
+      return 'manager';
+    }
+    
+    // Check for creator roles
+    if (roles.contains('Proposal & SOW Builder - Creator') ||
+        roles.contains('PDH - Employee')) {
+      print('👤 Creator role detected');
+      return 'creator';
+    }
+    
+    // Default to user role
+    print('👤 Default user role assigned');
+    return 'user';
   }
   
   /// Check if token will expire within the specified minutes
