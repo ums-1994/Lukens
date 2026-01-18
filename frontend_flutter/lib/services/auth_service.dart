@@ -15,6 +15,17 @@ class AuthService {
   static DateTime? _lastJwtAttempt;
   static const Duration _rateLimitDelay = Duration(seconds: 10); // Increased to 10 seconds
   static bool _isAuthenticating = false; // Prevent simultaneous attempts
+  
+  // Retry mechanism
+  static int _retryCount = 0;
+  static const int _maxRetries = 5;
+  static const List<Duration> _retryDelays = [
+    Duration(seconds: 1),    // 1st retry: 1 second
+    Duration(seconds: 2),    // 2nd retry: 2 seconds
+    Duration(seconds: 4),    // 3rd retry: 4 seconds
+    Duration(seconds: 8),    // 4th retry: 8 seconds
+    Duration(seconds: 16),   // 5th retry: 16 seconds
+  ];
 
   // Get current user
   static Map<String, dynamic>? get currentUser => _currentUser;
@@ -220,8 +231,16 @@ class AuthService {
     _lastJwtAttempt = now;
     print('🔑 JWT AUTHENTICATION ATTEMPT #${DateTime.now().millisecondsSinceEpoch}');
     
+    // Reset retry count for new authentication attempt
+    _retryCount = 0;
+    
+    return await _attemptJwtLoginWithRetry(jwtToken);
+  }
+
+  // Internal method to handle retry logic
+  static Future<Map<String, dynamic>?> _attemptJwtLoginWithRetry(String jwtToken) async {
     try {
-      print('🔑 Attempting to decrypt JWT token locally...');
+      print('🔄 Attempt ${_retryCount + 1}/$_maxRetries for JWT authentication');
       
       // Check if token is empty or null
       if (jwtToken.isEmpty) {
@@ -237,6 +256,7 @@ class AuthService {
         print('🔄 Going directly to backend verification...');
         final result = await _loginWithJwtBackend(jwtToken);
         _isAuthenticating = false;
+        _retryCount = 0; // Reset on success
         return result;
       }
       
@@ -257,6 +277,7 @@ class AuthService {
       // Set user data
       setUserData(userData, sessionToken);
       _isAuthenticating = false;
+      _retryCount = 0; // Reset on success
       
       return {
         'user': userData,
@@ -264,34 +285,122 @@ class AuthService {
       };
       
     } catch (e) {
-      print('❌ JWT decryption failed: $e');
+      print('❌ JWT authentication attempt ${_retryCount + 1} failed: $e');
       
-      // Fallback to backend verification if local decryption fails
-      print('🔄 Falling back to backend verification...');
-      try {
-        final result = await _loginWithJwtBackend(jwtToken);
-        _isAuthenticating = false;
-        return result;
-      } catch (backendError) {
-        _isAuthenticating = false;
-        print('❌ Both local and backend JWT verification failed');
-        print('🔍 Local error: $e');
-        print('🔍 Backend error: $backendError');
+      // Check if this is a retryable error
+      final isRetryable = _isRetryableError(e);
+      
+      if (isRetryable && _retryCount < _maxRetries - 1) {
+        _retryCount++;
+        final delay = _retryDelays[_retryCount - 1];
         
-        // Provide a user-friendly error message
-        if (backendError.toString().contains('Failed to fetch') || 
-            backendError.toString().contains('Network')) {
-          throw Exception('Unable to connect to authentication service. Please check your internet connection and try again.');
-        } else if (backendError.toString().contains('timeout')) {
-          throw Exception('Authentication service is taking too long to respond. Please try again later.');
-        } else if (backendError.toString().contains('Too Many Requests') || 
-                   backendError.toString().contains('429')) {
+        print('🔄 RETRYING in ${delay.inSeconds} seconds... (Attempt ${_retryCount + 1}/$_maxRetries)');
+        print('🔍 Error type: ${e.runtimeType}');
+        print('🔍 Error details: ${e.toString()}');
+        
+        // Wait before retrying
+        await Future.delayed(delay);
+        
+        // Try again
+        return await _attemptJwtLoginWithRetry(jwtToken);
+      } else {
+        // No more retries or non-retryable error
+        _isAuthenticating = false;
+        
+        if (!isRetryable) {
+          print('❌ Non-retryable error - not attempting further retries');
+        } else if (_retryCount >= _maxRetries - 1) {
+          print('❌ Maximum retries ($_maxRetries) reached');
+        }
+        
+        // Final error handling
+        print('❌ All JWT authentication attempts failed');
+        print('🔍 Total attempts: ${_retryCount + 1}');
+        print('🔍 Final error: $e');
+        
+        // Provide user-friendly error message
+        if (e.toString().contains('Failed to fetch') || 
+            e.toString().contains('Network')) {
+          if (_retryCount >= _maxRetries - 1) {
+            throw Exception('Unable to connect to authentication service after $_maxRetries attempts. Please check your internet connection and try again later.');
+          } else {
+            throw Exception('Unable to connect to authentication service. Please check your internet connection and try again.');
+          }
+        } else if (e.toString().contains('timeout')) {
+          if (_retryCount >= _maxRetries - 1) {
+            throw Exception('Authentication service is taking too long to respond after $_maxRetries attempts. Please try again later.');
+          } else {
+            throw Exception('Authentication service is taking too long to respond. Please try again later.');
+          }
+        } else if (e.toString().contains('Too Many Requests') || 
+                   e.toString().contains('429')) {
           throw Exception('Too many authentication attempts. Please wait a few minutes before trying again.');
+        } else if (e.toString().contains('not properly configured')) {
+          throw Exception('The authentication service is not properly configured to handle encrypted tokens. Please contact support or try again later.');
         } else {
-          throw Exception('Invalid authentication token. Please contact support if this problem persists.');
+          if (_retryCount >= _maxRetries - 1) {
+            throw Exception('Invalid authentication token after $_maxRetries attempts. Please contact support if this problem persists.');
+          } else {
+            throw Exception('Invalid authentication token. Please contact support if this problem persists.');
+          }
         }
       }
     }
+  }
+
+  // Check if an error is retryable
+  static bool _isRetryableError(dynamic error) {
+    final errorString = error.toString();
+    
+    // Retryable errors (network issues, timeouts, temporary server issues)
+    final retryablePatterns = [
+      'Failed to fetch',
+      'Network',
+      'timeout',
+      'Connection refused',
+      'SocketException',
+      'HttpException',
+      'ClientException',
+      'Connection timed out',
+      'Read timed out',
+      'Connection reset',
+      'Temporary failure',
+      'Service unavailable',
+      '503', // Service Unavailable
+      '502', // Bad Gateway
+      '504', // Gateway Timeout
+    ];
+    
+    // Non-retryable errors (authentication failures, invalid tokens, etc.)
+    final nonRetryablePatterns = [
+      'Invalid token',
+      'Token has expired',
+      'not properly configured',
+      'Too Many Requests',
+      '429',
+      '401', // Unauthorized
+      '403', // Forbidden
+      '400', // Bad Request
+      'JWT token is empty',
+      'Failed to decrypt JWT token',
+    ];
+    
+    // Check for non-retryable patterns first
+    for (final pattern in nonRetryablePatterns) {
+      if (errorString.contains(pattern)) {
+        return false;
+      }
+    }
+    
+    // Check for retryable patterns
+    for (final pattern in retryablePatterns) {
+      if (errorString.contains(pattern)) {
+        return true;
+      }
+    }
+    
+    // Default: retry unknown errors
+    return true;
   }
   
   // Fallback method for backend JWT verification

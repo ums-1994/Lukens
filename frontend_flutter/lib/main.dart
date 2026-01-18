@@ -6,6 +6,7 @@ import 'package:web/web.dart' as web;
 import 'widgets/app_wrapper.dart';
 import 'widgets/version_control_overlay.dart';
 import 'widgets/version_control_config.dart';
+import 'pages/authentication_error_page.dart';
 import 'pages/creator/creator_dashboard_page.dart';
 import 'pages/creator/compose_page.dart';
 import 'pages/creator/proposal_wizard.dart';
@@ -385,6 +386,14 @@ class MyApp extends StatelessWidget {
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
           '/test-signature': (context) => const TestSignaturePage(),
+          '/error': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            return AuthenticationErrorPage(
+              title: args?['title'] ?? 'Authentication Error',
+              message: args?['message'] ?? 'An unknown error occurred',
+              canRetry: args?['canRetry'] ?? false,
+            );
+          },
           '/team_details': (context) {
             final args = ModalRoute.of(context)!.settings.arguments as Map?;
             final id = args != null ? (args['teamId'] ?? '') : '';
@@ -490,6 +499,41 @@ class _AuthWrapperState extends State<AuthWrapper> {
           }
         } catch (e) {
           print('❌ Khonobuzz JWT login failed: $e');
+          print('❌ Error type: ${e.runtimeType}');
+          print('❌ Error details: ${e.toString()}');
+          
+          // Check if it's a rate limiting error
+          if (e.toString().contains('Too many authentication attempts') || 
+              e.toString().contains('Please wait') ||
+              e.toString().contains('already in progress')) {
+            print('🛑 This is a rate limiting error - user should wait');
+            // Show error message to user instead of continuing
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.pushReplacementNamed(context, '/error', arguments: {
+                'title': 'Authentication Rate Limited',
+                'message': e.toString(),
+                'canRetry': true,
+              });
+            });
+            return;
+          }
+          
+          // Check if it's a retry exhausted error
+          if (e.toString().contains('after 5 attempts') || 
+              e.toString().contains('Maximum retries')) {
+            print('🛑 This is a retry exhausted error - showing error page');
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.pushReplacementNamed(context, '/error', arguments: {
+                'title': 'Authentication Failed',
+                'message': e.toString(),
+                'canRetry': true,
+              });
+            });
+            return;
+          }
+          
+          // For other errors, continue to normal flow (might be email verification needed)
+          print('⚠️ Continuing to normal flow - might redirect to email verification');
         }
       } else {
         print('❌ Khonobuzz source detected but no token found in URL');
