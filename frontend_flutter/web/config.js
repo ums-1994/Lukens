@@ -1,5 +1,9 @@
 // Runtime configuration for API URL
 // This file is loaded before the Flutter app starts
+console.log('🔧 Loading config.js...');
+console.log('🔧 Current hostname:', window.location.hostname);
+console.log('🔧 Current origin:', window.location.origin);
+
 window.APP_CONFIG = {
   // API URL - can be overridden by environment variable or build-time replacement
   API_URL: (function() {
@@ -14,9 +18,14 @@ window.APP_CONFIG = {
       return window.APP_API_URL;
     }
     // Default to Render backend URL for production
-    const defaultUrl = window.location.hostname.includes('onrender.com')
-        ? 'https://backend-sow.onrender.com'
+    const isRender = window.location.hostname.includes('onrender.com');
+    const isProduction = isRender || window.location.hostname !== 'localhost';
+    const defaultUrl = isProduction 
+        ? 'https://lukens-wp8w.onrender.com' 
         : 'http://localhost:8000';
+    console.log('🌐 Environment detection:');
+    console.log('  - isRender:', isRender);
+    console.log('  - isProduction:', isProduction);
     console.log('🌐 Using default API URL:', defaultUrl);
     return defaultUrl;
   })(),

@@ -4,7 +4,7 @@ import 'dart:js' as js;
 /// Centralized API configuration for the Flutter application
 class ApiConfig {
   // Production URLs
-  static const String _productionBackendUrl = 'https://backend-sow.onrender.com';
+  static const String _productionBackendUrl = 'https://lukens-wp8w.onrender.com';
   static const String _productionFrontendUrl = 'https://frontend-sow.onrender.com';
   
   // Development URLs
@@ -23,19 +23,49 @@ class ApiConfig {
           if (apiUrl != null && apiUrl.toString().isNotEmpty) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
             if (url.isNotEmpty) {
+              print('🌐 Using API URL from JavaScript config: $url');
               return url;
             }
           }
         }
       } catch (e) {
+        print('⚠️ Failed to read JavaScript config: $e');
         // Fall through to environment-based detection
       }
     }
 
-    // Environment-based fallback
+    // Environment-based fallback with better production detection
+    if (kIsWeb) {
+      try {
+        final hostname = js.context['window']['location']['hostname'];
+        if (hostname != null && hostname.toString().contains('onrender.com')) {
+          print('🌐 Detected Render environment, using production backend');
+          return _productionBackendUrl;
+        }
+      } catch (e) {
+        print('⚠️ Could not detect hostname: $e');
+      }
+    }
+
+    // Additional fallback: if not localhost, assume production
+    if (kIsWeb) {
+      try {
+        final hostname = js.context['window']['location']['hostname'];
+        if (hostname != null && hostname.toString() != 'localhost') {
+          print('🌐 Non-localhost detected, using production backend');
+          return _productionBackendUrl;
+        }
+      } catch (e) {
+        print('⚠️ Could not detect hostname for fallback: $e');
+      }
+    }
+
+    // Final fallback based on build mode
     if (kReleaseMode) {
+      print('🌐 Using production backend (release mode)');
       return _productionBackendUrl;
     } else {
+      print('🌐 Using development backend (debug mode)');
       return _developmentBackendUrl;
     }
   }
