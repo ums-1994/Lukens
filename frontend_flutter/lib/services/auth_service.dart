@@ -13,7 +13,8 @@ class AuthService {
   
   // Rate limiting protection
   static DateTime? _lastJwtAttempt;
-  static const Duration _rateLimitDelay = Duration(seconds: 5);
+  static const Duration _rateLimitDelay = Duration(seconds: 10); // Increased to 10 seconds
+  static bool _isAuthenticating = false; // Prevent simultaneous attempts
 
   // Get current user
   static Map<String, dynamic>? get currentUser => _currentUser;
@@ -199,14 +200,25 @@ class AuthService {
 
   // Login using external JWT token with local decryption
   static Future<Map<String, dynamic>?> loginWithJwt(String jwtToken) async {
+    // Prevent simultaneous authentication attempts
+    if (_isAuthenticating) {
+      print('🛑 AUTHENTICATION ALREADY IN PROGRESS - SKIPPING');
+      throw Exception('Authentication is already in progress. Please wait.');
+    }
+    
     // Rate limiting protection
     final now = DateTime.now();
     if (_lastJwtAttempt != null && now.difference(_lastJwtAttempt!) < _rateLimitDelay) {
       final remainingTime = _rateLimitDelay - now.difference(_lastJwtAttempt!);
-      print('🛑 Rate limiting active. Please wait ${remainingTime.inSeconds}s before trying again.');
+      print('🛑 RATE LIMITING ACTIVE! Last attempt: $_lastJwtAttempt, Current: $now');
+      print('🛑 Time since last attempt: ${now.difference(_lastJwtAttempt!).inSeconds}s');
+      print('🛑 Remaining time: ${remainingTime.inSeconds}s');
       throw Exception('Please wait ${remainingTime.inSeconds} seconds before attempting authentication again.');
     }
+    
+    _isAuthenticating = true;
     _lastJwtAttempt = now;
+    print('🔑 JWT AUTHENTICATION ATTEMPT #${DateTime.now().millisecondsSinceEpoch}');
     
     try {
       print('🔑 Attempting to decrypt JWT token locally...');
@@ -223,7 +235,9 @@ class AuthService {
       if (!hasJwtFormat) {
         print('🔍 Token does not appear to be a standard JWT, skipping local decryption');
         print('🔄 Going directly to backend verification...');
-        return await _loginWithJwtBackend(jwtToken);
+        final result = await _loginWithJwtBackend(jwtToken);
+        _isAuthenticating = false;
+        return result;
       }
       
       // Only try local decryption for standard JWT format
@@ -242,6 +256,7 @@ class AuthService {
       
       // Set user data
       setUserData(userData, sessionToken);
+      _isAuthenticating = false;
       
       return {
         'user': userData,
@@ -254,8 +269,11 @@ class AuthService {
       // Fallback to backend verification if local decryption fails
       print('🔄 Falling back to backend verification...');
       try {
-        return await _loginWithJwtBackend(jwtToken);
+        final result = await _loginWithJwtBackend(jwtToken);
+        _isAuthenticating = false;
+        return result;
       } catch (backendError) {
+        _isAuthenticating = false;
         print('❌ Both local and backend JWT verification failed');
         print('🔍 Local error: $e');
         print('🔍 Backend error: $backendError');

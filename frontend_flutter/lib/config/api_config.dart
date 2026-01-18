@@ -13,6 +13,12 @@ class ApiConfig {
 
   /// Get the backend API base URL
   static String get backendBaseUrl {
+    // Force production for now - remove this after testing
+    print('🔧 FORCING PRODUCTION BACKEND URL: $_productionBackendUrl');
+    return _productionBackendUrl;
+    
+    // Original logic below - comment out for now
+    /*
     // For web builds, try to get from JavaScript config first
     if (kIsWeb) {
       try {
@@ -32,31 +38,27 @@ class ApiConfig {
         print('⚠️ Failed to read JavaScript config: $e');
         // Fall through to environment-based detection
       }
-    }
-
-    // Environment-based fallback with better production detection
-    if (kIsWeb) {
+      
+      // Environment-based fallback with better production detection
       try {
         final hostname = js.context['window']['location']['hostname'];
+        print('🔍 Detected hostname: ${hostname ?? 'NULL'}');
+        print('🔍 Current origin: ${js.context['window']['location']['origin'] ?? 'NULL'}');
+        
         if (hostname != null && hostname.toString().contains('onrender.com')) {
           print('🌐 Detected Render environment, using production backend');
+          return _productionBackendUrl;
+        } else if (hostname != null && hostname.toString() == 'localhost') {
+          print('🌐 Detected localhost environment, using development backend');
+          return _developmentBackendUrl;
+        } else {
+          print('🌐 Unknown hostname, defaulting to production backend');
           return _productionBackendUrl;
         }
       } catch (e) {
         print('⚠️ Could not detect hostname: $e');
-      }
-    }
-
-    // Additional fallback: if not localhost, assume production
-    if (kIsWeb) {
-      try {
-        final hostname = js.context['window']['location']['hostname'];
-        if (hostname != null && hostname.toString() != 'localhost') {
-          print('🌐 Non-localhost detected, using production backend');
-          return _productionBackendUrl;
-        }
-      } catch (e) {
-        print('⚠️ Could not detect hostname for fallback: $e');
+        print('⚠️ Defaulting to production backend');
+        return _productionBackendUrl;
       }
     }
 
@@ -68,6 +70,7 @@ class ApiConfig {
       print('🌐 Using development backend (debug mode)');
       return _developmentBackendUrl;
     }
+    */
   }
 
   /// Get the frontend base URL (for deep links, redirects, etc.)
