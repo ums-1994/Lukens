@@ -78,7 +78,7 @@ def main():
     load_dotenv()
     _print_env()
 
-    base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+    base_url = os.getenv("BACKEND_URL", "https://backend-sow.onrender.com")
 
     # 1) Try local decode
     _ = test_local_decode(TEST_TOKEN)

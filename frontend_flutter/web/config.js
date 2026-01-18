@@ -13,9 +13,11 @@ window.APP_CONFIG = {
       console.log('🌐 Using APP_API_URL:', window.APP_API_URL);
       return window.APP_API_URL;
     }
-    // Default to local backend URL for development
-    const defaultUrl = 'http://localhost:8000';
-    console.log('🌐 Using default API URL (local):', defaultUrl);
+    // Default to Render backend URL for production
+    const defaultUrl = window.location.hostname.includes('onrender.com')
+        ? 'https://backend-sow.onrender.com'
+        : 'http://localhost:8000';
+    console.log('🌐 Using default API URL:', defaultUrl);
     return defaultUrl;
   })(),
 };

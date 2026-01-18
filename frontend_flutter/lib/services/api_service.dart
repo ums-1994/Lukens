@@ -1,48 +1,18 @@
 import 'dart:convert';
 import 'dart:js' as js;
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../config/api_config.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
 class ApiService {
-  // Get API URL from JavaScript config or use default
-  static String get baseUrl {
-    if (kIsWeb) {
-      try {
-        // Try to get from window.APP_CONFIG.API_URL
-        final config = js.context['APP_CONFIG'];
-        if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-            final url = apiUrl.toString().replaceAll('"', '').trim();
-            print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
-            return url;
-          }
-        }
-        // Fallback: try window.REACT_APP_API_URL
-        final envUrl = js.context['REACT_APP_API_URL'];
-        if (envUrl != null && envUrl.toString().isNotEmpty) {
-          final url = envUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
-          return url;
-        }
-      } catch (e) {
-        print('⚠️ ApiService: Could not read API URL from config: $e');
-      }
-    }
-    // Default to local backend URL
-    print('🌐 ApiService: Using local API URL: http://localhost:8000');
-    return 'http://localhost:8000';
-  }
+  // Use centralized API configuration
+  static String get baseUrl => ApiConfig.backendBaseUrl;
 
   // Get headers with Firebase token
   static Map<String, String> _getHeaders(String? token) {
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
+    return ApiConfig.getHeaders(authToken: token);
   }
 
   // User Profile

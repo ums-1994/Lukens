@@ -1,17 +1,13 @@
 import 'dart:convert';
-import 'dart:js' as js;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
+import '../config/api_config.dart';
 import 'jwt_service.dart';
 
 class AuthService {
-  // Get API URL from JavaScript config or use default
-  static String get baseUrl {
-    // Always use localhost for development/testing
-    print('🌐 AuthService: Using local API URL: http://localhost:8000');
-    return 'http://localhost:8000';
-  }
+  // Use centralized API configuration
+  static String get baseUrl => ApiConfig.backendBaseUrl;
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 

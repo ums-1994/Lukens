@@ -67,7 +67,7 @@ CORS(
     resources={
         r"/*": {
             "origins": [
-                "https://proposals2025.netlify.app",
+                os.getenv("FRONTEND_URL", "https://frontend-sow.onrender.com"),
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
@@ -4474,7 +4474,7 @@ def send_for_signature(username, proposal_id):
         signer_name = data.get('signer_name')
         signer_email = data.get('signer_email')
         signer_title = data.get('signer_title', '')
-        return_url = data.get('return_url', 'http://localhost:8081')
+        return_url = data.get('return_url', os.getenv('FRONTEND_URL', 'https://frontend-sow.onrender.com'))
         
         if not signer_name or not signer_email:
             return {'detail': 'Signer name and email are required'}, 400
@@ -5481,4 +5481,7 @@ if __name__ == '__main__':
         init_db()  # Initialize database before running
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    # Production: disable debug mode, use HTTPS-only
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    port = int(os.getenv('PORT', 8000))
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import '../../api.dart';
+import '../../config/api_config.dart';
 
 class PreviewPage extends StatelessWidget {
   const PreviewPage({super.key});
@@ -156,7 +157,7 @@ class PreviewPage extends StatelessWidget {
                     signerName: nameController.text.trim(),
                     signerEmail: emailController.text.trim(),
                     returnUrl:
-                        'http://localhost:8081/#/proposals/$id?signed=true',
+                        '${ApiConfig.frontendBaseUrl}/#/proposals/$id?signed=true',
                   );
                   if (result != null && result['signing_url'] != null) {
                     final url = result['signing_url'].toString();

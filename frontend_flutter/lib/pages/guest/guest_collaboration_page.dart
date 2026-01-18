@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'dart:async';
 import '../../api.dart';
+import '../../config/api_config.dart';
 
 class GuestCollaborationPage extends StatefulWidget {
   const GuestCollaborationPage({super.key});
@@ -233,7 +234,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
       if (token == null || token.isEmpty) {
         final search = web.window.location.search;
         if (search.isNotEmpty) {
-          final searchUri = Uri.parse('http://dummy$search');
+          final searchUri = Uri.parse('${ApiConfig.frontendBaseUrl}/dummy$search');
           token = searchUri.queryParameters['token'];
           print('📍 Try 2 - Token from location.search: $token');
         }
