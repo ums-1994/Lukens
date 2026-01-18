@@ -3,8 +3,8 @@ import 'package:flutter/foundation.dart';
 class VersionControlConfig {
   static const int _versionYear = 2026;
   static const String _versionMonth = '01';
-  static const String _versionWeekCode = 'B';
-  static const String _versionDayCode = 'E';
+  static const String _versionWeekCode = 'C';
+  static const String _versionDayCode = 'A';
   static const int _versionCommitNumber = 1;
   static const String _versionEnvironment = 'SIT';
 
