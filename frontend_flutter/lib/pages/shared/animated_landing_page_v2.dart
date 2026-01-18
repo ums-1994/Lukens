@@ -144,23 +144,33 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
 
-    final source = uri.queryParameters['source'] ?? '';
-    if (source.toLowerCase() != 'khonobuzz') {
-      return;
-    }
+    // Accept multiple common keys from query
+    String? externalToken =
+        uri.queryParameters['token'] ??
+        uri.queryParameters['jwt'] ??
+        uri.queryParameters['access_token'] ??
+        uri.queryParameters['id_token'];
 
-    String? externalToken = uri.queryParameters['token'];
-
+    // If not in query, check hash fragment for common keys
     if (externalToken == null || externalToken.isEmpty) {
-      final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+      final hashMatch = RegExp(r'(?:token|jwt|access_token|id_token)=([^&#]+)')
+          .firstMatch(currentUrl);
       if (hashMatch != null) {
-        externalToken = hashMatch.group(1);
+        externalToken = Uri.decodeComponent(hashMatch.group(1)!);
       }
     }
 
     if (externalToken == null || externalToken.isEmpty) {
       return;
     }
+
+    // Remove token from the address bar before proceeding
+    try {
+      final sanitized = '${uri.scheme}://${uri.host}'
+          '${uri.hasPort ? ':${uri.port}' : ''}'
+          '${uri.path}';
+      web.window.history.replaceState(null, '', sanitized);
+    } catch (_) {}
 
     try {
       final loginResult = await AuthService.loginWithJwt(externalToken);
