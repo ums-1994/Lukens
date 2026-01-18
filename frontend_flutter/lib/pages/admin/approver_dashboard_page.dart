@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../api.dart';
+import '../../config/api_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
@@ -125,9 +126,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
       // Fetch pending approvals
       print(
-          '🌐 Fetching pending approvals from: ${ApiService.baseUrl}/api/proposals/pending_approval');
+          '🌐 Fetching pending approvals from: ${ApiConfig.backendBaseUrl}/api/proposals/pending_approval');
       final pendingResponse = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/pending_approval'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/pending_approval'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -1142,7 +1143,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           body['client_email'] = emailToUse;
         }
         return http.post(
-          Uri.parse('${ApiService.baseUrl}/api/proposals/$id/approve'),
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$id/approve'),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $token',
@@ -1303,7 +1304,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       }
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/reject'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$id/reject'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

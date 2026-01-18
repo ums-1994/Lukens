@@ -5,6 +5,7 @@ import '../client/client_dashboard_home.dart';
 import '../creator/blank_document_editor_page.dart';
 import '../../services/auth_service.dart';
 import '../../api.dart';
+import '../../config/api_config.dart';
 
 /// Router that determines whether to show Client Dashboard or Guest Collaboration
 /// based on the invitation type and permission level
@@ -35,7 +36,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
       final collaborateResponse = await http
           .get(
             Uri.parse(
-                '$baseUrl/api/collaborate?token=${widget.token}'),
+                '${ApiConfig.backendBaseUrl}/api/collaborate?token=${widget.token}'),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -119,7 +120,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
       final clientResponse = await http
           .get(
             Uri.parse(
-                '$baseUrl/api/client/proposals?token=${widget.token}'),
+                '${ApiConfig.backendBaseUrl}/api/client/proposals?token=${widget.token}'),
           )
           .timeout(const Duration(seconds: 5));
 

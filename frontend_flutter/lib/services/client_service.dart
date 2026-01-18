@@ -1,9 +1,10 @@
 ﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import '../config/api_config.dart';
 
 class ClientService {
-  static String get baseUrl => ApiService.baseUrl;
+  static String get baseUrl => ApiConfig.backendBaseUrl;
 
   // Get headers with token
   static Map<String, String> _getHeaders(String? token) {
@@ -21,7 +22,7 @@ class ClientService {
   static Future<List<dynamic>> getClients(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/clients'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients'),
         headers: _getHeaders(token),
       );
 
@@ -40,7 +41,7 @@ class ClientService {
   static Future<Map<String, dynamic>?> getClient(String token, int clientId) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/clients/$clientId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/$clientId'),
         headers: _getHeaders(token),
       );
 
@@ -58,7 +59,7 @@ class ClientService {
   static Future<bool> updateClientStatus(String token, int clientId, String status) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/clients/$clientId/status'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/$clientId/status'),
         headers: _getHeaders(token),
         body: json.encode({'status': status}),
       );
@@ -82,7 +83,7 @@ class ClientService {
     int expiryDays = 7,
   }) async {
     try {
-      final url = '$baseUrl/clients/invite';
+      final url = '${ApiConfig.backendBaseUrl}/clients/invite';
       final body = {
         'invited_email': email,
         'expected_company': companyName,
@@ -117,7 +118,7 @@ class ClientService {
   static Future<List<dynamic>> getInvitations(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/clients/invitations'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/invitations'),
         headers: _getHeaders(token),
       );
 
@@ -135,7 +136,7 @@ class ClientService {
   static Future<bool> resendInvitation(String token, int invitationId) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/clients/invitations/$invitationId/resend'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/invitations/$invitationId/resend'),
         headers: _getHeaders(token),
       );
 
@@ -164,7 +165,7 @@ class ClientService {
   static Future<bool> cancelInvitation(String token, int invitationId) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/clients/invitations/$invitationId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/invitations/$invitationId'),
         headers: _getHeaders(token),
       );
 
@@ -179,7 +180,7 @@ class ClientService {
   static Future<bool> deleteInvitation(String token, int invitationId) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/clients/invitations/$invitationId/hard-delete'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/invitations/$invitationId/hard-delete'),
         headers: _getHeaders(token),
       );
 
@@ -198,7 +199,7 @@ class ClientService {
   static Future<List<dynamic>> getClientNotes(String token, int clientId) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/clients/$clientId/notes'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/$clientId/notes'),
         headers: _getHeaders(token),
       );
 
@@ -220,7 +221,7 @@ class ClientService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/clients/$clientId/notes'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/$clientId/notes'),
         headers: _getHeaders(token),
         body: json.encode({'note_text': noteText}),
       );
@@ -243,7 +244,7 @@ class ClientService {
   }) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/clients/notes/$noteId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/notes/$noteId'),
         headers: _getHeaders(token),
         body: json.encode({'note_text': noteText}),
       );
@@ -259,7 +260,7 @@ class ClientService {
   static Future<bool> deleteClientNote(String token, int noteId) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/clients/notes/$noteId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/notes/$noteId'),
         headers: _getHeaders(token),
       );
 

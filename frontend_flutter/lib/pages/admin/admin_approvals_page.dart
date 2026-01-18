@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../api.dart';
+import '../../config/api_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
@@ -1496,7 +1497,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
       try {
         final response = await http.get(
-          Uri.parse('$baseUrl/api/proposals/$id/signed-document'),
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$id/signed-document'),
           headers: {
             'Authorization': 'Bearer $token',
           },

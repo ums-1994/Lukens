@@ -161,7 +161,7 @@ class InviteUserDialog {
 
                                       final response = await http.post(
                                         Uri.parse(
-                                          '${ApiService.baseUrl}/api/proposals/$savedProposalId/invite',
+                                          '${ApiService.backendBaseUrl}/api/proposals/$savedProposalId/invite',
                                         ),
                                         headers: {
                                           'Authorization': 'Bearer $token',

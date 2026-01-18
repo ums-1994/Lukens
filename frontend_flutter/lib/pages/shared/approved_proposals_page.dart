@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import '../../api.dart';
+import '../../config/api_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
@@ -805,7 +806,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       // Create a blob URL for the PDF and open it
       try {
         final response = await http.get(
-          Uri.parse('$baseUrl/api/proposals/$id/signed-document'),
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$id/signed-document'),
           headers: {
             'Authorization': 'Bearer $token',
           },

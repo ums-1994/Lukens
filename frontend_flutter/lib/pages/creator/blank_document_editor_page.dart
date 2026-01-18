@@ -12,6 +12,7 @@ import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
 import 'governance_panel.dart';
+import '../../config/api_config.dart';
 // Import models from document_editor
 import '../../document_editor/models/document_section.dart';
 import '../../document_editor/models/inline_image.dart';
@@ -297,7 +298,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
 
       final response = await http.get(
-        Uri.parse('$baseUrl/content?category=Images'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/content?category=Images'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -594,7 +595,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       print('🔄 Loading collaborators for proposal $_savedProposalId...');
       final response = await http.get(
-        Uri.parse('$baseUrl/api/proposals/$_savedProposalId/collaborators'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$_savedProposalId/collaborators'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -664,7 +665,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (token == null) return;
 
       final response = await http.delete(
-        Uri.parse('$baseUrl/api/collaborations/$invitationId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/collaborations/$invitationId'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -9240,7 +9241,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
                                       final response = await http.post(
                                         Uri.parse(
-                                            '$baseUrl/api/proposals/$_savedProposalId/invite'),
+                                            '${ApiConfig.backendBaseUrl}/api/proposals/$_savedProposalId/invite'),
                                         headers: {
                                           'Authorization': 'Bearer $token',
                                           'Content-Type': 'application/json',

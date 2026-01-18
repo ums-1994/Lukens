@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../../theme/premium_theme.dart';
 import 'dart:ui';
 import '../../api.dart';
+import '../../config/api_config.dart';
 
 class ClientOnboardingPage extends StatefulWidget {
   final String token;
@@ -65,7 +66,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
   Future<void> _validateToken() async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/onboard/${widget.token}'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/onboard/${widget.token}'),
       );
 
       if (response.statusCode == 200) {
@@ -102,7 +103,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/onboard/${widget.token}'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/onboard/${widget.token}'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'company_name': _companyNameController.text.trim(),

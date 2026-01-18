@@ -5,6 +5,7 @@ import 'package:web/web.dart' as web;
 import 'client_proposal_viewer.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
+import '../../config/api_config.dart';
 
 class ClientDashboardHome extends StatefulWidget {
   final String? initialToken;
@@ -98,7 +99,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/client/proposals?token=$_accessToken'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/client/proposals?token=$_accessToken'),
       );
 
       if (response.statusCode == 200) {

@@ -110,7 +110,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         if (_accessToken != null) 'collab_token': _accessToken!,
       }..removeWhere((k, v) => v == null);
 
-      final uri = Uri.parse('$baseUrl/users/search?${Uri(queryParameters: params).query}');
+      final uri = Uri.parse('${ApiConfig.backendBaseUrl}/users/search?${Uri(queryParameters: params).query}');
       final resp = await http.get(uri);
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as List<dynamic>;
@@ -303,7 +303,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/collaborate?token=$_accessToken'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/collaborate?token=$_accessToken'),
       );
 
       if (response.statusCode == 200) {
@@ -358,7 +358,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
           .toList();
 
       final response = await http.post(
-        Uri.parse('$baseUrl/api/collaborate/comment'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/collaborate/comment'),
         headers: {
           'Content-Type': 'application/json',
         },

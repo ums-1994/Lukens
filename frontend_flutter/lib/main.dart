@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
+import 'widgets/app_wrapper.dart';
+import 'widgets/version_control_overlay.dart';
+import 'widgets/version_control_config.dart';
 import 'pages/creator/creator_dashboard_page.dart';
 import 'pages/creator/compose_page.dart';
 import 'pages/creator/proposal_wizard.dart';
@@ -88,16 +91,18 @@ class MyApp extends StatelessWidget {
           scaffoldBackgroundColor: Colors.transparent,
         ),
         builder: (context, child) {
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/Global BG.jpg',
-                  fit: BoxFit.cover,
+          return AppWrapper(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Image.asset(
+                    'assets/images/Global BG.jpg',
+                    fit: BoxFit.cover,
+                  ),
                 ),
-              ),
-              if (child != null) child,
-            ],
+                if (child != null) child,
+              ],
+            ),
           );
         },
         home: const AuthWrapper(),

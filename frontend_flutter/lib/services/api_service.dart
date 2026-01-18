@@ -19,7 +19,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> getUserProfile(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/user/profile'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/user/profile'),
         headers: _getHeaders(token),
       );
 
@@ -46,7 +46,7 @@ class ApiService {
         if (proposalId != null) 'proposal_id': proposalId.toString(),
       };
       final uri =
-          Uri.parse('$baseUrl/users/search').replace(queryParameters: params);
+          Uri.parse('${ApiConfig.backendBaseUrl}/users/search').replace(queryParameters: params);
 
       final headers = <String, String>{
         'Content-Type': 'application/json',
@@ -78,7 +78,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/user/profile'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/user/profile'),
         headers: _getHeaders(token),
         body: json.encode({
           'firstName': firstName,
@@ -101,7 +101,7 @@ class ApiService {
   static Future<List<dynamic>> getProposals(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/proposals'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals'),
         headers: _getHeaders(token),
       );
 
@@ -125,7 +125,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/proposals'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals'),
         headers: _getHeaders(token),
         body: json.encode({
           'title': title,
@@ -159,7 +159,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/api/proposals/$id'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$id'),
         headers: _getHeaders(token),
         body: json.encode({
           'title': title,
@@ -186,7 +186,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/api/proposals/$id'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$id'),
         headers: _getHeaders(token),
       );
 
@@ -201,7 +201,7 @@ class ApiService {
   static Future<List<dynamic>> getSows(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/sows'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/sows'),
         headers: _getHeaders(token),
       );
 
@@ -228,7 +228,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/sows'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/sows'),
         headers: _getHeaders(token),
         body: json.encode({
           'title': title,
@@ -267,7 +267,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/sows/$id'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/sows/$id'),
         headers: _getHeaders(token),
         body: json.encode({
           'title': title,
@@ -297,7 +297,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/sows/$id'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/sows/$id'),
         headers: _getHeaders(token),
       );
 
@@ -312,7 +312,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> validateClientToken(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/client-dashboard/$token'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/client-dashboard/$token'),
         headers: _getHeaders(null),
       );
 
@@ -330,7 +330,7 @@ class ApiService {
       String token, List<int> signatureBytes) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/client-dashboard/$token/sign'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/client-dashboard/$token/sign'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -350,7 +350,7 @@ class ApiService {
   static Future<String?> getSignedPdfUrl(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/client-dashboard/$token/pdf'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/client-dashboard/$token/pdf'),
         headers: _getHeaders(null),
       );
 
@@ -375,7 +375,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/versions'),
         headers: _getHeaders(token),
         body: json.encode({
           'version_number': versionNumber,
@@ -402,7 +402,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/versions'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/versions'),
         headers: _getHeaders(token),
       );
 
@@ -423,7 +423,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/versions/$versionNumber'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/versions/$versionNumber'),
         headers: _getHeaders(token),
       );
 
@@ -490,7 +490,7 @@ class ApiService {
   }) async {
     try {
       final uri =
-          Uri.parse('$baseUrl/api/comments/document/$proposalId').replace(
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/comments/document/$proposalId').replace(
         queryParameters: {
           if (sectionId != null) 'section_id': sectionId.toString(),
           if (blockId != null) 'block_id': blockId,
@@ -520,7 +520,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/api/comments/$commentId/resolve'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/comments/$commentId/resolve'),
         headers: _getHeaders(token),
       );
 
@@ -537,7 +537,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/api/comments/$commentId/reopen'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/comments/$commentId/reopen'),
         headers: _getHeaders(token),
       );
 
@@ -556,7 +556,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/users/search').replace(
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/users/search').replace(
           queryParameters: {'q': query, 'limit': limit.toString()},
         ),
         headers: _getHeaders(token),
@@ -580,7 +580,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/archive'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/archive'),
         headers: _getHeaders(token),
       );
 
@@ -600,7 +600,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/api/proposals/$proposalId/restore'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/restore'),
         headers: _getHeaders(token),
       );
 
@@ -619,7 +619,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/proposals/archived'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/archived'),
         headers: _getHeaders(token),
       );
 
@@ -642,7 +642,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/generate'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/ai/generate'),
         headers: _getHeaders(token),
         body: json.encode({
           'prompt': prompt,
@@ -670,7 +670,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/improve'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/ai/improve'),
         headers: _getHeaders(token),
         body: json.encode({
           'content': content,
@@ -696,7 +696,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/analyze-risks'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/ai/analyze-risks'),
         headers: _getHeaders(token),
         body: json.encode({
           'proposal_id': proposalId,
@@ -721,7 +721,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/generate-full-proposal'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/ai/generate-full-proposal'),
         headers: _getHeaders(token),
         body: json.encode({
           'prompt': prompt,

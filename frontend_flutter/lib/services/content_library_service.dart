@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import '../config/api_config.dart';
 
 class ContentLibraryService {
-  static String get baseUrl => ApiService.baseUrl;
+  static String get baseUrl => ApiConfig.backendBaseUrl;
 
   // Get headers with authentication
   Map<String, String> _getHeaders({String? token}) {
@@ -27,7 +28,7 @@ class ContentLibraryService {
     String? token,
   }) async {
     try {
-      String url = '$baseUrl/api/content';
+      String url = '${ApiConfig.backendBaseUrl}/api/content';
       if (category != null && category.isNotEmpty) {
         url += '?category=$category';
       }
@@ -73,7 +74,7 @@ class ContentLibraryService {
   Future<Map<String, dynamic>?> getContentModule(int contentId) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/content/$contentId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content/$contentId'),
         headers: _getHeaders(),
       );
 
@@ -112,7 +113,7 @@ class ContentLibraryService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/content'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content'),
         headers: _getHeaders(),
         body: json.encode({
           'key': key,
@@ -151,7 +152,7 @@ class ContentLibraryService {
       if (publicId != null) body['public_id'] = publicId;
 
       final response = await http.put(
-        Uri.parse('$baseUrl/api/content/$contentId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content/$contentId'),
         headers: _getHeaders(),
         body: json.encode(body),
       );
@@ -167,7 +168,7 @@ class ContentLibraryService {
   Future<bool> deleteContentModule(int contentId) async {
     try {
       final response = await http.delete(
-        Uri.parse('$baseUrl/api/content/$contentId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content/$contentId'),
         headers: _getHeaders(),
       );
 
@@ -187,7 +188,7 @@ class ContentLibraryService {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/upload/template'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/upload/template'),
       );
 
       // Add authentication headers
@@ -233,7 +234,7 @@ class ContentLibraryService {
     try {
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/upload/image'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/upload/image'),
       );
 
       // Add authentication headers

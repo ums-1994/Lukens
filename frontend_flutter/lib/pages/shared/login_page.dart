@@ -4,6 +4,7 @@ import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
+import '../../config/api_config.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -139,7 +140,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Sending Firebase token to backend...');
       final response = await http.post(
-        Uri.parse('${AuthService.baseUrl}/api/firebase'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'id_token': firebaseIdToken}),
       );

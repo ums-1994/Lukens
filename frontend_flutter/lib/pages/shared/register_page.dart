@@ -4,6 +4,7 @@ import '../../services/firebase_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
+import '../../config/api_config.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -226,7 +227,7 @@ class _RegisterPageState extends State<RegisterPage>
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Syncing user to backend database...');
       final response = await http.post(
-        Uri.parse('${AuthService.baseUrl}/api/firebase'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'id_token': firebaseIdToken,

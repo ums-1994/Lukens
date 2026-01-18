@@ -1,8 +1,10 @@
 import 'dart:convert';
-import 'dart:js' as js;
-import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:web/web.dart' as web;
 import 'config/api_config.dart';
+import 'services/auth_service.dart';
 
 // Get API URL from JavaScript config or use default
 String getApiUrl() {
@@ -77,7 +79,7 @@ class AppState extends ChangeNotifier {
       }
 
       final r = await http.get(
-        Uri.parse("$baseUrl/api/content"),
+        Uri.parse("${getApiUrl()}/api/content"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -103,7 +105,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> fetchTrash() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/content/trash"),
+        Uri.parse("${getApiUrl()}/content/trash"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -123,7 +125,7 @@ class AppState extends ChangeNotifier {
   Future<bool> restoreContent(int contentId) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/content/$contentId/restore"),
+        Uri.parse("${getApiUrl()}/content/$contentId/restore"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -143,7 +145,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteContent(int contentId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("${getApiUrl()}/content/$contentId"),
         headers: _headers,
       );
       if (r.statusCode == 200 || r.statusCode == 204) {
@@ -181,7 +183,7 @@ class AppState extends ChangeNotifier {
       };
 
       final r = await http.post(
-        Uri.parse("$baseUrl/content"),
+        Uri.parse("${getApiUrl()}/content"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -217,7 +219,7 @@ class AppState extends ChangeNotifier {
       if (body.isEmpty) return false;
 
       final r = await http.put(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("${getApiUrl()}/content/$contentId"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -238,7 +240,7 @@ class AppState extends ChangeNotifier {
   Future<bool> permanentlyDeleteContent(int contentId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/content/$contentId/permanent"),
+        Uri.parse("${getApiUrl()}/content/$contentId/permanent"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -264,7 +266,7 @@ class AppState extends ChangeNotifier {
 
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/api/notifications"),
+        Uri.parse("${getApiUrl()}/api/notifications"),
         headers: _headers,
       );
 
@@ -294,7 +296,7 @@ class AppState extends ChangeNotifier {
 
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/api/notifications/$notificationId/mark-read"),
+        Uri.parse("${getApiUrl()}/api/notifications/$notificationId/mark-read"),
         headers: _headers,
       );
 
@@ -314,7 +316,7 @@ class AppState extends ChangeNotifier {
 
     try {
       final response = await http.post(
-        Uri.parse("$baseUrl/api/notifications/mark-all-read"),
+        Uri.parse("${getApiUrl()}/api/notifications/mark-all-read"),
         headers: _headers,
       );
 
@@ -332,7 +334,7 @@ class AppState extends ChangeNotifier {
   Future<void> fetchProposals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/api/proposals"),
+        Uri.parse("${getApiUrl()}/api/proposals"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -397,7 +399,7 @@ class AppState extends ChangeNotifier {
       {String? templateKey}) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/api/proposals"),
+        Uri.parse("${getApiUrl()}/api/proposals"),
         headers: _headers,
         body: jsonEncode(
             {"title": title, "client": client, "template_key": templateKey}),
@@ -418,7 +420,7 @@ class AppState extends ChangeNotifier {
       String proposalId, Map<String, dynamic> data) async {
     try {
       final r = await http.put(
-        Uri.parse("$baseUrl/proposals/$proposalId"),
+        Uri.parse("${getApiUrl()}/proposals/$proposalId"),
         headers: _headers,
         body: jsonEncode(data),
       );
@@ -434,7 +436,7 @@ class AppState extends ChangeNotifier {
   Future<void> updateProposalStatus(String proposalId, String status) async {
     try {
       final r = await http.patch(
-        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+        Uri.parse("${getApiUrl()}/proposals/$proposalId/status"),
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
@@ -450,7 +452,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getTemplates() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/templates"),
+        Uri.parse("${getApiUrl()}/templates"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -466,7 +468,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getContentModules() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/content-modules"),
+        Uri.parse("${getApiUrl()}/content-modules"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -483,7 +485,7 @@ class AppState extends ChangeNotifier {
       Map<String, dynamic> proposalData) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/ai-analysis"),
+        Uri.parse("${getApiUrl()}/proposals/ai-analysis"),
         headers: _headers,
         body: jsonEncode(proposalData),
       );
@@ -500,7 +502,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return;
     final id = currentProposal!["id"];
     final r = await http.put(
-      Uri.parse("$baseUrl/proposals/$id"),
+      Uri.parse("${getApiUrl()}/proposals/$id"),
       headers: _headers,
       body: jsonEncode({"sections": updates}),
     );
@@ -512,7 +514,7 @@ class AppState extends ChangeNotifier {
   Future<String?> submitForReview() async {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
-    final r = await http.post(Uri.parse("$baseUrl/proposals/$id/submit"),
+    final r = await http.post(Uri.parse("${getApiUrl()}/proposals/$id/submit"),
         headers: _headers);
     if (r.statusCode >= 400) {
       try {
@@ -532,7 +534,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return;
     final id = currentProposal!["id"];
     final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$id/approve?stage=$stage"),
+        Uri.parse("${getApiUrl()}/proposals/$id/approve?stage=$stage"),
         headers: _headers);
     currentProposal = jsonDecode(r.body);
     await fetchDashboard();
@@ -543,7 +545,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
     final r = await http.post(
-      Uri.parse("$baseUrl/proposals/$id/sign"),
+      Uri.parse("${getApiUrl()}/proposals/$id/sign"),
       headers: _headers,
       body: jsonEncode({"signer_name": signerName}),
     );
@@ -561,7 +563,7 @@ class AppState extends ChangeNotifier {
       {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/approve?comments=$comments"),
+        Uri.parse("${getApiUrl()}/proposals/$proposalId/approve?comments=$comments"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -581,7 +583,7 @@ class AppState extends ChangeNotifier {
       {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/reject?comments=$comments"),
+        Uri.parse("${getApiUrl()}/proposals/$proposalId/reject?comments=$comments"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -600,7 +602,7 @@ class AppState extends ChangeNotifier {
   Future<String?> sendToClient(String proposalId) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
+        Uri.parse("${getApiUrl()}/proposals/$proposalId/send_to_client"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -621,7 +623,7 @@ class AppState extends ChangeNotifier {
     try {
       final r = await http.post(
         Uri.parse(
-            "$baseUrl/proposals/$proposalId/client_decline?comments=$comments"),
+            "${getApiUrl()}/proposals/$proposalId/client_decline?comments=$comments"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -640,7 +642,7 @@ class AppState extends ChangeNotifier {
   Future<void> trackClientView(String proposalId) async {
     try {
       await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/client_view"),
+        Uri.parse("${getApiUrl()}/proposals/$proposalId/client_view"),
         headers: _headers,
       );
     } catch (e) {
@@ -651,7 +653,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getPendingApprovals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals/pending_approval"),
+        Uri.parse("${getApiUrl()}/proposals/pending_approval"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -667,7 +669,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getMyProposals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals/my_proposals"),
+        Uri.parse("${getApiUrl()}/proposals/my_proposals"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -684,7 +686,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
     final r = await http.post(
-      Uri.parse("$baseUrl/proposals/$id/create_esign_request"),
+      Uri.parse("${getApiUrl()}/proposals/$id/create_esign_request"),
       headers: _headers,
       body: jsonEncode({}),
     );
@@ -714,7 +716,7 @@ class AppState extends ChangeNotifier {
         if (returnUrl != null) 'return_url': returnUrl,
       };
       final r = await http.post(
-        Uri.parse("$baseUrl/api/proposals/$proposalId/docusign/send"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/docusign/send"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -757,21 +759,21 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> clientDashboardStats = {};
 
   Future<void> fetchClientProposals() async {
-    final r = await http.get(Uri.parse("$baseUrl/client/proposals"),
+    final r = await http.get(Uri.parse("${getApiUrl()}/client/proposals"),
         headers: _headers);
     clientProposals = jsonDecode(r.body);
     notifyListeners();
   }
 
   Future<void> fetchClientDashboardStats() async {
-    final r = await http.get(Uri.parse("$baseUrl/client/dashboard_stats"),
+    final r = await http.get(Uri.parse("${getApiUrl()}/client/dashboard_stats"),
         headers: _headers);
     clientDashboardStats = jsonDecode(r.body);
     notifyListeners();
   }
 
   Future<Map<String, dynamic>?> getClientProposal(String proposalId) async {
-    final r = await http.get(Uri.parse("$baseUrl/client/proposals/$proposalId"),
+    final r = await http.get(Uri.parse("${getApiUrl()}/client/proposals/$proposalId"),
         headers: _headers);
     if (r.statusCode == 200) {
       return jsonDecode(r.body);
@@ -783,7 +785,7 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>?> getProposalAnalytics(String proposalId) async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/api/proposals/$proposalId/analytics"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/analytics"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -798,7 +800,7 @@ class AppState extends ChangeNotifier {
   Future<String?> clientSignProposal(
       String proposalId, String signerName) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/client/proposals/$proposalId/sign"),
+      Uri.parse("${getApiUrl()}/client/proposals/$proposalId/sign"),
       headers: _headers,
       body: jsonEncode({"signer_name": signerName}),
     );
@@ -822,7 +824,7 @@ class AppState extends ChangeNotifier {
 
   Future<String?> login(String username, String password) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/login"),
+      Uri.parse("${getApiUrl()}/login"),
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: "username=$username&password=$password",
     );
@@ -864,7 +866,7 @@ class AppState extends ChangeNotifier {
   Future<String?> register(String username, String email, String password,
       String fullName, String role) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/register"),
+      Uri.parse("${getApiUrl()}/register"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "username": username,
@@ -889,7 +891,7 @@ class AppState extends ChangeNotifier {
   Future<void> fetchCurrentUser() async {
     if (authToken == null) return;
     final r = await http.get(
-      Uri.parse("$baseUrl/me"),
+      Uri.parse("${getApiUrl()}/me"),
       headers: {"Authorization": "Bearer $authToken"},
     );
     if (r.statusCode == 200) {
@@ -899,7 +901,7 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> verifyEmail(String token) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/verify-email"),
+      Uri.parse("${getApiUrl()}/verify-email"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"token": token}),
     );
@@ -928,7 +930,7 @@ class AppState extends ChangeNotifier {
 
   Future<String?> resendVerificationEmail(String email) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/resend-verification"),
+      Uri.parse("${getApiUrl()}/resend-verification"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"email": email}),
     );
@@ -961,7 +963,7 @@ class AppState extends ChangeNotifier {
       }
 
       final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/image"))
+          http.MultipartRequest('POST', Uri.parse("${getApiUrl()}/upload/image"))
             ..headers.addAll(_multipartHeaders)
             ..files.add(file);
 
@@ -993,7 +995,7 @@ class AppState extends ChangeNotifier {
       }
 
       final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/template"))
+          http.MultipartRequest('POST', Uri.parse("${getApiUrl()}/upload/template"))
             ..headers.addAll(_multipartHeaders)
             ..files.add(file);
 
@@ -1014,7 +1016,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteFromCloudinary(String publicId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/upload/$publicId"),
+        Uri.parse("${getApiUrl()}/upload/$publicId"),
         headers: _headers,
       );
       return r.statusCode == 200;
@@ -1027,7 +1029,7 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>?> getUploadSignature(String publicId) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/upload/signature"),
+        Uri.parse("${getApiUrl()}/upload/signature"),
         headers: _headers,
         body: jsonEncode({"public_id": publicId}),
       );
@@ -1062,7 +1064,7 @@ class AppState extends ChangeNotifier {
       }
 
       await http.post(
-        Uri.parse("$baseUrl/content"),
+        Uri.parse("${getApiUrl()}/content"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -1077,14 +1079,13 @@ class AppState extends ChangeNotifier {
     // Clear app state on logout
     authToken = null;
     currentUser = null;
+    // Also clear AuthService session
+    AuthService.logout();
     templates = [];
     contentBlocks = [];
     proposals = [];
     currentProposal = null;
     dashboardCounts = {};
-
-    // IMPORTANT: Sync logout with AuthService
-    AuthService.logout();
 
     notifyListeners();
   }

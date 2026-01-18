@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../shared/proposal_insights_modal.dart';
+import '../../config/api_config.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -171,7 +172,7 @@ class _DashboardPageState extends State<DashboardPage>
       String token, String proposalId) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/analyze-risks'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/ai/analyze-risks'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

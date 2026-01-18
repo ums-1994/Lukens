@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import '../config/api_config.dart';
 
 class SmtpAuthService {
-  static String get baseUrl => ApiService.baseUrl;
+  static String get baseUrl => ApiConfig.backendBaseUrl;
 
   // Register user with SMTP email verification
   static Future<Map<String, dynamic>?> registerUser({
@@ -15,7 +16,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/register'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/register'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -54,7 +55,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/login-email'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/login-email'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -89,7 +90,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/verify-email'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -123,7 +124,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/resend-verification'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/resend-verification'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -159,7 +160,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/forgot-password'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/forgot-password'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -195,7 +196,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/me'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/me'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

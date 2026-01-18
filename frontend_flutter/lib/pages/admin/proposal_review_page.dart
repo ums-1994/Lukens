@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../../config/api_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
@@ -73,7 +74,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       Map<String, dynamic>? proposal;
       try {
         final pendingResponse = await http.get(
-          Uri.parse('${ApiService.baseUrl}/api/proposals/pending_approval'),
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/pending_approval'),
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
@@ -99,7 +100,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         try {
           // Try with /api prefix first
           var response = await http.get(
-            Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId'),
+            Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId'),
             headers: {
               'Authorization': 'Bearer $token',
               'Content-Type': 'application/json',
@@ -109,7 +110,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           // If that fails, try without /api prefix
           if (response.statusCode != 200) {
             response = await http.get(
-              Uri.parse('${ApiService.baseUrl}/proposals/$proposalId'),
+              Uri.parse('${ApiConfig.backendBaseUrl}/proposals/$proposalId'),
               headers: {
                 'Authorization': 'Bearer $token',
                 'Content-Type': 'application/json',
@@ -164,7 +165,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   Future<void> _loadVersions(int proposalId, String token) async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/versions'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/versions'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -206,7 +207,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     try {
       // Try multiple endpoints for comments
       var response = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/comments'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/comments'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -216,7 +217,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       // If that fails, try the document comments endpoint
       if (response.statusCode != 200) {
         response = await http.get(
-          Uri.parse('${ApiService.baseUrl}/api/comments/document/$proposalId'),
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/comments/document/$proposalId'),
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
@@ -276,7 +277,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
       // Try the document comments endpoint
       var response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/comments/document/$proposalId'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/comments/document/$proposalId'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -289,7 +290,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       // If that fails, try the proposals comments endpoint
       if (response.statusCode != 200 && response.statusCode != 201) {
         response = await http.post(
-          Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/comments'),
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/comments'),
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
@@ -373,7 +374,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           body['client_email'] = emailToUse;
         }
         return http.post(
-          Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/approve'),
+          Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/approve'),
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
@@ -514,7 +515,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       if (proposalId == null) return;
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/reject'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/reject'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',

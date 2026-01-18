@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import '../../../services/api_service.dart';
+import '../../../config/api_config.dart';
 
 /// Lightweight API helper for document editor operations.
 ///
@@ -10,7 +11,7 @@ import '../../../services/api_service.dart';
 class DocumentApiService {
   DocumentApiService._();
 
-  static String get _baseUrl => ApiService.baseUrl;
+  static String get _baseUrl => ApiConfig.backendBaseUrl;
 
   /// Fetch collaborators for a given proposal.
   static Future<List<Map<String, dynamic>>> fetchCollaborators({
@@ -18,7 +19,7 @@ class DocumentApiService {
     required int proposalId,
   }) async {
     final response = await http.get(
-      Uri.parse('$_baseUrl/api/proposals/$proposalId/collaborators'),
+      Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$proposalId/collaborators'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -43,7 +44,7 @@ class DocumentApiService {
     required int invitationId,
   }) async {
     final response = await http.delete(
-      Uri.parse('$_baseUrl/api/collaborations/$invitationId'),
+      Uri.parse('${ApiConfig.backendBaseUrl}/api/collaborations/$invitationId'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',

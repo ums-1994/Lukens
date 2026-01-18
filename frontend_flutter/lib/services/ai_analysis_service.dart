@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import '../config/api_config.dart';
 
 class AIAnalysisService {
-  static String get _baseUrl => ApiService.baseUrl;
+  static String get _baseUrl => ApiConfig.backendBaseUrl;
   static String? _authToken;
 
   // Set authentication token
@@ -14,7 +15,7 @@ class AIAnalysisService {
   // Check if AI is configured (check backend status)
   static Future<bool> get isConfigured async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/ai/status'));
+      final response = await http.get(Uri.parse('${ApiConfig.backendBaseUrl}/ai/status'));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['ai_enabled'] == true;
@@ -35,7 +36,7 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/analyze-risks'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/ai/analyze-risks'),
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
       );
@@ -143,7 +144,7 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/check-compliance'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/ai/check-compliance'),
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
       );
