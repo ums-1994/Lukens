@@ -495,7 +495,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> resendVerification(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/resend-verification'),
+        Uri.parse('$baseUrl/api/resend-verification'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email}),
       );

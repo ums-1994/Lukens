@@ -105,7 +105,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> fetchTrash() async {
     try {
       final r = await http.get(
-        Uri.parse("${getApiUrl()}/content/trash"),
+        Uri.parse("${getApiUrl()}/api/content/trash"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -125,7 +125,7 @@ class AppState extends ChangeNotifier {
   Future<bool> restoreContent(int contentId) async {
     try {
       final r = await http.post(
-        Uri.parse("${getApiUrl()}/content/$contentId/restore"),
+        Uri.parse("${getApiUrl()}/api/content/$contentId/restore"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -145,7 +145,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteContent(int contentId) async {
     try {
       final r = await http.delete(
-        Uri.parse("${getApiUrl()}/content/$contentId"),
+        Uri.parse("${getApiUrl()}/api/content/$contentId"),
         headers: _headers,
       );
       if (r.statusCode == 200 || r.statusCode == 204) {
@@ -183,7 +183,7 @@ class AppState extends ChangeNotifier {
       };
 
       final r = await http.post(
-        Uri.parse("${getApiUrl()}/content"),
+        Uri.parse("${getApiUrl()}/api/content"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -219,7 +219,7 @@ class AppState extends ChangeNotifier {
       if (body.isEmpty) return false;
 
       final r = await http.put(
-        Uri.parse("${getApiUrl()}/content/$contentId"),
+        Uri.parse("${getApiUrl()}/api/content/$contentId"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -240,7 +240,7 @@ class AppState extends ChangeNotifier {
   Future<bool> permanentlyDeleteContent(int contentId) async {
     try {
       final r = await http.delete(
-        Uri.parse("${getApiUrl()}/content/$contentId/permanent"),
+        Uri.parse("${getApiUrl()}/api/content/$contentId/permanent"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -452,7 +452,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getTemplates() async {
     try {
       final r = await http.get(
-        Uri.parse("${getApiUrl()}/templates"),
+        Uri.parse("${getApiUrl()}/api/templates"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -468,7 +468,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getContentModules() async {
     try {
       final r = await http.get(
-        Uri.parse("${getApiUrl()}/content-modules"),
+        Uri.parse("${getApiUrl()}/api/content-modules"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -485,7 +485,7 @@ class AppState extends ChangeNotifier {
       Map<String, dynamic> proposalData) async {
     try {
       final r = await http.post(
-        Uri.parse("${getApiUrl()}/proposals/ai-analysis"),
+        Uri.parse("${getApiUrl()}/api/proposals/ai-analysis"),
         headers: _headers,
         body: jsonEncode(proposalData),
       );
@@ -502,7 +502,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return;
     final id = currentProposal!["id"];
     final r = await http.put(
-      Uri.parse("${getApiUrl()}/proposals/$id"),
+      Uri.parse("${getApiUrl()}/api/proposals/$id"),
       headers: _headers,
       body: jsonEncode({"sections": updates}),
     );
@@ -514,7 +514,7 @@ class AppState extends ChangeNotifier {
   Future<String?> submitForReview() async {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
-    final r = await http.post(Uri.parse("${getApiUrl()}/proposals/$id/submit"),
+    final r = await http.post(Uri.parse("${getApiUrl()}/api/proposals/$id/submit"),
         headers: _headers);
     if (r.statusCode >= 400) {
       try {
@@ -534,7 +534,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return;
     final id = currentProposal!["id"];
     final r = await http.post(
-        Uri.parse("${getApiUrl()}/proposals/$id/approve?stage=$stage"),
+        Uri.parse("${getApiUrl()}/api/proposals/$id/approve?stage=$stage"),
         headers: _headers);
     currentProposal = jsonDecode(r.body);
     await fetchDashboard();
@@ -545,7 +545,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
     final r = await http.post(
-      Uri.parse("${getApiUrl()}/proposals/$id/sign"),
+      Uri.parse("${getApiUrl()}/api/proposals/$id/sign"),
       headers: _headers,
       body: jsonEncode({"signer_name": signerName}),
     );
@@ -563,7 +563,7 @@ class AppState extends ChangeNotifier {
       {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse("${getApiUrl()}/proposals/$proposalId/approve?comments=$comments"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/approve?comments=$comments"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -583,7 +583,7 @@ class AppState extends ChangeNotifier {
       {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse("${getApiUrl()}/proposals/$proposalId/reject?comments=$comments"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/reject?comments=$comments"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -602,7 +602,7 @@ class AppState extends ChangeNotifier {
   Future<String?> sendToClient(String proposalId) async {
     try {
       final r = await http.post(
-        Uri.parse("${getApiUrl()}/proposals/$proposalId/send_to_client"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/send_to_client"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -622,8 +622,7 @@ class AppState extends ChangeNotifier {
       {String comments = ""}) async {
     try {
       final r = await http.post(
-        Uri.parse(
-            "${getApiUrl()}/proposals/$proposalId/client_decline?comments=$comments"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/client_decline?comments=$comments"),
         headers: _headers,
       );
       if (r.statusCode >= 400) {
@@ -642,7 +641,7 @@ class AppState extends ChangeNotifier {
   Future<void> trackClientView(String proposalId) async {
     try {
       await http.post(
-        Uri.parse("${getApiUrl()}/proposals/$proposalId/client_view"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/client_view"),
         headers: _headers,
       );
     } catch (e) {
@@ -653,7 +652,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getPendingApprovals() async {
     try {
       final r = await http.get(
-        Uri.parse("${getApiUrl()}/proposals/pending_approval"),
+        Uri.parse("${getApiUrl()}/api/proposals/pending_approval"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -669,7 +668,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getMyProposals() async {
     try {
       final r = await http.get(
-        Uri.parse("${getApiUrl()}/proposals/my_proposals"),
+        Uri.parse("${getApiUrl()}/api/proposals/my_proposals"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -686,7 +685,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
     final r = await http.post(
-      Uri.parse("${getApiUrl()}/proposals/$id/create_esign_request"),
+      Uri.parse("${getApiUrl()}/api/proposals/$id/create_esign_request"),
       headers: _headers,
       body: jsonEncode({}),
     );
@@ -759,21 +758,21 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> clientDashboardStats = {};
 
   Future<void> fetchClientProposals() async {
-    final r = await http.get(Uri.parse("${getApiUrl()}/client/proposals"),
+    final r = await http.get(Uri.parse("${getApiUrl()}/api/client/proposals"),
         headers: _headers);
     clientProposals = jsonDecode(r.body);
     notifyListeners();
   }
 
   Future<void> fetchClientDashboardStats() async {
-    final r = await http.get(Uri.parse("${getApiUrl()}/client/dashboard_stats"),
+    final r = await http.get(Uri.parse("${getApiUrl()}/api/client/dashboard_stats"),
         headers: _headers);
     clientDashboardStats = jsonDecode(r.body);
     notifyListeners();
   }
 
   Future<Map<String, dynamic>?> getClientProposal(String proposalId) async {
-    final r = await http.get(Uri.parse("${getApiUrl()}/client/proposals/$proposalId"),
+    final r = await http.get(Uri.parse("${getApiUrl()}/api/client/proposals/$proposalId"),
         headers: _headers);
     if (r.statusCode == 200) {
       return jsonDecode(r.body);
@@ -800,7 +799,7 @@ class AppState extends ChangeNotifier {
   Future<String?> clientSignProposal(
       String proposalId, String signerName) async {
     final r = await http.post(
-      Uri.parse("${getApiUrl()}/client/proposals/$proposalId/sign"),
+      Uri.parse("${getApiUrl()}/api/client/proposals/$proposalId/sign"),
       headers: _headers,
       body: jsonEncode({"signer_name": signerName}),
     );
@@ -901,7 +900,7 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> verifyEmail(String token) async {
     final r = await http.post(
-      Uri.parse("${getApiUrl()}/verify-email"),
+      Uri.parse("${getApiUrl()}/api/verify-email"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"token": token}),
     );
@@ -930,7 +929,7 @@ class AppState extends ChangeNotifier {
 
   Future<String?> resendVerificationEmail(String email) async {
     final r = await http.post(
-      Uri.parse("${getApiUrl()}/resend-verification"),
+      Uri.parse("${getApiUrl()}/api/resend-verification"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"email": email}),
     );
@@ -963,7 +962,7 @@ class AppState extends ChangeNotifier {
       }
 
       final request =
-          http.MultipartRequest('POST', Uri.parse("${getApiUrl()}/upload/image"))
+          http.MultipartRequest('POST', Uri.parse("${getApiUrl()}/api/upload/image"))
             ..headers.addAll(_multipartHeaders)
             ..files.add(file);
 
@@ -995,7 +994,7 @@ class AppState extends ChangeNotifier {
       }
 
       final request =
-          http.MultipartRequest('POST', Uri.parse("${getApiUrl()}/upload/template"))
+          http.MultipartRequest('POST', Uri.parse("${getApiUrl()}/api/upload/template"))
             ..headers.addAll(_multipartHeaders)
             ..files.add(file);
 
@@ -1016,7 +1015,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteFromCloudinary(String publicId) async {
     try {
       final r = await http.delete(
-        Uri.parse("${getApiUrl()}/upload/$publicId"),
+        Uri.parse("${getApiUrl()}/api/upload/$publicId"),
         headers: _headers,
       );
       return r.statusCode == 200;
@@ -1029,7 +1028,7 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>?> getUploadSignature(String publicId) async {
     try {
       final r = await http.post(
-        Uri.parse("${getApiUrl()}/upload/signature"),
+        Uri.parse("${getApiUrl()}/api/upload/signature"),
         headers: _headers,
         body: jsonEncode({"public_id": publicId}),
       );
@@ -1064,7 +1063,7 @@ class AppState extends ChangeNotifier {
       }
 
       await http.post(
-        Uri.parse("${getApiUrl()}/content"),
+        Uri.parse("${getApiUrl()}/api/content"),
         headers: _headers,
         body: jsonEncode(body),
       );

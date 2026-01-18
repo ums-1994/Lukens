@@ -19,6 +19,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     with TickerProviderStateMixin {
   late AnimationController _controller;
   final TextEditingController _jwtController = TextEditingController();
+  bool _isLoading = false;
   
   // Individual animations with precise timing intervals
   late Animation<double> _backgroundAnim;
@@ -172,6 +173,10 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       web.window.history.replaceState(null, '', sanitized);
     } catch (_) {}
 
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
       final loginResult = await AuthService.loginWithJwt(externalToken);
       final userProfile =
@@ -181,6 +186,9 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       if (!mounted) return;
 
       if (userProfile == null || token == null) {
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
 
@@ -220,6 +228,11 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       );
     } catch (e) {
       print('❌ JWT login from landing page failed: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -235,6 +248,10 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     final token = _jwtController.text.trim();
     if (token.isEmpty) return;
 
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
       final loginResult = await AuthService.loginWithJwt(token);
       final userProfile = loginResult?['user'] as Map<String, dynamic>?;
@@ -244,6 +261,9 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
 
       if (userProfile == null || authToken == null) {
         if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Invalid or expired token'),
@@ -290,6 +310,9 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
       );
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error: ${e.toString()}'),
@@ -612,31 +635,72 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                               contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               border: InputBorder.none,
                             ),
+                            enabled: !_isLoading,
                           ),
                         ),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E88E5),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          margin: const EdgeInsets.all(8),
-                          child: TextButton(
-                            onPressed: _handleJwtLogin,
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        if (_isLoading)
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
                             ),
-                            child: const Text(
-                              'Open',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
+                          )
+                        else
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E88E5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            margin: const EdgeInsets.all(8),
+                            child: TextButton(
+                              onPressed: _handleJwtLogin,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              ),
+                              child: const Text(
+                                'Open',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
+                  
+                  // Loading spinner below token field
+                  if (_isLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1E88E5)),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Text(
+                            'Logging in...',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),

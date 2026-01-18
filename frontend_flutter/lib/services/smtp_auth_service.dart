@@ -124,7 +124,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('${ApiConfig.backendBaseUrl}/resend-verification'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/resend-verification'),
         headers: {
           'Content-Type': 'application/json',
         },
