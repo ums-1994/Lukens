@@ -581,6 +581,22 @@ def verify_firebase_auth(firebase_user=None, firebase_uid=None, firebase_email=N
         return {'detail': str(e)}, 500
 
 
+@bp.get("/debug-env")
+def debug_env():
+    """Debug endpoint to check environment variables"""
+    try:
+        env_info = {
+            'encryption_key_set': bool(os.getenv('ENCRYPTION_KEY')),
+            'jwt_secret_key_set': bool(os.getenv('JWT_SECRET_KEY')),
+            'jwt_encryption_key_set': bool(os.getenv('JWT_ENCRYPTION_KEY')),
+            'fernet_key_set': bool(os.getenv('FERNET_KEY')),
+            'encryption_key_length': len(os.getenv('ENCRYPTION_KEY', '')),
+            'jwt_secret_key_length': len(os.getenv('JWT_SECRET_KEY', '')),
+        }
+        return env_info, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @bp.post("/khonobuzz/jwt-login")
 def khonobuzz_jwt_login():
     """

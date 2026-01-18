@@ -53,17 +53,26 @@ def validate_jwt_token(token: str) -> Dict[str, Any]:
         raise JWTValidationError("Token is required and must be a string")
     # Normalize token first
     token = _normalize_token(token)
+    
+    logger.info(f"Processing token: {token[:50]}... (length: {len(token)})")
+    logger.info(f"Token contains dots: {token.count('.')}")
 
     # If not a standard JWT (3 parts), try Fernet decryption
     if token.count('.') != 2:
+        logger.info("Token is not a standard JWT, attempting Fernet decryption")
         maybe_plain = _try_decrypt_fernet(token)
         if maybe_plain:
             token = maybe_plain.strip()
+            logger.info(f"Fernet decryption successful, new token: {token[:50]}... (length: {len(token)})")
+        else:
+            logger.warning("Fernet decryption failed, no key available or invalid token")
 
     # If now a JWT, validate as HS256
     if token.count('.') == 2:
+        logger.info("Token is now a JWT, attempting validation")
         try:
             secret = _get_jwt_secret()
+            logger.info(f"JWT secret available: {secret is not None}")
 
             decoded = jwt.decode(
                 token,
@@ -157,6 +166,14 @@ def _get_fernet() -> Optional[Fernet]:
         or os.getenv('ENCRYPTION_KEY')
         or os.getenv('FERNET_KEY')
     )
+    
+    # Debug logging to check what keys are available
+    logger.info("Checking encryption keys:")
+    logger.info(f"  JWT_ENCRYPTION_KEY: {'SET' if os.getenv('JWT_ENCRYPTION_KEY') else 'NOT SET'}")
+    logger.info(f"  ENCRYPTION_KEY: {'SET' if os.getenv('ENCRYPTION_KEY') else 'NOT SET'}")
+    logger.info(f"  FERNET_KEY: {'SET' if os.getenv('FERNET_KEY') else 'NOT SET'}")
+    logger.info(f"  Selected key: {'SET' if key else 'NONE'}")
+    
     if not key:
         return None
     # First, try using the provided key as-is (already urlsafe base64?)

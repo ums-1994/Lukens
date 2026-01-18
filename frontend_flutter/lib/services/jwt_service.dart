@@ -11,10 +11,17 @@ class JwtService {
       final normalized = _normalizeToken(token);
       print('🔑 Parsing JWT token...');
       
+      // Check if token is empty after normalization
+      if (normalized.isEmpty) {
+        print('❌ Invalid JWT: Token is empty after normalization');
+        return null;
+      }
+      
       // Check if token has the correct format (3 parts separated by dots)
       final parts = normalized.split('.');
       if (parts.length != 3) {
         print('❌ Invalid JWT format: Expected 3 parts, got ${parts.length}');
+        print('📍 Token preview: ${normalized.length > 50 ? normalized.substring(0, 50) + '...' : normalized}');
         return null;
       }
       
@@ -44,29 +51,43 @@ class JwtService {
   
   /// Normalize token strings (strip Bearer, quotes, URL params/encoding, whitespace)
   static String _normalizeToken(String token) {
+    print('🔍 Original token: "${token.substring(0, token.length > 50 ? 50 : token.length)}${token.length > 50 ? '...' : ''}"');
+    
     String t = token.trim();
+    
     // If full URL pasted, try extract token query param
     try {
       final uri = Uri.parse(t);
       if (uri.queryParameters.containsKey('token')) {
         t = uri.queryParameters['token']!.trim();
+        print('🔍 Extracted token from URL: "${t.substring(0, t.length > 50 ? 50 : t.length)}${t.length > 50 ? '...' : ''}"');
       }
     } catch (_) {
       // Not a URL
     }
+    
     // Strip common prefixes and wrappers
     if (t.toLowerCase().startsWith('bearer ')) {
       t = t.substring(7).trim();
+      print('🔍 Removed Bearer prefix');
     }
     if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
       t = t.substring(1, t.length - 1).trim();
+      print('🔍 Removed quotes');
     }
+    
     // Decode percent-encoding if any
     try {
       t = Uri.decodeComponent(t);
+      print('🔍 Decoded percent encoding');
     } catch (_) {}
+    
     // Remove whitespace/newlines
     t = t.replaceAll(RegExp(r"\s+"), '');
+    
+    print('🔍 Normalized token: "${t.substring(0, t.length > 50 ? 50 : t.length)}${t.length > 50 ? '...' : ''}"');
+    print('🔍 Token length: ${t.length}');
+    
     return t;
   }
 

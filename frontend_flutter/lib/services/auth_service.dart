@@ -198,7 +198,22 @@ class AuthService {
     try {
       print('🔑 Attempting to decrypt JWT token locally...');
       
-      // First try to decrypt the token locally
+      // Check if token is empty or null
+      if (jwtToken.isEmpty) {
+        throw Exception('JWT token is empty');
+      }
+      
+      // Check if this looks like a Fernet-encrypted token (long base64 string without dots)
+      final normalizedToken = jwtToken.trim();
+      final hasJwtFormat = normalizedToken.contains('.') && normalizedToken.split('.').length == 3;
+      
+      if (!hasJwtFormat) {
+        print('🔍 Token does not appear to be a standard JWT, skipping local decryption');
+        print('🔄 Going directly to backend verification...');
+        return await _loginWithJwtBackend(jwtToken);
+      }
+      
+      // Only try local decryption for standard JWT format
       final userData = JwtService.getUserFromToken(jwtToken);
       
       if (userData == null) {
@@ -225,18 +240,44 @@ class AuthService {
       
       // Fallback to backend verification if local decryption fails
       print('🔄 Falling back to backend verification...');
-      return await _loginWithJwtBackend(jwtToken);
+      try {
+        return await _loginWithJwtBackend(jwtToken);
+      } catch (backendError) {
+        print('❌ Both local and backend JWT verification failed');
+        print('🔍 Local error: $e');
+        print('🔍 Backend error: $backendError');
+        
+        // Provide a user-friendly error message
+        if (backendError.toString().contains('Failed to fetch') || 
+            backendError.toString().contains('Network')) {
+          throw Exception('Unable to connect to authentication service. Please check your internet connection and try again.');
+        } else if (backendError.toString().contains('timeout')) {
+          throw Exception('Authentication service is taking too long to respond. Please try again later.');
+        } else {
+          throw Exception('Invalid authentication token. Please contact support if this problem persists.');
+        }
+      }
     }
   }
   
   // Fallback method for backend JWT verification
   static Future<Map<String, dynamic>?> _loginWithJwtBackend(String jwtToken) async {
     try {
+      print('🌐 Using API URL from JavaScript config: ${ApiConfig.backendBaseUrl}');
+      
       final response = await http.post(
-        Uri.parse('$baseUrl/api/khonobuzz/jwt-login'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/khonobuzz/jwt-login'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': jwtToken}),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Request timeout - backend not responding');
+        },
       );
+
+      print('📡 Backend response status: ${response.statusCode}');
+      print('📡 Backend response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
@@ -251,12 +292,38 @@ class AuthService {
         return data;
       } else {
         final error = json.decode(response.body);
-        throw Exception(
-            error['detail'] ?? 'External JWT login failed with status ${response.statusCode}');
+        final errorMessage = error['detail'] ?? 'Unknown error';
+        
+        // Handle specific error cases
+        if (errorMessage.contains('expected 3 parts, got 1')) {
+          throw Exception('The authentication service is not properly configured to handle encrypted tokens. Please contact support or try again later.');
+        } else if (errorMessage.contains('JWT token is required')) {
+          throw Exception('Authentication token is missing. Please check your login link and try again.');
+        } else if (errorMessage.contains('Token has expired')) {
+          throw Exception('Your authentication link has expired. Please request a new one.');
+        } else if (errorMessage.contains('Invalid token')) {
+          throw Exception('Invalid authentication token. Please contact support if this problem persists.');
+        }
+        
+        throw Exception(errorMessage);
       }
     } catch (e) {
       print('❌ Backend JWT verification failed: $e');
-      rethrow;
+      
+      // Provide more specific error messages
+      if (e.toString().contains('Failed to fetch')) {
+        print('🔍 Network connectivity issue - check if backend is accessible');
+        print('🔍 Backend URL: ${ApiConfig.backendBaseUrl}/api/khonobuzz/jwt-login');
+        throw Exception('Unable to connect to authentication service. Please check your internet connection and try again.');
+      } else if (e.toString().contains('timeout')) {
+        print('🔍 Request timed out - backend may be slow or unavailable');
+        throw Exception('Authentication service is taking too long to respond. Please try again later.');
+      } else if (e.toString().contains('not properly configured')) {
+        // This is the specific case we're handling - don't rethrow as a generic error
+        rethrow;
+      } else {
+        throw Exception('Authentication failed: ${e.toString()}');
+      }
     }
   }
   
