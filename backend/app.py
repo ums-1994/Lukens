@@ -107,6 +107,15 @@ app.register_blueprint(approver_bp, url_prefix='/api')
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
 
+# ---------------------------------------------------------------------------
+# Compatibility route (no /api prefix) for Khonobuzz JWT login
+# Some clients may call /khonobuzz/jwt-login directly; forward to blueprint
+from api.routes.auth import khonobuzz_jwt_login as _khonobuzz_jwt_login
+
+@app.post("/khonobuzz/jwt-login")
+def khonobuzz_jwt_login_alias():
+    return _khonobuzz_jwt_login()
+
 # Mark if database has been initialized
 _db_initialized = False
 

@@ -8,27 +8,28 @@ class JwtService {
   /// Decrypt and validate JWT token
   static Map<String, dynamic>? decryptToken(String token) {
     try {
+      final normalized = _normalizeToken(token);
       print('🔑 Parsing JWT token...');
       
       // Check if token has the correct format (3 parts separated by dots)
-      final parts = token.split('.');
+      final parts = normalized.split('.');
       if (parts.length != 3) {
         print('❌ Invalid JWT format: Expected 3 parts, got ${parts.length}');
         return null;
       }
       
       // First decode the JWT to get the payload
-      final payload = Jwt.parseJwt(token);
+      final payload = Jwt.parseJwt(normalized);
       print('✅ JWT payload decoded successfully');
       
       // Verify the token signature (simplified version)
-      if (!_verifyTokenSignature(token)) {
+      if (!_verifyTokenSignature(normalized)) {
         print('❌ JWT signature verification failed');
         throw Exception('Invalid token signature');
       }
       
       // Check if token is expired
-      if (Jwt.isExpired(token)) {
+      if (Jwt.isExpired(normalized)) {
         print('❌ JWT token has expired');
         throw Exception('Token has expired');
       }
@@ -41,6 +42,34 @@ class JwtService {
     }
   }
   
+  /// Normalize token strings (strip Bearer, quotes, URL params/encoding, whitespace)
+  static String _normalizeToken(String token) {
+    String t = token.trim();
+    // If full URL pasted, try extract token query param
+    try {
+      final uri = Uri.parse(t);
+      if (uri.queryParameters.containsKey('token')) {
+        t = uri.queryParameters['token']!.trim();
+      }
+    } catch (_) {
+      // Not a URL
+    }
+    // Strip common prefixes and wrappers
+    if (t.toLowerCase().startsWith('bearer ')) {
+      t = t.substring(7).trim();
+    }
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      t = t.substring(1, t.length - 1).trim();
+    }
+    // Decode percent-encoding if any
+    try {
+      t = Uri.decodeComponent(t);
+    } catch (_) {}
+    // Remove whitespace/newlines
+    t = t.replaceAll(RegExp(r"\s+"), '');
+    return t;
+  }
+
   /// Verify JWT token signature (simplified implementation)
   static bool _verifyTokenSignature(String token) {
     try {

@@ -237,7 +237,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> _loginWithJwtBackend(String jwtToken) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/khonobuzz/jwt-login'),
+        Uri.parse('$baseUrl/api/khonobuzz/jwt-login'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': jwtToken}),
       );
