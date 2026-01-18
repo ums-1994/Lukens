@@ -5,7 +5,7 @@ class VersionControlConfig {
   static const String _versionMonth = '01';
   static const String _versionWeekCode = 'C';
   static const String _versionDayCode = 'A';
-  static const int _versionCommitNumber = 2;
+  static const int _versionCommitNumber = 3;
   static const String _versionEnvironment = 'SIT';
 
   static const String versionLabel =

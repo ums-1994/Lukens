@@ -10,6 +10,10 @@ class AuthService {
   static String get baseUrl => ApiConfig.backendBaseUrl;
   static String? _token;
   static Map<String, dynamic>? _currentUser;
+  
+  // Rate limiting protection
+  static DateTime? _lastJwtAttempt;
+  static const Duration _rateLimitDelay = Duration(seconds: 5);
 
   // Get current user
   static Map<String, dynamic>? get currentUser => _currentUser;
@@ -195,6 +199,15 @@ class AuthService {
 
   // Login using external JWT token with local decryption
   static Future<Map<String, dynamic>?> loginWithJwt(String jwtToken) async {
+    // Rate limiting protection
+    final now = DateTime.now();
+    if (_lastJwtAttempt != null && now.difference(_lastJwtAttempt!) < _rateLimitDelay) {
+      final remainingTime = _rateLimitDelay - now.difference(_lastJwtAttempt!);
+      print('🛑 Rate limiting active. Please wait ${remainingTime.inSeconds}s before trying again.');
+      throw Exception('Please wait ${remainingTime.inSeconds} seconds before attempting authentication again.');
+    }
+    _lastJwtAttempt = now;
+    
     try {
       print('🔑 Attempting to decrypt JWT token locally...');
       
@@ -253,6 +266,9 @@ class AuthService {
           throw Exception('Unable to connect to authentication service. Please check your internet connection and try again.');
         } else if (backendError.toString().contains('timeout')) {
           throw Exception('Authentication service is taking too long to respond. Please try again later.');
+        } else if (backendError.toString().contains('Too Many Requests') || 
+                   backendError.toString().contains('429')) {
+          throw Exception('Too many authentication attempts. Please wait a few minutes before trying again.');
         } else {
           throw Exception('Invalid authentication token. Please contact support if this problem persists.');
         }
@@ -270,7 +286,7 @@ class AuthService {
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': jwtToken}),
       ).timeout(
-        const Duration(seconds: 30),
+        const Duration(seconds: 45), // Increased timeout to handle rate limits
         onTimeout: () {
           throw Exception('Request timeout - backend not responding');
         },
@@ -301,6 +317,9 @@ class AuthService {
           throw Exception('Authentication token is missing. Please check your login link and try again.');
         } else if (errorMessage.contains('Token has expired')) {
           throw Exception('Your authentication link has expired. Please request a new one.');
+        } else if (errorMessage.contains('Too Many Requests') || 
+                   errorMessage.contains('429')) {
+          throw Exception('Too many authentication attempts. Please wait a few minutes before trying again.');
         } else if (errorMessage.contains('Invalid token')) {
           throw Exception('Invalid authentication token. Please contact support if this problem persists.');
         }
@@ -320,6 +339,9 @@ class AuthService {
         throw Exception('Authentication service is taking too long to respond. Please try again later.');
       } else if (e.toString().contains('not properly configured')) {
         // This is the specific case we're handling - don't rethrow as a generic error
+        rethrow;
+      } else if (e.toString().contains('Too many authentication attempts')) {
+        // This is our rate limiting - don't add extra context
         rethrow;
       } else {
         throw Exception('Authentication failed: ${e.toString()}');
