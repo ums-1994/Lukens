@@ -48,9 +48,191 @@ class _ProposalWizardState extends State<ProposalWizard>
       {}; // AI-run governance check results
   Map<String, dynamic> _riskAssessment = {};
   bool _isInternalApproved = false;
-  bool _isClientSigned = false;
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
+
+  int _countIssuesByPriority(List<Map<String, dynamic>> issues, Set<String> priorities) {
+    return issues.where((i) {
+      final p = (i['priority']?.toString() ?? '').toLowerCase().trim();
+      return priorities.contains(p);
+    }).length;
+  }
+
+  void _openIssuesReviewSheet(List<Map<String, dynamic>> issues) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.35,
+          maxChildSize: 0.9,
+          builder: (context, controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Flagged issues',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${issues.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: issues.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No flagged issues found',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: controller,
+                            itemCount: issues.length,
+                            itemBuilder: (context, index) {
+                              final issue = issues[index];
+                              final title = issue['title']?.toString() ?? 'Issue';
+                              final description = issue['description']?.toString() ?? '';
+                              final priority = (issue['priority']?.toString() ?? 'info')
+                                  .toLowerCase()
+                                  .trim();
+                              final type = issue['type']?.toString();
+                              final sectionId = _mapSectionTitleToModuleId(title);
+                              final bool canAutoAddModule =
+                                  (type == 'missing_section' || type == 'incomplete_content') &&
+                                      sectionId != null;
+
+                              Color priorityColor;
+                              if (priority == 'critical' || priority == 'high') {
+                                priorityColor = const Color(0xFFDC2626);
+                              } else if (priority == 'warning' || priority == 'medium') {
+                                priorityColor = const Color(0xFFF59E0B);
+                              } else {
+                                priorityColor = const Color(0xFF00BCD4);
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey[200]!, width: 1),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF1A1A1A),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            priority.toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              color: priorityColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (description.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          description,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                      if (canAutoAddModule) ...[
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.end,
+                                          children: [
+                                            TextButton(
+                                              onPressed: () async {
+                                                Navigator.pop(context);
+                                                _ensureModuleSelected(sectionId);
+                                                await _openContentLibraryAndInsert(sectionId);
+                                              },
+                                              child: const Text('Add module'),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: PremiumTheme.teal,
+                                                foregroundColor: Colors.white,
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
+                                              ),
+                                              onPressed: () {
+                                                Navigator.pop(context);
+                                                _addModuleWithAI(sectionId);
+                                              },
+                                              icon: const Icon(Icons.auto_awesome, size: 16),
+                                              label: const Text('Add with AI'),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   // Scroll controllers
   final ScrollController _composeScrollController = ScrollController();
@@ -623,8 +805,8 @@ class _ProposalWizardState extends State<ProposalWizard>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -904,7 +1086,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.06),
+                              color: Colors.black.withValues(alpha: 0.06),
                               blurRadius: 18,
                               offset: const Offset(0, 6),
                             ),
@@ -987,7 +1169,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
+                                color: Colors.black.withValues(alpha: 0.04),
                                 blurRadius: 14,
                                 offset: const Offset(0, 4),
                               ),
@@ -1000,7 +1182,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 height: 3,
                                 width: 40,
                                 decoration: BoxDecoration(
-                                  color: PremiumTheme.teal.withOpacity(0.9),
+                                  color: PremiumTheme.teal.withValues(alpha: 0.9),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                               ),
@@ -1367,7 +1549,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ? PremiumTheme.success
                     : isActive
                         ? const Color(0xFFEAF2F8) // Light blue background
-                        : const Color(0xFFEAF2F8).withOpacity(0.5),
+                        : const Color(0xFFEAF2F8).withValues(alpha: 0.5),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isCompleted
@@ -1386,7 +1568,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                           fontWeight: FontWeight.bold,
                           color: isActive
                               ? PremiumTheme.info // Blue text
-                              : PremiumTheme.info.withOpacity(0.6),
+                              : PremiumTheme.info.withValues(alpha: 0.6),
                         ),
                       ),
               ),
@@ -1491,7 +1673,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: PremiumTheme.error.withOpacity(0.12),
+                            color: PremiumTheme.error.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1745,7 +1927,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                                   width: 60,
                                   height: 60,
                                   decoration: BoxDecoration(
-                                    color: color.withOpacity(0.2),
+                                    color: color.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(
@@ -2177,12 +2359,12 @@ class _ProposalWizardState extends State<ProposalWizard>
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: module['category'] == 'Company'
-                  ? PremiumTheme.info.withOpacity(0.2)
+                  ? PremiumTheme.info.withValues(alpha: 0.2)
                   : module['category'] == 'Project'
-                      ? PremiumTheme.success.withOpacity(0.2)
+                      ? PremiumTheme.success.withValues(alpha: 0.2)
                       : module['category'] == 'Legal'
-                          ? PremiumTheme.error.withOpacity(0.2)
-                          : PremiumTheme.purple.withOpacity(0.2),
+                          ? PremiumTheme.error.withValues(alpha: 0.2)
+                          : PremiumTheme.purple.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -2580,7 +2762,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               );
             }
 
-            final issue = raw as Map<String, dynamic>;
+            final issue = raw;
             final title = issue['title']?.toString() ?? 'Issue';
             final description = issue['description']?.toString() ?? '';
             final action = issue['action']?.toString();
@@ -2653,10 +2835,10 @@ class _ProposalWizardState extends State<ProposalWizard>
                           children: [
                             TextButton(
                               onPressed: () async {
-                                if (sectionId != null) {
-                                  _ensureModuleSelected(sectionId);
-                                  await _openContentLibraryAndInsert(sectionId);
-                                }
+                                if (!canAutoAddModule) return;
+                                final targetSectionId = sectionId;
+                                _ensureModuleSelected(targetSectionId);
+                                await _openContentLibraryAndInsert(targetSectionId);
                               },
                               child: const Text('Add module'),
                             ),
@@ -2671,9 +2853,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 ),
                               ),
                               onPressed: () {
-                                if (sectionId != null) {
-                                  _addModuleWithAI(sectionId);
-                                }
+                                if (!canAutoAddModule) return;
+                                _addModuleWithAI(sectionId);
                               },
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Add with AI'),
@@ -2742,6 +2923,9 @@ class _ProposalWizardState extends State<ProposalWizard>
     final riskScore = _riskAssessment['risk_score'] ?? 0;
     final risks = _riskAssessment['risks'] ?? [];
     final recommendations = _riskAssessment['recommendations'] ?? [];
+    final issues = List<Map<String, dynamic>>.from(
+      _riskAssessment['issues'] ?? const [],
+    );
 
     Color riskColor = PremiumTheme.success;
     if (riskLevel == 'Medium') riskColor = Colors.orange;
@@ -2750,6 +2934,53 @@ class _ProposalWizardState extends State<ProposalWizard>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (issues.isNotEmpty)
+          GlassContainer(
+            borderRadius: 16,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: riskColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.flag_outlined, size: 14, color: riskColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Flagged · ${issues.length}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: riskColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Critical: ${_countIssuesByPriority(issues, {'critical', 'high'})} · '
+                    'Warning: ${_countIssuesByPriority(issues, {'warning', 'medium'})} · '
+                    'Info: ${_countIssuesByPriority(issues, {'info', 'low'})}',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: () => _openIssuesReviewSheet(issues),
+                  child: const Text('Review'),
+                ),
+              ],
+            ),
+          ),
+        if (issues.isNotEmpty) const SizedBox(height: 16),
         // Risk Summary Card
         GlassContainer(
           borderRadius: 24,
@@ -2762,7 +2993,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: riskColor.withOpacity(0.2),
+                      color: riskColor.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
@@ -2900,7 +3131,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.success.withOpacity(0.2),
+                    color: PremiumTheme.success.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: PremiumTheme.success),
                   ),
@@ -2951,34 +3182,6 @@ class _ProposalWizardState extends State<ProposalWizard>
             child: Text(
               text,
               style: PremiumTheme.bodyMedium,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: PremiumTheme.bodyMedium.copyWith(
-                color: PremiumTheme.textSecondary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: PremiumTheme.bodyMedium.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
             ),
           ),
         ],
@@ -3039,6 +3242,7 @@ class _ProposalWizardState extends State<ProposalWizard>
           'recommendations': recommendations,
           'ai_status': analysis['status'] ?? 'Ready',
           'ai_riskScore': rawRiskScore,
+          'issues': issues,
         };
         _isLoading = false;
       });
@@ -3125,7 +3329,7 @@ class _ProposalWizardState extends State<ProposalWizard>
       sections.add({
         'title': module['name']?.toString() ?? moduleId.replaceAll('_', ' '),
         'content': content,
-        'backgroundColor': const Color(0xFFFFFFFF).value,
+        'backgroundColor': const Color(0xFFFFFFFF).toARGB32(),
         'backgroundImageUrl': null,
         'sectionType': 'content',
         'isCoverPage': false,
@@ -3290,101 +3494,5 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
   }
 
-  Future<void> _sendToClient() async {
-    if (!_isInternalApproved) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please complete internal approval first'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final app = context.read<AppState>();
-
-      int? proposalId;
-      if (_proposalId != null) {
-        proposalId = int.tryParse(_proposalId!);
-      }
-
-      if (proposalId == null && app.currentProposal != null) {
-        final dynamic rawId = app.currentProposal!['id'];
-        if (rawId is int) {
-          proposalId = rawId;
-        } else if (rawId is String) {
-          proposalId = int.tryParse(rawId);
-        }
-      }
-
-      if (proposalId == null) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'No saved proposal found. Please create and save the proposal before sending to the client.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final clientName =
-          (_formData['clientName']?.toString().isNotEmpty ?? false)
-              ? _formData['clientName'].toString()
-              : 'Client';
-      final clientEmail =
-          (_formData['clientEmail']?.toString().isNotEmpty ?? false)
-              ? _formData['clientEmail'].toString()
-              : '';
-
-      if (clientEmail.isEmpty || !clientEmail.contains('@')) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please provide a valid client email before sending'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final result = await app.sendProposalForSignature(
-        proposalId: proposalId,
-        signerName: clientName,
-        signerEmail: clientEmail,
-      );
-
-      if (result == null) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to send proposal to client'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      setState(() {
-        _isClientSigned = true;
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Proposal sent to client successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error sending to client: $e')),
-      );
-    }
-  }
+  
 }
