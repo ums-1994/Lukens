@@ -383,8 +383,9 @@ def firebase_auth():
             return {'detail': 'Firebase ID token required'}, 400
         
         # Get role from request (for new registrations)
-        requested_role = data.get('role', 'user')
-        print(f'🔍 Backend received role from request: "{requested_role}"')
+        # Use None as default to distinguish between "not provided" and "explicitly set to user"
+        requested_role = data.get('role') if 'role' in data else None
+        print(f'🔍 Backend received role from request: "{requested_role}" (provided: {"role" in data})')
         print(f'🔍 Full request data keys: {list(data.keys())}')
         if 'role' in data:
             print(f'🔍 Role value type: {type(data.get("role"))}, value: {repr(data.get("role"))}')
@@ -424,7 +425,7 @@ def firebase_auth():
                 
                 # If a role was provided in the request, normalize and update it (for role updates during registration)
                 # Otherwise, use the role from the database
-                if requested_role and requested_role != 'user' and requested_role.lower().strip() != 'user':
+                if requested_role is not None:
                     # Normalize the requested role first
                     requested_normalized = requested_role.lower().strip()
                     if requested_normalized in ['admin', 'ceo']:
@@ -507,7 +508,7 @@ def firebase_auth():
                 
                 # Use requested role if provided, otherwise default to 'manager'
                 # Supported roles: 'admin', 'manager', 'finance_manager'
-                normalized_role = requested_role.lower().strip() if requested_role else 'manager'
+                normalized_role = requested_role.lower().strip() if requested_role is not None else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
                 elif normalized_role in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
