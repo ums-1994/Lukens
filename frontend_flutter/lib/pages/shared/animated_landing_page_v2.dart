@@ -18,7 +18,6 @@ class AnimatedLandingPageV2 extends StatefulWidget {
 class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
     with TickerProviderStateMixin {
   late AnimationController _controller;
-  final TextEditingController _jwtController = TextEditingController();
   bool _isLoading = false;
   
   // Individual animations with precise timing intervals
@@ -240,88 +239,9 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
   void dispose() {
     _controller.dispose();
     _glowController.dispose();
-    _jwtController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleJwtLogin() async {
-    final token = _jwtController.text.trim();
-    if (token.isEmpty) return;
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final loginResult = await AuthService.loginWithJwt(token);
-      final userProfile = loginResult?['user'] as Map<String, dynamic>?;
-      final authToken = loginResult?['token'] as String?;
-
-      if (!mounted) return;
-
-      if (userProfile == null || authToken == null) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Invalid or expired token'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      final appState = context.read<AppState>();
-      appState.authToken = authToken;
-      appState.currentUser = userProfile;
-
-      final roleService = context.read<RoleService>();
-      await roleService.initializeRoleFromUser(userProfile);
-
-      await appState.init();
-
-      final rawRole = userProfile['role']?.toString() ?? '';
-      final userRole = rawRole.toLowerCase().trim();
-      String dashboardRoute;
-
-      final isAdmin = userRole == 'admin' || userRole == 'ceo';
-      final isManager = userRole == 'manager' ||
-          userRole == 'financial manager' ||
-          userRole == 'creator' ||
-          userRole == 'user';
-
-      if (isAdmin) {
-        dashboardRoute = '/approver_dashboard';
-      } else if (isManager) {
-        dashboardRoute = '/creator_dashboard';
-      } else {
-        dashboardRoute = '/creator_dashboard';
-      }
-
-      if (!mounted) return;
-
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        dashboardRoute,
-        (route) => false,
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -614,93 +534,6 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                     ],
                   ),
                   
-                  // JWT Token Input
-                  const SizedBox(height: 30),
-                  Container(
-                    width: 500,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white.withOpacity(0.2)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _jwtController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: const InputDecoration(
-                              hintText: 'Paste JWT token here',
-                              hintStyle: TextStyle(color: Colors.white54),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              border: InputBorder.none,
-                            ),
-                            enabled: !_isLoading,
-                          ),
-                        ),
-                        if (_isLoading)
-                          Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            ),
-                          )
-                        else
-                          Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E88E5),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            margin: const EdgeInsets.all(8),
-                            child: TextButton(
-                              onPressed: _handleJwtLogin,
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                              ),
-                              child: const Text(
-                                'Open',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  
-                  // Loading spinner below token field
-                  if (_isLoading)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1E88E5)),
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Text(
-                            'Logging in...',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                 ],
               ),
             ),
