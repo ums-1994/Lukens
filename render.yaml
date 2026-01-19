@@ -5,6 +5,8 @@ services:
     env: python
     region: oregon
     plan: starter
+    repo: https://github.com/ums-1994/Lukens.git
+    branch: cleaned_code_jwt_deployed
     buildCommand: cd backend && pip install -r requirements.txt
     startCommand: cd backend && python migrate_db.py && gunicorn -c gunicorn_conf.py app:app
     envVars:
@@ -73,6 +75,8 @@ services:
     env: static
     region: oregon
     plan: starter
+    repo: https://github.com/ums-1994/Lukens.git
+    branch: cleaned_code_jwt_deployed
     buildCommand: git clone https://github.com/flutter/flutter.git -b stable /tmp/flutter && export PATH="$PATH:/tmp/flutter/bin" && flutter config --enable-web && cd frontend_flutter && flutter pub get && flutter build web --release --base-href /
     staticPublishPath: frontend_flutter/build/web
     envVars:
