@@ -646,9 +646,20 @@ def khonobuzz_jwt_login():
                 user_id = user[0]
                 username = user[1]
                 full_name = user[3] or email.split('@')[0]
+                # Always use JWT-derived role when available, not database role
+                # This ensures role updates from JWT are reflected immediately
                 role_value = user_info.get('role', 'manager')  # Use determined role from JWT
-                department = user[5]
+                department = user[5] or user[4]  # Use JWT department if DB has none
                 is_active = user[6]
+                
+                # Update user role in database if JWT role differs from DB role
+                if user[4] != role_value:  # user[4] is current DB role
+                    print(f"🔄 Updating user role from '{user[4]}' to '{role_value}' for {email}")
+                    cursor.execute(
+                        'UPDATE users SET role = %s WHERE email = %s',
+                        (role_value, email)
+                    )
+                    conn.commit()
             else:
                 base_username = email.split('@')[0]
                 username = base_username
