@@ -66,7 +66,17 @@ CORS(
     supports_credentials=True,
     resources={
         r"/*": {
-            "origins": "*",  # Allow all origins temporarily for debugging
+            "origins": [
+                "https://frontend-sow.onrender.com",  # Explicit frontend URL
+                "http://localhost:5173",
+                "http://localhost:5000",
+                "http://localhost:8081",
+                "http://localhost:3000",  # Flutter web default
+                "http://127.0.0.1:3000",  # Flutter web alternative
+                "https://backend-sow.onrender.com",  # Backend itself (for direct access)
+                "https://*.onrender.com",  # Allow any Render.com frontend
+                "*",  # Allow all origins as fallback
+            ],
             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
         }
