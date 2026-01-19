@@ -148,7 +148,8 @@ class _RegisterPageState extends State<RegisterPage>
       // Map role selection to backend role format
       String role;
       if (_selectedRole == 'Finance Manager') {
-        role = 'finance manager';
+        // Use canonical backend role
+        role = 'finance_manager';
       } else if (_selectedRole == 'Admin') {
         role = 'admin';
       } else {

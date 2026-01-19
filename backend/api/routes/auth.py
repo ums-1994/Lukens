@@ -435,10 +435,12 @@ def firebase_auth():
                     elif requested_normalized in ['manager', 'creator', 'user']:
                         new_role = 'manager'
                     else:
-                        new_role = requested_normalized
+                        # Unknown role: ignore update rather than writing invalid roles to DB
+                        new_role = None
+                        print(f'⚠️ Unknown requested role "{requested_role}", ignoring role update')
                     
                     # Update role in database if it's different
-                    if new_role != user_role:
+                    if new_role is not None and new_role != user_role:
                         print(f'🔄 Updating user role from "{user_role}" to "{new_role}"')
                         cursor.execute(
                             '''UPDATE users SET role = %s WHERE id = %s''',
