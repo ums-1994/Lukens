@@ -268,8 +268,12 @@ class _RegisterPageState extends State<RegisterPage>
         setState(() => _isLoading = false);
 
         if (userProfile != null) {
+          // Normalize roles for comparison (handle space vs underscore differences)
+          final backendRole = (userProfile['role']?.toString() ?? '').toLowerCase().trim().replaceAll(' ', '_');
+          final requestedRoleNormalized = role.toLowerCase().trim().replaceAll(' ', '_');
+          
           // Update role in backend if needed
-          if (userProfile['role'] != role) {
+          if (backendRole != requestedRoleNormalized) {
             // Role might need to be updated in backend
             print(
                 '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
@@ -289,39 +293,27 @@ class _RegisterPageState extends State<RegisterPage>
 
           await appState.init();
 
-          // Redirect based on user role
-          final userRole =
-              (userProfile['role']?.toString() ?? '').toLowerCase().trim();
-          String dashboardRoute;
+          // Redirect based on user role using RoleService
+          final rawRole = userProfile['role']?.toString() ?? '';
+          final userRole = rawRole.toLowerCase().trim();
+          final currentRole = roleService.currentRole;
 
           print('🔍 User role from backend: "$userRole"');
           print('🔍 Requested role: "$role"');
+          print('🔍 Frontend mapped role: $currentRole');
 
-          // Check both the backend role and the requested role
-          final requestedRole = role.toLowerCase().trim();
-          final isAdmin = userRole == 'admin' ||
-              userRole == 'ceo' ||
-              requestedRole == 'admin';
-          final isFinance = userRole == 'finance' ||
-              userRole == 'finance manager' ||
-              userRole == 'financial manager' ||
-              userRole == 'finance_manager' ||
-              userRole == 'financial_manager' ||
-              requestedRole == 'finance' ||
-              requestedRole == 'finance manager' ||
-              requestedRole == 'financial manager' ||
-              requestedRole == 'finance_manager' ||
-              requestedRole == 'financial_manager';
+          String dashboardRoute;
 
-          if (isAdmin) {
+          if (currentRole == UserRole.approver ||
+              currentRole == UserRole.admin) {
             dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Approval Dashboard');
-          } else if (isFinance) {
+            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
+          } else if (currentRole == UserRole.finance) {
             dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard');
+            print('✅ Routing to Finance Dashboard (from RoleService)');
           } else {
             dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard');
+            print('✅ Routing to Creator Dashboard (from RoleService)');
           }
 
           ScaffoldMessenger.of(context).showSnackBar(
