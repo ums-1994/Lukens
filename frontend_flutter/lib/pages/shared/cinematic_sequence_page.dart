@@ -184,13 +184,17 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
       String dashboardRoute;
 
       final isAdmin = userRole == 'admin' || userRole == 'ceo';
+      final isFinance = userRole == 'proposal & sow builder - finance' ||
+          userRole == 'finance' ||
+          userRole == 'financial manager';
       final isManager = userRole == 'manager' ||
-          userRole == 'financial manager' ||
           userRole == 'creator' ||
           userRole == 'user';
 
       if (isAdmin) {
         dashboardRoute = '/approver_dashboard';
+      } else if (isFinance) {
+        dashboardRoute = '/finance_dashboard';
       } else if (isManager) {
         dashboardRoute = '/creator_dashboard';
       } else {
