@@ -422,12 +422,36 @@ def firebase_auth():
                 username = user[1]
                 user_role = user[4]  # Get role from database
                 
+                # If a role was provided in the request, normalize and update it (for role updates during registration)
+                # Otherwise, use the role from the database
+                if requested_role and requested_role != 'user' and requested_role.lower().strip() != 'user':
+                    # Normalize the requested role first
+                    requested_normalized = requested_role.lower().strip()
+                    if requested_normalized in ['admin', 'ceo']:
+                        new_role = 'admin'
+                    elif requested_normalized in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
+                        new_role = 'finance_manager'
+                    elif requested_normalized in ['manager', 'creator', 'user']:
+                        new_role = 'manager'
+                    else:
+                        new_role = requested_normalized
+                    
+                    # Update role in database if it's different
+                    if new_role != user_role:
+                        print(f'🔄 Updating user role from "{user_role}" to "{new_role}"')
+                        cursor.execute(
+                            '''UPDATE users SET role = %s WHERE id = %s''',
+                            (new_role, user_id)
+                        )
+                        conn.commit()
+                        user_role = new_role
+                
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'
                 role_lower = user_role.lower().strip() if user_role else 'user'
                 if role_lower in ['admin', 'ceo']:
                     normalized_role = 'admin'
-                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager']:
+                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
                     # Preserve a distinct finance manager role so frontend can route to finance dashboard
                     normalized_role = 'finance_manager'
                 elif role_lower in ['manager', 'creator', 'user']:
