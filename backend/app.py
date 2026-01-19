@@ -64,31 +64,30 @@ app = Flask(__name__)
 CORS(
     app,
     supports_credentials=True,
-    resources={
-        r"/*": {
-            "origins": [
-                "https://frontend-sow.onrender.com",  # Explicit frontend URL
-                "http://localhost:5173",
-                "http://localhost:5000",
-                "http://localhost:8081",
-                "http://localhost:3000",  # Flutter web default
-                "http://127.0.0.1:3000",  # Flutter web alternative
-                "https://backend-sow.onrender.com",  # Backend itself (for direct access)
-                "https://*.onrender.com",  # Allow any Render.com frontend
-                "*",  # Allow all origins as fallback
-            ],
-            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-            "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
-        }
-    },
+    origins=["https://frontend-sow.onrender.com"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
 )
 
 @app.route("/", methods=["OPTIONS"])
 @app.route("/<path:remaining>", methods=["OPTIONS"])
 def handle_options_preflight(remaining=None):
-    print("🔧 CORS preflight request received")
+    origin = request.headers.get('Origin')
+    allowed_origin = "https://frontend-sow.onrender.com"
+    
+    print(f"🔧 CORS preflight request received from: {origin}")
     print(f"🕐 Timestamp: {datetime.now()}")
-    return {}, 200
+    
+    if origin == allowed_origin:
+        response = jsonify({})
+        response.headers.add('Access-Control-Allow-Origin', allowed_origin)
+        response.headers.add('Access-Control-Allow-Methods', 'GET,HEAD,POST,OPTIONS,PUT,PATCH,DELETE')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    else:
+        print(f"🚫 CORS blocked request from unauthorized origin: {origin}")
+        return jsonify({'error': 'CORS policy violation'}), 403
 
 # Register API blueprints
 from api.routes.auth import bp as auth_bp
