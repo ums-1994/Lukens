@@ -12,24 +12,57 @@ services:
         value: 3.11.0
       - key: DB_HOST
         fromDatabase:
-          name: lukens-db
+          name: sowbuilder
           property: host
       - key: DB_PORT
         fromDatabase:
-          name: lukens-db
+          name: sowbuilder
           property: port
       - key: DB_NAME
         fromDatabase:
-          name: lukens-db
+          name: sowbuilder
           property: database
       - key: DB_USER
         fromDatabase:
-          name: lukens-db
+          name: sowbuilder
           property: user
       - key: DB_PASSWORD
         fromDatabase:
-          name: lukens-db
+          name: sowbuilder
           property: password
+      
+      # SMTP Configuration
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: umsibanda.1994@gmail.com
+      - key: SMTP_PASS
+        value: aozi xfgg mdcn ylae
+      - key: SMTP_FROM_EMAIL
+        value: umsibanda.1994@gmail.com
+      - key: SMTP_FROM_NAME
+        value: Khonology
+      
+      # Frontend URL
+      - key: FRONTEND_URL
+        value: https://frontend-sow.onrender.com
+      
+      # CORS Configuration
+      - key: CORS_ORIGIN
+        value: https://frontend-sow.onrender.com
+      
+      # Production URLs
+      - key: BACKEND_BASE_URL
+        value: https://backend-sow.onrender.com
+      
+      # Production Settings
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: PORT
+        value: "8000"
+      
       # Add your other environment variables in Render dashboard
       # OPENROUTER_API_KEY, CLOUDINARY_*, SENDGRID_*, DOCUSIGN_*, FIREBASE_*, etc.
       # FRONTEND_URL=https://sowbuilders.netlify.app (set in Render dashboard)
@@ -44,14 +77,14 @@ services:
     staticPublishPath: frontend_flutter/build/web
     envVars:
       - key: REACT_APP_API_URL
+        value: https://backend-sow.onrender.com
         sync: false
-        # Set this to your backend URL after deployment: https://lukens-backend.onrender.com
 
 databases:
   # PostgreSQL Database
-  - name: lukens-db
-    databaseName: lukens_production
-    user: lukens_user
+  - name: sowbuilder
+    databaseName: sowbuilder
+    user: sowbuilder_user
     plan: starter
     region: oregon
 
