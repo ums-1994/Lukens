@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:provider/provider.dart';
+import 'package:web/web.dart' as web;
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
@@ -19,6 +20,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   late final AnimationController _ctaController;
   late final AnimationController _parallaxController;
   late final AnimationController _frameController;
+  
+  bool _isProcessingToken = false;
 
 
   // Background images for cinematic sequence (clean geometric look)
@@ -68,6 +71,11 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     // Start animation sequence
     _startAnimationSequence();
     _cycleBackgrounds();
+
+    // Check for JWT token in URL
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleJwtTokenFromUrl();
+    });
   }
 
   Future<void> _precacheFrames() async {
@@ -108,6 +116,102 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     _ctaController.dispose();
     _parallaxController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleJwtTokenFromUrl() async {
+    if (!mounted) return;
+
+    final currentUrl = web.window.location.href;
+    final uri = Uri.parse(currentUrl);
+
+    // Accept multiple common keys from query
+    String? externalToken =
+        uri.queryParameters['token'] ??
+        uri.queryParameters['jwt'] ??
+        uri.queryParameters['access_token'] ??
+        uri.queryParameters['id_token'];
+
+    // If not in query, check hash fragment for common keys
+    if (externalToken == null || externalToken.isEmpty) {
+      final hashMatch = RegExp(r'(?:token|jwt|access_token|id_token)=([^&#]+)')
+          .firstMatch(currentUrl);
+      if (hashMatch != null) {
+        externalToken = Uri.decodeComponent(hashMatch.group(1)!);
+      }
+    }
+
+    if (externalToken == null || externalToken.isEmpty) {
+      return;
+    }
+
+    // Remove token from the address bar before proceeding
+    try {
+      final sanitized = '${uri.scheme}://${uri.host}'
+          '${uri.hasPort ? ':${uri.port}' : ''}'
+          '${uri.path}';
+      web.window.history.replaceState(null, '', sanitized);
+    } catch (_) {}
+
+    setState(() {
+      _isProcessingToken = true;
+    });
+
+    try {
+      final loginResult = await AuthService.loginWithJwt(externalToken);
+      final userProfile = loginResult?['user'] as Map<String, dynamic>?;
+      final token = loginResult?['token'] as String?;
+
+      if (!mounted) return;
+
+      if (userProfile == null || token == null) {
+        setState(() {
+          _isProcessingToken = false;
+        });
+        return;
+      }
+
+      final appState = context.read<AppState>();
+      appState.authToken = token;
+      appState.currentUser = userProfile;
+
+      final roleService = context.read<RoleService>();
+      await roleService.initializeRoleFromUser(userProfile);
+
+      await appState.init();
+
+      final rawRole = userProfile['role']?.toString() ?? '';
+      final userRole = rawRole.toLowerCase().trim();
+      String dashboardRoute;
+
+      final isAdmin = userRole == 'admin' || userRole == 'ceo';
+      final isManager = userRole == 'manager' ||
+          userRole == 'financial manager' ||
+          userRole == 'creator' ||
+          userRole == 'user';
+
+      if (isAdmin) {
+        dashboardRoute = '/approver_dashboard';
+      } else if (isManager) {
+        dashboardRoute = '/creator_dashboard';
+      } else {
+        dashboardRoute = '/creator_dashboard';
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        dashboardRoute,
+        (route) => false,
+      );
+    } catch (e) {
+      print('❌ JWT login from cinematic page failed: $e');
+      if (mounted) {
+        setState(() {
+          _isProcessingToken = false;
+        });
+      }
+    }
   }
 
   @override
@@ -176,6 +280,22 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               ),
             ),
           ),
+
+          // Red spinning loader overlay when processing JWT token
+          if (_isProcessingToken)
+            Container(
+              color: Colors.black.withOpacity(0.8),
+              child: Center(
+                child: SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 4,
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE9293A)),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -458,7 +578,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                   ),
                 ),
               ],
-          ],
+            ), // Close Wrap
+          ], // Close Column children
         ),
       ),
     );
