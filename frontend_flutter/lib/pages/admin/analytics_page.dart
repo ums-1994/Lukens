@@ -1780,7 +1780,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           Navigator.pushReplacementNamed(context, '/proposals');
           break;
         case 'Templates':
-          Navigator.pushReplacementNamed(context, '/content_library');
+          Navigator.pushReplacementNamed(context, '/templates');
           break;
         case 'Content Library':
           Navigator.pushReplacementNamed(context, '/content_library');
@@ -1812,7 +1812,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           Navigator.pushReplacementNamed(context, '/proposals');
           break;
         case 'Templates':
-          Navigator.pushReplacementNamed(context, '/content_library');
+          Navigator.pushReplacementNamed(context, '/templates');
           break;
         case 'Content Library':
           Navigator.pushReplacementNamed(context, '/content_library');

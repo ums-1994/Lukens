@@ -3,6 +3,7 @@ Firebase Authentication utilities
 Verifies Firebase ID tokens from the frontend
 """
 import os
+import json
 import firebase_admin
 from firebase_admin import credentials, auth
 from functools import wraps
@@ -21,28 +22,53 @@ def initialize_firebase():
     try:
         # Try to get credentials from environment variable (service account JSON)
         cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+
+        if cred_path and not os.path.exists(cred_path):
+            print(f"[FIREBASE] WARNING: FIREBASE_CREDENTIALS_PATH set but file not found: {cred_path}")
+            cred_path = None
         
         # If not set, try default location in backend directory
         if not cred_path:
             backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             default_path = os.path.join(backend_dir, 'firebase-service-account.json')
+            alt_default_path = os.path.join(backend_dir, 'firebase-service-account.json.json')
+            alt_default_path2 = os.path.join(backend_dir, 'firebase-service-account.json.txt')
             if os.path.exists(default_path):
                 cred_path = default_path
                 print(f"[FIREBASE] Using default Firebase credentials: {default_path}")
+            elif os.path.exists(alt_default_path):
+                cred_path = alt_default_path
+                print(f"[FIREBASE] Using default Firebase credentials: {alt_default_path}")
+            elif os.path.exists(alt_default_path2):
+                cred_path = alt_default_path2
+                print(f"[FIREBASE] Using default Firebase credentials: {alt_default_path2}")
         
         if cred_path and os.path.exists(cred_path):
+            project_id = None
+            try:
+                with open(cred_path, 'r', encoding='utf-8') as f:
+                    cred_info = json.load(f)
+                project_id = cred_info.get('project_id')
+            except Exception:
+                project_id = None
             cred = credentials.Certificate(cred_path)
-            _firebase_app = firebase_admin.initialize_app(cred)
+            if project_id:
+                _firebase_app = firebase_admin.initialize_app(cred, {'projectId': project_id})
+            else:
+                _firebase_app = firebase_admin.initialize_app(cred)
             print(f"[FIREBASE] Firebase Admin SDK initialized from: {cred_path}")
         else:
             # Try to use default credentials (for Google Cloud environments)
             # Or use service account JSON from environment variable
             service_account_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON')
             if service_account_json:
-                import json
                 cred_info = json.loads(service_account_json)
                 cred = credentials.Certificate(cred_info)
-                _firebase_app = firebase_admin.initialize_app(cred)
+                project_id = cred_info.get('project_id')
+                if project_id:
+                    _firebase_app = firebase_admin.initialize_app(cred, {'projectId': project_id})
+                else:
+                    _firebase_app = firebase_admin.initialize_app(cred)
                 print("[FIREBASE] Firebase Admin SDK initialized from environment variable")
             else:
                 # Try default credentials (for local development with gcloud auth)
@@ -94,8 +120,11 @@ def verify_firebase_token(id_token):
         print(f"[FIREBASE] ERROR: Expired Firebase ID token: {str(e)}")
         return None
     except ValueError as e:
-        # Token format errors
-        print(f"[FIREBASE] WARNING: Token format error (likely not a Firebase token): {str(e)}")
+        msg = str(e)
+        if 'project ID is required' in msg or 'project id is required' in msg.lower():
+            print(f"[FIREBASE] WARNING: Firebase Admin SDK not fully configured (project ID missing): {msg}")
+        else:
+            print(f"[FIREBASE] WARNING: Token format error (likely not a Firebase token): {msg}")
         return None
     except Exception as e:
         print(f"[FIREBASE] ERROR: Error verifying Firebase token: {type(e).__name__}: {str(e)}")
