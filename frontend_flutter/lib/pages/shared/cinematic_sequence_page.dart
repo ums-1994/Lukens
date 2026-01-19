@@ -20,7 +20,6 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   late final AnimationController _parallaxController;
   late final AnimationController _frameController;
 
-  final TextEditingController _jwtController = TextEditingController();
 
   // Background images for cinematic sequence (clean geometric look)
   final List<String> _backgroundImages = [
@@ -108,85 +107,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     _underlineController.dispose();
     _ctaController.dispose();
     _parallaxController.dispose();
-    _jwtController.dispose();
     super.dispose();
-  }
-
-  Future<void> _handleJwtLogin() async {
-    final token = _jwtController.text.trim();
-    if (token.isEmpty) return;
-
-    try {
-      final loginResult = await AuthService.loginWithJwt(token);
-      final userProfile = loginResult?['user'] as Map<String, dynamic>?;
-      final authToken = loginResult?['token'] as String?;
-
-      if (!mounted) return;
-
-      if (userProfile == null || authToken == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invalid or expired token'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      final appState = context.read<AppState>();
-      appState.authToken = authToken;
-      appState.currentUser = userProfile;
-
-      final roleService = context.read<RoleService>();
-      await roleService.initializeRoleFromUser(userProfile);
-
-      await appState.init();
-
-      final rawRole = userProfile['role']?.toString() ?? '';
-      final userRole = rawRole.toLowerCase().trim();
-      
-      // Log the detected role for debugging
-      print('🔑 User role from JWT: $userRole');
-      print('👤 User email: ${userProfile['email']}');
-      print('📋 User roles array: ${userProfile['roles']}');
-
-      // KHONOBUZZ role-based routing
-      final isAdmin = userRole == 'admin';
-      final isManager = userRole == 'manager';
-      final isCreator = userRole == 'creator';
-      final isUser = userRole == 'user';
-
-      String dashboardRoute;
-      if (isAdmin) {
-        dashboardRoute = '/approver_dashboard';
-        print('🎯 Routing to Admin Dashboard (/approver_dashboard)');
-      } else if (isManager) {
-        dashboardRoute = '/creator_dashboard'; // Manager uses creator dashboard
-        print('🎯 Routing to Manager Dashboard (/creator_dashboard)');
-      } else if (isCreator) {
-        dashboardRoute = '/creator_dashboard';
-        print('🎯 Routing to Creator Dashboard (/creator_dashboard)');
-      } else {
-        dashboardRoute = '/creator_dashboard'; // Default for regular users
-        print('🎯 Routing to Default Dashboard (/creator_dashboard)');
-      }
-
-      if (!mounted) return;
-
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        dashboardRoute,
-        (route) => false,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('JWT login failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
   }
 
   @override
@@ -537,65 +458,6 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 24),
-            Container(
-              width: isMobile ? double.infinity : 500,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _jwtController,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                      decoration: const InputDecoration(
-                        hintText: 'Paste JWT token here',
-                        hintStyle:
-                            TextStyle(color: Colors.white54, fontSize: 14),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
-                      maxLines: 1,
-                    ),
-                  ),
-                  Container(
-                    margin: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: TextButton(
-                      onPressed: _handleJwtLogin,
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isMobile ? 16 : 24,
-                          vertical: 10,
-                        ),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text(
-                        'Open',
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
