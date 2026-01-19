@@ -87,6 +87,7 @@ CORS(
 @app.route("/<path:remaining>", methods=["OPTIONS"])
 def handle_options_preflight(remaining=None):
     print("🔧 CORS preflight request received")
+    print(f"🕐 Timestamp: {datetime.now()}")
     return {}, 200
 
 # Register API blueprints
