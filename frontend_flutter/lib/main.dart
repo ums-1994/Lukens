@@ -661,7 +661,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 ),
               );
             });
-            });
           }
         } catch (e) {
           print('❌ JWT login error: $e');
