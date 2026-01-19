@@ -420,7 +420,7 @@ class AppState extends ChangeNotifier {
       String proposalId, Map<String, dynamic> data) async {
     try {
       final r = await http.put(
-        Uri.parse("${getApiUrl()}/proposals/$proposalId"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId"),
         headers: _headers,
         body: jsonEncode(data),
       );
@@ -436,7 +436,7 @@ class AppState extends ChangeNotifier {
   Future<void> updateProposalStatus(String proposalId, String status) async {
     try {
       final r = await http.patch(
-        Uri.parse("${getApiUrl()}/proposals/$proposalId/status"),
+        Uri.parse("${getApiUrl()}/api/proposals/$proposalId/status"),
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
@@ -823,7 +823,7 @@ class AppState extends ChangeNotifier {
 
   Future<String?> login(String username, String password) async {
     final r = await http.post(
-      Uri.parse("${getApiUrl()}/login"),
+      Uri.parse("${getApiUrl()}/api/login"),
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: "username=$username&password=$password",
     );
@@ -865,7 +865,7 @@ class AppState extends ChangeNotifier {
   Future<String?> register(String username, String email, String password,
       String fullName, String role) async {
     final r = await http.post(
-      Uri.parse("${getApiUrl()}/register"),
+      Uri.parse("${getApiUrl()}/api/register"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "username": username,
@@ -890,7 +890,7 @@ class AppState extends ChangeNotifier {
   Future<void> fetchCurrentUser() async {
     if (authToken == null) return;
     final r = await http.get(
-      Uri.parse("${getApiUrl()}/me"),
+      Uri.parse("${getApiUrl()}/api/me"),
       headers: {"Authorization": "Bearer $authToken"},
     );
     if (r.statusCode == 200) {
