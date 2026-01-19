@@ -90,7 +90,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('${ApiConfig.backendBaseUrl}/verify-email'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/verify-email'),
         headers: {
           'Content-Type': 'application/json',
         },

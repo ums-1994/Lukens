@@ -191,7 +191,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> verifyEmail(String token) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+        Uri.parse('$baseUrl/api/verify-email'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': token}),
       );
