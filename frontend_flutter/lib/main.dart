@@ -702,19 +702,22 @@ class _HomeShellState extends State<HomeShell> {
     final user = AuthService.currentUser;
     if (user == null) return;
 
-    final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
     final roleService = context.read<RoleService>();
 
     // Initialize role service
     roleService.initializeRoleFromUser(user).then((_) {
-      // Navigate based on role
-      if (backendRole == 'admin' || backendRole == 'ceo') {
-        // Admin → Approver Dashboard
-        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+      final currentRole = roleService.currentRole;
+      String dashboardRoute;
+
+      if (currentRole == UserRole.approver || currentRole == UserRole.admin) {
+        dashboardRoute = '/approver_dashboard';
+      } else if (currentRole == UserRole.finance) {
+        dashboardRoute = '/finance_dashboard';
       } else {
-        // Manager → Creator Dashboard
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        dashboardRoute = '/creator_dashboard';
       }
+
+      Navigator.pushReplacementNamed(context, dashboardRoute);
     });
   }
 
