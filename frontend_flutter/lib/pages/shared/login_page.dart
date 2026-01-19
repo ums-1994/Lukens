@@ -186,7 +186,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           final rawRole = userProfile['role']?.toString() ?? '';
           final userRole = rawRole.toLowerCase().trim();
 
-          // Use RoleService mapping as the source of truth
+          // Use RoleService mapping as one view of the role
           final currentRole = roleService.currentRole;
 
           print('🔍 Login: Raw role from backend: "$rawRole"');
@@ -196,17 +196,31 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           String dashboardRoute;
 
-          if (currentRole == UserRole.approver ||
-              currentRole == UserRole.admin) {
+          final isAdmin = userRole == 'admin' || userRole == 'ceo';
+          final isFinance = userRole == 'finance' ||
+              userRole == 'finance manager' ||
+              userRole == 'financial manager' ||
+              userRole == 'finance_manager' ||
+              userRole == 'financial_manager';
+          final isManager = userRole == 'manager' ||
+              userRole == 'creator' ||
+              userRole == 'user';
+
+          if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
-          } else if (currentRole == UserRole.finance) {
+            print(
+                '✅ Routing to Admin/Approver Dashboard (from normalized role)');
+          } else if (isFinance) {
             dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard (from RoleService)');
-          } else {
-            // Default to creator/manager dashboard for all other roles
+            print('✅ Routing to Finance Dashboard (from normalized role)');
+          } else if (isManager) {
             dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard (from RoleService)');
+            print('✅ Routing to Creator Dashboard (Manager normalized role)');
+          } else {
+            // Fallback: treat unknown roles as manager
+            dashboardRoute = '/creator_dashboard';
+            print(
+                '⚠️ Unknown normalized role "$userRole", defaulting to Creator Dashboard');
           }
 
           print(
