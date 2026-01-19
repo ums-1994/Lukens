@@ -258,7 +258,7 @@ def extract_user_info(decoded_token: Dict[str, Any]) -> Dict[str, Any]:
 def _determine_primary_role(roles: List[str]) -> str:
     """
     Determine the primary role from KHONOBUZZ roles array.
-    Priority: Admin > Manager > Creator > User
+    Priority: Admin > Finance > Manager > Creator > User
     """
     if not roles or not isinstance(roles, list):
         return "user"
@@ -267,6 +267,15 @@ def _determine_primary_role(roles: List[str]) -> str:
     if "Proposal & SOW Builder - Admin" in roles:
         logger.info("Admin role detected: Proposal & SOW Builder - Admin")
         return "admin"
+    
+    # Check for finance role (second highest priority)
+    if any(role in roles for role in [
+        "Proposal & SOW Builder - Finance",
+        "Finance Manager",
+        "Financial Manager"
+    ]):
+        logger.info("Finance role detected")
+        return "finance"
     
     # Check for manager roles
     if any(role in roles for role in [

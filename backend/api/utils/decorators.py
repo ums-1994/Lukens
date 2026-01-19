@@ -374,3 +374,37 @@ def admin_required(f):
         return f(username=username, *args, **kwargs)
 
     return decorated
+
+
+def finance_required(f):
+    """Decorator to require finance role"""
+    @wraps(f)
+    def decorated(username=None, *args, **kwargs):
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            result = cursor.fetchone()
+
+        if not result or result[0] not in ['finance', 'financial manager']:
+            return {'detail': 'Finance access required'}, 403
+
+        return f(username=username, *args, **kwargs)
+
+    return decorated
+
+
+def admin_or_finance_required(f):
+    """Decorator to require admin or finance role"""
+    @wraps(f)
+    def decorated(username=None, *args, **kwargs):
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            result = cursor.fetchone()
+
+        if not result or result[0] not in ['admin', 'finance', 'financial manager']:
+            return {'detail': 'Admin or Finance access required'}, 403
+
+        return f(username=username, *args, **kwargs)
+
+    return decorated
