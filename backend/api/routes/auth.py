@@ -652,14 +652,31 @@ def khonobuzz_jwt_login():
                 department = user[5] or user[4]  # Use JWT department if DB has none
                 is_active = user[6]
                 
-                # Update user role in database if JWT role differs from DB role
-                if user[4] != role_value:  # user[4] is current DB role
-                    print(f"🔄 Updating user role from '{user[4]}' to '{role_value}' for {email}")
+                # Always update user role in database to match JWT role
+                # This ensures database stays synchronized with JWT token roles
+                current_db_role = user[4]  # Current role in database
+                if current_db_role != role_value:  # Roles differ, update database
+                    print(f"🔄 ROLE SYNC: Updating user role from '{current_db_role}' to '{role_value}' for {email}")
+                    print(f"📋 JWT Roles: {user_info.get('roles', [])}")
+                    print(f"🎯 Primary Role: {role_value}")
+                    
+                    # Update user role in database
                     cursor.execute(
-                        'UPDATE users SET role = %s WHERE email = %s',
-                        (role_value, email)
+                        'UPDATE users SET role = %s, full_name = %s WHERE email = %s',
+                        (role_value, user_info.get('full_name', full_name), email)
                     )
+                    
+                    # Also update department if JWT provides one
+                    if user_info.get('department'):
+                        cursor.execute(
+                            'UPDATE users SET department = %s WHERE email = %s',
+                            (user_info.get('department'), email)
+                        )
+                    
                     conn.commit()
+                    print(f"✅ Database updated: {email} now has role '{role_value}'")
+                else:
+                    print(f"✅ Role already in sync: {email} has role '{role_value}'")
             else:
                 base_username = email.split('@')[0]
                 username = base_username
