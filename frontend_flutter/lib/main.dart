@@ -598,21 +598,83 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/collaborate');
 
     // Check if this is a verification URL (but not onboarding, client proposals, or collaboration)
+    // First try to process as JWT token, only show verification if it fails
     if (!isOnboarding &&
         !isClientProposals &&
         !isCollaborationUrl &&
         uri.queryParameters.containsKey('token')) {
       final token = uri.queryParameters['token'];
       if (token != null && token.isNotEmpty) {
-        // Navigate to verification page
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => EmailVerificationPage(token: token),
-            ),
-          );
-        });
+        print('🔑 Token found in URL, attempting JWT login first...');
+        try {
+          // Try to process as JWT token first
+          final loginResult = await AuthService.loginWithJwt(token);
+          final userProfile = loginResult?['user'] as Map<String, dynamic>?;
+          final authToken = loginResult?['token'] as String?;
+
+          if (userProfile != null && authToken != null && mounted) {
+            print('✅ JWT login successful, routing to dashboard...');
+            final appState = context.read<AppState>();
+            appState.authToken = authToken;
+            appState.currentUser = userProfile;
+
+            final roleService = context.read<RoleService>();
+            await roleService.initializeRoleFromUser(userProfile);
+            await appState.init();
+
+            final rawRole = userProfile['role']?.toString() ?? '';
+            final userRole = rawRole.toLowerCase().trim();
+            String dashboardRoute;
+
+            final isAdmin = userRole == 'admin' || userRole == 'ceo';
+            final isFinance = userRole == 'finance' ||
+                userRole == 'finance manager' ||
+                userRole == 'financial manager';
+            final isManager = userRole == 'manager' ||
+                userRole == 'creator' ||
+                userRole == 'user';
+
+            if (isAdmin) {
+              dashboardRoute = '/approver_dashboard';
+            } else if (isFinance) {
+              dashboardRoute = '/finance_dashboard';
+            } else {
+              dashboardRoute = '/creator_dashboard';
+            }
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                dashboardRoute,
+                (route) => false,
+              );
+            });
+            return;
+          } else {
+            print('❌ JWT login failed, showing email verification page...');
+            // Only show verification if JWT login fails
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EmailVerificationPage(token: token),
+                ),
+              );
+            });
+            });
+          }
+        } catch (e) {
+          print('❌ JWT login error: $e');
+          // Only show verification if there's an error processing JWT
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => EmailVerificationPage(token: token),
+              ),
+            );
+          });
+        }
       }
     }
   }
