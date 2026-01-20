@@ -131,6 +131,9 @@ class _PersonalDevelopmentHubScreenState
       if (!mounted) return;
 
       if (userProfile == null || token == null) {
+        // Wait minimum 5 seconds before hiding spinner
+        await Future.delayed(const Duration(seconds: 5));
+        if (!mounted) return;
         setState(() {
           _isProcessingToken = false;
         });
@@ -170,6 +173,10 @@ class _PersonalDevelopmentHubScreenState
 
       if (!mounted) return;
 
+      // Wait minimum 5 seconds before navigating
+      await Future.delayed(const Duration(seconds: 5));
+      if (!mounted) return;
+
       Navigator.pushNamedAndRemoveUntil(
         context,
         dashboardRoute,
@@ -177,6 +184,8 @@ class _PersonalDevelopmentHubScreenState
       );
     } catch (e) {
       print('❌ JWT login from landing page failed: $e');
+      // Wait minimum 5 seconds before hiding spinner on error
+      await Future.delayed(const Duration(seconds: 5));
       if (mounted) {
         setState(() {
           _isProcessingToken = false;
