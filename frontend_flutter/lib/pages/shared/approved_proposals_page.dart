@@ -806,7 +806,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       // Create a blob URL for the PDF and open it
       try {
         final response = await http.get(
-          Uri.parse('${ApiConfig.backendBaseUrl}/api/proposals/$id/signed-document'),
+          Uri.parse(
+              '${ApiConfig.backendBaseUrl}/api/proposals/$id/signed-document'),
           headers: {
             'Authorization': 'Bearer $token',
           },
@@ -915,7 +916,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');
