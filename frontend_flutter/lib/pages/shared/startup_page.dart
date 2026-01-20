@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' show ImageFilter;
-import 'cinematic_sequence_page.dart';
+import '../Proposal_Landing_Screen.dart';
 
 class StartupPage extends StatelessWidget {
   const StartupPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Use the cinematic sequence with all 9 frames
-    return const CinematicSequencePage();
+    // Use the new Proposal Landing Screen as the main entry point
+    return const PersonalDevelopmentHubScreen();
 
     // Alternative: Use V1 (previous version)
     // return const AnimatedLandingPage();

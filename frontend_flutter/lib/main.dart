@@ -39,7 +39,6 @@ import 'pages/client/client_dashboard_home.dart';
 import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
-import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
 import 'services/role_service.dart';
 import 'api.dart';
@@ -85,6 +84,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Lukens',
+        debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
@@ -377,8 +377,7 @@ class MyApp extends StatelessWidget {
             );
           },
           '/admin_dashboard': (context) => const ApproverDashboardPage(),
-          '/cinematic': (context) => const CinematicSequencePage(),
-          '/client_management': (context) => const ClientManagementPage(),
+                    '/client_management': (context) => const ClientManagementPage(),
           '/collaboration': (context) =>
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
