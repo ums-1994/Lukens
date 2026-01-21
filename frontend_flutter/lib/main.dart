@@ -25,6 +25,7 @@ import 'pages/admin/approver_dashboard_page.dart';
 import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
 import 'pages/finance_manager/finance_dashboard_v2.dart';
+import 'pages/finance_manager/finance_onboarding_page.dart';
 import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
 import 'pages/shared/register_page.dart';
@@ -366,6 +367,7 @@ class MyApp extends StatelessWidget {
           '/approvals': (context) => const ApproverDashboardPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/finance_dashboard': (context) => FinanceDashboardPage(),
+          '/finance/onboarding': (context) => const FinanceOnboardingPage(),
           '/approved_proposals': (context) => const ApprovedProposalsPage(),
           '/admin_approvals': (context) => const AdminApprovalsPage(),
           '/proposal_review': (context) {
@@ -377,7 +379,7 @@ class MyApp extends StatelessWidget {
             );
           },
           '/admin_dashboard': (context) => const ApproverDashboardPage(),
-                    '/client_management': (context) => const ClientManagementPage(),
+          '/client_management': (context) => const ClientManagementPage(),
           '/collaboration': (context) =>
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
@@ -386,7 +388,8 @@ class MyApp extends StatelessWidget {
           '/settings': (context) => const SettingsPage(),
           '/test-signature': (context) => const TestSignaturePage(),
           '/error': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            final args = ModalRoute.of(context)?.settings.arguments
+                as Map<String, dynamic>?;
             return AuthenticationErrorPage(
               title: args?['title'] ?? 'Authentication Error',
               message: args?['message'] ?? 'An unknown error occurred',
@@ -500,9 +503,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
           print('❌ Khonobuzz JWT login failed: $e');
           print('❌ Error type: ${e.runtimeType}');
           print('❌ Error details: ${e.toString()}');
-          
+
           // Check if it's a rate limiting error
-          if (e.toString().contains('Too many authentication attempts') || 
+          if (e.toString().contains('Too many authentication attempts') ||
               e.toString().contains('Please wait') ||
               e.toString().contains('already in progress')) {
             print('🛑 This is a rate limiting error - user should wait');
@@ -516,9 +519,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
             });
             return;
           }
-          
+
           // Check if it's a retry exhausted error
-          if (e.toString().contains('after 5 attempts') || 
+          if (e.toString().contains('after 5 attempts') ||
               e.toString().contains('Maximum retries')) {
             print('🛑 This is a retry exhausted error - showing error page');
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -530,9 +533,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
             });
             return;
           }
-          
+
           // For other errors, continue to normal flow (might be email verification needed)
-          print('⚠️ Continuing to normal flow - might redirect to email verification');
+          print(
+              '⚠️ Continuing to normal flow - might redirect to email verification');
         }
       } else {
         print('❌ Khonobuzz source detected but no token found in URL');
