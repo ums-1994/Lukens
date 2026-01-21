@@ -349,13 +349,21 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         ),
       ),
       child: Column(
-        children: const [
-          SizedBox(height: 16),
-          Icon(Icons.account_balance, color: Colors.white),
-          SizedBox(height: 8),
-          Icon(Icons.receipt_long, color: Colors.white70),
-          SizedBox(height: 8),
-          Icon(Icons.trending_up, color: Colors.white70),
+        children: [
+          const SizedBox(height: 16),
+          const Icon(Icons.account_balance, color: Colors.white),
+          const SizedBox(height: 8),
+          const Icon(Icons.receipt_long, color: Colors.white70),
+          const SizedBox(height: 8),
+          const Icon(Icons.trending_up, color: Colors.white70),
+          const SizedBox(height: 16),
+          IconButton(
+            tooltip: 'Clients',
+            onPressed: () {
+              Navigator.pushNamed(context, '/finance/onboarding');
+            },
+            icon: const Icon(Icons.person_add, color: Colors.white70),
+          ),
         ],
       ),
     );
