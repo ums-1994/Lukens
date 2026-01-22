@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
 import '../../services/api_service.dart';
+import '../../services/client_service.dart';
+import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -27,6 +29,12 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isLoading = false;
   bool _isLoadingTemplates = true;
   List<Template> _availableTemplates = [];
+  
+  // Client management
+  List<Map<String, dynamic>> _clients = [];
+  bool _isLoadingClients = false;
+  Map<String, dynamic>? _selectedClient;
+  bool _useManualEntry = false;
 
   // Form data
   final Map<String, dynamic> _formData = {
@@ -35,6 +43,11 @@ class _ProposalWizardState extends State<ProposalWizard>
     'proposalTitle': '',
     'clientName': '',
     'clientEmail': '',
+    'clientHolding': '',
+    'clientAddress': '',
+    'clientContactName': '',
+    'clientContactEmail': '',
+    'clientContactMobile': '',
     'opportunityName': '',
     'projectType': '',
     'estimatedValue': '',
@@ -154,6 +167,56 @@ class _ProposalWizardState extends State<ProposalWizard>
     _formData['moduleContents'] = <String, String>{};
     // Load templates from template library
     _loadTemplatesFromLibrary();
+    // Load clients for dropdown
+    _loadClients();
+  }
+  
+  Future<void> _loadClients() async {
+    setState(() => _isLoadingClients = true);
+    try {
+      final token = AuthService.token;
+      if (token != null) {
+        final clients = await ClientService.getClients(token);
+        if (mounted) {
+          setState(() {
+            _clients = List<Map<String, dynamic>>.from(clients);
+            _isLoadingClients = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading clients: $e');
+      if (mounted) {
+        setState(() => _isLoadingClients = false);
+      }
+    }
+  }
+  
+  void _onClientSelected(Map<String, dynamic>? client) {
+    setState(() {
+      _selectedClient = client;
+      _useManualEntry = client == null;
+      
+      if (client != null) {
+        // Auto-populate client details
+        _formData['clientName'] = client['company_name'] ?? client['name'] ?? '';
+        _formData['clientEmail'] = client['email'] ?? '';
+        _formData['clientHolding'] = client['organization'] ?? client['holding'] ?? '';
+        _formData['clientAddress'] = client['location'] ?? client['address'] ?? '';
+        _formData['clientContactName'] = client['contact_person'] ?? client['contact_name'] ?? '';
+        _formData['clientContactEmail'] = client['contact_email'] ?? client['email'] ?? '';
+        _formData['clientContactMobile'] = client['phone'] ?? client['mobile'] ?? '';
+      } else {
+        // Clear fields when switching to manual entry
+        _formData['clientName'] = '';
+        _formData['clientEmail'] = '';
+        _formData['clientHolding'] = '';
+        _formData['clientAddress'] = '';
+        _formData['clientContactName'] = '';
+        _formData['clientContactEmail'] = '';
+        _formData['clientContactMobile'] = '';
+      }
+    });
   }
 
   Future<void> _loadTemplatesFromLibrary() async {
@@ -1860,87 +1923,177 @@ class _ProposalWizardState extends State<ProposalWizard>
                         controller: proposalTitleController,
                       ),
                       const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Name',
-                              'Company or contact name',
-                              (value) => setState(
-                                  () => _formData['clientName'] = value),
-                              Icons.business_outlined,
-                              controller: clientNameController,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Email',
-                              'client@company.com',
-                              (value) => setState(
-                                  () => _formData['clientEmail'] = value),
-                              Icons.email_outlined,
-                              keyboardType: TextInputType.emailAddress,
-                              controller: clientEmailController,
-                            ),
-                          ),
-                        ],
-                      ),
+                      // Client Selection Dropdown
+                      _buildClientDropdown(),
                       const SizedBox(height: 20),
-                      _buildTextField(
-                        'Client Holding / Group',
-                        'Parent company or group',
-                        (value) =>
-                            setState(() => _formData['clientHolding'] = value),
-                        Icons.account_tree_outlined,
-                        controller: clientHoldingController,
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTextField(
-                        'Client Address',
-                        'Physical or postal address',
-                        (value) =>
-                            setState(() => _formData['clientAddress'] = value),
-                        Icons.location_on_outlined,
-                        controller: clientAddressController,
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Contact Name',
-                              'Primary contact person',
-                              (value) => setState(
-                                  () => _formData['clientContactName'] = value),
-                              Icons.person_outline,
-                              controller: clientContactNameController,
-                            ),
+                      // Client Details Fields (auto-populated or manual)
+                      if (!_useManualEntry && _selectedClient != null)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green.withOpacity(0.3)),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Contact Email',
-                              'contact@client.com',
-                              (value) => setState(() =>
-                                  _formData['clientContactEmail'] = value),
-                              Icons.alternate_email,
-                              keyboardType: TextInputType.emailAddress,
-                              controller: clientContactEmailController,
-                            ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.green, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Client details auto-filled from database',
+                                  style: TextStyle(color: Colors.green.shade300, fontSize: 12),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      if (_useManualEntry || _selectedClient == null) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Name',
+                                'Company or contact name',
+                                (value) => setState(
+                                    () => _formData['clientName'] = value),
+                                Icons.business_outlined,
+                                controller: clientNameController,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Email',
+                                'client@company.com',
+                                (value) => setState(
+                                    () => _formData['clientEmail'] = value),
+                                Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: clientEmailController,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        // Show read-only fields when client is selected
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Client Name',
+                                _formData['clientName']?.toString() ?? '',
+                                Icons.business_outlined,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Client Email',
+                                _formData['clientEmail']?.toString() ?? '',
+                                Icons.email_outlined,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 20),
-                      _buildTextField(
-                        'Client Contact Mobile',
-                        'Mobile number',
-                        (value) => setState(
-                            () => _formData['clientContactMobile'] = value),
-                        Icons.phone_iphone,
-                        keyboardType: TextInputType.phone,
-                        controller: clientContactMobileController,
-                      ),
+                      if (_useManualEntry || _selectedClient == null)
+                        _buildTextField(
+                          'Client Holding / Group',
+                          'Parent company or group',
+                          (value) =>
+                              setState(() => _formData['clientHolding'] = value),
+                          Icons.account_tree_outlined,
+                          controller: clientHoldingController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Holding / Group',
+                          _formData['clientHolding']?.toString() ?? '',
+                          Icons.account_tree_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry || _selectedClient == null)
+                        _buildTextField(
+                          'Client Address',
+                          'Physical or postal address',
+                          (value) =>
+                              setState(() => _formData['clientAddress'] = value),
+                          Icons.location_on_outlined,
+                          controller: clientAddressController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Address',
+                          _formData['clientAddress']?.toString() ?? '',
+                          Icons.location_on_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry || _selectedClient == null)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Contact Name',
+                                'Primary contact person',
+                                (value) => setState(
+                                    () => _formData['clientContactName'] = value),
+                                Icons.person_outline,
+                                controller: clientContactNameController,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Contact Email',
+                                'contact@client.com',
+                                (value) => setState(() =>
+                                    _formData['clientContactEmail'] = value),
+                                Icons.alternate_email,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: clientContactEmailController,
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Client Contact Name',
+                                _formData['clientContactName']?.toString() ?? '',
+                                Icons.person_outline,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Client Contact Email',
+                                _formData['clientContactEmail']?.toString() ?? '',
+                                Icons.alternate_email,
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry || _selectedClient == null)
+                        _buildTextField(
+                          'Client Contact Mobile',
+                          'Mobile number',
+                          (value) => setState(
+                              () => _formData['clientContactMobile'] = value),
+                          Icons.phone_iphone,
+                          keyboardType: TextInputType.phone,
+                          controller: clientContactMobileController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Contact Mobile',
+                          _formData['clientContactMobile']?.toString() ?? '',
+                          Icons.phone_iphone,
+                        ),
                       const SizedBox(height: 20),
                       _buildTextField(
                         'Project/Opportunity Name',
@@ -2321,6 +2474,140 @@ class _ProposalWizardState extends State<ProposalWizard>
           );
         }).toList(),
         onChanged: (value) => onChanged(value ?? ''),
+      ),
+    );
+  }
+
+  Widget _buildClientDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.business, color: PremiumTheme.teal, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Select Client',
+              style: PremiumTheme.bodyLarge.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: DropdownButtonFormField<Map<String, dynamic>>(
+            value: _selectedClient,
+            style: PremiumTheme.bodyMedium.copyWith(
+              color: PremiumTheme.textPrimary,
+            ),
+            decoration: InputDecoration(
+              labelText: 'Client from Database',
+              hintText: _isLoadingClients 
+                  ? 'Loading clients...' 
+                  : 'Select a client or enter manually',
+              labelStyle: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textSecondary,
+              ),
+              hintStyle: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textTertiary,
+              ),
+              prefixIcon: Icon(Icons.search, color: PremiumTheme.teal),
+              filled: true,
+              fillColor: PremiumTheme.glassWhite,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
+              ),
+            ),
+            dropdownColor: PremiumTheme.darkBg2,
+            items: [
+              DropdownMenuItem<Map<String, dynamic>>(
+                value: null,
+                child: Text(
+                  'Enter manually',
+                  style: PremiumTheme.bodyMedium,
+                ),
+              ),
+              ..._clients.map((client) {
+                final name = client['company_name'] ?? 
+                            client['name'] ?? 
+                            client['email'] ?? 
+                            'Unknown';
+                final email = client['email'] ?? '';
+                return DropdownMenuItem<Map<String, dynamic>>(
+                  value: client,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (email.isNotEmpty)
+                        Text(
+                          email,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+            onChanged: (client) => _onClientSelected(client),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadOnlyField(String label, String value, IconData icon) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: TextFormField(
+        initialValue: value,
+        readOnly: true,
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.left,
+        style: PremiumTheme.bodyMedium.copyWith(
+          color: PremiumTheme.textPrimary,
+        ),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textSecondary,
+          ),
+          prefixIcon: Icon(icon, color: PremiumTheme.teal),
+          filled: true,
+          fillColor: PremiumTheme.glassWhite.withOpacity(0.5),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
+          ),
+        ),
       ),
     );
   }
