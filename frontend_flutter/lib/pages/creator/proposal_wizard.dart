@@ -29,7 +29,7 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isLoading = false;
   bool _isLoadingTemplates = true;
   List<Template> _availableTemplates = [];
-  
+
   // Client management
   List<Map<String, dynamic>> _clients = [];
   bool _isLoadingClients = false;
@@ -170,7 +170,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     // Load clients for dropdown
     _loadClients();
   }
-  
+
   Future<void> _loadClients() async {
     setState(() => _isLoadingClients = true);
     try {
@@ -191,21 +191,27 @@ class _ProposalWizardState extends State<ProposalWizard>
       }
     }
   }
-  
+
   void _onClientSelected(Map<String, dynamic>? client) {
     setState(() {
       _selectedClient = client;
       _useManualEntry = client == null;
-      
+
       if (client != null) {
         // Auto-populate client details
-        _formData['clientName'] = client['company_name'] ?? client['name'] ?? '';
+        _formData['clientName'] =
+            client['company_name'] ?? client['name'] ?? '';
         _formData['clientEmail'] = client['email'] ?? '';
-        _formData['clientHolding'] = client['organization'] ?? client['holding'] ?? '';
-        _formData['clientAddress'] = client['location'] ?? client['address'] ?? '';
-        _formData['clientContactName'] = client['contact_person'] ?? client['contact_name'] ?? '';
-        _formData['clientContactEmail'] = client['contact_email'] ?? client['email'] ?? '';
-        _formData['clientContactMobile'] = client['phone'] ?? client['mobile'] ?? '';
+        _formData['clientHolding'] =
+            client['organization'] ?? client['holding'] ?? '';
+        _formData['clientAddress'] =
+            client['location'] ?? client['address'] ?? '';
+        _formData['clientContactName'] =
+            client['contact_person'] ?? client['contact_name'] ?? '';
+        _formData['clientContactEmail'] =
+            client['contact_email'] ?? client['email'] ?? '';
+        _formData['clientContactMobile'] =
+            client['phone'] ?? client['mobile'] ?? '';
       } else {
         // Clear fields when switching to manual entry
         _formData['clientName'] = '';
@@ -1927,27 +1933,32 @@ class _ProposalWizardState extends State<ProposalWizard>
                       _buildClientDropdown(),
                       const SizedBox(height: 20),
                       // Client Details Fields (auto-populated or manual)
-                      if (!_useManualEntry && _selectedClient != null)
+                      if (!_useManualEntry && _selectedClient != null) ...[
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.green.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.green.withOpacity(0.3)),
+                            border: Border.all(
+                                color: Colors.green.withOpacity(0.3)),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.check_circle, color: Colors.green, size: 20),
+                              Icon(Icons.check_circle,
+                                  color: Colors.green, size: 20),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Client details auto-filled from database',
-                                  style: TextStyle(color: Colors.green.shade300, fontSize: 12),
+                                  style: TextStyle(
+                                      color: Colors.green.shade300,
+                                      fontSize: 12),
                                 ),
                               ),
                             ],
                           ),
                         ),
+                      ],
                       if (_useManualEntry || _selectedClient == null) ...[
                         Row(
                           children: [
@@ -2002,12 +2013,12 @@ class _ProposalWizardState extends State<ProposalWizard>
                         _buildTextField(
                           'Client Holding / Group',
                           'Parent company or group',
-                          (value) =>
-                              setState(() => _formData['clientHolding'] = value),
+                          (value) => setState(
+                              () => _formData['clientHolding'] = value),
                           Icons.account_tree_outlined,
                           controller: clientHoldingController,
-                        )
-                      else
+                        ),
+                      if (!_useManualEntry && _selectedClient != null)
                         _buildReadOnlyField(
                           'Client Holding / Group',
                           _formData['clientHolding']?.toString() ?? '',
@@ -2018,12 +2029,12 @@ class _ProposalWizardState extends State<ProposalWizard>
                         _buildTextField(
                           'Client Address',
                           'Physical or postal address',
-                          (value) =>
-                              setState(() => _formData['clientAddress'] = value),
+                          (value) => setState(
+                              () => _formData['clientAddress'] = value),
                           Icons.location_on_outlined,
                           controller: clientAddressController,
-                        )
-                      else
+                        ),
+                      if (!_useManualEntry && _selectedClient != null)
                         _buildReadOnlyField(
                           'Client Address',
                           _formData['clientAddress']?.toString() ?? '',
@@ -2037,8 +2048,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                               child: _buildTextField(
                                 'Client Contact Name',
                                 'Primary contact person',
-                                (value) => setState(
-                                    () => _formData['clientContactName'] = value),
+                                (value) => setState(() =>
+                                    _formData['clientContactName'] = value),
                                 Icons.person_outline,
                                 controller: clientContactNameController,
                               ),
@@ -2056,14 +2067,15 @@ class _ProposalWizardState extends State<ProposalWizard>
                               ),
                             ),
                           ],
-                        )
-                      else
+                        ),
+                      if (!_useManualEntry && _selectedClient != null)
                         Row(
                           children: [
                             Expanded(
                               child: _buildReadOnlyField(
                                 'Client Contact Name',
-                                _formData['clientContactName']?.toString() ?? '',
+                                _formData['clientContactName']?.toString() ??
+                                    '',
                                 Icons.person_outline,
                               ),
                             ),
@@ -2071,7 +2083,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                             Expanded(
                               child: _buildReadOnlyField(
                                 'Client Contact Email',
-                                _formData['clientContactEmail']?.toString() ?? '',
+                                _formData['clientContactEmail']?.toString() ??
+                                    '',
                                 Icons.alternate_email,
                               ),
                             ),
@@ -2087,8 +2100,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                           Icons.phone_iphone,
                           keyboardType: TextInputType.phone,
                           controller: clientContactMobileController,
-                        )
-                      else
+                        ),
+                      if (!_useManualEntry && _selectedClient != null)
                         _buildReadOnlyField(
                           'Client Contact Mobile',
                           _formData['clientContactMobile']?.toString() ?? '',
@@ -2504,8 +2517,8 @@ class _ProposalWizardState extends State<ProposalWizard>
             ),
             decoration: InputDecoration(
               labelText: 'Client from Database',
-              hintText: _isLoadingClients 
-                  ? 'Loading clients...' 
+              hintText: _isLoadingClients
+                  ? 'Loading clients...'
                   : 'Select a client or enter manually',
               labelStyle: PremiumTheme.bodyMedium.copyWith(
                 color: PremiumTheme.textSecondary,
@@ -2539,10 +2552,10 @@ class _ProposalWizardState extends State<ProposalWizard>
                 ),
               ),
               ..._clients.map((client) {
-                final name = client['company_name'] ?? 
-                            client['name'] ?? 
-                            client['email'] ?? 
-                            'Unknown';
+                final name = client['company_name'] ??
+                    client['name'] ??
+                    client['email'] ??
+                    'Unknown';
                 final email = client['email'] ?? '';
                 return DropdownMenuItem<Map<String, dynamic>>(
                   value: client,

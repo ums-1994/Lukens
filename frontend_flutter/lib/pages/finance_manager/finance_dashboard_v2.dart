@@ -403,7 +403,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     );
   }
 
-  Widget _buildTabButton(String label, IconData icon, bool isActive, VoidCallback onTap) {
+  Widget _buildTabButton(
+      String label, IconData icon, bool isActive, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -411,8 +412,11 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          color: isActive ? PremiumTheme.teal.withOpacity(0.2) : Colors.transparent,
-          border: isActive ? Border.all(color: PremiumTheme.teal, width: 1) : null,
+          color: isActive
+              ? PremiumTheme.teal.withOpacity(0.2)
+              : Colors.transparent,
+          border:
+              isActive ? Border.all(color: PremiumTheme.teal, width: 1) : null,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
