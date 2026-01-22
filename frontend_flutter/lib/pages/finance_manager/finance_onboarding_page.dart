@@ -11,9 +11,8 @@ class FinanceOnboardingPage extends StatefulWidget {
 
 class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  bool _showForm = false;
-
   final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _clientEmailController = TextEditingController();
   final TextEditingController _holdingInfoController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _contactNameController = TextEditingController();
@@ -24,6 +23,7 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
   @override
   void dispose() {
     _nameController.dispose();
+    _clientEmailController.dispose();
     _holdingInfoController.dispose();
     _addressController.dispose();
     _contactNameController.dispose();
@@ -48,135 +48,168 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Finance Onboarding',
-                    style: PremiumTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Capture new client information for finance.',
-                    style: PremiumTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _showForm = true;
-                        });
-                      },
-                      icon: const Icon(Icons.person_add),
-                      label: const Text('New Client'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: PremiumTheme.teal,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 16,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 0,
-                      ),
-                    ),
-                  ),
-                  if (_showForm) ...[
-                    const SizedBox(height: 24),
-                    Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildField(
-                            label: 'Client Information Name',
-                            controller: _nameController,
-                            isRequired: true,
+                          Text(
+                            'Finance Onboarding',
+                            style: PremiumTheme.titleLarge,
                           ),
-                          const SizedBox(height: 16),
-                          _buildField(
-                            label: 'Client Information Holding Information',
-                            controller: _holdingInfoController,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildField(
-                            label: 'Client Information Address',
-                            controller: _addressController,
-                            maxLines: 2,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildField(
-                            label: 'Client Information Client Contact Name',
-                            controller: _contactNameController,
-                            isRequired: true,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildField(
-                            label:
-                                'Client Information Client Contact Email Address',
-                            controller: _contactEmailController,
-                            isRequired: true,
-                            keyboardType: TextInputType.emailAddress,
-                            isEmail: true,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildField(
-                            label:
-                                'Client Information Client Contact Mobile Number',
-                            controller: _contactMobileController,
-                            keyboardType: TextInputType.phone,
-                          ),
-                          const SizedBox(height: 24),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _showForm = false;
-                                  });
-                                },
-                                child: const Text('Cancel'),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton(
-                                onPressed: () {
-                                  final form = _formKey.currentState;
-                                  if (form == null) {
-                                    return;
-                                  }
-                                  if (!form.validate()) {
-                                    return;
-                                  }
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Client information captured successfully.',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: PremiumTheme.teal,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 24,
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  elevation: 0,
-                                ),
-                                child: const Text('Save'),
-                              ),
-                            ],
+                          const SizedBox(height: 8),
+                          Text(
+                            'Capture new client information for finance.',
+                            style: PremiumTheme.bodyMedium,
                           ),
                         ],
                       ),
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text('Back'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              _formKey.currentState?.reset();
+                              _nameController.clear();
+                              _clientEmailController.clear();
+                              _holdingInfoController.clear();
+                              _addressController.clear();
+                              _contactNameController.clear();
+                              _contactEmailController.clear();
+                              _contactMobileController.clear();
+                            },
+                            icon: const Icon(Icons.person_add),
+                            label: const Text('New Client'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: PremiumTheme.teal,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildField(
+                          label: 'Client Name',
+                          controller: _nameController,
+                          isRequired: true,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildField(
+                          label: 'Client Email',
+                          controller: _clientEmailController,
+                          isRequired: true,
+                          keyboardType: TextInputType.emailAddress,
+                          isEmail: true,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildField(
+                          label: 'Client Holding',
+                          controller: _holdingInfoController,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildField(
+                          label: 'Client Address',
+                          controller: _addressController,
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildField(
+                          label: 'Client Contact Name',
+                          controller: _contactNameController,
+                          isRequired: true,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildField(
+                          label: 'Client Contact Email',
+                          controller: _contactEmailController,
+                          isRequired: true,
+                          keyboardType: TextInputType.emailAddress,
+                          isEmail: true,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildField(
+                          label: 'Client Contact Mobile',
+                          controller: _contactMobileController,
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                _formKey.currentState?.reset();
+                                _nameController.clear();
+                                _clientEmailController.clear();
+                                _holdingInfoController.clear();
+                                _addressController.clear();
+                                _contactNameController.clear();
+                                _contactEmailController.clear();
+                                _contactMobileController.clear();
+                              },
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton(
+                              onPressed: () {
+                                final form = _formKey.currentState;
+                                if (form == null) {
+                                  return;
+                                }
+                                if (!form.validate()) {
+                                  return;
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Client information captured successfully.',
+                                    ),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: PremiumTheme.teal,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: const Text('Save'),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
