@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
+import '../creator/client_management_page.dart';
 
 /// Simplified Finance dashboard that uses real proposal data from `/api/proposals`.
 class FinanceDashboardPage extends StatefulWidget {
@@ -20,6 +21,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   String _statusFilter = 'all'; // all, pending, approved, other
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  String _currentTab = 'proposals'; // 'proposals' or 'clients'
 
   @override
   void initState() {
@@ -198,16 +200,24 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                _buildSummaryRow(
-                                  totalCount: totalCount,
-                                  pendingCount: pendingCount,
-                                  approvedCount: approvedCount,
-                                  totalAmount: totalAmount,
-                                ),
+                                _buildTabSelector(),
                                 const SizedBox(height: 16),
-                                _buildFilters(),
-                                const SizedBox(height: 16),
-                                _buildTable(proposals),
+                                if (_currentTab == 'proposals') ...[
+                                  _buildSummaryRow(
+                                    totalCount: totalCount,
+                                    pendingCount: pendingCount,
+                                    approvedCount: approvedCount,
+                                    totalAmount: totalAmount,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildFilters(),
+                                  const SizedBox(height: 16),
+                                  _buildTable(proposals),
+                                ] else ...[
+                                  Expanded(
+                                    child: ClientManagementPage(),
+                                  ),
+                                ],
                                 const SizedBox(height: 24),
                                 const Footer(),
                               ],
@@ -351,20 +361,81 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          const Icon(Icons.account_balance, color: Colors.white),
+          Icon(Icons.account_balance, color: Colors.white),
           const SizedBox(height: 8),
-          const Icon(Icons.receipt_long, color: Colors.white70),
+          Icon(Icons.receipt_long, color: Colors.white70),
           const SizedBox(height: 8),
-          const Icon(Icons.trending_up, color: Colors.white70),
-          const SizedBox(height: 16),
-          IconButton(
-            tooltip: 'Clients',
-            onPressed: () {
-              Navigator.pushNamed(context, '/finance/onboarding');
-            },
-            icon: const Icon(Icons.person_add, color: Colors.white70),
+          Icon(Icons.trending_up, color: Colors.white70),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabSelector() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: PremiumTheme.darkBg2.withOpacity(0.85),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildTabButton(
+              'Proposals',
+              Icons.description,
+              _currentTab == 'proposals',
+              () => setState(() => _currentTab = 'proposals'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildTabButton(
+              'Client Management',
+              Icons.business,
+              _currentTab == 'clients',
+              () => setState(() => _currentTab = 'clients'),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton(
+      String label, IconData icon, bool isActive, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: isActive
+              ? PremiumTheme.teal.withOpacity(0.2)
+              : Colors.transparent,
+          border:
+              isActive ? Border.all(color: PremiumTheme.teal, width: 1) : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isActive ? PremiumTheme.teal : Colors.white70,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: isActive ? PremiumTheme.teal : Colors.white70,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -529,7 +600,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              value: _statusFilter,
+              initialValue: _statusFilter,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
