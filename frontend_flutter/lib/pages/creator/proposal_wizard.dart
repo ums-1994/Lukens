@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
 import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/client_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -27,6 +29,9 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isLoading = false;
   bool _isLoadingTemplates = true;
   List<Template> _availableTemplates = [];
+  List<Map<String, dynamic>> _clients = [];
+  bool _isLoadingClients = false;
+  int? _selectedClientId;
 
   // Form data
   final Map<String, dynamic> _formData = {
@@ -154,6 +159,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     _formData['moduleContents'] = <String, String>{};
     // Load templates from template library
     _loadTemplatesFromLibrary();
+    _loadClients();
   }
 
   Future<void> _loadTemplatesFromLibrary() async {
@@ -244,6 +250,29 @@ class _ProposalWizardState extends State<ProposalWizard>
     } catch (e) {
       setState(() => _isLoadingTemplates = false);
       print('Error loading templates: $e');
+    }
+  }
+
+  Future<void> _loadClients() async {
+    setState(() => _isLoadingClients = true);
+    try {
+      final token = AuthService.token;
+      if (token == null || token.isEmpty) {
+        return;
+      }
+
+      final results = await ClientService.getClients(token);
+      if (!mounted) return;
+
+      setState(() {
+        _clients = List<Map<String, dynamic>>.from(results);
+      });
+    } catch (e) {
+      debugPrint('Error loading clients for proposal wizard: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingClients = false);
+      }
     }
   }
 
@@ -417,6 +446,110 @@ class _ProposalWizardState extends State<ProposalWizard>
           _contentModules.map((m) => m['id'] as String).toList();
       _formData['selectedModules'] = allModuleIds;
     });
+  }
+
+  void _onClientSelected(Map<String, dynamic> client) {
+    final dynamic rawId = client['id'];
+    int? id;
+    if (rawId is int) {
+      id = rawId;
+    } else if (rawId is String) {
+      id = int.tryParse(rawId);
+    }
+
+    final String? companyName =
+        (client['company_name']?.toString().isNotEmpty ?? false)
+            ? client['company_name'].toString()
+            : null;
+    final String? contactPerson =
+        (client['contact_person']?.toString().isNotEmpty ?? false)
+            ? client['contact_person'].toString()
+            : null;
+    final String? email = (client['email']?.toString().isNotEmpty ?? false)
+        ? client['email'].toString()
+        : null;
+    final String? phone = (client['phone']?.toString().isNotEmpty ?? false)
+        ? client['phone'].toString()
+        : null;
+    final String? location =
+        (client['location']?.toString().isNotEmpty ?? false)
+            ? client['location'].toString()
+            : null;
+    final String? projectNeeds =
+        (client['project_needs']?.toString().isNotEmpty ?? false)
+            ? client['project_needs'].toString()
+            : null;
+    final String? budgetRange =
+        (client['budget_range']?.toString().isNotEmpty ?? false)
+            ? client['budget_range'].toString()
+            : null;
+    final String? clientTimeline =
+        (client['timeline']?.toString().isNotEmpty ?? false)
+            ? client['timeline'].toString()
+            : null;
+
+    setState(() {
+      _selectedClientId = id;
+
+      if (companyName != null) {
+        _formData['clientName'] = companyName;
+      }
+      if (email != null) {
+        _formData['clientEmail'] = email;
+        _formData['clientContactEmail'] = email;
+      }
+      if (location != null) {
+        _formData['clientAddress'] = location;
+      }
+      if (contactPerson != null) {
+        _formData['clientContactName'] = contactPerson;
+      }
+      if (phone != null) {
+        _formData['clientContactMobile'] = phone;
+      }
+
+      if (projectNeeds != null &&
+          !(_formData['opportunityName']?.toString().isNotEmpty ?? false)) {
+        _formData['opportunityName'] = projectNeeds;
+      }
+      if (budgetRange != null &&
+          !(_formData['estimatedValue']?.toString().isNotEmpty ?? false)) {
+        _formData['estimatedValue'] = budgetRange;
+      }
+      if (clientTimeline != null &&
+          !(_formData['timeline']?.toString().isNotEmpty ?? false)) {
+        _formData['timeline'] = clientTimeline;
+      }
+    });
+
+    final missingFields = <String>[];
+    if ((_formData['clientName']?.toString().trim().isEmpty ?? true)) {
+      missingFields.add('Client Name');
+    }
+    if ((_formData['clientEmail']?.toString().trim().isEmpty ?? true)) {
+      missingFields.add('Client Email');
+    }
+    if ((_formData['clientAddress']?.toString().trim().isEmpty ?? true)) {
+      missingFields.add('Client Address');
+    }
+    if ((_formData['clientContactName']?.toString().trim().isEmpty ?? true)) {
+      missingFields.add('Client Contact Name');
+    }
+    if ((_formData['clientContactEmail']?.toString().trim().isEmpty ?? true)) {
+      missingFields.add('Client Contact Email');
+    }
+
+    if (missingFields.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Some client details are missing. Please fill them manually: '
+            '${missingFields.join(', ')}',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
   void _toggleModule(String moduleId) {
@@ -1793,25 +1926,6 @@ class _ProposalWizardState extends State<ProposalWizard>
                                     color: PremiumTheme.success,
                                     size: 24,
                                   ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  }),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildClientDetails() {
-    // Initialize controllers with current values and explicit LTR direction
-    final proposalTitleController = TextEditingController(
-        text: _formData['proposalTitle']?.toString() ?? '');
-    final clientNameController =
-        TextEditingController(text: _formData['clientName']?.toString() ?? '');
     final clientEmailController =
         TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
     final clientHoldingController = TextEditingController(
@@ -1844,7 +1958,9 @@ class _ProposalWizardState extends State<ProposalWizard>
               'Enter client information and opportunity details',
               style: PremiumTheme.bodyMedium,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            _buildClientSelector(),
+            const SizedBox(height: 8),
             Expanded(
               child: CustomScrollbar(
                 child: SingleChildScrollView(
@@ -3083,6 +3199,12 @@ class _ProposalWizardState extends State<ProposalWizard>
       'client name': _formData['clientName']?.toString() ?? '',
       'client': _formData['clientName']?.toString() ?? '',
       'client email': _formData['clientEmail']?.toString() ?? '',
+      'client contact name': _formData['clientContactName']?.toString() ?? '',
+      'client contact email': _formData['clientContactEmail']?.toString() ?? '',
+      'client contact mobile':
+          _formData['clientContactMobile']?.toString() ?? '',
+      'client address': _formData['clientAddress']?.toString() ?? '',
+      'client holding': _formData['clientHolding']?.toString() ?? '',
       'timeline': _formData['timeline']?.toString() ?? '',
       'estimated value': _formData['estimatedValue']?.toString() ?? '',
     };
