@@ -1926,6 +1926,174 @@ class _ProposalWizardState extends State<ProposalWizard>
                                     color: PremiumTheme.success,
                                     size: 24,
                                   ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClientSelector() {
+    if (_isLoadingClients) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(PremiumTheme.teal),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Loading clients...',
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_clients.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Text(
+          'No clients found. Please ensure clients have been onboarded.',
+          style: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textSecondary,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: DropdownButtonFormField<int>(
+        value: _selectedClientId,
+        decoration: InputDecoration(
+          labelText: 'Client',
+          hintText: 'Select client',
+          labelStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textSecondary,
+          ),
+          hintStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textTertiary,
+          ),
+          prefixIcon: Icon(
+            Icons.business_outlined,
+            color: PremiumTheme.teal,
+          ),
+          filled: true,
+          fillColor: PremiumTheme.glassWhite,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
+          ),
+        ),
+        dropdownColor: PremiumTheme.darkBg2,
+        items: _clients.map((client) {
+          final dynamic rawId = client['id'];
+          int? id;
+          if (rawId is int) {
+            id = rawId;
+          } else if (rawId is String) {
+            id = int.tryParse(rawId);
+          }
+
+          if (id == null) {
+            return null;
+          }
+
+          final String companyName =
+              (client['company_name']?.toString().isNotEmpty ?? false)
+                  ? client['company_name'].toString()
+                  : '';
+          final String contactPerson =
+              (client['contact_person']?.toString().isNotEmpty ?? false)
+                  ? client['contact_person'].toString()
+                  : '';
+          final String email =
+              (client['email']?.toString().isNotEmpty ?? false)
+                  ? client['email'].toString()
+                  : '';
+
+          String displayName;
+          if (companyName.isNotEmpty && contactPerson.isNotEmpty) {
+            displayName = '$companyName – $contactPerson';
+          } else if (companyName.isNotEmpty) {
+            displayName = companyName;
+          } else if (contactPerson.isNotEmpty) {
+            displayName = contactPerson;
+          } else if (email.isNotEmpty) {
+            displayName = email;
+          } else {
+            displayName = 'Client #$id';
+          }
+
+          return DropdownMenuItem<int>(
+            value: id,
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                displayName,
+                style: PremiumTheme.bodyMedium,
+              ),
+            ),
+          );
+        }).whereType<DropdownMenuItem<int>>().toList(),
+        onChanged: (value) {
+          if (value == null) return;
+
+          final client = _clients.firstWhere(
+            (c) {
+              final dynamic rawId = c['id'];
+              if (rawId is int) {
+                return rawId == value;
+              }
+              if (rawId is String) {
+                return int.tryParse(rawId) == value;
+              }
+              return false;
+            },
+            orElse: () => <String, dynamic>{},
+          );
+
+          if (client.isNotEmpty) {
+            _onClientSelected(client);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildClientDetails() {
+    final proposalTitleController = TextEditingController(
+        text: _formData['proposalTitle']?.toString() ?? '');
+    final clientNameController =
+        TextEditingController(text: _formData['clientName']?.toString() ?? '');
     final clientEmailController =
         TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
     final clientHoldingController = TextEditingController(
