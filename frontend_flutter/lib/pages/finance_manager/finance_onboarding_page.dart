@@ -304,7 +304,7 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
       };
 
       final response = await http.post(
-        Uri.parse('${ApiConfig.backendBaseUrl}/clients/manual'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/clients/manual'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -323,6 +323,8 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
           final decoded = json.decode(response.body) as Map<String, dynamic>;
           if (decoded['error'] != null) {
             message = decoded['error'].toString();
+          } else if (decoded['detail'] != null) {
+            message = decoded['detail'].toString();
           }
         } catch (_) {}
 
