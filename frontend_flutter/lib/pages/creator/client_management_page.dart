@@ -814,21 +814,49 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ],
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed: _showInviteDialog,
-                icon: const Icon(Icons.person_add, size: 20),
-                label: const Text('Invite Client',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: PremiumTheme.teal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/finance/onboarding');
+                    },
+                    icon: const Icon(Icons.person_add_alt_1, size: 20),
+                    label: const Text(
+                      'New Client',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: PremiumTheme.teal,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
                   ),
-                  elevation: 0,
-                ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _showInviteDialog,
+                    icon: const Icon(Icons.mail_outline, size: 20),
+                    label: const Text(
+                      'Invite Client',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: PremiumTheme.teal,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

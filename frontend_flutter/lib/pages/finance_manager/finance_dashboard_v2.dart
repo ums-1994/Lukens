@@ -360,7 +360,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           IconButton(
             tooltip: 'Clients',
             onPressed: () {
-              Navigator.pushNamed(context, '/finance/onboarding');
+              Navigator.pushNamed(context, '/client_management');
             },
             icon: const Icon(Icons.person_add, color: Colors.white70),
           ),
