@@ -5,8 +5,6 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
 import '../../services/api_service.dart';
-import '../../services/auth_service.dart';
-import '../../services/client_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -29,9 +27,6 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isLoading = false;
   bool _isLoadingTemplates = true;
   List<Template> _availableTemplates = [];
-  List<Map<String, dynamic>> _clients = [];
-  bool _isLoadingClients = false;
-  int? _selectedClientId;
 
   // Form data
   final Map<String, dynamic> _formData = {
@@ -159,7 +154,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     _formData['moduleContents'] = <String, String>{};
     // Load templates from template library
     _loadTemplatesFromLibrary();
-    _loadClients();
   }
 
   Future<void> _loadTemplatesFromLibrary() async {
@@ -250,29 +244,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     } catch (e) {
       setState(() => _isLoadingTemplates = false);
       print('Error loading templates: $e');
-    }
-  }
-
-  Future<void> _loadClients() async {
-    setState(() => _isLoadingClients = true);
-    try {
-      final token = AuthService.token;
-      if (token == null || token.isEmpty) {
-        return;
-      }
-
-      final results = await ClientService.getClients(token);
-      if (!mounted) return;
-
-      setState(() {
-        _clients = List<Map<String, dynamic>>.from(results);
-      });
-    } catch (e) {
-      debugPrint('Error loading clients for proposal wizard: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingClients = false);
-      }
     }
   }
 
@@ -446,110 +417,6 @@ class _ProposalWizardState extends State<ProposalWizard>
           _contentModules.map((m) => m['id'] as String).toList();
       _formData['selectedModules'] = allModuleIds;
     });
-  }
-
-  void _onClientSelected(Map<String, dynamic> client) {
-    final dynamic rawId = client['id'];
-    int? id;
-    if (rawId is int) {
-      id = rawId;
-    } else if (rawId is String) {
-      id = int.tryParse(rawId);
-    }
-
-    final String? companyName =
-        (client['company_name']?.toString().isNotEmpty ?? false)
-            ? client['company_name'].toString()
-            : null;
-    final String? contactPerson =
-        (client['contact_person']?.toString().isNotEmpty ?? false)
-            ? client['contact_person'].toString()
-            : null;
-    final String? email = (client['email']?.toString().isNotEmpty ?? false)
-        ? client['email'].toString()
-        : null;
-    final String? phone = (client['phone']?.toString().isNotEmpty ?? false)
-        ? client['phone'].toString()
-        : null;
-    final String? location =
-        (client['location']?.toString().isNotEmpty ?? false)
-            ? client['location'].toString()
-            : null;
-    final String? projectNeeds =
-        (client['project_needs']?.toString().isNotEmpty ?? false)
-            ? client['project_needs'].toString()
-            : null;
-    final String? budgetRange =
-        (client['budget_range']?.toString().isNotEmpty ?? false)
-            ? client['budget_range'].toString()
-            : null;
-    final String? clientTimeline =
-        (client['timeline']?.toString().isNotEmpty ?? false)
-            ? client['timeline'].toString()
-            : null;
-
-    setState(() {
-      _selectedClientId = id;
-
-      if (companyName != null) {
-        _formData['clientName'] = companyName;
-      }
-      if (email != null) {
-        _formData['clientEmail'] = email;
-        _formData['clientContactEmail'] = email;
-      }
-      if (location != null) {
-        _formData['clientAddress'] = location;
-      }
-      if (contactPerson != null) {
-        _formData['clientContactName'] = contactPerson;
-      }
-      if (phone != null) {
-        _formData['clientContactMobile'] = phone;
-      }
-
-      if (projectNeeds != null &&
-          !(_formData['opportunityName']?.toString().isNotEmpty ?? false)) {
-        _formData['opportunityName'] = projectNeeds;
-      }
-      if (budgetRange != null &&
-          !(_formData['estimatedValue']?.toString().isNotEmpty ?? false)) {
-        _formData['estimatedValue'] = budgetRange;
-      }
-      if (clientTimeline != null &&
-          !(_formData['timeline']?.toString().isNotEmpty ?? false)) {
-        _formData['timeline'] = clientTimeline;
-      }
-    });
-
-    final missingFields = <String>[];
-    if ((_formData['clientName']?.toString().trim().isEmpty ?? true)) {
-      missingFields.add('Client Name');
-    }
-    if ((_formData['clientEmail']?.toString().trim().isEmpty ?? true)) {
-      missingFields.add('Client Email');
-    }
-    if ((_formData['clientAddress']?.toString().trim().isEmpty ?? true)) {
-      missingFields.add('Client Address');
-    }
-    if ((_formData['clientContactName']?.toString().trim().isEmpty ?? true)) {
-      missingFields.add('Client Contact Name');
-    }
-    if ((_formData['clientContactEmail']?.toString().trim().isEmpty ?? true)) {
-      missingFields.add('Client Contact Email');
-    }
-
-    if (missingFields.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Some client details are missing. Please fill them manually: '
-            '${missingFields.join(', ')}',
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
   }
 
   void _toggleModule(String moduleId) {
@@ -1835,264 +1702,112 @@ class _ProposalWizardState extends State<ProposalWizard>
                   ),
                 )
               : CustomScrollbar(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      int crossAxisCount = 1;
-                      if (constraints.maxWidth > 1200) {
-                        crossAxisCount = 3;
-                      } else if (constraints.maxWidth > 800) {
-                        crossAxisCount = 2;
-                      }
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    // responsive columns: 3 on wide, 2 on medium, 1 on small
+                    int crossAxisCount = 1;
+                    if (constraints.maxWidth > 1200) {
+                      crossAxisCount = 3;
+                    } else if (constraints.maxWidth > 800) {
+                      crossAxisCount = 2;
+                    } else {
+                      crossAxisCount = 1;
+                    }
 
-                      return GridView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        gridDelegate:
-                            SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          childAspectRatio:
-                              crossAxisCount == 1 ? 3 : 1.2,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                        ),
-                        itemCount: _availableTemplates.length,
-                        itemBuilder: (context, index) {
-                          final template = _availableTemplates[index];
-                          final isSelected =
-                              _formData['templateId'] == template.id;
-                          final color = template.templateType == 'sow'
-                              ? const Color(0xFF2ECC71)
-                              : template.templateType == 'rfi'
-                                  ? const Color(0xFFE74C3C)
-                                  : const Color(0xFF3498DB);
+                    return GridView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        childAspectRatio: crossAxisCount == 1 ? 3 : 1.2,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                      ),
+                      itemCount: _availableTemplates.length,
+                      itemBuilder: (context, index) {
+                        final template = _availableTemplates[index];
+                        final isSelected =
+                            _formData['templateId'] == template.id;
+                        final color = template.templateType == 'sow'
+                            ? const Color(0xFF2ECC71)
+                            : template.templateType == 'rfi'
+                                ? const Color(0xFFE74C3C)
+                                : const Color(0xFF3498DB);
 
-                          return GestureDetector(
-                            onTap: () => _selectTemplate(template.id),
-                            child: GlassContainer(
-                              borderRadius: 20,
-                              padding: const EdgeInsets.all(20),
-                              gradientStart: isSelected ? color : null,
-                              gradientEnd: isSelected ? color : null,
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 60,
-                                    height: 60,
-                                    decoration: BoxDecoration(
-                                      color: color.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(
-                                      template.templateType == 'sow'
-                                          ? Icons.work_outline
-                                          : template.templateType == 'rfi'
-                                              ? Icons.quiz_outlined
-                                              : Icons.description_outlined,
-                                      color: color,
-                                      size: 30,
-                                    ),
+                        return GestureDetector(
+                          onTap: () => _selectTemplate(template.id),
+                          child: GlassContainer(
+                            borderRadius: 20,
+                            padding: const EdgeInsets.all(20),
+                            gradientStart: isSelected ? color : null,
+                            gradientEnd: isSelected ? color : null,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                  const SizedBox(width: 20),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          template.name,
-                                          style: PremiumTheme.bodyLarge
-                                              .copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            color: PremiumTheme.textPrimary,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          template.description ?? '',
-                                          style: PremiumTheme.bodyMedium,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          '${template.sections.length} sections',
-                                          style: PremiumTheme.labelMedium,
-                                        ),
-                                      ],
-                                    ),
+                                  child: Icon(
+                                    template.templateType == 'sow'
+                                        ? Icons.work_outline
+                                        : template.templateType == 'rfi'
+                                            ? Icons.quiz_outlined
+                                            : Icons.description_outlined,
+                                    color: color,
+                                    size: 30,
                                   ),
-                                  if (isSelected)
-                                    Icon(
-                                      Icons.check_circle,
-                                      color: PremiumTheme.success,
-                                      size: 24,
-                                    ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(width: 20),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        template.name,
+                                        style: PremiumTheme.bodyLarge.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: PremiumTheme.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        template.description ?? '',
+                                        style: PremiumTheme.bodyMedium,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        '${template.sections.length} sections',
+                                        style: PremiumTheme.labelMedium,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (isSelected)
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: PremiumTheme.success,
+                                    size: 24,
+                                  ),
+                              ],
                             ),
-                          );
-                        },
-                      );
-                    },
-                  ),
+                          ),
+                        );
+                      },
+                    );
+                  }),
                 ),
-              ),
-            ),
-          ],
         ),
       ],
     );
   }
 
-  Widget _buildClientSelector() {
-    if (_isLoadingClients) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 20),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(PremiumTheme.teal),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Loading clients...',
-              style: PremiumTheme.bodyMedium.copyWith(
-                color: PremiumTheme.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_clients.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 20),
-        child: Text(
-          'No clients found. Please ensure clients have been onboarded.',
-          style: PremiumTheme.bodyMedium.copyWith(
-            color: PremiumTheme.textSecondary,
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: DropdownButtonFormField<int>(
-        value: _selectedClientId,
-        decoration: InputDecoration(
-          labelText: 'Client',
-          hintText: 'Select client',
-          labelStyle: PremiumTheme.bodyMedium.copyWith(
-            color: PremiumTheme.textSecondary,
-          ),
-          hintStyle: PremiumTheme.bodyMedium.copyWith(
-            color: PremiumTheme.textTertiary,
-          ),
-          prefixIcon: Icon(
-            Icons.business_outlined,
-            color: PremiumTheme.teal,
-          ),
-          filled: true,
-          fillColor: PremiumTheme.glassWhite,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
-          ),
-        ),
-        dropdownColor: PremiumTheme.darkBg2,
-        items: _clients.map((client) {
-          final dynamic rawId = client['id'];
-          int? id;
-          if (rawId is int) {
-            id = rawId;
-          } else if (rawId is String) {
-            id = int.tryParse(rawId);
-          }
-
-          if (id == null) {
-            return null;
-          }
-
-          final String companyName =
-              (client['company_name']?.toString().isNotEmpty ?? false)
-                  ? client['company_name'].toString()
-                  : '';
-          final String contactPerson =
-              (client['contact_person']?.toString().isNotEmpty ?? false)
-                  ? client['contact_person'].toString()
-                  : '';
-          final String email =
-              (client['email']?.toString().isNotEmpty ?? false)
-                  ? client['email'].toString()
-                  : '';
-
-          String displayName;
-          if (companyName.isNotEmpty && contactPerson.isNotEmpty) {
-            displayName = '$companyName – $contactPerson';
-          } else if (companyName.isNotEmpty) {
-            displayName = companyName;
-          } else if (contactPerson.isNotEmpty) {
-            displayName = contactPerson;
-          } else if (email.isNotEmpty) {
-            displayName = email;
-          } else {
-            displayName = 'Client #$id';
-          }
-
-          return DropdownMenuItem<int>(
-            value: id,
-            child: Directionality(
-              textDirection: TextDirection.ltr,
-              child: Text(
-                displayName,
-                style: PremiumTheme.bodyMedium,
-              ),
-            ),
-          );
-        }).whereType<DropdownMenuItem<int>>().toList(),
-        onChanged: (value) {
-          if (value == null) return;
-
-          final client = _clients.firstWhere(
-            (c) {
-              final dynamic rawId = c['id'];
-              if (rawId is int) {
-                return rawId == value;
-              }
-              if (rawId is String) {
-                return int.tryParse(rawId) == value;
-              }
-              return false;
-            },
-            orElse: () => <String, dynamic>{},
-          );
-
-          if (client.isNotEmpty) {
-            _onClientSelected(client);
-          }
-        },
-      ),
-    );
-  }
-
   Widget _buildClientDetails() {
+    // Initialize controllers with current values and explicit LTR direction
     final proposalTitleController = TextEditingController(
         text: _formData['proposalTitle']?.toString() ?? '');
     final clientNameController =
@@ -2129,9 +1844,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               'Enter client information and opportunity details',
               style: PremiumTheme.bodyMedium,
             ),
-            const SizedBox(height: 16),
-            _buildClientSelector(),
-            const SizedBox(height: 8),
+            const SizedBox(height: 24),
             Expanded(
               child: CustomScrollbar(
                 child: SingleChildScrollView(
@@ -2222,8 +1935,11 @@ class _ProposalWizardState extends State<ProposalWizard>
                       _buildTextField(
                         'Client Contact Mobile',
                         'Mobile number',
-                        (value) => setState(
-                            () => _formData['clientContactMobile'] = value),
+                        (value) {
+                          setState(() {
+                            _formData['clientContactMobile'] = value;
+                          });
+                        },
                         Icons.phone_iphone,
                         keyboardType: TextInputType.phone,
                         controller: clientContactMobileController,
@@ -2867,7 +2583,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               );
             }
 
-            final issue = raw as Map<String, dynamic>;
+            final issue = raw;
             final title = issue['title']?.toString() ?? 'Issue';
             final description = issue['description']?.toString() ?? '';
             final action = issue['action']?.toString();
@@ -2940,11 +2656,9 @@ class _ProposalWizardState extends State<ProposalWizard>
                           children: [
                             TextButton(
                               onPressed: () async {
-                                if (sectionId != null) {
-                                  _ensureModuleSelected(sectionId);
-                                  await _openContentLibraryAndInsert(sectionId);
-                                }
-                              },
+                                _ensureModuleSelected(sectionId);
+                                await _openContentLibraryAndInsert(sectionId);
+                                                            },
                               child: const Text('Add module'),
                             ),
                             const SizedBox(width: 8),
@@ -2958,10 +2672,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 ),
                               ),
                               onPressed: () {
-                                if (sectionId != null) {
-                                  _addModuleWithAI(sectionId);
-                                }
-                              },
+                                _addModuleWithAI(sectionId);
+                                                            },
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Add with AI'),
                             ),
@@ -3370,12 +3082,6 @@ class _ProposalWizardState extends State<ProposalWizard>
       'client name': _formData['clientName']?.toString() ?? '',
       'client': _formData['clientName']?.toString() ?? '',
       'client email': _formData['clientEmail']?.toString() ?? '',
-      'client contact name': _formData['clientContactName']?.toString() ?? '',
-      'client contact email': _formData['clientContactEmail']?.toString() ?? '',
-      'client contact mobile':
-          _formData['clientContactMobile']?.toString() ?? '',
-      'client address': _formData['clientAddress']?.toString() ?? '',
-      'client holding': _formData['clientHolding']?.toString() ?? '',
       'timeline': _formData['timeline']?.toString() ?? '',
       'estimated value': _formData['estimatedValue']?.toString() ?? '',
     };
