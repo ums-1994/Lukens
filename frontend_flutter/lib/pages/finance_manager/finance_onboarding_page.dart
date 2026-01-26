@@ -1,5 +1,10 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
 
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+import '../../config/api_config.dart';
+import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 
 class FinanceOnboardingPage extends StatefulWidget {
@@ -19,6 +24,7 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
   final TextEditingController _contactEmailController = TextEditingController();
   final TextEditingController _contactMobileController =
       TextEditingController();
+  bool _isSaving = false;
 
   @override
   void dispose() {
@@ -87,8 +93,8 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
                               _contactEmailController.clear();
                               _contactMobileController.clear();
                             },
-                            icon: const Icon(Icons.person_add),
-                            label: const Text('New Client'),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Clear Form'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: PremiumTheme.teal,
                               foregroundColor: Colors.white,
@@ -175,22 +181,7 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
                             ),
                             const SizedBox(width: 12),
                             ElevatedButton(
-                              onPressed: () {
-                                final form = _formKey.currentState;
-                                if (form == null) {
-                                  return;
-                                }
-                                if (!form.validate()) {
-                                  return;
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Client information captured successfully.',
-                                    ),
-                                  ),
-                                );
-                              },
+                              onPressed: _isSaving ? null : _saveClient,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: PremiumTheme.teal,
                                 foregroundColor: Colors.white,
@@ -203,7 +194,18 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
                                 ),
                                 elevation: 0,
                               ),
-                              child: const Text('Save'),
+                              child: _isSaving
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
+                                      ),
+                                    )
+                                  : const Text('Save'),
                             ),
                           ],
                         ),
@@ -272,5 +274,74 @@ class _FinanceOnboardingPageState extends State<FinanceOnboardingPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _saveClient() async {
+    final form = _formKey.currentState;
+    if (form == null) return;
+    if (!form.validate()) return;
+
+    final token = AuthService.token;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You must be logged in to save a client'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final body = {
+        'company_name': _nameController.text.trim(),
+        'email': _clientEmailController.text.trim(),
+        'contact_person': _contactNameController.text.trim(),
+        'phone': _contactMobileController.text.trim(),
+        'holding': _holdingInfoController.text.trim(),
+        'address': _addressController.text.trim(),
+        'contact_email': _contactEmailController.text.trim(),
+      };
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.backendBaseUrl}/clients/manual'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        // Return to previous page (e.g. ClientManagementPage) and signal success
+        if (mounted) {
+          Navigator.pop(context, true);
+        }
+      } else {
+        String message = 'Failed to save client';
+        try {
+          final decoded = json.decode(response.body) as Map<String, dynamic>;
+          if (decoded['error'] != null) {
+            message = decoded['error'].toString();
+          }
+        } catch (_) {}
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving client: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
   }
 }

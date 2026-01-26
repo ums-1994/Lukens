@@ -333,6 +333,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final app = Provider.of<AppState>(context);
     final user = app.currentUser;
     final userRole = user?['role'] ?? 'Financial Manager';
+    final isFinanceUser = _isFinanceUser();
 
     return Scaffold(
       body: Container(
@@ -420,146 +421,148 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
 
-            // Main Content with Sidebar
+            // Main Content with optional Sidebar
             Expanded(
               child: Row(
                 children: [
-                  // Collapsible Sidebar
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.2),
-                        ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      border: Border(
-                        right: BorderSide(
-                          color: PremiumTheme.glassWhiteBorder,
-                          width: 1,
+                  if (!isFinanceUser)
+                    // Collapsible Sidebar (hidden for finance users)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: _isSidebarCollapsed ? 90.0 : 250.0,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.black.withOpacity(0.3),
+                            Colors.black.withOpacity(0.2),
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        border: Border(
+                          right: BorderSide(
+                            color: PremiumTheme.glassWhiteBorder,
+                            width: 1,
+                          ),
                         ),
                       ),
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: PremiumTheme.glassWhite,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: PremiumTheme.glassWhiteBorder,
-                                    width: 1,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 16),
+                            // Toggle button
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              child: InkWell(
+                                onTap: _toggleSidebar,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: PremiumTheme.glassWhite,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: PremiumTheme.glassWhiteBorder,
+                                      width: 1,
+                                    ),
                                   ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
+                                  child: Row(
+                                    mainAxisAlignment: _isSidebarCollapsed
+                                        ? MainAxisAlignment.center
+                                        : MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      if (!_isSidebarCollapsed)
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 12),
+                                          child: Text(
+                                            'Navigation',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12),
+                                          ),
+                                        ),
+                                      Padding(
                                         padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
+                                            horizontal:
+                                                _isSidebarCollapsed ? 0 : 8),
+                                        child: Icon(
+                                          _isSidebarCollapsed
+                                              ? Icons.keyboard_arrow_right
+                                              : Icons.keyboard_arrow_left,
+                                          color: Colors.white,
                                         ),
                                       ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          if (!_isAdminUser()) // Only show for non-admin users
+                            const SizedBox(height: 12),
+                            // Navigation items
                             _buildNavItem(
-                                'My Proposals',
-                                'assets/images/My_Proposals.png',
-                                _currentPage == 'My Proposals',
+                                'Dashboard',
+                                'assets/images/Dahboard.png',
+                                _currentPage == 'Dashboard',
                                 context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Client Management',
-                              context),
-                          _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approved Proposals',
-                              context),
-                          if (!_isAdminUser()) // Only show for non-admin users
+                            if (!_isAdminUser())
+                              _buildNavItem(
+                                  'My Proposals',
+                                  'assets/images/My_Proposals.png',
+                                  _currentPage == 'My Proposals',
+                                  context),
                             _buildNavItem(
-                                'Analytics (My Pipeline)',
-                                'assets/images/analytics.png',
-                                _currentPage == 'Analytics (My Pipeline)',
+                                'Templates',
+                                'assets/images/content_library.png',
+                                _currentPage == 'Templates',
                                 context),
+                            _buildNavItem(
+                                'Content Library',
+                                'assets/images/content_library.png',
+                                _currentPage == 'Content Library',
+                                context),
+                            _buildNavItem(
+                                'Client Management',
+                                'assets/images/collaborations.png',
+                                _currentPage == 'Client Management',
+                                context),
+                            _buildNavItem(
+                                'Approved Proposals',
+                                'assets/images/Time Allocation_Approval_Blue.png',
+                                _currentPage == 'Approved Proposals',
+                                context),
+                            if (!_isAdminUser())
+                              _buildNavItem(
+                                  'Analytics (My Pipeline)',
+                                  'assets/images/analytics.png',
+                                  _currentPage == 'Analytics (My Pipeline)',
+                                  context),
 
-                          const SizedBox(height: 20),
+                            const SizedBox(height: 20),
 
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
+                            // Divider
+                            if (!_isSidebarCollapsed)
+                              Container(
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                height: 1,
+                                color: const Color(0xFF2C3E50),
+                              ),
 
-                          const SizedBox(height: 12),
+                            const SizedBox(height: 12),
 
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
-                        ],
+                            // Logout button
+                            _buildNavItem(
+                                'Logout',
+                                'assets/images/Logout_KhonoBuzz.png',
+                                false,
+                                context),
+                            const SizedBox(height: 20),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
                   // Content Area
                   Expanded(
@@ -725,6 +728,17 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
+  bool _isFinanceUser() {
+    try {
+      final user = AuthService.currentUser;
+      if (user == null) return false;
+      final role = (user['role']?.toString() ?? '').toLowerCase().trim();
+      return role.contains('finance');
+    } catch (e) {
+      return false;
+    }
+  }
+
   void _navigateToPage(BuildContext context, String label) {
     final isAdmin = _isAdminUser();
 
@@ -818,8 +832,16 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/finance/onboarding');
+                    onPressed: () async {
+                      final result = await Navigator.pushNamed(
+                          context, '/finance/onboarding');
+                      if (result == true || result == 'client_created') {
+                        await _loadData();
+                        _showSnackBar(
+                          'Client information captured successfully.',
+                          isSuccess: true,
+                        );
+                      }
                     },
                     icon: const Icon(Icons.person_add_alt_1, size: 20),
                     label: const Text(

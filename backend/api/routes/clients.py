@@ -593,6 +593,100 @@ def get_clients(username=None):
         return jsonify({"error": str(exc)}), 500
 
 
+@bp.post("/clients/manual")
+@token_required
+def create_client_manual(username=None):
+    """Create a client directly from an internal form (e.g. finance UI).
+
+    This bypasses the public invitation/onboarding flow and simply inserts
+    a row into the clients table for the current authenticated user.
+    """
+    try:
+        data = request.json or {}
+
+        company_name = (data.get("company_name") or "").strip()
+        email = (data.get("email") or "").strip()
+        contact_person = (data.get("contact_person") or "").strip() or None
+        phone = (data.get("phone") or "").strip() or None
+        holding = (data.get("holding") or "").strip() or None
+        address = (data.get("address") or "").strip() or None
+        contact_email = (data.get("contact_email") or "").strip() or None
+
+        if not company_name or not email:
+            return jsonify({"error": "Company name and email are required"}), 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Resolve current user ID
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"error": "User not found"}), 404
+
+            user_id = user_row["id"]
+
+            # Build additional_info from optional finance-only fields
+            extra_parts = []
+            if holding:
+                extra_parts.append(f"Holding: {holding}")
+            if address:
+                extra_parts.append(f"Address: {address}")
+            if contact_email and contact_email.lower() != email.lower():
+                extra_parts.append(f"Contact email: {contact_email}")
+            additional_info = "\n".join(extra_parts) if extra_parts else None
+
+            cursor.execute(
+                """
+                INSERT INTO clients (
+                    company_name, contact_person, email, phone,
+                    industry, company_size, location, business_type,
+                    project_needs, budget_range, timeline, additional_info,
+                    status, onboarding_token, created_by
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', NULL, %s)
+                ON CONFLICT (email) DO UPDATE SET
+                    company_name = EXCLUDED.company_name,
+                    contact_person = EXCLUDED.contact_person,
+                    phone = EXCLUDED.phone,
+                    location = EXCLUDED.location,
+                    additional_info = EXCLUDED.additional_info,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id, company_name, email, created_at
+                """,
+                (
+                    company_name,
+                    contact_person,
+                    email,
+                    phone,
+                    None,  # industry
+                    None,  # company_size
+                    address,
+                    None,  # business_type
+                    None,  # project_needs
+                    None,  # budget_range
+                    None,  # timeline
+                    additional_info,
+                    user_id,
+                ),
+            )
+
+            client = cursor.fetchone()
+            conn.commit()
+
+            result = dict(client)
+            for key, value in result.items():
+                if isinstance(value, datetime):
+                    result[key] = value.isoformat()
+
+            return jsonify({"success": True, "client": result}), 201
+
+    except Exception as exc:
+        print(f"[ERROR] Error creating client manually: {exc}")
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
 @bp.get("/clients/<int:client_id>")
 @token_required
 def get_client(username=None, client_id=None):
