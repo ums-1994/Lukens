@@ -1835,110 +1835,113 @@ class _ProposalWizardState extends State<ProposalWizard>
                   ),
                 )
               : CustomScrollbar(
-                  child: LayoutBuilder(builder: (context, constraints) {
-                    // responsive columns: 3 on wide, 2 on medium, 1 on small
-                    int crossAxisCount = 1;
-                    if (constraints.maxWidth > 1200) {
-                      crossAxisCount = 3;
-                    } else if (constraints.maxWidth > 800) {
-                      crossAxisCount = 2;
-                    } else {
-                      crossAxisCount = 1;
-                    }
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      int crossAxisCount = 1;
+                      if (constraints.maxWidth > 1200) {
+                        crossAxisCount = 3;
+                      } else if (constraints.maxWidth > 800) {
+                        crossAxisCount = 2;
+                      }
 
-                    return GridView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossAxisCount,
-                        childAspectRatio: crossAxisCount == 1 ? 3 : 1.2,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                      ),
-                      itemCount: _availableTemplates.length,
-                      itemBuilder: (context, index) {
-                        final template = _availableTemplates[index];
-                        final isSelected =
-                            _formData['templateId'] == template.id;
-                        final color = template.templateType == 'sow'
-                            ? const Color(0xFF2ECC71)
-                            : template.templateType == 'rfi'
-                                ? const Color(0xFFE74C3C)
-                                : const Color(0xFF3498DB);
+                      return GridView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        gridDelegate:
+                            SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          childAspectRatio:
+                              crossAxisCount == 1 ? 3 : 1.2,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemCount: _availableTemplates.length,
+                        itemBuilder: (context, index) {
+                          final template = _availableTemplates[index];
+                          final isSelected =
+                              _formData['templateId'] == template.id;
+                          final color = template.templateType == 'sow'
+                              ? const Color(0xFF2ECC71)
+                              : template.templateType == 'rfi'
+                                  ? const Color(0xFFE74C3C)
+                                  : const Color(0xFF3498DB);
 
-                        return GestureDetector(
-                          onTap: () => _selectTemplate(template.id),
-                          child: GlassContainer(
-                            borderRadius: 20,
-                            padding: const EdgeInsets.all(20),
-                            gradientStart: isSelected ? color : null,
-                            gradientEnd: isSelected ? color : null,
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 60,
-                                  height: 60,
-                                  decoration: BoxDecoration(
-                                    color: color.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(12),
+                          return GestureDetector(
+                            onTap: () => _selectTemplate(template.id),
+                            child: GlassContainer(
+                              borderRadius: 20,
+                              padding: const EdgeInsets.all(20),
+                              gradientStart: isSelected ? color : null,
+                              gradientEnd: isSelected ? color : null,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 60,
+                                    height: 60,
+                                    decoration: BoxDecoration(
+                                      color: color.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Icon(
+                                      template.templateType == 'sow'
+                                          ? Icons.work_outline
+                                          : template.templateType == 'rfi'
+                                              ? Icons.quiz_outlined
+                                              : Icons.description_outlined,
+                                      color: color,
+                                      size: 30,
+                                    ),
                                   ),
-                                  child: Icon(
-                                    template.templateType == 'sow'
-                                        ? Icons.work_outline
-                                        : template.templateType == 'rfi'
-                                            ? Icons.quiz_outlined
-                                            : Icons.description_outlined,
-                                    color: color,
-                                    size: 30,
-                                  ),
-                                ),
-                                const SizedBox(width: 20),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        template.name,
-                                        style: PremiumTheme.bodyLarge.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: PremiumTheme.textPrimary,
+                                  const SizedBox(width: 20),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          template.name,
+                                          style: PremiumTheme.bodyLarge
+                                              .copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: PremiumTheme.textPrimary,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        template.description ?? '',
-                                        style: PremiumTheme.bodyMedium,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        '${template.sections.length} sections',
-                                        style: PremiumTheme.labelMedium,
-                                      ),
-                                    ],
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          template.description ?? '',
+                                          style: PremiumTheme.bodyMedium,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          '${template.sections.length} sections',
+                                          style: PremiumTheme.labelMedium,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                if (isSelected)
-                                  Icon(
-                                    Icons.check_circle,
-                                    color: PremiumTheme.success,
-                                    size: 24,
-                                  ),
-                              ],
+                                  if (isSelected)
+                                    Icon(
+                                      Icons.check_circle,
+                                      color: PremiumTheme.success,
+                                      size: 24,
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      );
+                    },
                   ),
                 ),
               ),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 
