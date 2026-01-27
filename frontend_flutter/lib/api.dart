@@ -820,6 +820,22 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  // Cycle Time Analytics
+  Future<Map<String, dynamic>?> getCycleTimeAnalytics() async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/analytics/cycle-time"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching cycle time analytics: $e');
+    }
+    return null;
+  }
+
   Future<String?> clientSignProposal(
       String proposalId, String signerName) async {
     final r = await http.post(

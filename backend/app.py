@@ -61,17 +61,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+
+# CORS:
+# - Flutter web dev server uses a random localhost port (e.g. http://localhost:51704)
+# - When credentials are enabled, we must NOT reply with "*" for Access-Control-Allow-Origin
+_CORS_ALLOWED_ORIGINS = [
+    # Production
+    r"^https://proposals2025\.netlify\.app$",
+    # Local dev (any port)
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+    # Some documented local ports (keep explicit)
+    r"^http://localhost:5173$",
+    r"^http://localhost:5000$",
+    r"^http://localhost:8081$",
+    r"^http://localhost:8083$",
+]
+
 CORS(
     app,
     supports_credentials=True,
     resources={
         r"/*": {
-            "origins": [
-                "https://proposals2025.netlify.app",
-                "http://localhost:5173",
-                "http://localhost:5000",
-                "http://localhost:8081",
-            ],
+            "origins": _CORS_ALLOWED_ORIGINS,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
         }
@@ -81,7 +93,18 @@ CORS(
 @app.route("/", methods=["OPTIONS"])
 @app.route("/<path:remaining>", methods=["OPTIONS"])
 def handle_options_preflight(remaining=None):
-    return {}, 200
+    """Handle CORS preflight requests"""
+    origin = request.headers.get("Origin")
+    response = jsonify()
+    # With credentials, echo back the origin (if present). Flask-CORS will also
+    # apply headers for matched origins, but we ensure preflights don't fail early.
+    if origin:
+        response.headers.add("Access-Control-Allow-Origin", origin)
+        response.headers.add("Vary", "Origin")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE")
+    response.headers.add("Access-Control-Allow-Credentials", "true")
+    return response
 
 # Register API blueprints
 from api.routes.auth import bp as auth_bp
@@ -2004,24 +2027,53 @@ def reject_proposal(username, proposal_id):
 @app.patch("/proposals/<int:proposal_id>/status")
 @token_required
 def update_proposal_status(username, proposal_id):
+    """Update proposal status and log the status change in activity_log."""
     try:
-        data = request.get_json()
-        status = data.get('status')
-        
-        if not status:
+        data = request.get_json() or {}
+        new_status = data.get('status')
+
+        if not new_status:
             return {'detail': 'Status is required'}, 400
-        
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''UPDATE proposals SET status = %s WHERE id = %s''',
-            (status, proposal_id)
-        )
-        conn.commit()
-        release_pg_conn(conn)
-        return {'detail': 'Status updated'}, 200
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Look up current status (for status transition logging)
+            cursor.execute("SELECT status FROM proposals WHERE id = %s", (proposal_id,))
+            row = cursor.fetchone()
+            if not row:
+                return {'detail': 'Proposal not found'}, 404
+            old_status = row[0]
+
+            # Update status + updated_at
+            cursor.execute(
+                '''UPDATE proposals
+                   SET status = %s, updated_at = NOW()
+                   WHERE id = %s''',
+                (new_status, proposal_id)
+            )
+
+            # Resolve user_id for activity log (best-effort)
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            u = cursor.fetchone()
+            user_id = u[0] if u else None
+
+            # Log activity (doesn't break main flow if it fails)
+            log_activity(
+                proposal_id=proposal_id,
+                user_id=user_id,
+                action_type="status_changed",
+                description=f"Status changed: {old_status} → {new_status}",
+                metadata={"from": old_status, "to": new_status}
+            )
+
+            conn.commit()
+
+        return {'detail': 'Status updated', 'from': old_status, 'to': new_status}, 200
+
     except Exception as e:
         return {'detail': str(e)}, 500
+
 
 @app.post("/proposals/<int:proposal_id>/send_to_client")
 @token_required
@@ -5471,3 +5523,109 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
     app.run(debug=True, host='0.0.0.0', port=8000)
+
+# =============================================================================
+# ANALYTICS: CYCLE TIME METRICS (FIRST PASS)
+# =============================================================================
+@app.get("/api/analytics/cycle-time")
+@token_required
+def analytics_cycle_time(username):
+    """
+    First-pass cycle time metrics:
+      cycle_time = updated_at - created_at
+
+    Returns average/max cycle time per status (treated as 'stage') for the
+    current user's proposals.
+
+    Optional query params:
+      - start_date=YYYY-MM-DD
+      - end_date=YYYY-MM-DD
+      - status=<exact status>
+    """
+    try:
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+        status = request.args.get("status")
+
+        # Resolve current user's numeric ID, then filter by proposals.owner_id.
+        # In dev (or for freshly created Firebase users), the user may not exist yet.
+        # In that case, return an empty analytics payload instead of an error.
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            row = cursor.fetchone()
+            if not row:
+                return {
+                    "metric": "cycle_time",
+                    "definition": "updated_at - created_at",
+                    "filters": {
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "status": status,
+                    },
+                    "bottleneck": None,
+                    "by_stage": [],
+                }, 200
+            owner_id = row[0]
+
+        where = ["owner_id = %s", "created_at IS NOT NULL", "updated_at IS NOT NULL"]
+        params = [owner_id]
+
+        if start_date:
+            where.append("created_at >= %s")
+            params.append(start_date)
+        if end_date:
+            where.append("created_at <= %s")
+            params.append(end_date)
+        if status:
+            where.append("status = %s")
+            params.append(status)
+
+        where_sql = " AND ".join(where)
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT
+                    status AS stage,
+                    COUNT(*) AS samples,
+                    AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400.0) AS avg_days,
+                    MAX(EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400.0) AS max_days
+                FROM proposals
+                WHERE {where_sql}
+                GROUP BY status
+                ORDER BY avg_days DESC NULLS LAST;
+                """,
+                params,
+            )
+
+            rows = cursor.fetchall()
+
+        by_stage = [
+            {
+                "stage": r[0],
+                "samples": int(r[1]),
+                "avg_days": float(r[2]) if r[2] is not None else None,
+                "max_days": float(r[3]) if r[3] is not None else None,
+            }
+            for r in rows
+        ]
+
+        bottleneck = by_stage[0] if by_stage else None
+
+        return {
+            "metric": "cycle_time",
+            "definition": "updated_at - created_at",
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "status": status,
+            },
+            "bottleneck": bottleneck,
+            "by_stage": by_stage,
+        }, 200
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"detail": str(e)}, 500

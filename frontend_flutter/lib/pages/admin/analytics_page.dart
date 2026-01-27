@@ -33,6 +33,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       NumberFormat.currency(symbol: _currencySymbol, decimalDigits: 0);
   final NumberFormat _compactCurrencyFormatter =
       NumberFormat.compactCurrency(symbol: _currencySymbol, decimalDigits: 1);
+  Map<String, dynamic>? _cycleTimeAnalytics;
 
   @override
   void initState() {
@@ -47,6 +48,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       if (app.proposals.isEmpty) {
         app.fetchProposals();
       }
+      _loadCycleTimeAnalytics(app);
+    });
+  }
+
+  Future<void> _loadCycleTimeAnalytics(AppState app) async {
+    final data = await app.getCycleTimeAnalytics();
+    if (!mounted) return;
+    setState(() {
+      _cycleTimeAnalytics = data;
     });
   }
 
@@ -931,6 +941,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   ],
                                 ],
                               ),
+                              const SizedBox(height: 24),
+                              if (_cycleTimeAnalytics != null)
+                                _buildGlassChartCard(
+                                  'Cycle Time by Stage',
+                                  _buildCycleTimeContent(_cycleTimeAnalytics),
+                                  height: 220,
+                                ),
                               const SizedBox(height: 32),
                               _buildGlassChartCard(
                                 'Revenue Analytics',
@@ -1923,3 +1940,96 @@ class _MetricCardData {
     required this.subtitle,
   });
 }
+
+Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
+    final byStage = (cycleTimeAnalytics?['by_stage'] as List?) ?? [];
+    if (byStage.isEmpty) {
+      return const Center(
+        child: Text(
+          'No cycle time data available yet.\nStart sending proposals to see stage metrics here.',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    String formatDays(num? days) {
+      if (days == null) return '-';
+      if (days < 1) {
+        final hours = days * 24;
+        if (hours < 1) {
+          final minutes = hours * 60;
+          return '${minutes.toStringAsFixed(0)} min';
+        }
+        return '${hours.toStringAsFixed(1)} h';
+      }
+      return '${days.toStringAsFixed(1)} d';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (cycleTimeAnalytics?['bottleneck'] != null) ...[
+          Text(
+            'Current Bottleneck: ${cycleTimeAnalytics!['bottleneck']['stage']}',
+            style: PremiumTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        SizedBox(
+          height: 140,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: byStage.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final item = byStage[index] as Map<String, dynamic>;
+              final stage = item['stage']?.toString() ?? 'Unknown';
+              final avgDays = item['avg_days'] as num?;
+              final samples = item['samples'] as int? ?? 0;
+
+              return Container(
+                width: 220,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.03),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      stage,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      formatDays(avgDays),
+                      style: PremiumTheme.displayMedium.copyWith(fontSize: 22),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$samples samples',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: PremiumTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
