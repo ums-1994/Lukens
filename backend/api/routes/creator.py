@@ -11,8 +11,195 @@ from datetime import datetime
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
+from api.utils.ai_safety import AISafetyError
 
 bp = Blueprint('creator', __name__, url_prefix='')
+
+
+def _normalize_kb_filter(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def _kb_clause_keys_for_issue(issue: dict):
+    category = str(issue.get("category") or "").lower()
+    description = str(issue.get("description") or "").lower()
+    recommendation = str(issue.get("recommendation") or "").lower()
+    combined = " ".join([category, description, recommendation])
+
+    clause_keys = set()
+
+    if any(t in combined for t in ["credential", "api key", "apikey", "secret", "token", "password"]):
+        clause_keys.add("no_credentials_minimum")
+
+    if any(
+        t in combined
+        for t in [
+            "pii",
+            "personal data",
+            "personal information",
+            "id number",
+            "passport",
+            "email",
+            "phone",
+        ]
+    ):
+        clause_keys.add("pii_handling_minimum")
+
+    if any(t in combined for t in ["confidential", "confidentiality", "nda", "non-disclosure"]):
+        clause_keys.add("confidentiality_minimum")
+
+    return sorted(clause_keys)
+
+
+def _kb_recommendations_for_issues(conn, issues):
+    if not issues:
+        return {
+            "clause_keys": [],
+            "clauses": [],
+        }
+
+    clause_keys = set()
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        for key in _kb_clause_keys_for_issue(issue):
+            clause_keys.add(key)
+
+    clause_keys = sorted(clause_keys)
+    if not clause_keys:
+        return {
+            "clause_keys": [],
+            "clauses": [],
+        }
+
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        """
+        SELECT
+            c.id,
+            d.key AS document_key,
+            c.clause_key,
+            c.title,
+            c.category,
+            c.severity,
+            c.clause_text,
+            c.recommended_text,
+            c.tags,
+            c.is_active,
+            c.created_at,
+            c.updated_at
+        FROM kb_clauses c
+        JOIN kb_documents d ON d.id = c.document_id
+        WHERE c.is_active = TRUE
+          AND c.clause_key = ANY(%s)
+        ORDER BY c.id
+        """,
+        (clause_keys,),
+    )
+    clauses = cursor.fetchall() or []
+    return {
+        "clause_keys": clause_keys,
+        "clauses": [dict(r) for r in clauses],
+    }
+
+
+@bp.get("/kb/documents")
+@token_required
+def kb_list_documents(username=None):
+    try:
+        keys = request.args.getlist("key") or None
+        include_inactive = (request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
+
+        where = ["1=1"]
+        params = []
+        if not include_inactive:
+            where.append("is_active = TRUE")
+        if keys:
+            where.append("key = ANY(%s)")
+            params.append(keys)
+
+        where_sql = " AND ".join(where)
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                f"""
+                SELECT id, key, title, doc_type, tags, body, version, is_active, created_at, updated_at
+                FROM kb_documents
+                WHERE {where_sql}
+                ORDER BY id
+                """,
+                tuple(params),
+            )
+            docs = cursor.fetchall() or []
+            return {"documents": [dict(r) for r in docs]}, 200
+    except Exception as e:
+        print(f"❌ Error listing kb documents: {e}")
+        traceback.print_exc()
+        return {"detail": str(e)}, 500
+
+
+@bp.get("/kb/clauses")
+@token_required
+def kb_list_clauses(username=None):
+    try:
+        document_key = _normalize_kb_filter(request.args.get("document_key"))
+        category = _normalize_kb_filter(request.args.get("category"))
+        severity = _normalize_kb_filter(request.args.get("severity"))
+        clause_keys = request.args.getlist("clause_key") or None
+        include_inactive = (request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
+
+        where = ["1=1"]
+        params = []
+        if not include_inactive:
+            where.append("c.is_active = TRUE")
+        if document_key:
+            where.append("d.key = %s")
+            params.append(document_key)
+        if clause_keys:
+            where.append("c.clause_key = ANY(%s)")
+            params.append(clause_keys)
+        if category:
+            where.append("LOWER(c.category) = LOWER(%s)")
+            params.append(category)
+        if severity:
+            where.append("LOWER(c.severity) = LOWER(%s)")
+            params.append(severity)
+
+        where_sql = " AND ".join(where)
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                f"""
+                SELECT
+                    c.id,
+                    d.key AS document_key,
+                    c.clause_key,
+                    c.title,
+                    c.category,
+                    c.severity,
+                    c.clause_text,
+                    c.recommended_text,
+                    c.tags,
+                    c.is_active,
+                    c.created_at,
+                    c.updated_at
+                FROM kb_clauses c
+                JOIN kb_documents d ON d.id = c.document_id
+                WHERE {where_sql}
+                ORDER BY c.id
+                """,
+                tuple(params),
+            )
+            clauses = cursor.fetchall() or []
+            return {"clauses": [dict(r) for r in clauses]}, 200
+    except Exception as e:
+        print(f"❌ Error listing kb clauses: {e}")
+        traceback.print_exc()
+        return {"detail": str(e)}, 500
 
 # ============================================================================
 # CONTENT LIBRARY ROUTES
@@ -716,6 +903,8 @@ def ai_generate_content(username=None):
             'section_type': section_type
         }, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error generating AI content: {e}")
         return {'detail': str(e)}, 500
@@ -760,9 +949,14 @@ def ai_improve_content(username=None):
         
         return result, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error improving content: {e}")
-        return {'detail': str(e)}, 500
+        return {
+            "detail": "Upstream AI provider error",
+            "blocked": False,
+        }, 502
 
 @bp.post("/ai/generate-full-proposal")
 @token_required
@@ -816,6 +1010,8 @@ def ai_generate_full_proposal(username=None):
             'section_count': len(sections)
         }, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error generating full proposal: {e}")
         return {'detail': str(e)}, 500
@@ -848,9 +1044,14 @@ def ai_analyze_risks(username=None):
             
             # Analyze risks
             risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
+
+            kb_recommendations = _kb_recommendations_for_issues(conn, risk_analysis.get("issues") or [])
+            risk_analysis["kb_recommendations"] = kb_recommendations
             
             return risk_analysis, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")
         return {'detail': str(e)}, 500

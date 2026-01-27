@@ -2742,6 +2742,14 @@ class _ProposalWizardState extends State<ProposalWizard>
     final riskScore = _riskAssessment['risk_score'] ?? 0;
     final risks = _riskAssessment['risks'] ?? [];
     final recommendations = _riskAssessment['recommendations'] ?? [];
+    final issues = List<Map<String, dynamic>>.from(
+      _riskAssessment['issues'] ?? const [],
+    );
+    final kbRecommendations =
+        Map<String, dynamic>.from(_riskAssessment['kb_recommendations'] ?? {});
+    final kbClauses = List<Map<String, dynamic>>.from(
+      kbRecommendations['clauses'] ?? const [],
+    );
 
     Color riskColor = PremiumTheme.success;
     if (riskLevel == 'Medium') riskColor = Colors.orange;
@@ -2796,6 +2804,89 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
         ),
         const SizedBox(height: 16),
+        if (issues.isNotEmpty) ...[
+          Text(
+            'Flagged Issues',
+            style: PremiumTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...issues.map<Widget>((issue) {
+            final title = issue['title']?.toString() ?? 'Issue';
+            final description = issue['description']?.toString() ?? '';
+            final action = issue['action']?.toString() ?? '';
+            final priority = issue['priority']?.toString().toLowerCase() ?? '';
+
+            Color iconColor = PremiumTheme.info;
+            if (priority == 'critical' || priority == 'high') {
+              iconColor = PremiumTheme.error;
+            } else if (priority == 'medium' || priority == 'warning') {
+              iconColor = Colors.orange;
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassContainer(
+                borderRadius: 16,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.flag_outlined,
+                          color: iconColor,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: PremiumTheme.bodyLarge.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (description.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  description,
+                                  style: PremiumTheme.bodyMedium,
+                                ),
+                              ],
+                              if (action.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Recommendation:',
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  action,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 4),
+        ],
         // Identified Risks
         if (risks.isNotEmpty) ...[
           Text(
@@ -2864,6 +2955,56 @@ class _ProposalWizardState extends State<ProposalWizard>
                   ),
                 ),
               )),
+        ],
+        if (kbClauses.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text(
+            'Suggested Policy Clauses',
+            style: PremiumTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...kbClauses.map<Widget>((clause) {
+            final title = clause['title']?.toString() ?? 'Clause';
+            final category = clause['category']?.toString() ?? '';
+            final recommendedText = clause['recommended_text']?.toString() ?? '';
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassContainer(
+                borderRadius: 16,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: PremiumTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (category.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        category,
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          color: PremiumTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (recommendedText.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        recommendedText,
+                        style: PremiumTheme.bodyMedium,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
       ],
     );
@@ -3037,6 +3178,8 @@ class _ProposalWizardState extends State<ProposalWizard>
           'risk_score': displayScore,
           'risks': risks,
           'recommendations': recommendations,
+          'issues': issues,
+          'kb_recommendations': analysis['kb_recommendations'] ?? {},
           'ai_status': analysis['status'] ?? 'Ready',
           'ai_riskScore': rawRiskScore,
         };

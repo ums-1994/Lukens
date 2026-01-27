@@ -13,6 +13,9 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+from api.utils.ai_safety import AISafetyError, enforce_safe_for_external_ai, sanitize_for_external_ai
+from api.utils.gemini_client import GeminiClient, GeminiSchemaError
+
 # Load environment variables
 load_dotenv()
 
@@ -22,44 +25,75 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
 DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "ZAR")  # Default to South African Rands
 DEFAULT_CURRENCY_SYMBOL = os.getenv("DEFAULT_CURRENCY_SYMBOL", "R")  # Default to R
 
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openrouter").strip().lower()
+
 
 class AIService:
     """Service for AI-powered proposal analysis and generation"""
     
     def __init__(self):
+        self.provider = AI_PROVIDER
         self.api_key = OPENROUTER_API_KEY
         self.base_url = OPENROUTER_BASE_URL
         self.model = OPENROUTER_MODEL
         self.currency = DEFAULT_CURRENCY  # Default: South African Rands
         self.currency_symbol = DEFAULT_CURRENCY_SYMBOL  # Default: R
+
+        self._gemini_client: GeminiClient | None = None
+
+        if self.provider == "gemini":
+            self._gemini_client = GeminiClient()
+        else:
+            if not self.api_key:
+                raise ValueError("OPENROUTER_API_KEY not found in environment variables")
         
-        if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY not found in environment variables")
-        
-        # Debug: Print key info (first/last few chars only for security)
-        if self.api_key:
-            print(f"✅ OpenRouter API Key loaded: {self.api_key[:10]}...{self.api_key[-4:]}")
-            print(f"✅ Using model: {self.model}")
+        if self.provider == "gemini":
+            print("✅ Using AI provider: gemini")
+            print(f"✅ Using model: {os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')}")
             print(f"💰 Currency set to: {self.currency} ({self.currency_symbol})")
         else:
-            print("❌ OpenRouter API Key is empty!")
-    
+            if self.api_key:
+                print(f"✅ OpenRouter API Key loaded: {self.api_key[:10]}...{self.api_key[-4:]}")
+                print(f"✅ Using model: {self.model}")
+                print(f"💰 Currency set to: {self.currency} ({self.currency_symbol})")
+            else:
+                print("❌ OpenRouter API Key is empty!")
+
     def _make_request(self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 2000) -> str:
-        """Make a request to OpenRouter API"""
+        """Make a request to OpenRouter API (sanitized-only payload)"""
+        if self.provider == "gemini":
+            if not self._gemini_client:
+                raise Exception("Gemini client not initialized")
+
+            # Convert chat-style messages into a single prompt for Gemini.
+            safe_messages = enforce_safe_for_external_ai(messages)
+            prompt = "\n\n".join(
+                f"{m.get('role', 'user').upper()}: {m.get('content', '')}" for m in safe_messages
+            )
+            return self._gemini_client.generate_text(
+                prompt,
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8000",  # Required by OpenRouter
             "X-Title": "Proposal & SOW Builder"
         }
-        
+
+        # Enforce that we never send sensitive data to third-party AI providers.
+        # We sanitize all outbound message content and block if secrets are detected.
+        sanitized_messages = enforce_safe_for_external_ai(messages)
+
         payload = {
             "model": self.model,
-            "messages": messages,
+            "messages": sanitized_messages,
             "temperature": temperature,
             "max_tokens": max_tokens
         }
-        
+
         try:
             response = requests.post(
                 f"{self.base_url}/chat/completions",
@@ -68,22 +102,31 @@ class AIService:
                 timeout=60
             )
             response.raise_for_status()
-            
+
             result = response.json()
             return result["choices"][0]["message"]["content"]
-        
+
+        except AISafetyError:
+            raise
         except requests.exceptions.RequestException as e:
             raise Exception(f"OpenRouter API request failed: {str(e)}")
-    
+
     def analyze_proposal_risks(self, proposal_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyze proposal for compound risks (Wildcard Challenge)
         Detects missing sections, incomplete content, and compliance issues
         """
+        safety_result = sanitize_for_external_ai(proposal_data)
+        if safety_result.blocked:
+            raise AISafetyError(
+                "Blocked outbound AI risk analysis due to sensitive data detected.",
+                reasons=safety_result.block_reasons,
+            )
+
         prompt = f"""You are an expert proposal reviewer for Khonology. Analyze this proposal for risks and compliance issues.
 
 Proposal Data:
-{json.dumps(proposal_data, indent=2)}
+{json.dumps(safety_result.sanitized, indent=2)}
 
 Analyze for:
 1. Missing or incomplete mandatory sections (Executive Summary, Scope & Deliverables, Delivery Approach, Assumptions, Risks, References, Team Bios)
@@ -95,22 +138,22 @@ Analyze for:
 7. Any altered clauses that need review
 
 Provide a JSON response with:
-{{
+{
   "overall_risk_level": "low|medium|high|critical",
   "can_release": true/false,
   "risk_score": 0-100,
   "issues": [
-    {{
+    {
       "category": "missing_section|incomplete_content|compliance|clarity",
       "severity": "low|medium|high|critical",
       "section": "section name",
       "description": "detailed issue description",
       "recommendation": "how to fix"
-    }}
+    }
   ],
   "summary": "brief summary of all issues",
   "required_actions": ["action 1", "action 2"]
-}}
+}
 
 Be thorough and flag even small deviations that could compound into larger risks."""
 
@@ -118,18 +161,37 @@ Be thorough and flag even small deviations that could compound into larger risks
             {"role": "system", "content": "You are an expert proposal risk analyzer. Always respond with valid JSON."},
             {"role": "user", "content": prompt}
         ]
-        
+
+        if self.provider == "gemini":
+            if not self._gemini_client:
+                raise Exception("Gemini client not initialized")
+            try:
+                analysis = self._gemini_client.generate_json(prompt, RiskAnalysis)
+                return analysis.model_dump()
+            except GeminiSchemaError as e:
+                return {
+                    "overall_risk_level": "medium",
+                    "can_release": False,
+                    "risk_score": 50,
+                    "issues": [{
+                        "category": "analysis_error",
+                        "severity": "medium",
+                        "section": "AI Analysis",
+                        "description": str(e),
+                        "recommendation": "Manual review required"
+                    }],
+                    "summary": "AI analysis completed but response format was unexpected",
+                    "required_actions": ["Manual review recommended"]
+                }
+
         response = self._make_request(messages, temperature=0.3)
-        
-        # Parse JSON response
+
         try:
-            # Extract JSON from response (in case there's extra text)
             start_idx = response.find('{')
             end_idx = response.rfind('}') + 1
             json_str = response[start_idx:end_idx]
             return json.loads(json_str)
         except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
             return {
                 "overall_risk_level": "medium",
                 "can_release": False,
@@ -167,13 +229,15 @@ Be thorough and flag even small deviations that could compound into larger risks
         
         section_prompt = section_prompts.get(section_type, "Generate professional content for this section.")
         
+        safe_context = enforce_safe_for_external_ai(context)
+
         prompt = f"""You are writing a proposal section for Khonology, a South African company.
 
 Section Type: {section_type}
 Task: {section_prompt}
 
 Context:
-{json.dumps(context, indent=2)}
+{json.dumps(safe_context, indent=2)}
 
 IMPORTANT: All monetary amounts must be in South African Rands (ZAR) using the {self.currency_symbol} symbol (e.g., {self.currency_symbol}50,000).
 Do NOT use dollars ($), euros (€), or any other currency.
@@ -192,10 +256,12 @@ Keep it concise but comprehensive (200-400 words)."""
         """
         Generate a complete multi-section proposal
         """
+        safe_context = enforce_safe_for_external_ai(context)
+
         prompt = f"""You are writing a complete business proposal for Khonology, a South African company.
 
 Context:
-{json.dumps(context, indent=2)}
+{json.dumps(safe_context, indent=2)}
 
 Generate a comprehensive proposal with the following sections:
 
@@ -219,11 +285,11 @@ For each section, write professional, detailed content (150-300 words per sectio
 Use proper formatting with headings, paragraphs, and bullet points.
 
 Return a JSON object with section titles as keys and content as values:
-{{
+{
   "Executive Summary": "content here...",
   "Introduction & Background": "content here...",
   ...
-}}"""
+}"""
 
         messages = [
             {"role": "system", "content": "You are an expert proposal writer. Always respond with valid JSON containing all sections."},
@@ -249,11 +315,13 @@ Return a JSON object with section titles as keys and content as values:
         """
         Analyze and suggest improvements for existing content
         """
+        safe_content = enforce_safe_for_external_ai(content)
+
         prompt = f"""You are an expert proposal editor for Khonology, a South African company. Review this content and suggest improvements.
 
 Section Type: {section_type}
 Current Content:
-{content}
+{safe_content}
 
 IMPORTANT: If the content contains pricing/monetary amounts, ensure they are in South African Rands (ZAR) using the {self.currency_symbol} symbol.
 Convert any dollars ($), euros (€), or other currencies to Rands (e.g., ${self.currency_symbol}150,000).
@@ -306,10 +374,17 @@ Provide a JSON response with:
         """
         Check proposal compliance with Khonology standards
         """
+        safety_result = sanitize_for_external_ai(proposal_data)
+        if safety_result.blocked:
+            raise AISafetyError(
+                "Blocked outbound AI compliance check due to sensitive data detected.",
+                reasons=safety_result.block_reasons,
+            )
+
         prompt = f"""You are a compliance checker for Khonology proposals. Review this proposal for compliance.
 
 Proposal Data:
-{json.dumps(proposal_data, indent=2)}
+{json.dumps(safety_result.sanitized, indent=2)}
 
 Check for:
 1. All mandatory sections present and complete
@@ -320,21 +395,21 @@ Check for:
 6. Completeness of team bios and references
 
 Provide a JSON response with:
-{{
+{
   "compliant": true/false,
   "compliance_score": 0-100,
   "passed_checks": ["check 1", "check 2"],
   "failed_checks": [
-    {{
+    {
       "check": "check name",
       "severity": "low|medium|high",
       "description": "what failed",
       "fix": "how to fix"
-    }}
+    }
   ],
   "ready_for_approval": true/false,
   "summary": "overall compliance status"
-}}"""
+}"""
 
         messages = [
             {"role": "system", "content": "You are a compliance checker. Always respond with valid JSON."},
@@ -362,10 +437,17 @@ Provide a JSON response with:
         """
         Generate a comprehensive risk summary for dashboard display
         """
+        safety_result = sanitize_for_external_ai(proposal_data)
+        if safety_result.blocked:
+            raise AISafetyError(
+                "Blocked outbound AI risk summary due to sensitive data detected.",
+                reasons=safety_result.block_reasons,
+            )
+
         prompt = f"""Generate a brief executive summary of risks for this proposal.
 
 Proposal Data:
-{json.dumps(proposal_data, indent=2)}
+{json.dumps(safety_result.sanitized, indent=2)}
 
 Write a 2-3 sentence summary highlighting the most critical risks or issues that need attention before release.
 If the proposal looks good, provide positive feedback."""
@@ -381,11 +463,18 @@ If the proposal looks good, provide positive feedback."""
         """
         Suggest next steps based on proposal state and current stage
         """
+        safety_result = sanitize_for_external_ai(proposal_data)
+        if safety_result.blocked:
+            raise AISafetyError(
+                "Blocked outbound AI next-steps generation due to sensitive data detected.",
+                reasons=safety_result.block_reasons,
+            )
+
         prompt = f"""Based on this proposal's current state and stage, suggest 3-5 actionable next steps.
 
 Current Stage: {current_stage}
 Proposal Data:
-{json.dumps(proposal_data, indent=2)}
+{json.dumps(safety_result.sanitized, indent=2)}
 
 Provide a JSON array of specific, actionable next steps:
 ["step 1", "step 2", "step 3"]"""

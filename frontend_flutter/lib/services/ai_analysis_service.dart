@@ -42,7 +42,17 @@ class AIAnalysisService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return _convertToUIFormat(data['analysis']);
+        if (data is! Map<String, dynamic>) {
+          throw Exception('Unexpected risk analysis response');
+        }
+
+        // Backend currently returns the analysis at the top-level.
+        // Keep backward compatibility if a nested `analysis` key exists.
+        final analysis = (data['analysis'] is Map<String, dynamic>)
+            ? Map<String, dynamic>.from(data['analysis'])
+            : data;
+
+        return _convertToUIFormat(analysis);
       } else {
         throw Exception('Risk analysis failed: ${response.statusCode}');
       }
@@ -224,6 +234,7 @@ class AIAnalysisService {
       'issues': issues,
       'summary': analysis['summary'] ?? '',
       'required_actions': analysis['required_actions'] ?? [],
+      'kb_recommendations': analysis['kb_recommendations'] ?? {},
     };
   }
 

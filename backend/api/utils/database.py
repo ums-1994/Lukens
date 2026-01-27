@@ -7,9 +7,64 @@ import psycopg2.extras
 import psycopg2.pool
 from contextlib import contextmanager
 
+from urllib.parse import urlparse, parse_qs
+
+from dotenv import load_dotenv
+
 # PostgreSQL connection pool
 _pg_pool = None
 _db_initialized = False
+
+
+# Load environment variables from .env so DATABASE_URL works when this module
+# is imported directly (e.g., python -c ... from the backend folder).
+load_dotenv()
+
+
+def _build_db_config_from_env():
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        parsed = urlparse(database_url)
+
+        if parsed.scheme not in ('postgres', 'postgresql'):
+            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+
+        db_config = {
+            'host': parsed.hostname,
+            'database': (parsed.path or '').lstrip('/'),
+            'user': parsed.username,
+            'password': parsed.password,
+            'port': parsed.port or 5432,
+        }
+
+        query = parse_qs(parsed.query or '')
+        sslmode_from_url = (query.get('sslmode') or [None])[0]
+
+        ssl_mode = sslmode_from_url or os.getenv('DB_SSLMODE')
+        if not ssl_mode:
+            if os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
+                ssl_mode = 'require'
+            elif db_config.get('host') and 'render.com' in db_config['host'].lower():
+                ssl_mode = 'require'
+            else:
+                ssl_mode = 'prefer'
+
+        if ssl_mode:
+            db_config['sslmode'] = ssl_mode
+
+        missing = [k for k in ('host', 'database', 'user') if not db_config.get(k)]
+        if missing:
+            raise ValueError(f"DATABASE_URL missing required parts: {', '.join(missing)}")
+
+        return db_config
+
+    return {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'database': os.getenv('DB_NAME', 'proposal_db'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+        'port': int(os.getenv('DB_PORT', '5432')),
+    }
 
 
 def get_pg_pool():
@@ -17,21 +72,12 @@ def get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         try:
-            db_config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'proposal_db'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'port': int(os.getenv('DB_PORT', '5432')),
-            }
+            db_config = _build_db_config_from_env()
             
             # Add SSL mode for external connections (like Render)
             # Check if host contains 'render.com' or SSL is explicitly required
-            ssl_mode = os.getenv('DB_SSLMODE', 'prefer')
-            if 'render.com' in db_config['host'].lower() or os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
-                ssl_mode = 'require'
-                db_config['sslmode'] = ssl_mode
-                print(f"[*] Using SSL mode: {ssl_mode} for external connection")
+            if 'sslmode' in db_config:
+                print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
