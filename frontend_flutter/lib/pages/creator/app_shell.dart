@@ -4,6 +4,7 @@ import '../../api.dart';
 import 'content_library_page.dart';
 import 'creator_dashboard_page.dart';
 import 'settings_page.dart';
+import 'templates_page.dart';
 
 class AppShell extends StatefulWidget {
   final String initialPage;
@@ -210,7 +211,7 @@ class _AppShellState extends State<AppShell> {
       case 'Settings':
         return const SettingsPage();
       case 'Templates':
-        return _buildPlaceholder('Templates', Icons.description);
+        return const TemplatesPage();
       case 'Team':
         return _buildPlaceholder('Team', Icons.people);
       case 'Analytics':

@@ -13,8 +13,13 @@ window.APP_CONFIG = {
       console.log('🌐 Using APP_API_URL:', window.APP_API_URL);
       return window.APP_API_URL;
     }
-    // Default to production backend URL
-    const defaultUrl = 'https://lukens-wp8w.onrender.com';
+    const hostname = window.location && window.location.hostname
+      ? window.location.hostname
+      : '';
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+    const defaultUrl = isLocal
+      ? 'http://127.0.0.1:8002'
+      : 'https://lukens-wp8w.onrender.com';
     console.log('🌐 Using default API URL:', defaultUrl);
     return defaultUrl;
   })(),

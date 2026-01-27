@@ -68,7 +68,10 @@ class _RegisterPageState extends State<RegisterPage>
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    _precacheFrames();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _precacheFrames();
+    });
     _cycleBackgrounds();
   }
 

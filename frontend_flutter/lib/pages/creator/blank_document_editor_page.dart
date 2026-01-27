@@ -3626,12 +3626,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Templates - Coming soon'),
-            backgroundColor: Color(0xFF00BCD4),
-          ),
-        );
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Approved Proposals':
         Navigator.pushReplacementNamed(context, '/approved_proposals');

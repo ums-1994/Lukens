@@ -51,7 +51,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    _precacheFrames();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _precacheFrames();
+    });
     _cycleBackgrounds();
   }
 
