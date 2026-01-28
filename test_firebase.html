@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase Connection Test</title>
+    <script type="module">
+        // Import Firebase modules at the top level
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        
+        // Global function to test Firebase
+        window.testFirebase = async function() {
+            try {
+                console.log('Testing Firebase connection...');
+                
+                // Test Firebase initialization
+                const firebaseConfig = {
+                    apiKey: "AIzaSyC0WT1ArMcm6Ah8jM_hNaE9uffM1aTriBc",
+                    authDomain: "lukens-e17d6.firebaseapp.com",
+                    projectId: "lukens-e17d6",
+                    storageBucket: "lukens-e17d6.firebasestorage.app",
+                    messagingSenderId: "940107272310",
+                    appId: "1:940107272310:web:bc6601706e2fe1d94d8f57"
+                };
+                
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                
+                console.log('Firebase initialized successfully');
+                document.getElementById('status').innerHTML = '✅ Firebase connection successful!';
+                
+            } catch (error) {
+                console.error('Firebase connection failed:', error);
+                document.getElementById('status').innerHTML = '❌ Firebase connection failed: ' + error.message;
+            }
+        };
+    </script>
+</head>
+<body>
+    <h1>Firebase Connection Test</h1>
+    <div id="status">Click the button to test Firebase connection...</div>
+    <button onclick="testFirebase()">Test Firebase Connection</button>
+</body>
+</html>

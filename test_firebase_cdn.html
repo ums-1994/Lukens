@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase CDN Test</title>
+</head>
+<body>
+    <h1>Firebase CDN Connectivity Test</h1>
+    <div id="status">Testing different Firebase CDN sources...</div>
+    
+    <script>
+        const tests = [
+            {
+                name: 'Firebase CDN (gstatic.com)',
+                url: 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js'
+            },
+            {
+                name: 'Firebase CDN (unpkg.com)',
+                url: 'https://unpkg.com/firebase@10.7.1/firebase-app.js'
+            },
+            {
+                name: 'Firebase CDN (jsdelivr.net)',
+                url: 'https://cdn.jsdelivr.net/npm/firebase@10.7.1/firebase-app.js'
+            }
+        ];
+        
+        async function testCDN() {
+            const results = document.getElementById('status');
+            results.innerHTML = '<h3>Testing CDN sources...</h3>';
+            
+            for (const test of tests) {
+                try {
+                    const response = await fetch(test.url, { method: 'HEAD' });
+                    const status = response.ok ? '✅' : '❌';
+                    results.innerHTML += `<p>${status} ${test.name}: ${response.status}</p>`;
+                } catch (error) {
+                    results.innerHTML += `<p>❌ ${test.name}: ${error.message}</p>`;
+                }
+            }
+        }
+        
+        testCDN();
+    </script>
+</body>
+</html>

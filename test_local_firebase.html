@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Local Firebase Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        button { padding: 10px 20px; margin: 5px; }
+        input { padding: 8px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Local Firebase Test</h1>
+    
+    <div id="status" class="test-section">
+        <h3>Loading Firebase...</h3>
+    </div>
+
+    <div class="test-section">
+        <h3>🔐 Authentication Test</h3>
+        <input type="email" id="email" placeholder="Email" value="test@example.com">
+        <input type="password" id="password" placeholder="Password" value="password123">
+        <button onclick="testSignIn()">Sign In</button>
+        <button onclick="testSignUp()">Sign Up</button>
+        <button onclick="testSignOut()">Sign Out</button>
+        <div id="auth-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>📊 Firebase Objects</h3>
+        <div id="firebase-objects"></div>
+    </div>
+
+    <!-- Load Local Firebase -->
+    <script type="module">
+        import './firebase-config.js';
+
+        // Wait a moment for Firebase to initialize
+        setTimeout(() => {
+            runTests();
+        }, 100);
+
+        function runTests() {
+            const status = document.getElementById('status');
+            const objects = document.getElementById('firebase-objects');
+            
+            try {
+                // Test Firebase objects
+                const tests = [
+                    { name: 'firebaseApp', obj: window.firebaseApp },
+                    { name: 'firebaseAuth', obj: window.firebaseAuth },
+                    { name: 'firebaseDb', obj: window.firebaseDb },
+                    { name: 'firebaseAnalytics', obj: window.firebaseAnalytics }
+                ];
+
+                let results = '<h4>✅ Firebase Objects Loaded:</h4>';
+                tests.forEach(test => {
+                    const status = test.obj ? '✅' : '❌';
+                    results += `<p>${status} ${test.name}: ${test.obj ? 'Loaded' : 'Missing'}</p>`;
+                });
+
+                objects.innerHTML = results;
+                status.innerHTML = '<h3 class="success">✅ Local Firebase Loaded Successfully!</h3>';
+                
+                // Set up auth listener
+                if (window.firebaseAuth) {
+                    window.firebaseAuth.onAuthStateChanged((user) => {
+                        const authStatus = document.getElementById('auth-status');
+                        if (user) {
+                            authStatus.innerHTML = `<div class="success">✅ Logged in as: ${user.email} (UID: ${user.uid})</div>`;
+                        } else {
+                            authStatus.innerHTML = '<div class="error">❌ Not logged in</div>';
+                        }
+                    });
+                }
+
+            } catch (error) {
+                status.innerHTML = `<h3 class="error">❌ Error: ${error.message}</h3>`;
+                }
+            }
+
+            window.testSignIn = async function() {
+                try {
+                    const email = document.getElementById('email').value;
+                    const password = document.getElementById('password').value;
+                    const result = await window.firebaseAuth.signInWithEmailAndPassword(email, password);
+                    console.log('Sign in result:', result);
+                } catch (error) {
+                    console.error('Sign in error:', error);
+                    alert('Sign in error: ' + error.message);
+                }
+            };
+
+            window.testSignUp = async function() {
+                try {
+                    const email = document.getElementById('email').value;
+                    const password = document.getElementById('password').value;
+                    const result = await window.firebaseAuth.createUserWithEmailAndPassword(email, password);
+                    console.log('Sign up result:', result);
+                } catch (error) {
+                    console.error('Sign up error:', error);
+                    alert('Sign up error: ' + error.message);
+                }
+            };
+
+            window.testSignOut = async function() {
+                try {
+                    await window.firebaseAuth.signOut();
+                    console.log('Signed out');
+                } catch (error) {
+                    console.error('Sign out error:', error);
+                    alert('Sign out error: ' + error.message);
+                }
+            };
+        </script>
+</body>
+</html>
