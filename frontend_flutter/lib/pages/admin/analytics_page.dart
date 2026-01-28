@@ -56,7 +56,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final data = await app.getCycleTimeAnalytics();
     if (!mounted) return;
     setState(() {
-      _cycleTimeAnalytics = data;
+      // If API call fails, set empty data so card still shows with empty state message
+      _cycleTimeAnalytics = data ?? {
+        'by_stage': [],
+        'bottleneck': null,
+        'metric': 'cycle_time',
+      };
     });
   }
 
@@ -942,12 +947,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 ],
                               ),
                               const SizedBox(height: 24),
-                              if (_cycleTimeAnalytics != null)
-                                _buildGlassChartCard(
-                                  'Cycle Time by Stage',
-                                  _buildCycleTimeContent(_cycleTimeAnalytics),
-                                  height: 220,
-                                ),
+                              _buildGlassChartCard(
+                                'Cycle Time by Stage',
+                                _buildCycleTimeContent(_cycleTimeAnalytics),
+                                height: 220,
+                              ),
                               const SizedBox(height: 32),
                               _buildGlassChartCard(
                                 'Revenue Analytics',
@@ -1944,10 +1948,38 @@ class _MetricCardData {
 Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
     final byStage = (cycleTimeAnalytics?['by_stage'] as List?) ?? [];
     if (byStage.isEmpty) {
-      return const Center(
-        child: Text(
-          'No cycle time data available yet.\nStart sending proposals to see stage metrics here.',
-          textAlign: TextAlign.center,
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.timeline_outlined,
+                size: 48,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No cycle time data available yet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Start sending proposals to see stage metrics here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }

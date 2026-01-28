@@ -68,11 +68,14 @@ class _RegisterPageState extends State<RegisterPage>
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _precacheFrames();
-    });
     _cycleBackgrounds();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Precache all frames after dependencies are available
+    _precacheFrames();
   }
 
   Future<void> _precacheFrames() async {
@@ -266,7 +269,8 @@ class _RegisterPageState extends State<RegisterPage>
 
       final result = json.decode(response.body);
       final userProfile = result['user'] as Map<String, dynamic>?;
-      final String authToken = firebaseIdToken;
+      final String authToken = (result['backend_token'] as String?) ?? firebaseIdToken;
+       print('🔐 Using API token: ' + (authToken.startsWith('eyJ') ? 'firebase' : 'backend'));
 
       if (mounted) {
         setState(() => _isLoading = false);

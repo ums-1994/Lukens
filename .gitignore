@@ -124,4 +124,9 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-e
+env/
+
+# Python virtual environments
+venv/
+.venv/
+env/
