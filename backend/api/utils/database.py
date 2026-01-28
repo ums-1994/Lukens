@@ -184,6 +184,54 @@ def init_pg_schema():
         except Exception as e:
             print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
 
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS opportunity_id VARCHAR(50)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add opportunity_id column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS engagement_stage VARCHAR(50)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_stage column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS engagement_opened_at TIMESTAMP
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_opened_at column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS engagement_target_close_at TIMESTAMP
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_target_close_at column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS client_id INTEGER
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add client_id column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_proposals_client_id
+                ON proposals(client_id)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
+
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
         id SERIAL PRIMARY KEY,
@@ -231,6 +279,16 @@ def init_pg_schema():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
+
+        # Ensure proposals.client_id has a foreign key to clients.id
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_client_id_fkey
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible): {e}")
         
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:

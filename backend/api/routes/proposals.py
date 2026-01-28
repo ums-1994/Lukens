@@ -104,6 +104,7 @@ def create_proposal(username=None, user_id=None, email=None):
 
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email')
+            client_id = data.get('client_id')
             
             # Insert
             cursor.execute(
@@ -129,6 +130,10 @@ def create_proposal(username=None, user_id=None, email=None):
                 insert_cols.append('client_email')
                 values.append(client_email)
 
+            if 'client_id' in existing_columns and client_id is not None:
+                insert_cols.append('client_id')
+                values.append(client_id)
+
             if 'owner_id' in existing_columns:
                 insert_cols.append('owner_id')
                 values.append(user_id)
@@ -145,10 +150,44 @@ def create_proposal(username=None, user_id=None, email=None):
             )
             
             row = cursor.fetchone()
-            conn.commit()
-
             column_names = [desc[0] for desc in cursor.description]
             row_dict = dict(zip(column_names, row))
+
+            try:
+                engagement_updates = []
+                engagement_params = []
+
+                if 'opportunity_id' in existing_columns and row_dict.get('id') is not None:
+                    try:
+                        opportunity_id = f"OPP-{int(row_dict['id']):06d}"
+                        engagement_updates.append('opportunity_id = %s')
+                        engagement_params.append(opportunity_id)
+                        row_dict['opportunity_id'] = opportunity_id
+                    except Exception:
+                        # If anything goes wrong, skip setting opportunity_id
+                        pass
+
+                if 'engagement_stage' in existing_columns:
+                    initial_stage = 'Proposal Drafted'
+                    engagement_updates.append('engagement_stage = %s')
+                    engagement_params.append(initial_stage)
+                    row_dict['engagement_stage'] = initial_stage
+
+                if 'engagement_opened_at' in existing_columns and row_dict.get('created_at') is not None:
+                    engagement_updates.append('engagement_opened_at = %s')
+                    engagement_params.append(row_dict['created_at'])
+                    row_dict['engagement_opened_at'] = row_dict['created_at']
+
+                if engagement_updates:
+                    engagement_params.append(row_dict['id'])
+                    cursor.execute(
+                        f"UPDATE proposals SET {', '.join(engagement_updates)} WHERE id = %s",
+                        engagement_params,
+                    )
+            except Exception as meta_err:
+                print(f"⚠️ Failed to set engagement metadata for proposal: {meta_err}")
+
+            conn.commit()
 
             new_proposal = {
                 'id': row_dict.get('id'),
@@ -188,6 +227,17 @@ def create_proposal(username=None, user_id=None, email=None):
                 updated_at_val.isoformat() if hasattr(updated_at_val, 'isoformat') and updated_at_val else None
             )
             new_proposal['updatedAt'] = new_proposal['updated_at']
+            if 'client_id' in row_dict:
+                new_proposal['client_id'] = row_dict.get('client_id')
+            if 'opportunity_id' in row_dict:
+                new_proposal['opportunity_id'] = row_dict.get('opportunity_id')
+            if 'engagement_stage' in row_dict:
+                new_proposal['engagement_stage'] = row_dict.get('engagement_stage')
+            if 'engagement_opened_at' in row_dict:
+                opened_val = row_dict.get('engagement_opened_at')
+                new_proposal['engagement_opened_at'] = (
+                    opened_val.isoformat() if hasattr(opened_val, 'isoformat') and opened_val else None
+                )
             
             print(f"✅ Proposal created: {new_proposal['id']}")
             return jsonify(new_proposal), 201
@@ -418,6 +468,15 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
     try:
         data = request.get_json()
         print(f"📝 Updating proposal {proposal_id} for user {username}")
+
+        for forbidden_key in [
+            'opportunity_id',
+            'engagement_stage',
+            'engagement_opened_at',
+            'engagement_target_close_at',
+        ]:
+            if forbidden_key in data:
+                data.pop(forbidden_key, None)
         
         with get_db_connection() as conn:
             cursor = conn.cursor()

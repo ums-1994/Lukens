@@ -84,6 +84,14 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
           initial['estimatedValue']?.toString() ?? '';
       _proposalData['timeline'] = initial['timeline']?.toString() ?? '';
 
+      _proposalData['opportunityId'] =
+          initial['opportunityId']?.toString() ?? '';
+      _proposalData['engagementStage'] =
+          initial['engagementStage']?.toString() ?? 'Proposal Drafted';
+      _proposalData['engagementOpenedAt'] =
+          initial['engagementOpenedAt']?.toString() ?? '';
+      _proposalData['ownerName'] = initial['ownerName']?.toString() ?? '';
+
       _controllers['clientName'] =
           TextEditingController(text: _proposalData['clientName']);
       _controllers['clientEmail'] =
@@ -326,9 +334,18 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Date: ${_formatDate(DateTime.now())}',
+                  'Opp ${_proposalData['opportunityId'] ?? ''} • Stage: ${_proposalData['engagementStage'] ?? 'Proposal Drafted'} • Owner: ${_proposalData['ownerName'] ?? ''}',
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
+                    color: Colors.grey,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Draft v1 • ${_formatDate(DateTime.now())}',
+                  style: const TextStyle(
+                    fontSize: 12,
                     color: Colors.grey,
                   ),
                 ),

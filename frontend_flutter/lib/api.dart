@@ -419,13 +419,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> createProposal(String title, String client,
-      {String? templateKey}) async {
+      {String? templateKey, dynamic clientId}) async {
     try {
       final r = await http.post(
         Uri.parse("$baseUrl/api/proposals"),
         headers: _headers,
-        body: jsonEncode(
-            {"title": title, "client": client, "template_key": templateKey}),
+        body: jsonEncode({
+          "title": title,
+          "client": client,
+          "template_key": templateKey,
+          if (clientId != null) "client_id": clientId,
+        }),
       );
       final p = jsonDecode(r.body);
       currentProposal = p;
