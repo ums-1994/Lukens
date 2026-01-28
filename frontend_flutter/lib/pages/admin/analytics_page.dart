@@ -34,6 +34,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final NumberFormat _compactCurrencyFormatter =
       NumberFormat.compactCurrency(symbol: _currencySymbol, decimalDigits: 1);
   Map<String, dynamic>? _cycleTimeAnalytics;
+  
+  // Cycle Time filters
+  DateTime? _cycleTimeStartDate;
+  DateTime? _cycleTimeEndDate;
+  String? _cycleTimeStatus;
+  String? _cycleTimeOwner;
+  String? _cycleTimeProposalType;
 
   @override
   void initState() {
@@ -53,10 +60,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Future<void> _loadCycleTimeAnalytics(AppState app) async {
-    final data = await app.getCycleTimeAnalytics();
+    final data = await app.getCycleTimeAnalytics(
+      startDate: _cycleTimeStartDate != null
+          ? '${_cycleTimeStartDate!.year}-${_cycleTimeStartDate!.month.toString().padLeft(2, '0')}-${_cycleTimeStartDate!.day.toString().padLeft(2, '0')}'
+          : null,
+      endDate: _cycleTimeEndDate != null
+          ? '${_cycleTimeEndDate!.year}-${_cycleTimeEndDate!.month.toString().padLeft(2, '0')}-${_cycleTimeEndDate!.day.toString().padLeft(2, '0')}'
+          : null,
+      status: _cycleTimeStatus,
+      owner: _cycleTimeOwner,
+      proposalType: _cycleTimeProposalType,
+    );
     if (!mounted) return;
     setState(() {
-      _cycleTimeAnalytics = data;
+      _cycleTimeAnalytics = data ?? {
+        'by_stage': [],
+        'bottleneck': null,
+        'metric': 'cycle_time',
+      };
     });
   }
 
@@ -371,6 +392,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     int activeCount = 0;
     final Map<String, int> statusCounts = {};
     final List<_ProposalPerformanceRow> performanceRows = [];
+    
+    // Calculate completion rate from completed_steps
+    double totalCompletionRate = 0.0;
+    int proposalsWithSteps = 0;
+    const List<String> allSteps = ['compose', 'govern', 'risk']; // Typical workflow steps
 
     for (final proposal in normalized) {
       final statusRaw = (proposal['status'] ?? 'Draft').toString();
@@ -395,6 +421,21 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
       if (!_isClosedStatus(statusLower)) {
         activeCount++;
+      }
+      
+      // Calculate completion rate for this proposal
+      final completedSteps = proposal['completed_steps'];
+      if (completedSteps != null) {
+        List<String> steps = [];
+        if (completedSteps is List) {
+          steps = completedSteps.map((e) => e.toString().toLowerCase()).toList();
+        }
+        final completedCount = steps.length;
+        final completionRate = allSteps.isNotEmpty 
+            ? (completedCount / allSteps.length) * 100 
+            : 0.0;
+        totalCompletionRate += completionRate;
+        proposalsWithSteps++;
       }
 
       final created =
@@ -489,6 +530,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
     }
 
+    final double averageCompletionRate = proposalsWithSteps > 0
+        ? totalCompletionRate / proposalsWithSteps
+        : 0.0;
+
     return _AnalyticsSnapshot(
       totalPipelineValue: totalRevenue,
       totalProposals: normalized.length,
@@ -496,6 +541,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       averageDealSize: averageDealSize,
       winRate: winRate,
       lossRate: lossRate,
+      completionRate: averageCompletionRate,
       statusCounts: statusCounts,
       monthlyPoints: monthlyPoints,
       recentProposals: recentProposals,
@@ -942,12 +988,19 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 ],
                               ),
                               const SizedBox(height: 24),
-                              if (_cycleTimeAnalytics != null)
-                                _buildGlassChartCard(
-                                  'Cycle Time by Stage',
-                                  _buildCycleTimeContent(_cycleTimeAnalytics),
-                                  height: 220,
+                              _buildGlassChartCard(
+                                'Cycle Time by Stage',
+                                Column(
+                                  children: [
+                                    _buildCycleTimeFilters(),
+                                    const SizedBox(height: 16),
+                                    Expanded(
+                                      child: _buildCycleTimeContent(_cycleTimeAnalytics),
+                                    ),
+                                  ],
                                 ),
+                                height: 280,
+                              ),
                               const SizedBox(height: 32),
                               _buildGlassChartCard(
                                 'Revenue Analytics',
@@ -961,8 +1014,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   Expanded(
                                     flex: 2,
                                     child: _buildGlassChartCard(
-                                      'Proposal Status',
-                                      _buildProposalStatusChart(
+                                      'Proposal Pipeline',
+                                      _buildProposalPipelineFunnel(
                                           analytics.statusCounts),
                                       height: 320,
                                     ),
@@ -973,6 +1026,19 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                       'Win Rate',
                                       _buildWinRatePieChart(analytics.winRate,
                                           analytics.lossRate),
+                                      height: 320,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 32),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: _buildGlassChartCard(
+                                      'Completion Rate',
+                                      _buildCompletionRateGauge(analytics.completionRate),
                                       height: 320,
                                     ),
                                   ),
@@ -1423,131 +1489,268 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  Widget _buildProposalStatusChart(Map<String, int> statusCounts) {
-    final statuses = [
-      'Draft',
-      'In Review',
-      'Pending Ceo Approval',
-      'Sent To Client',
-      'Signed',
-      'Lost',
-    ];
-
-    // Map declined statuses to "Lost"
-    final normalizedCounts = <String, int>{};
-    int lostCount = 0;
-    for (final entry in statusCounts.entries) {
-      final status = entry.key.toLowerCase();
-      if (status.contains('declined') ||
-          status.contains('lost') ||
-          status.contains('rejected')) {
-        lostCount += entry.value;
-      } else {
-        normalizedCounts[entry.key] = entry.value;
-      }
-    }
-    if (lostCount > 0) {
-      normalizedCounts['Lost'] = lostCount;
+  Widget _buildCompletionRateGauge(double completionRate) {
+    // Clamp completion rate between 0 and 100
+    final rate = completionRate.clamp(0.0, 100.0);
+    
+    // Determine color based on completion rate
+    Color gaugeColor;
+    if (rate >= 80) {
+      gaugeColor = PremiumTheme.success;
+    } else if (rate >= 50) {
+      gaugeColor = PremiumTheme.warning;
+    } else {
+      gaugeColor = PremiumTheme.error;
     }
 
-    final bars = <BarChartGroupData>[];
-    int maxCount = 0;
-    for (int i = 0; i < statuses.length; i++) {
-      final label = statuses[i];
-      final count = normalizedCounts[label] ?? 0;
-      maxCount = math.max(maxCount, count);
-      bars.add(
-        BarChartGroupData(
-          x: i,
-          barRods: [
-            BarChartRodData(
-              toY: count.toDouble(),
-              color: _statusColor(label.toLowerCase()),
-              width: 28,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(6),
-                topRight: Radius.circular(6),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Gauge visualization (circular progress)
+          SizedBox(
+            width: 200,
+            height: 200,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Background circle
+                SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: CircularProgressIndicator(
+                    value: 1.0,
+                    strokeWidth: 20,
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                ),
+                // Progress circle
+                SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: CircularProgressIndicator(
+                    value: rate / 100,
+                    strokeWidth: 20,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation<Color>(gaugeColor),
+                  ),
+                ),
+                // Percentage text
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${rate.toStringAsFixed(0)}%',
+                      style: PremiumTheme.displayLarge.copyWith(
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Complete',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          // Status indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: gaugeColor.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: gaugeColor.withValues(alpha: 0.5),
+                width: 1,
               ),
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: gaugeColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  rate >= 80
+                      ? 'Ready'
+                      : rate >= 50
+                          ? 'In Progress'
+                          : 'Needs Attention',
+                  style: TextStyle(
+                    color: gaugeColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProposalPipelineFunnel(Map<String, int> statusCounts) {
+    // Define the pipeline stages in order (funnel flow)
+    final pipelineStages = [
+      'Draft',
+      'In Review',
+      'Released',
+      'Signed',
+    ];
+
+    // Normalize status counts to match pipeline stages
+    final normalizedCounts = <String, int>{};
+    for (final stage in pipelineStages) {
+      // Try exact match first
+      if (statusCounts.containsKey(stage)) {
+        normalizedCounts[stage] = statusCounts[stage]!;
+      } else {
+        // Try case-insensitive match
+        final matchingKey = statusCounts.keys.firstWhere(
+          (key) => key.toLowerCase() == stage.toLowerCase(),
+          orElse: () => '',
+        );
+        if (matchingKey.isNotEmpty) {
+          normalizedCounts[stage] = statusCounts[matchingKey]!;
+        } else {
+          // Map similar statuses
+          if (stage == 'Released') {
+            // Check for "Sent To Client", "Sent to Client", etc.
+            final releasedKey = statusCounts.keys.firstWhere(
+              (key) => key.toLowerCase().contains('sent') ||
+                  key.toLowerCase().contains('released'),
+              orElse: () => '',
+            );
+            if (releasedKey.isNotEmpty) {
+              normalizedCounts[stage] = statusCounts[releasedKey]!;
+            } else {
+              normalizedCounts[stage] = 0;
+            }
+          } else if (stage == 'In Review') {
+            // Check for "Pending Ceo Approval", etc.
+            final reviewKey = statusCounts.keys.firstWhere(
+              (key) => key.toLowerCase().contains('review') ||
+                  key.toLowerCase().contains('pending'),
+              orElse: () => '',
+            );
+            if (reviewKey.isNotEmpty) {
+              normalizedCounts[stage] = statusCounts[reviewKey]!;
+            } else {
+              normalizedCounts[stage] = 0;
+            }
+          } else {
+            normalizedCounts[stage] = 0;
+          }
+        }
+      }
+    }
+
+    // Get max count for scaling
+    final maxCount = normalizedCounts.values.fold<int>(
+      0,
+      (prev, count) => math.max(prev, count),
+    );
+
+    if (maxCount == 0) {
+      return const Center(
+        child: Text(
+          'No pipeline data available',
+          style: TextStyle(color: Colors.white70),
         ),
       );
     }
-    final maxY = math.max(maxCount.toDouble(), 5.0);
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceAround,
-        maxY: maxY,
-        barTouchData: BarTouchData(
-          enabled: true,
-          touchTooltipData: BarTouchTooltipData(
-            tooltipPadding: const EdgeInsets.all(8),
-            tooltipMargin: 8,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              return BarTooltipItem(
-                '${rod.toY.toInt()} proposals',
-                const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              );
-            },
+
+    // Build funnel segments
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: pipelineStages.asMap().entries.map((entry) {
+        final index = entry.key;
+        final stage = entry.value;
+        final count = normalizedCounts[stage] ?? 0;
+        
+        // Calculate width as percentage of max (funnel effect)
+        // Each stage should be progressively narrower
+        final widthPercent = maxCount > 0 ? (count / maxCount) : 0.0;
+        // Minimum width to ensure visibility
+        final minWidthPercent = 0.15;
+        final finalWidthPercent = math.max(widthPercent, minWidthPercent);
+
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: index < pipelineStages.length - 1 ? 12.0 : 0,
           ),
-        ),
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  value.toInt().toString(),
+          child: Row(
+            children: [
+              // Stage label
+              SizedBox(
+                width: 100,
+                child: Text(
+                  stage,
                   style: const TextStyle(
-                    color: Color(0xFF6B7280),
+                    color: Colors.white70,
                     fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
-                );
-              },
-            ),
-          ),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 38,
-              getTitlesWidget: (value, meta) {
-                if (value.toInt() >= 0 && value.toInt() < statuses.length) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      statuses[value.toInt()],
-                      style: const TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Funnel bar
+              Expanded(
+                child: Stack(
+                  children: [
+                    // Background bar
+                    Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                  );
-                }
-                return const Text('');
-              },
-            ),
+                    // Filled portion
+                    FractionallySizedBox(
+                      widthFactor: finalWidthPercent,
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _statusColor(stage.toLowerCase()),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          count.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ),
-        borderData: FlBorderData(show: false),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: math.max(maxY / 4, 1.0),
-          getDrawingHorizontalLine: (value) => FlLine(
-            color: const Color(0xFF2D3748),
-            strokeWidth: 1,
-          ),
-        ),
-        barGroups: bars,
-      ),
+        );
+      }).toList(),
     );
   }
 
@@ -1851,103 +2054,181 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
     }
   }
-}
 
-class _AnalyticsSnapshot {
-  final double totalPipelineValue;
-  final int totalProposals;
-  final int activeProposals;
-  final double averageDealSize;
-  final double winRate;
-  final double lossRate;
-  final Map<String, int> statusCounts;
-  final List<_MonthlyPoint> monthlyPoints;
-  final List<_ProposalPerformanceRow> recentProposals;
-  final double? revenueChangePercent;
-  final double? activeChangePercent;
-  final double? conversionChangePercent;
-  final double? averageDealChangePercent;
+  Widget _buildCycleTimeFilters() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Date Range
+          Expanded(
+            child: InkWell(
+              onTap: () async {
+                final picked = await showDateRangePicker(
+                  context: context,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now(),
+                  initialDateRange: _cycleTimeStartDate != null && _cycleTimeEndDate != null
+                      ? DateTimeRange(start: _cycleTimeStartDate!, end: _cycleTimeEndDate!)
+                      : null,
+                );
+                if (picked != null) {
+                  setState(() {
+                    _cycleTimeStartDate = picked.start;
+                    _cycleTimeEndDate = picked.end;
+                  });
+                  final app = context.read<AppState>();
+                  _loadCycleTimeAnalytics(app);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_today, size: 16, color: Colors.white70),
+                    const SizedBox(width: 8),
+                    Text(
+                      _cycleTimeStartDate != null && _cycleTimeEndDate != null
+                          ? '${DateFormat('MMM d').format(_cycleTimeStartDate!)} - ${DateFormat('MMM d').format(_cycleTimeEndDate!)}'
+                          : 'Date Range',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Status Filter
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: _cycleTimeStatus,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.1),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              dropdownColor: const Color(0xFF1A1F2E),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              hint: const Text('Status', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              items: ['', 'Draft', 'In Review', 'Released', 'Signed'].map((status) {
+                return DropdownMenuItem<String>(
+                  value: status.isEmpty ? null : status,
+                  child: Text(status.isEmpty ? 'All Statuses' : status),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _cycleTimeStatus = value;
+                });
+                final app = context.read<AppState>();
+                _loadCycleTimeAnalytics(app);
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Proposal Type Filter
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: _cycleTimeProposalType,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.1),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              dropdownColor: const Color(0xFF1A1F2E),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              hint: const Text('Type', style: TextStyle(color: Colors.white70, fontSize: 12)),
+              items: ['', 'proposal', 'sow', 'rfi'].map((type) {
+                return DropdownMenuItem<String>(
+                  value: type.isEmpty ? null : type,
+                  child: Text(type.isEmpty ? 'All Types' : type.toUpperCase()),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _cycleTimeProposalType = value;
+                });
+                final app = context.read<AppState>();
+                _loadCycleTimeAnalytics(app);
+              },
+            ),
+          ),
+          // Clear Filters
+          if (_cycleTimeStartDate != null || _cycleTimeEndDate != null || _cycleTimeStatus != null || _cycleTimeProposalType != null)
+            IconButton(
+              icon: const Icon(Icons.clear, size: 18, color: Colors.white70),
+              onPressed: () {
+                setState(() {
+                  _cycleTimeStartDate = null;
+                  _cycleTimeEndDate = null;
+                  _cycleTimeStatus = null;
+                  _cycleTimeProposalType = null;
+                });
+                final app = context.read<AppState>();
+                _loadCycleTimeAnalytics(app);
+              },
+            ),
+        ],
+      ),
+    );
+  }
 
-  const _AnalyticsSnapshot({
-    required this.totalPipelineValue,
-    required this.totalProposals,
-    required this.activeProposals,
-    required this.averageDealSize,
-    required this.winRate,
-    required this.lossRate,
-    required this.statusCounts,
-    required this.monthlyPoints,
-    required this.recentProposals,
-    required this.revenueChangePercent,
-    required this.activeChangePercent,
-    required this.conversionChangePercent,
-    required this.averageDealChangePercent,
-  });
-}
-
-class _MonthlyPoint {
-  final DateTime month;
-  double revenue;
-  int proposals;
-  int wins;
-  int losses;
-
-  _MonthlyPoint(this.month)
-      : revenue = 0,
-        proposals = 0,
-        wins = 0,
-        losses = 0;
-
-  String get label => DateFormat('MMM').format(month);
-}
-
-class _ProposalPerformanceRow {
-  final String title;
-  final double? value;
-  final String valueLabel;
-  final String status;
-  final int daysOpen;
-  final double probability;
-  final Color statusColor;
-  final DateTime? updatedAt;
-
-  _ProposalPerformanceRow({
-    required this.title,
-    required this.value,
-    required this.valueLabel,
-    required this.status,
-    required this.daysOpen,
-    required this.probability,
-    required this.statusColor,
-    required this.updatedAt,
-  });
-
-  String get probabilityLabel => '${(probability * 100).round()}%';
-}
-
-class _MetricCardData {
-  final String title;
-  final String value;
-  final String change;
-  final bool isPositive;
-  final String subtitle;
-
-  const _MetricCardData({
-    required this.title,
-    required this.value,
-    required this.change,
-    required this.isPositive,
-    required this.subtitle,
-  });
-}
-
-Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
+  Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
     final byStage = (cycleTimeAnalytics?['by_stage'] as List?) ?? [];
     if (byStage.isEmpty) {
-      return const Center(
-        child: Text(
-          'No cycle time data available yet.\nStart sending proposals to see stage metrics here.',
-          textAlign: TextAlign.center,
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.timeline_outlined,
+                size: 48,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No cycle time data available yet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Start sending proposals to see stage metrics here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -2033,3 +2314,94 @@ Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
       ],
     );
   }
+}
+
+class _AnalyticsSnapshot {
+  final double totalPipelineValue;
+  final int totalProposals;
+  final int activeProposals;
+  final double averageDealSize;
+  final double winRate;
+  final double lossRate;
+  final double completionRate;
+  final Map<String, int> statusCounts;
+  final List<_MonthlyPoint> monthlyPoints;
+  final List<_ProposalPerformanceRow> recentProposals;
+  final double? revenueChangePercent;
+  final double? activeChangePercent;
+  final double? conversionChangePercent;
+  final double? averageDealChangePercent;
+
+  const _AnalyticsSnapshot({
+    required this.totalPipelineValue,
+    required this.totalProposals,
+    required this.activeProposals,
+    required this.averageDealSize,
+    required this.winRate,
+    required this.lossRate,
+    required this.completionRate,
+    required this.statusCounts,
+    required this.monthlyPoints,
+    required this.recentProposals,
+    required this.revenueChangePercent,
+    required this.activeChangePercent,
+    required this.conversionChangePercent,
+    required this.averageDealChangePercent,
+  });
+}
+
+class _MonthlyPoint {
+  final DateTime month;
+  double revenue;
+  int proposals;
+  int wins;
+  int losses;
+
+  _MonthlyPoint(this.month)
+      : revenue = 0,
+        proposals = 0,
+        wins = 0,
+        losses = 0;
+
+  String get label => DateFormat('MMM').format(month);
+}
+
+class _ProposalPerformanceRow {
+  final String title;
+  final double? value;
+  final String valueLabel;
+  final String status;
+  final int daysOpen;
+  final double probability;
+  final Color statusColor;
+  final DateTime? updatedAt;
+
+  _ProposalPerformanceRow({
+    required this.title,
+    required this.value,
+    required this.valueLabel,
+    required this.status,
+    required this.daysOpen,
+    required this.probability,
+    required this.statusColor,
+    required this.updatedAt,
+  });
+
+  String get probabilityLabel => '${(probability * 100).round()}%';
+}
+
+class _MetricCardData {
+  final String title;
+  final String value;
+  final String change;
+  final bool isPositive;
+  final String subtitle;
+
+  const _MetricCardData({
+    required this.title,
+    required this.value,
+    required this.change,
+    required this.isPositive,
+    required this.subtitle,
+  });
+}

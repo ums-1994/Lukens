@@ -821,12 +821,24 @@ class AppState extends ChangeNotifier {
   }
 
   // Cycle Time Analytics
-  Future<Map<String, dynamic>?> getCycleTimeAnalytics() async {
+  Future<Map<String, dynamic>?> getCycleTimeAnalytics({
+    String? startDate,
+    String? endDate,
+    String? status,
+    String? owner,
+    String? proposalType,
+  }) async {
     try {
-      final r = await http.get(
-        Uri.parse("$baseUrl/api/analytics/cycle-time"),
-        headers: _headers,
+      final uri = Uri.parse("$baseUrl/api/analytics/cycle-time").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (status != null && status.isNotEmpty) 'status': status,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty) 'proposal_type': proposalType,
+        },
       );
+      final r = await http.get(uri, headers: _headers);
       if (r.statusCode == 200) {
         return jsonDecode(r.body);
       }

@@ -5541,11 +5541,15 @@ def analytics_cycle_time(username):
       - start_date=YYYY-MM-DD
       - end_date=YYYY-MM-DD
       - status=<exact status>
+      - owner=<username or user_id>
+      - proposal_type=<proposal|sow|rfi>
     """
     try:
         start_date = request.args.get("start_date")
         end_date = request.args.get("end_date")
         status = request.args.get("status")
+        owner_filter = request.args.get("owner")
+        proposal_type = request.args.get("proposal_type")
 
         # Resolve current user's numeric ID, then filter by proposals.owner_id.
         # In dev (or for freshly created Firebase users), the user may not exist yet.
@@ -5562,11 +5566,43 @@ def analytics_cycle_time(username):
                         "start_date": start_date,
                         "end_date": end_date,
                         "status": status,
+                        "owner": owner_filter,
+                        "proposal_type": proposal_type,
                     },
                     "bottleneck": None,
                     "by_stage": [],
                 }, 200
-            owner_id = row[0]
+            default_owner_id = row[0]
+
+        # Determine which owner_id to filter by
+        owner_id = default_owner_id
+        if owner_filter:
+            # If owner filter is provided, look up that user's ID
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                # Try username first, then user_id
+                cursor.execute(
+                    "SELECT id FROM users WHERE username = %s OR id::text = %s",
+                    (owner_filter, owner_filter)
+                )
+                owner_row = cursor.fetchone()
+                if owner_row:
+                    owner_id = owner_row[0]
+                else:
+                    # Owner not found, return empty
+                    return {
+                        "metric": "cycle_time",
+                        "definition": "updated_at - created_at",
+                        "filters": {
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "status": status,
+                            "owner": owner_filter,
+                            "proposal_type": proposal_type,
+                        },
+                        "bottleneck": None,
+                        "by_stage": [],
+                    }, 200
 
         where = ["owner_id = %s", "created_at IS NOT NULL", "updated_at IS NOT NULL"]
         params = [owner_id]
@@ -5580,6 +5616,9 @@ def analytics_cycle_time(username):
         if status:
             where.append("status = %s")
             params.append(status)
+        if proposal_type:
+            where.append("template_type = %s")
+            params.append(proposal_type.lower())
 
         where_sql = " AND ".join(where)
 
@@ -5621,6 +5660,8 @@ def analytics_cycle_time(username):
                 "start_date": start_date,
                 "end_date": end_date,
                 "status": status,
+                "owner": owner_filter,
+                "proposal_type": proposal_type,
             },
             "bottleneck": bottleneck,
             "by_stage": by_stage,
