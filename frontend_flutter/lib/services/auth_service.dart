@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:js_util' as js_util;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
@@ -7,30 +6,6 @@ import 'package:web/web.dart' as web;
 class AuthService {
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
-    if (kIsWeb) {
-      try {
-        // Try to get from window.APP_CONFIG.API_URL
-        final config = js_util.getProperty(js_util.globalThis, 'APP_CONFIG');
-        if (config != null) {
-          final apiUrl = js_util.getProperty(config, 'API_URL');
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-            final url = apiUrl.toString().replaceAll('"', '').trim();
-            print('🌐 Using API URL from APP_CONFIG: $url');
-            return url;
-          }
-        }
-        // Fallback: try window.REACT_APP_API_URL
-        final envUrl =
-            js_util.getProperty(js_util.globalThis, 'REACT_APP_API_URL');
-        if (envUrl != null && envUrl.toString().isNotEmpty) {
-          final url = envUrl.toString().replaceAll('"', '').trim();
-          print('🌐 Using API URL from REACT_APP_API_URL: $url');
-          return url;
-        }
-      } catch (e) {
-        print('⚠️ Could not read API URL from config: $e');
-      }
-    }
     // Check if we're in production (not localhost)
     if (kIsWeb) {
       final hostname = web.window.location.hostname;

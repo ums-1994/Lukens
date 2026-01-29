@@ -138,22 +138,22 @@ Analyze for:
 7. Any altered clauses that need review
 
 Provide a JSON response with:
-{
+{{
   "overall_risk_level": "low|medium|high|critical",
   "can_release": true/false,
   "risk_score": 0-100,
   "issues": [
-    {
+    {{
       "category": "missing_section|incomplete_content|compliance|clarity",
       "severity": "low|medium|high|critical",
       "section": "section name",
       "description": "detailed issue description",
       "recommendation": "how to fix"
-    }
+    }}
   ],
   "summary": "brief summary of all issues",
   "required_actions": ["action 1", "action 2"]
-}
+}}
 
 Be thorough and flag even small deviations that could compound into larger risks."""
 

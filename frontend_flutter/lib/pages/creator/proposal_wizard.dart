@@ -2738,22 +2738,19 @@ class _ProposalWizardState extends State<ProposalWizard>
       );
     }
 
-    final riskLevel = _riskAssessment['risk_level'] ?? 'Low';
+    final status = _riskAssessment['status'] ?? 'PASS';
+    final riskLevel = status; // Map Risk Gate status to UI display
     final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final risks = _riskAssessment['risks'] ?? [];
-    final recommendations = _riskAssessment['recommendations'] ?? [];
     final issues = List<Map<String, dynamic>>.from(
       _riskAssessment['issues'] ?? const [],
     );
-    final kbRecommendations =
-        Map<String, dynamic>.from(_riskAssessment['kb_recommendations'] ?? {});
-    final kbClauses = List<Map<String, dynamic>>.from(
-      kbRecommendations['clauses'] ?? const [],
+    final kbCitations = List<Map<String, dynamic>>.from(
+      _riskAssessment['kb_citations'] ?? const [],
     );
 
     Color riskColor = PremiumTheme.success;
-    if (riskLevel == 'Medium') riskColor = Colors.orange;
-    if (riskLevel == 'High') riskColor = PremiumTheme.error;
+    if (riskLevel == 'REVIEW') riskColor = Colors.orange;
+    if (riskLevel == 'BLOCK') riskColor = PremiumTheme.error;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2813,15 +2810,17 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
           const SizedBox(height: 12),
           ...issues.map<Widget>((issue) {
-            final title = issue['title']?.toString() ?? 'Issue';
+            final title = issue['title']?.toString() ??
+                issue['section']?.toString() ??
+                'Issue';
             final description = issue['description']?.toString() ?? '';
-            final action = issue['action']?.toString() ?? '';
-            final priority = issue['priority']?.toString().toLowerCase() ?? '';
+            final action = issue['recommendation']?.toString() ?? '';
+            final severity = issue['severity']?.toString().toLowerCase() ?? '';
 
             Color iconColor = PremiumTheme.info;
-            if (priority == 'critical' || priority == 'high') {
+            if (severity == 'critical' || severity == 'high') {
               iconColor = PremiumTheme.error;
-            } else if (priority == 'medium' || priority == 'warning') {
+            } else if (severity == 'medium') {
               iconColor = Colors.orange;
             }
 
@@ -2887,124 +2886,76 @@ class _ProposalWizardState extends State<ProposalWizard>
           }),
           const SizedBox(height: 4),
         ],
-        // Identified Risks
-        if (risks.isNotEmpty) ...[
+        // KB Citations
+        if (kbCitations.isNotEmpty) ...[
           Text(
-            'Identified Risks',
+            'KB Citations',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          ...risks.map<Widget>((risk) => Padding(
+          ...kbCitations.map<Widget>((citation) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GlassContainer(
                   borderRadius: 16,
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.flag_outlined,
-                        color: PremiumTheme.error,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          risk.toString(),
-                          style: PremiumTheme.bodyMedium,
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.library_books_outlined,
+                            color: PremiumTheme.info,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  citation['title']?.toString() ?? 'KB Clause',
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Category: ${citation['category']?.toString() ?? ''}',
+                                  style: PremiumTheme.labelMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
+                                ),
+                                if (citation['recommended_text']
+                                        ?.toString()
+                                        .isNotEmpty ==
+                                    true) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Recommended:',
+                                    style: PremiumTheme.labelMedium.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    citation['recommended_text'],
+                                    style: PremiumTheme.bodyMedium,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               )),
-          const SizedBox(height: 16),
-        ],
-        // Recommendations
-        if (recommendations.isNotEmpty) ...[
-          Text(
-            'Recommendations',
-            style: PremiumTheme.bodyLarge.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...recommendations.map<Widget>((rec) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: GlassContainer(
-                  borderRadius: 16,
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.lightbulb_outline,
-                        color: PremiumTheme.info,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          rec.toString(),
-                          style: PremiumTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )),
-        ],
-        if (kbClauses.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text(
-            'Suggested Policy Clauses',
-            style: PremiumTheme.bodyLarge.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...kbClauses.map<Widget>((clause) {
-            final title = clause['title']?.toString() ?? 'Clause';
-            final category = clause['category']?.toString() ?? '';
-            final recommendedText = clause['recommended_text']?.toString() ?? '';
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: GlassContainer(
-                borderRadius: 16,
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: PremiumTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (category.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        category,
-                        style: PremiumTheme.bodyMedium.copyWith(
-                          color: PremiumTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                    if (recommendedText.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        recommendedText,
-                        style: PremiumTheme.bodyMedium,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          }),
+          const SizedBox(height: 4),
         ],
       ],
     );

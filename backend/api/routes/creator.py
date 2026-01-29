@@ -2,12 +2,27 @@
 Creator role routes - Content management, proposal CRUD, AI features, uploads
 """
 from flask import Blueprint, request, jsonify
+import io
+import json
 import os
+import re
 import traceback
 import cloudinary
+import cloudinary.api
 import cloudinary.uploader
 import psycopg2.extras
 from datetime import datetime
+import requests
+
+try:
+    from PyPDF2 import PdfReader
+except ImportError:
+    PdfReader = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
@@ -200,6 +215,244 @@ def kb_list_clauses(username=None):
         print(f"❌ Error listing kb clauses: {e}")
         traceback.print_exc()
         return {"detail": str(e)}, 500
+
+
+def _slugify(value: str) -> str:
+    value = (value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value).strip("_")
+    return value or "kb_doc"
+
+
+def _download_asset_bytes(*, url: str) -> tuple[bytes, str | None]:
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
+    content_type = resp.headers.get("content-type")
+    return resp.content, content_type
+
+
+def _extract_text_from_file_bytes(file_bytes: bytes, content_type: str | None, filename: str | None) -> str:
+    lowered_name = (filename or "").lower()
+    lowered_ct = (content_type or "").lower()
+
+    if lowered_name.endswith(".pdf") or "application/pdf" in lowered_ct:
+        if PdfReader is None:
+            raise ValueError("PDF extraction requires PyPDF2 to be installed")
+        reader = PdfReader(io.BytesIO(file_bytes))
+        parts = []
+        for page in reader.pages:
+            try:
+                parts.append(page.extract_text() or "")
+            except Exception:
+                parts.append("")
+        return "\n".join(parts).strip()
+
+    if lowered_name.endswith(".docx") or "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in lowered_ct:
+        if docx is None:
+            raise ValueError("DOCX extraction requires python-docx to be installed")
+        doc = docx.Document(io.BytesIO(file_bytes))
+        return "\n".join([p.text for p in doc.paragraphs if p.text]).strip()
+
+    if lowered_name.endswith(".txt") or lowered_ct.startswith("text/"):
+        return file_bytes.decode("utf-8", errors="ignore").strip()
+
+    return file_bytes.decode("utf-8", errors="ignore").strip()
+
+
+@bp.post("/kb/import/cloudinary")
+@token_required
+def kb_import_from_cloudinary(username=None):
+    try:
+        data = request.get_json() or {}
+
+        public_id = (data.get("public_id") or "").strip() or None
+        url = (data.get("url") or "").strip() or None
+
+        document_key = (data.get("document_key") or "").strip() or None
+        title = (data.get("title") or "").strip() or None
+        doc_type = (data.get("doc_type") or "policy").strip() or "policy"
+        tags = data.get("tags")
+        version = (data.get("version") or "").strip() or None
+
+        if not public_id and not url:
+            return {"detail": "public_id or url is required"}, 400
+
+        if public_id and not url:
+            resource = cloudinary.api.resource(public_id, resource_type="raw")
+            url = resource.get("secure_url") or resource.get("url")
+            if not title:
+                title = resource.get("original_filename")
+            filename = resource.get("original_filename")
+            ext = resource.get("format")
+            if filename and ext and not filename.lower().endswith(f".{ext}"):
+                filename = f"{filename}.{ext}"
+        else:
+            filename = None
+
+        if not url:
+            return {"detail": "Could not resolve asset url"}, 400
+
+        file_bytes, content_type = _download_asset_bytes(url=url)
+        extracted_text = _extract_text_from_file_bytes(file_bytes, content_type, filename)
+        if not extracted_text:
+            return {"detail": "Could not extract text from document"}, 400
+
+        from ai_service import ai_service
+        from api.utils.ai_safety import sanitize_for_external_ai, AISafetyError
+
+        safety_result = sanitize_for_external_ai({"kb_source_text": extracted_text[:200000]})
+        if safety_result.blocked:
+            raise AISafetyError(
+                "Blocked outbound AI KB import due to sensitive data detected.",
+                reasons=safety_result.block_reasons,
+            )
+
+        kb_title = title or "KB Document"
+        kb_key = document_key or _slugify(kb_title)
+
+        prompt = f"""You are a compliance and governance assistant. Extract reusable knowledge base clauses from the provided document.
+
+Document Title: {kb_title}
+
+Document Text:
+{safety_result.sanitized.get('kb_source_text')}
+
+Return ONLY valid JSON in this exact shape:
+{{
+  "document": {{
+    "key": "string",
+    "title": "string",
+    "doc_type": "policy|template|legal|security|process|other",
+    "version": "string|null",
+    "tags": ["tag1", "tag2"],
+    "source_url": "string|null"
+  }},
+  "clauses": [
+    {{
+      "clause_key": "string",
+      "title": "string",
+      "category": "security|legal|privacy|governance|quality|delivery|other",
+      "severity": "low|medium|high|critical",
+      "clause_text": "string",
+      "recommended_text": "string",
+      "tags": ["tag1", "tag2"]
+    }}
+  ]
+}}
+
+Rules:
+- Produce 5-20 clauses max.
+- clause_key must be unique, snake_case, and stable.
+- Keep clause_text concise.
+"""
+
+        messages = [
+            {"role": "system", "content": "You extract structured KB clauses. Always return valid JSON only."},
+            {"role": "user", "content": prompt},
+        ]
+
+        response_text = ai_service._make_request(messages, temperature=0.2, max_tokens=2000)
+        start_idx = response_text.find("{")
+        end_idx = response_text.rfind("}") + 1
+        payload = response_text[start_idx:end_idx]
+        parsed = json.loads(payload)
+
+        parsed_doc = parsed.get("document") or {}
+        clauses = parsed.get("clauses") or []
+
+        doc_tags = parsed_doc.get("tags")
+        if not isinstance(doc_tags, list):
+            doc_tags = []
+        if isinstance(tags, list):
+            doc_tags = list(dict.fromkeys([*doc_tags, *tags]))
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """
+                INSERT INTO kb_documents (key, title, doc_type, tags, body, version)
+                VALUES (%s, %s, %s, %s::jsonb, %s, %s)
+                ON CONFLICT (key)
+                DO UPDATE SET
+                  title = EXCLUDED.title,
+                  doc_type = EXCLUDED.doc_type,
+                  tags = EXCLUDED.tags,
+                  body = EXCLUDED.body,
+                  version = EXCLUDED.version,
+                  updated_at = CURRENT_TIMESTAMP
+                RETURNING id
+                """,
+                (
+                    kb_key,
+                    parsed_doc.get("title") or kb_title,
+                    parsed_doc.get("doc_type") or doc_type,
+                    json.dumps(doc_tags),
+                    (parsed_doc.get("source_url") or url),
+                    parsed_doc.get("version") or version,
+                ),
+            )
+            document_id = (cursor.fetchone() or {}).get("id")
+
+            inserted = 0
+            for idx, clause in enumerate(clauses):
+                if not isinstance(clause, dict):
+                    continue
+                clause_key = (clause.get("clause_key") or "").strip()
+                clause_title = (clause.get("title") or "").strip() or f"Clause {idx + 1}"
+                category = (clause.get("category") or "other").strip() or "other"
+                severity = (clause.get("severity") or "medium").strip() or "medium"
+                clause_text = (clause.get("clause_text") or "").strip()
+                recommended_text = (clause.get("recommended_text") or "").strip() or None
+                clause_tags = clause.get("tags")
+                if not isinstance(clause_tags, list):
+                    clause_tags = []
+
+                if not clause_text:
+                    continue
+
+                if not clause_key:
+                    clause_key = f"{kb_key}_{_slugify(clause_title)}"
+
+                cursor.execute(
+                    """
+                    INSERT INTO kb_clauses (document_id, clause_key, title, category, severity, clause_text, recommended_text, tags)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (clause_key)
+                    DO UPDATE SET
+                      title = EXCLUDED.title,
+                      category = EXCLUDED.category,
+                      severity = EXCLUDED.severity,
+                      clause_text = EXCLUDED.clause_text,
+                      recommended_text = EXCLUDED.recommended_text,
+                      tags = EXCLUDED.tags,
+                      updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        document_id,
+                        clause_key,
+                        clause_title,
+                        category,
+                        severity,
+                        clause_text,
+                        recommended_text,
+                        json.dumps(clause_tags),
+                    ),
+                )
+                inserted += 1
+
+            conn.commit()
+
+        return {
+            "document_key": kb_key,
+            "title": kb_title,
+            "source_url": url,
+            "clauses_upserted": inserted,
+        }, 200
+
+    except Exception as e:
+        print(f"❌ KB import error: {e}")
+        traceback.print_exc()
+        return {"detail": "Internal error"}, 500
 
 # ============================================================================
 # CONTENT LIBRARY ROUTES
