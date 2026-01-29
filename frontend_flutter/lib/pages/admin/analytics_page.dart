@@ -1738,7 +1738,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   Future<Map<String, dynamic>?> _fetchCycleTimeAnalytics() async {
     try {
-      final data = await ApiService.getCycleTimeAnalytics();
+      final data = await getCycleTimeAnalytics();
       return data;
     } catch (e) {
       print('Cycle time analytics exception: $e');
@@ -1748,6 +1748,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
     return FutureBuilder<Map<String, dynamic>?>(
+
       future: _fetchCycleTimeAnalytics(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
