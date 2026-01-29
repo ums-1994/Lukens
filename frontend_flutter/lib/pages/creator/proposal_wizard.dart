@@ -615,6 +615,10 @@ class _ProposalWizardState extends State<ProposalWizard>
               ? created['engagement_opened_at'].toString()
               : null;
 
+      final String? createdAt = created != null && created['created_at'] != null
+          ? created['created_at'].toString()
+          : null;
+
       final currentUser = app.currentUser;
       final String? ownerName =
           currentUser != null && currentUser['full_name'] != null
@@ -632,6 +636,8 @@ class _ProposalWizardState extends State<ProposalWizard>
         'engagementStage': engagementStage ?? 'Proposal Drafted',
         'engagementOpenedAt': engagementOpenedAt ?? '',
         'ownerName': ownerName ?? '',
+        'createdAt': createdAt ?? '',
+        'versionNumber': 1,
       };
 
       moduleContents.forEach((key, value) {
