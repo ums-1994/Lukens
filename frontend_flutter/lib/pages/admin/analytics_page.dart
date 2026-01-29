@@ -10,7 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 
-import '../../api.dart';
+import '../../api.dart' as api;
 import '../../services/asset_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -1738,7 +1738,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   Future<Map<String, dynamic>?> _fetchCycleTimeAnalytics() async {
     try {
-      final data = await getCycleTimeAnalytics();
+      final data = await api.getCycleTimeAnalytics();
       return data;
     } catch (e) {
       print('Cycle time analytics exception: $e');
