@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
@@ -924,6 +925,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 ],
                               ),
                               const SizedBox(height: 32),
+                              _buildCycleTimeMetrics(),
+                              const SizedBox(height: 32),
                               _buildGlassPerformanceTable(
                                   analytics.recentProposals),
                               const SizedBox(height: 32),
@@ -1724,6 +1727,110 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           ),
         ),
       ],
+    );
+  }
+
+  Future<Map<String, dynamic>?> _fetchCycleTimeMetrics() async {
+    try {
+      final app = context.read<AppState>();
+      final token = app.token;
+      final response = await http.get(
+        Uri.parse('${app.baseUrl}/api/analytics/cycle-time-inline'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data;
+      } else {
+        print('Cycle time metrics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Cycle time metrics exception: $e');
+      return null;
+    }
+  }
+
+  Widget _buildCycleTimeMetrics() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _fetchCycleTimeMetrics(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildGlassChartCard('Cycle Time Metrics', const Center(child: CircularProgressIndicator()), height: 320);
+        }
+        if (!snapshot.hasData || snapshot.data == null) {
+          return _buildGlassChartCard('Cycle Time Metrics', const Center(child: Text('No data available')), height: 320);
+        }
+        final data = snapshot.data!;
+        final byStage = (data['by_stage'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        final bottleneck = data['bottleneck'] as Map<String, dynamic>?;
+        if (byStage.isEmpty) {
+          return _buildGlassChartCard('Cycle Time Metrics', const Center(child: Text('No cycle time data')), height: 320);
+        }
+        return _buildGlassChartCard(
+          'Cycle Time Metrics',
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (bottleneck != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'Bottleneck: ${bottleneck['stage']} (${(bottleneck['avg_days'] as num)?.toStringAsFixed(1) ?? 'N/A'} days avg)',
+                    style: PremiumTheme.bodySmall.copyWith(color: PremiumTheme.error),
+                  ),
+                ),
+              SizedBox(
+                height: 200,
+                child: BarChart(
+                  BarChartData(
+                    alignment: BarChartAlignment.spaceAround,
+                    titlesData: FlTitlesData(
+                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (value, _) => Text(value.toStringAsFixed(0), style: const TextStyle(fontSize: 10)))),
+                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 80, getTitlesWidget: (value, _) {
+                        final index = value.toInt();
+                        if (index >= 0 && index < byStage.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              byStage[index]['stage']?.toString().split(' ').first ?? '',
+                              style: const TextStyle(fontSize: 10),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }
+                        return const Text('');
+                      })),
+                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    barGroups: byStage.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final stage = entry.value;
+                      final avg = (stage['avg_days'] as num?)?.toDouble() ?? 0.0;
+                      return BarChartGroupData(
+                        x: i,
+                        barRods: [
+                          BarChartRodData(
+                            toY: avg,
+                            color: bottleneck != null && bottleneck['stage'] == stage['stage'] ? PremiumTheme.error : PremiumTheme.primary,
+                            width: 20,
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                    minY: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          height: 320,
+        );
+      },
     );
   }
 
