@@ -44,6 +44,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     'clientContactName': '',
     'clientContactEmail': '',
     'clientContactMobile': '',
+    'clientId': null,
     'opportunityName': '',
     'projectType': '',
     'estimatedValue': '',
@@ -206,6 +207,7 @@ class _ProposalWizardState extends State<ProposalWizard>
             client['contact_email'] ?? client['email'] ?? '';
         _formData['clientContactMobile'] =
             client['phone'] ?? client['mobile'] ?? '';
+        _formData['clientId'] = client['id'];
       } else {
         // Clear fields when switching to manual entry
         _formData['clientName'] = '';
@@ -215,6 +217,7 @@ class _ProposalWizardState extends State<ProposalWizard>
         _formData['clientContactName'] = '';
         _formData['clientContactEmail'] = '';
         _formData['clientContactMobile'] = '';
+        _formData['clientId'] = null;
       }
     });
   }
@@ -586,6 +589,7 @@ class _ProposalWizardState extends State<ProposalWizard>
         templateKey: _formData['templateId']?.toString().isNotEmpty == true
             ? _formData['templateId'].toString()
             : null,
+        clientId: _formData['clientId'],
       );
 
       final proposalId = (created != null && created['id'] != null)
@@ -598,6 +602,25 @@ class _ProposalWizardState extends State<ProposalWizard>
       final Map<String, String> moduleContents =
           Map<String, String>.from(_formData['moduleContents'] ?? {});
 
+      final String? opportunityId =
+          created != null && created['opportunity_id'] != null
+              ? created['opportunity_id'].toString()
+              : null;
+      final String? engagementStage =
+          created != null && created['engagement_stage'] != null
+              ? created['engagement_stage'].toString()
+              : null;
+      final String? engagementOpenedAt =
+          created != null && created['engagement_opened_at'] != null
+              ? created['engagement_opened_at'].toString()
+              : null;
+
+      final currentUser = app.currentUser;
+      final String? ownerName =
+          currentUser != null && currentUser['full_name'] != null
+              ? currentUser['full_name'].toString()
+              : null;
+
       final Map<String, dynamic> initialData = {
         'clientName': _formData['clientName'] ?? '',
         'clientEmail': _formData['clientEmail'] ?? '',
@@ -605,6 +628,10 @@ class _ProposalWizardState extends State<ProposalWizard>
         'estimatedValue': _formData['estimatedValue'] ?? '',
         'timeline': _formData['timeline'] ?? '',
         'opportunityName': _formData['opportunityName'] ?? '',
+        'opportunityId': opportunityId ?? '',
+        'engagementStage': engagementStage ?? 'Proposal Drafted',
+        'engagementOpenedAt': engagementOpenedAt ?? '',
+        'ownerName': ownerName ?? '',
       };
 
       moduleContents.forEach((key, value) {
@@ -1865,15 +1892,15 @@ class _ProposalWizardState extends State<ProposalWizard>
                         controller: proposalTitleController,
                       ),
                       const SizedBox(height: 20),
-                      // Client Selection Dropdown
+                      // Client Selection Dropdown (active clients only)
                       _buildClientDropdown(),
                       const SizedBox(height: 20),
                       // Client Details Fields (auto-populated or manual)
-                      if (!_useManualEntry && _selectedClient != null)
+                      if (!_useManualEntry && _selectedClient != null) ...[
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
+                            color: Colors.green.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                                 color: Colors.green.withOpacity(0.3)),
@@ -1885,7 +1912,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Client details auto-filled from database',
+                                  'Client details auto-filled from database. Update the client record in Client Management to change these values.',
                                   style: TextStyle(
                                       color: Colors.green.shade300,
                                       fontSize: 12),
@@ -1894,6 +1921,45 @@ class _ProposalWizardState extends State<ProposalWizard>
                             ],
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        if ((_formData['clientName']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientEmail']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientContactName']
+                                    ?.toString()
+                                    .isEmpty ??
+                                true) ||
+                            (_formData['clientContactEmail']
+                                    ?.toString()
+                                    .isEmpty ??
+                                true))
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.orange.withOpacity(0.4)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    color: Colors.orange, size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'Some client details are missing. You can temporarily fill in the missing fields here (manual override).',
+                                    style: TextStyle(
+                                      color: Colors.orange,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                       if (_useManualEntry || _selectedClient == null) ...[
                         Row(
                           children: [
@@ -1922,29 +1988,59 @@ class _ProposalWizardState extends State<ProposalWizard>
                           ],
                         ),
                       ] else ...[
-                        // Show read-only fields when client is selected
+                        // When a client is selected, keep populated fields read-only
+                        // but allow manual override for any missing core fields.
                         Row(
                           children: [
                             Expanded(
-                              child: _buildReadOnlyField(
-                                'Client Name',
-                                _formData['clientName']?.toString() ?? '',
-                                Icons.business_outlined,
-                              ),
+                              child: (_formData['clientName']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Name',
+                                      'Company or contact name',
+                                      (value) => setState(() =>
+                                          _formData['clientName'] = value),
+                                      Icons.business_outlined,
+                                      controller: clientNameController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Name',
+                                      _formData['clientName']?.toString() ?? '',
+                                      Icons.business_outlined,
+                                    ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: _buildReadOnlyField(
-                                'Client Email',
-                                _formData['clientEmail']?.toString() ?? '',
-                                Icons.email_outlined,
-                              ),
+                              child: (_formData['clientEmail']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Email',
+                                      'client@company.com',
+                                      (value) => setState(() =>
+                                          _formData['clientEmail'] = value),
+                                      Icons.email_outlined,
+                                      keyboardType: TextInputType.emailAddress,
+                                      controller: clientEmailController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Email',
+                                      _formData['clientEmail']?.toString() ??
+                                          '',
+                                      Icons.email_outlined,
+                                    ),
                             ),
                           ],
                         ),
                       ],
                       const SizedBox(height: 20),
-                      if (_useManualEntry || _selectedClient == null)
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientHolding']?.toString().isEmpty ??
+                              true))
                         _buildTextField(
                           'Client Holding / Group',
                           'Parent company or group',
@@ -1960,7 +2056,10 @@ class _ProposalWizardState extends State<ProposalWizard>
                           Icons.account_tree_outlined,
                         ),
                       const SizedBox(height: 20),
-                      if (_useManualEntry || _selectedClient == null)
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientAddress']?.toString().isEmpty ??
+                              true))
                         _buildTextField(
                           'Client Address',
                           'Physical or postal address',
@@ -1976,7 +2075,14 @@ class _ProposalWizardState extends State<ProposalWizard>
                           Icons.location_on_outlined,
                         ),
                       const SizedBox(height: 20),
-                      if (_useManualEntry || _selectedClient == null)
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientContactName']?.toString().isEmpty ??
+                              true) ||
+                          (_formData['clientContactEmail']
+                                  ?.toString()
+                                  .isEmpty ??
+                              true))
                         Row(
                           children: [
                             Expanded(
@@ -2026,7 +2132,12 @@ class _ProposalWizardState extends State<ProposalWizard>
                           ],
                         ),
                       const SizedBox(height: 20),
-                      if (_useManualEntry || _selectedClient == null)
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientContactMobile']
+                                  ?.toString()
+                                  .isEmpty ??
+                              true))
                         _buildTextField(
                           'Client Contact Mobile',
                           'Mobile number',
@@ -2486,7 +2597,11 @@ class _ProposalWizardState extends State<ProposalWizard>
                   style: PremiumTheme.bodyMedium,
                 ),
               ),
-              ..._clients.map((client) {
+              ..._clients.where((client) {
+                final status = client['status']?.toString().toLowerCase() ?? '';
+                // Only allow active clients; treat missing/empty status as active
+                return status.isEmpty || status == 'active';
+              }).map((client) {
                 final name = client['company_name'] ??
                     client['name'] ??
                     client['email'] ??
