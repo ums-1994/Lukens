@@ -187,7 +187,8 @@ class AIAnalysisService {
         proposalData['id'] != null &&
         proposalData['id'].toString() != 'draft') {
       try {
-        return await analyzeProposalRisks(proposalData['id'].toString());
+        final raw = await analyzeProposalRisks(proposalData['id'].toString());
+        return _convertToUIFormat(raw);
       } catch (e) {
         print('AI Risk Analysis failed, falling back to basic analysis: $e');
         // Fall through to basic analysis
@@ -207,22 +208,43 @@ class AIAnalysisService {
     if (analysis['issues'] != null) {
       for (final issue in analysis['issues']) {
         issues.add({
-          'type': issue['category'] ?? 'ai_analysis',
-          'title': issue['section'] ?? 'Issue',
+          'type': issue['category'] ?? issue['type'] ?? 'ai_analysis',
+          'title': issue['section'] ?? issue['title'] ?? 'Issue',
           'description': issue['description'] ?? '',
-          'points': _severityToPoints(issue['severity']),
-          'priority': issue['severity'] ?? 'info',
-          'action': issue['recommendation'] ?? 'Review and fix',
+          'points': issue['points'] is num
+              ? (issue['points'] as num).toInt()
+              : _severityToPoints(issue['severity'] ?? issue['priority']),
+          'priority': issue['severity'] ?? issue['priority'] ?? 'info',
+          'action': issue['recommendation'] ?? issue['action'] ?? 'Review and fix',
         });
       }
     }
 
     // Calculate risk score
-    int riskScore = analysis['risk_score'] ?? 0;
+    final dynamic rawScore = analysis['riskScore'] ?? analysis['risk_score'] ?? 0;
+    int riskScore = 0;
+    if (rawScore is num) {
+      riskScore = rawScore.toInt();
+    } else {
+      riskScore = int.tryParse(rawScore.toString()) ?? 0;
+    }
 
     // Determine status
     String status;
-    if (analysis['can_release'] == true) {
+    final dynamic rawStatus = analysis['status'];
+    final statusStr = rawStatus?.toString().trim();
+    if (statusStr != null) {
+      final s = statusStr.toUpperCase();
+      if (s == 'PASS') {
+        status = 'Ready';
+      } else if (s == 'REVIEW') {
+        status = 'At Risk';
+      } else if (s == 'BLOCK') {
+        status = 'Blocked';
+      } else {
+        status = statusStr;
+      }
+    } else if (analysis['can_release'] == true) {
       status = 'Ready';
     } else if (riskScore <= 30) {
       status = 'At Risk';
@@ -236,7 +258,8 @@ class AIAnalysisService {
       'issues': issues,
       'summary': analysis['summary'] ?? '',
       'required_actions': analysis['required_actions'] ?? [],
-      'kb_recommendations': analysis['kb_recommendations'] ?? {},
+      'kb_recommendations': analysis['kb_recommendations'] ??
+          {'citations': analysis['kb_citations'] ?? []},
     };
   }
 
