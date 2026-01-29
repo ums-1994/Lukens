@@ -1726,17 +1726,72 @@ def get_proposals(username):
             
             print(f"🔍 Looking for proposals for user {username}")
             
-            # Query all columns that exist in the database
-            cursor.execute(
-                '''SELECT id, user_id, title, content, status, client, client_email, 
-                          budget, timeline_days, created_at, updated_at
-                   FROM proposals WHERE user_id = %s
-                   ORDER BY created_at DESC''',
-                (username,)
-            )
+            query_with_risk = '''
+                SELECT
+                    p.id,
+                    p.user_id,
+                    p.title,
+                    p.content,
+                    p.status,
+                    p.client,
+                    p.client_email,
+                    p.budget,
+                    p.timeline_days,
+                    p.created_at,
+                    p.updated_at,
+                    rg.risk_score,
+                    rg.status AS risk_gate_status,
+                    rg.overridden AS risk_gate_overridden
+                FROM proposals p
+                LEFT JOIN LATERAL (
+                    SELECT risk_score, status, overridden
+                    FROM risk_gate_runs
+                    WHERE proposal_id = p.id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ) rg ON TRUE
+                WHERE p.user_id = %s
+                ORDER BY p.created_at DESC
+            '''
+            try:
+                cursor.execute(query_with_risk, (username,))
+            except Exception as e:
+                if "risk_gate_runs" in str(e) and "does not exist" in str(e).lower():
+                    cursor.execute(
+                        '''SELECT id, user_id, title, content, status, client, client_email,
+                                  budget, timeline_days, created_at, updated_at
+                           FROM proposals WHERE user_id = %s
+                           ORDER BY created_at DESC''',
+                        (username,),
+                    )
+                else:
+                    raise
             rows = cursor.fetchall()
             proposals = []
+
+            def _risk_level(score, gate_status):
+                if gate_status == "BLOCK":
+                    return "critical"
+                if gate_status == "REVIEW":
+                    return "high"
+                try:
+                    s = int(score) if score is not None else None
+                except Exception:
+                    s = None
+                if s is None:
+                    return None
+                if s >= 90:
+                    return "critical"
+                if s >= 70:
+                    return "high"
+                if s >= 40:
+                    return "medium"
+                return "low"
+
             for row in rows:
+                risk_score = row[11] if len(row) > 11 else None
+                risk_gate_status = row[12] if len(row) > 12 else None
+                risk_gate_overridden = row[13] if len(row) > 13 else None
                 proposals.append({
                     'id': row[0],
                     'user_id': row[1],
@@ -1752,6 +1807,10 @@ def get_proposals(username):
                     'created_at': row[9].isoformat() if row[9] else None,
                     'updated_at': row[10].isoformat() if row[10] else None,
                     'updatedAt': row[10].isoformat() if row[10] else None,
+                    'risk_score': int(risk_score) if risk_score is not None else None,
+                    'risk_level': _risk_level(risk_score, risk_gate_status),
+                    'risk_gate_status': risk_gate_status,
+                    'risk_gate_overridden': risk_gate_overridden,
                 })
             print(f"✅ Found {len(proposals)} proposals for user {username}")
             return proposals, 200
