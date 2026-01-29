@@ -138,6 +138,7 @@ from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
+from api.routes.risk_gate import bp as risk_gate_bp
 from api.utils.decorators import token_required as firebase_token_required
 
 app.register_blueprint(auth_bp, url_prefix='/api')
@@ -149,6 +150,7 @@ app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
+app.register_blueprint(risk_gate_bp, url_prefix='/api/risk-gate')
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = Starlette()

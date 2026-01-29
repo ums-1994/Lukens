@@ -13,7 +13,7 @@ from api.utils.database import get_db_connection
 from api.utils.ai_safety import AISafetyError, sanitize_for_external_ai, enforce_safe_for_external_ai
 from api.utils.decorators import token_required
 
-bp = Blueprint("risk_gate", __name__, url_prefix="/api/risk-gate")
+bp = Blueprint("risk_gate", __name__)
 
 
 def _json_default(value):
