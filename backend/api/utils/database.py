@@ -26,8 +26,17 @@ def _build_db_config_from_env():
     if database_url:
         parsed = urlparse(database_url)
 
-        if parsed.scheme not in ('postgres', 'postgresql'):
-            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+        # Accept common Postgres URL scheme variants.
+        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
+        scheme = (parsed.scheme or '').lower()
+        if scheme.startswith('postgresql+'):
+            scheme = 'postgresql'
+
+        if scheme not in ('postgres', 'postgresql'):
+            raise ValueError(
+                'DATABASE_URL must start with postgres:// or postgresql:// '
+                '(optionally with a driver like postgresql+psycopg2://)'
+            )
 
         db_config = {
             'host': parsed.hostname,
@@ -356,6 +365,48 @@ def init_pg_schema():
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
         FOREIGN KEY (invited_by) REFERENCES users(id)
         )''')
+
+        # Risk Gate runs + override audit trail
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_runs (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            requested_by VARCHAR(255),
+            status VARCHAR(20) NOT NULL,
+            risk_score INTEGER NOT NULL,
+            issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+            kb_citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+            redaction_summary JSONB,
+            overridden BOOLEAN NOT NULL DEFAULT FALSE,
+            override_reason TEXT,
+            overridden_by VARCHAR(255),
+            overridden_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_runs_proposal_id
+               ON risk_gate_runs(proposal_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_overrides (
+            id SERIAL PRIMARY KEY,
+            run_id INTEGER NOT NULL,
+            override_reason TEXT NOT NULL,
+            approved_by VARCHAR(255) NOT NULL,
+            approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (run_id) REFERENCES risk_gate_runs(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_overrides_run_id
+               ON risk_gate_overrides(run_id, approved_at DESC)'''
+        )
 
         # Suggested changes table
         cursor.execute('''CREATE TABLE IF NOT EXISTS suggested_changes (

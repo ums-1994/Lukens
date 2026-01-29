@@ -70,6 +70,8 @@ CORS(
         r"/*": {
             "origins": [
                 "https://proposals2025.netlify.app",
+                r"^http://localhost(:\\d+)?$",
+                r"^http://127\\.0\\.0\\.1(:\\d+)?$",
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
@@ -94,6 +96,7 @@ from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 from api.routes.approver import bp as approver_bp
+from api.routes.risk_gate import bp as risk_gate_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -103,6 +106,7 @@ app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
+app.register_blueprint(risk_gate_bp)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -280,6 +284,48 @@ def init_pg_schema():
         client_can_edit BOOLEAN DEFAULT false,
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
+
+        # Risk Gate runs + override audit trail
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_runs (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            requested_by VARCHAR(255),
+            status VARCHAR(20) NOT NULL,
+            risk_score INTEGER NOT NULL,
+            issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+            kb_citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+            redaction_summary JSONB,
+            overridden BOOLEAN NOT NULL DEFAULT FALSE,
+            override_reason TEXT,
+            overridden_by VARCHAR(255),
+            overridden_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_runs_proposal_id
+               ON risk_gate_runs(proposal_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_overrides (
+            id SERIAL PRIMARY KEY,
+            run_id INTEGER NOT NULL,
+            override_reason TEXT NOT NULL,
+            approved_by VARCHAR(255) NOT NULL,
+            approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (run_id) REFERENCES risk_gate_runs(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_overrides_run_id
+               ON risk_gate_overrides(run_id, approved_at DESC)'''
+        )
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
         id SERIAL PRIMARY KEY,
