@@ -11,7 +11,6 @@ import 'package:web/web.dart' as web;
 
 import '../../api.dart';
 import '../../services/asset_service.dart';
-import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 
@@ -33,14 +32,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       NumberFormat.currency(symbol: _currencySymbol, decimalDigits: 0);
   final NumberFormat _compactCurrencyFormatter =
       NumberFormat.compactCurrency(symbol: _currencySymbol, decimalDigits: 1);
-  Map<String, dynamic>? _cycleTimeAnalytics;
-  
-  // Cycle Time filters
-  DateTime? _cycleTimeStartDate;
-  DateTime? _cycleTimeEndDate;
-  String? _cycleTimeStatus;
-  String? _cycleTimeOwner;
-  String? _cycleTimeProposalType;
 
   @override
   void initState() {
@@ -55,29 +46,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       if (app.proposals.isEmpty) {
         app.fetchProposals();
       }
-      _loadCycleTimeAnalytics(app);
-    });
-  }
-
-  Future<void> _loadCycleTimeAnalytics(AppState app) async {
-    final data = await app.getCycleTimeAnalytics(
-      startDate: _cycleTimeStartDate != null
-          ? '${_cycleTimeStartDate!.year}-${_cycleTimeStartDate!.month.toString().padLeft(2, '0')}-${_cycleTimeStartDate!.day.toString().padLeft(2, '0')}'
-          : null,
-      endDate: _cycleTimeEndDate != null
-          ? '${_cycleTimeEndDate!.year}-${_cycleTimeEndDate!.month.toString().padLeft(2, '0')}-${_cycleTimeEndDate!.day.toString().padLeft(2, '0')}'
-          : null,
-      status: _cycleTimeStatus,
-      owner: _cycleTimeOwner,
-      proposalType: _cycleTimeProposalType,
-    );
-    if (!mounted) return;
-    setState(() {
-      _cycleTimeAnalytics = data ?? {
-        'by_stage': [],
-        'bottleneck': null,
-        'metric': 'cycle_time',
-      };
     });
   }
 
@@ -392,11 +360,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     int activeCount = 0;
     final Map<String, int> statusCounts = {};
     final List<_ProposalPerformanceRow> performanceRows = [];
-    
-    // Calculate completion rate from completed_steps
-    double totalCompletionRate = 0.0;
-    int proposalsWithSteps = 0;
-    const List<String> allSteps = ['compose', 'govern', 'risk']; // Typical workflow steps
 
     for (final proposal in normalized) {
       final statusRaw = (proposal['status'] ?? 'Draft').toString();
@@ -421,21 +384,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
       if (!_isClosedStatus(statusLower)) {
         activeCount++;
-      }
-      
-      // Calculate completion rate for this proposal
-      final completedSteps = proposal['completed_steps'];
-      if (completedSteps != null) {
-        List<String> steps = [];
-        if (completedSteps is List) {
-          steps = completedSteps.map((e) => e.toString().toLowerCase()).toList();
-        }
-        final completedCount = steps.length;
-        final completionRate = allSteps.isNotEmpty 
-            ? (completedCount / allSteps.length) * 100 
-            : 0.0;
-        totalCompletionRate += completionRate;
-        proposalsWithSteps++;
       }
 
       final created =
@@ -530,10 +478,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
     }
 
-    final double averageCompletionRate = proposalsWithSteps > 0
-        ? totalCompletionRate / proposalsWithSteps
-        : 0.0;
-
     return _AnalyticsSnapshot(
       totalPipelineValue: totalRevenue,
       totalProposals: normalized.length,
@@ -541,7 +485,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       averageDealSize: averageDealSize,
       winRate: winRate,
       lossRate: lossRate,
-      completionRate: averageCompletionRate,
       statusCounts: statusCounts,
       monthlyPoints: monthlyPoints,
       recentProposals: recentProposals,
@@ -692,12 +635,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return name ?? 'User';
   }
 
-  bool _isAdminUser() {
-    final user = AuthService.currentUser;
-    final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
-    return backendRole == 'admin' || backendRole == 'ceo';
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -705,7 +642,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final metrics = _buildMetricCards(analytics);
     final userName = _getUserName(app.currentUser);
     final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : 'U';
-    final isAdminUser = _isAdminUser();
     return Scaffold(
       body: Container(
         color: Colors.transparent,
@@ -725,16 +661,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isNarrow = constraints.maxWidth < 520;
-                    final title = Text(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
                       'Analytics Dashboard',
                       style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                    );
-
-                    final userControls = Row(
-                      mainAxisSize: MainAxisSize.min,
+                    ),
+                    Row(
                       children: [
                         Container(
                           width: 35,
@@ -754,12 +688,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            userName,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white),
-                          ),
+                        Text(
+                          userName,
+                          style: const TextStyle(color: Colors.white),
                         ),
                         const SizedBox(width: 10),
                         PopupMenuButton<String>(
@@ -784,27 +715,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           ],
                         ),
                       ],
-                    );
-
-                    if (!isNarrow) {
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          title,
-                          userControls,
-                        ],
-                      );
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        title,
-                        const SizedBox(height: 8),
-                        userControls,
-                      ],
-                    );
-                  },
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -864,69 +776,39 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             ),
                           ),
                           const SizedBox(height: 12),
-                          if (isAdminUser) ...[
-                            _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Approvals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Analytics',
-                              'assets/images/analytics.png',
-                              true,
-                              context,
-                            ),
-                          ] else ...[
-                            _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
+                          _buildNavItem('Dashboard',
+                              'assets/images/Dahboard.png', false, context),
+                          _buildNavItem('My Proposals',
+                              'assets/images/My_Proposals.png', false, context),
+                          _buildNavItem(
                               'Templates',
                               'assets/images/content_library.png',
                               false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              true,
-                              context,
-                            ),
-                          ],
+                              context),
+                          _buildNavItem(
+                            'Content Library',
+                            'assets/images/content_library.png',
+                            false,
+                            context,
+                          ),
+                          _buildNavItem(
+                            'Client Management',
+                            'assets/images/collaborations.png',
+                            false,
+                            context,
+                          ),
+                          _buildNavItem(
+                            'Approved Proposals',
+                            'assets/images/Time Allocation_Approval_Blue.png',
+                            false,
+                            context,
+                          ),
+                          _buildNavItem(
+                            'Analytics (My Pipeline)',
+                            'assets/images/analytics.png',
+                            true,
+                            context,
+                          ),
                           const SizedBox(height: 20),
                           if (!_isSidebarCollapsed)
                             Container(
@@ -980,82 +862,36 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                       ),
                                     ],
                                   ),
-                                  LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final isNarrow = constraints.maxWidth < 420;
-                                      final controls = [
-                                        _buildGlassDropdown(),
-                                        _buildGlassButton(
-                                          'Export',
-                                          Icons.download,
-                                          _showExportDialog,
-                                        ),
-                                      ];
-
-                                      if (!isNarrow) {
-                                        return Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            controls[0],
-                                            const SizedBox(width: 12),
-                                            controls[1],
-                                          ],
-                                        );
-                                      }
-
-                                      return Wrap(
-                                        spacing: 12,
-                                        runSpacing: 12,
-                                        alignment: WrapAlignment.end,
-                                        children: controls,
-                                      );
-                                    },
+                                  Row(
+                                    children: [
+                                      _buildGlassDropdown(),
+                                      const SizedBox(width: 12),
+                                      _buildGlassButton(
+                                        'Export',
+                                        Icons.download,
+                                        _showExportDialog,
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 32),
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  const minCardWidth = 240.0;
-                                  const spacing = 20.0;
-                                  final maxWidth = constraints.maxWidth;
-                                  final columns = (maxWidth / (minCardWidth + spacing))
-                                      .floor()
-                                      .clamp(1, 4);
-                                  final cardWidth = (maxWidth - (spacing * (columns - 1))) / columns;
-
-                                  return Wrap(
-                                    spacing: spacing,
-                                    runSpacing: spacing,
-                                    children: [
-                                      for (final m in metrics)
-                                        SizedBox(
-                                          width: cardWidth,
-                                          child: _buildGlassMetricCard(
-                                            m.title,
-                                            m.value,
-                                            m.change,
-                                            m.isPositive,
-                                            m.subtitle,
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 24),
-                              _buildGlassChartCard(
-                                'Cycle Time by Stage',
-                                Column(
-                                  children: [
-                                    _buildCycleTimeFilters(),
-                                    const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  for (int i = 0; i < metrics.length; i++) ...[
                                     Expanded(
-                                      child: _buildCycleTimeContent(_cycleTimeAnalytics),
+                                      child: _buildGlassMetricCard(
+                                        metrics[i].title,
+                                        metrics[i].value,
+                                        metrics[i].change,
+                                        metrics[i].isPositive,
+                                        metrics[i].subtitle,
+                                      ),
                                     ),
+                                    if (i != metrics.length - 1)
+                                      const SizedBox(width: 20),
                                   ],
-                                ),
-                                height: 280,
+                                ],
                               ),
                               const SizedBox(height: 32),
                               _buildGlassChartCard(
@@ -1070,8 +906,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   Expanded(
                                     flex: 2,
                                     child: _buildGlassChartCard(
-                                      'Proposal Pipeline',
-                                      _buildProposalPipelineFunnel(
+                                      'Proposal Status',
+                                      _buildProposalStatusChart(
                                           analytics.statusCounts),
                                       height: 320,
                                     ),
@@ -1082,19 +918,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                       'Win Rate',
                                       _buildWinRatePieChart(analytics.winRate,
                                           analytics.lossRate),
-                                      height: 320,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 32),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: _buildGlassChartCard(
-                                      'Completion Rate',
-                                      _buildCompletionRateGauge(analytics.completionRate),
                                       height: 320,
                                     ),
                                   ),
@@ -1294,7 +1117,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(icon, color: Colors.white, size: 18),
                     const SizedBox(width: 8),
@@ -1378,15 +1200,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF6B7280),
-                      ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF6B7280),
                     ),
                   ),
                 ],
@@ -1550,268 +1368,131 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  Widget _buildCompletionRateGauge(double completionRate) {
-    // Clamp completion rate between 0 and 100
-    final rate = completionRate.clamp(0.0, 100.0);
-    
-    // Determine color based on completion rate
-    Color gaugeColor;
-    if (rate >= 80) {
-      gaugeColor = PremiumTheme.success;
-    } else if (rate >= 50) {
-      gaugeColor = PremiumTheme.warning;
-    } else {
-      gaugeColor = PremiumTheme.error;
-    }
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Gauge visualization (circular progress)
-          SizedBox(
-            width: 200,
-            height: 200,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Background circle
-                SizedBox(
-                  width: 200,
-                  height: 200,
-                  child: CircularProgressIndicator(
-                    value: 1.0,
-                    strokeWidth: 20,
-                    backgroundColor: Colors.white.withValues(alpha: 0.1),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.white.withValues(alpha: 0.1),
-                    ),
-                  ),
-                ),
-                // Progress circle
-                SizedBox(
-                  width: 200,
-                  height: 200,
-                  child: CircularProgressIndicator(
-                    value: rate / 100,
-                    strokeWidth: 20,
-                    backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(gaugeColor),
-                  ),
-                ),
-                // Percentage text
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '${rate.toStringAsFixed(0)}%',
-                      style: PremiumTheme.displayLarge.copyWith(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Complete',
-                      style: PremiumTheme.bodyMedium.copyWith(
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Status indicator
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: gaugeColor.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: gaugeColor.withValues(alpha: 0.5),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: gaugeColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  rate >= 80
-                      ? 'Ready'
-                      : rate >= 50
-                          ? 'In Progress'
-                          : 'Needs Attention',
-                  style: TextStyle(
-                    color: gaugeColor,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProposalPipelineFunnel(Map<String, int> statusCounts) {
-    // Define the pipeline stages in order (funnel flow)
-    final pipelineStages = [
+  Widget _buildProposalStatusChart(Map<String, int> statusCounts) {
+    final statuses = [
       'Draft',
       'In Review',
-      'Released',
+      'Pending Ceo Approval',
+      'Sent To Client',
       'Signed',
+      'Lost',
     ];
 
-    // Normalize status counts to match pipeline stages
+    // Map declined statuses to "Lost"
     final normalizedCounts = <String, int>{};
-    for (final stage in pipelineStages) {
-      // Try exact match first
-      if (statusCounts.containsKey(stage)) {
-        normalizedCounts[stage] = statusCounts[stage]!;
+    int lostCount = 0;
+    for (final entry in statusCounts.entries) {
+      final status = entry.key.toLowerCase();
+      if (status.contains('declined') ||
+          status.contains('lost') ||
+          status.contains('rejected')) {
+        lostCount += entry.value;
       } else {
-        // Try case-insensitive match
-        final matchingKey = statusCounts.keys.firstWhere(
-          (key) => key.toLowerCase() == stage.toLowerCase(),
-          orElse: () => '',
-        );
-        if (matchingKey.isNotEmpty) {
-          normalizedCounts[stage] = statusCounts[matchingKey]!;
-        } else {
-          // Map similar statuses
-          if (stage == 'Released') {
-            // Check for "Sent To Client", "Sent to Client", etc.
-            final releasedKey = statusCounts.keys.firstWhere(
-              (key) => key.toLowerCase().contains('sent') ||
-                  key.toLowerCase().contains('released'),
-              orElse: () => '',
-            );
-            if (releasedKey.isNotEmpty) {
-              normalizedCounts[stage] = statusCounts[releasedKey]!;
-            } else {
-              normalizedCounts[stage] = 0;
-            }
-          } else if (stage == 'In Review') {
-            // Check for "Pending Ceo Approval", etc.
-            final reviewKey = statusCounts.keys.firstWhere(
-              (key) => key.toLowerCase().contains('review') ||
-                  key.toLowerCase().contains('pending'),
-              orElse: () => '',
-            );
-            if (reviewKey.isNotEmpty) {
-              normalizedCounts[stage] = statusCounts[reviewKey]!;
-            } else {
-              normalizedCounts[stage] = 0;
-            }
-          } else {
-            normalizedCounts[stage] = 0;
-          }
-        }
+        normalizedCounts[entry.key] = entry.value;
       }
     }
+    if (lostCount > 0) {
+      normalizedCounts['Lost'] = lostCount;
+    }
 
-    // Get max count for scaling
-    final maxCount = normalizedCounts.values.fold<int>(
-      0,
-      (prev, count) => math.max(prev, count),
-    );
-
-    if (maxCount == 0) {
-      return const Center(
-        child: Text(
-          'No pipeline data available',
-          style: TextStyle(color: Colors.white70),
+    final bars = <BarChartGroupData>[];
+    int maxCount = 0;
+    for (int i = 0; i < statuses.length; i++) {
+      final label = statuses[i];
+      final count = normalizedCounts[label] ?? 0;
+      maxCount = math.max(maxCount, count);
+      bars.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: count.toDouble(),
+              color: _statusColor(label.toLowerCase()),
+              width: 28,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(6),
+                topRight: Radius.circular(6),
+              ),
+            ),
+          ],
         ),
       );
     }
-
-    // Build funnel segments
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: pipelineStages.asMap().entries.map((entry) {
-        final index = entry.key;
-        final stage = entry.value;
-        final count = normalizedCounts[stage] ?? 0;
-        
-        // Calculate width as percentage of max (funnel effect)
-        // Each stage should be progressively narrower
-        final widthPercent = maxCount > 0 ? (count / maxCount) : 0.0;
-        // Minimum width to ensure visibility
-        final minWidthPercent = 0.15;
-        final finalWidthPercent = math.max(widthPercent, minWidthPercent);
-
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: index < pipelineStages.length - 1 ? 12.0 : 0,
+    final maxY = math.max(maxCount.toDouble(), 5.0);
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY,
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            tooltipPadding: const EdgeInsets.all(8),
+            tooltipMargin: 8,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              return BarTooltipItem(
+                '${rod.toY.toInt()} proposals',
+                const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              );
+            },
           ),
-          child: Row(
-            children: [
-              // Stage label
-              SizedBox(
-                width: 100,
-                child: Text(
-                  stage,
+        ),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (value, meta) {
+                return Text(
+                  value.toInt().toString(),
                   style: const TextStyle(
-                    color: Colors.white70,
+                    color: Color(0xFF6B7280),
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Funnel bar
-              Expanded(
-                child: Stack(
-                  children: [
-                    // Background bar
-                    Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    // Filled portion
-                    FractionallySizedBox(
-                      widthFactor: finalWidthPercent,
-                      child: Container(
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: _statusColor(stage.toLowerCase()),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          count.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ),
-        );
-      }).toList(),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 38,
+              getTitlesWidget: (value, meta) {
+                if (value.toInt() >= 0 && value.toInt() < statuses.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      statuses[value.toInt()],
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 12,
+                      ),
+                    ),
+                  );
+                }
+                return const Text('');
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: math.max(maxY / 4, 1.0),
+          getDrawingHorizontalLine: (value) => FlLine(
+            color: const Color(0xFF2D3748),
+            strokeWidth: 1,
+          ),
+        ),
+        barGroups: bars,
+      ),
     );
   }
 
@@ -2047,379 +1728,31 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   void _navigateToPage(BuildContext context, String label) {
-    final isAdminUser = _isAdminUser();
-
-    if (isAdminUser) {
-      switch (label) {
-        case 'Dashboard':
-          Navigator.pushReplacementNamed(context, '/approver_dashboard');
-          break;
-        case 'Approvals':
-          Navigator.pushReplacementNamed(context, '/admin_approvals');
-          break;
-        case 'My Proposals':
-          Navigator.pushReplacementNamed(context, '/proposals');
-          break;
-        case 'Templates':
-          Navigator.pushReplacementNamed(context, '/templates');
-          break;
-        case 'Content Library':
-          Navigator.pushReplacementNamed(context, '/content_library');
-          break;
-        case 'Client Management':
-          Navigator.pushReplacementNamed(context, '/client_management');
-          break;
-        case 'Analytics':
-          // Already on analytics for admin
-          break;
-        case 'Approved Proposals':
-          Navigator.pushReplacementNamed(context, '/admin_approvals');
-          break;
-        case 'Analytics (My Pipeline)':
-          // Already here (legacy label)
-          break;
-        case 'Logout':
-          AuthService.logout();
-          Navigator.pushNamedAndRemoveUntil(
-              context, '/login', (Route<dynamic> route) => false);
-          break;
-      }
-    } else {
-      switch (label) {
-        case 'Dashboard':
-          Navigator.pushReplacementNamed(context, '/creator_dashboard');
-          break;
-        case 'My Proposals':
-          Navigator.pushReplacementNamed(context, '/proposals');
-          break;
-        case 'Templates':
-          Navigator.pushReplacementNamed(context, '/templates');
-          break;
-        case 'Content Library':
-          Navigator.pushReplacementNamed(context, '/content_library');
-          break;
-        case 'Client Management':
-          Navigator.pushReplacementNamed(context, '/client_management');
-          break;
-        case 'Approved Proposals':
-          Navigator.pushReplacementNamed(context, '/approved_proposals');
-          break;
-        case 'Analytics (My Pipeline)':
-          // Already here
-          break;
-        case 'Logout':
-          AuthService.logout();
-          Navigator.pushNamedAndRemoveUntil(
-              context, '/login', (Route<dynamic> route) => false);
-          break;
-      }
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client_management');
+        break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Analytics (My Pipeline)':
+        break;
+      case 'Logout':
+        Navigator.pushReplacementNamed(context, '/login');
+        break;
     }
-  }
-
-  Widget _buildCycleTimeFilters() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Builder(
-        builder: (context) {
-          final app = context.watch<AppState>();
-
-          final owners = <String>{};
-          for (final p in app.proposals) {
-            if (p is Map) {
-              final o = (p['owner_id'] ?? p['user_id'])?.toString();
-              if (o != null && o.isNotEmpty) owners.add(o);
-            }
-          }
-          final ownerItems = owners.toList()..sort();
-
-          return Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              SizedBox(
-                width: 220,
-                child: InkWell(
-              onTap: () async {
-                final picked = await showDateRangePicker(
-                  context: context,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
-                  initialDateRange: _cycleTimeStartDate != null && _cycleTimeEndDate != null
-                      ? DateTimeRange(start: _cycleTimeStartDate!, end: _cycleTimeEndDate!)
-                      : null,
-                );
-                if (picked != null) {
-                  setState(() {
-                    _cycleTimeStartDate = picked.start;
-                    _cycleTimeEndDate = picked.end;
-                  });
-                  _loadCycleTimeAnalytics(app);
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.calendar_today, size: 16, color: Colors.white70),
-                    const SizedBox(width: 8),
-                    Text(
-                      _cycleTimeStartDate != null && _cycleTimeEndDate != null
-                          ? '${DateFormat('MMM d').format(_cycleTimeStartDate!)} - ${DateFormat('MMM d').format(_cycleTimeEndDate!)}'
-                          : 'Date Range',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-                ),
-              ),
-              SizedBox(
-                width: 160,
-                child: DropdownButtonFormField<String>(
-              value: _cycleTimeStatus,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.1),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              dropdownColor: const Color(0xFF1A1F2E),
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-              hint: const Text('Status', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              items: ['', 'Draft', 'In Review', 'Released', 'Signed'].map((status) {
-                return DropdownMenuItem<String>(
-                  value: status.isEmpty ? null : status,
-                  child: Text(status.isEmpty ? 'All Statuses' : status),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _cycleTimeStatus = value;
-                });
-                _loadCycleTimeAnalytics(app);
-              },
-                ),
-              ),
-              SizedBox(
-                width: 160,
-                child: DropdownButtonFormField<String>(
-                  value: _cycleTimeOwner,
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.1),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  dropdownColor: const Color(0xFF1A1F2E),
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  hint: const Text('Owner', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  items: [null, ...ownerItems].map((o) {
-                    return DropdownMenuItem<String>(
-                      value: o,
-                      child: Text(o == null ? 'All Owners' : o),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _cycleTimeOwner = value;
-                    });
-                    _loadCycleTimeAnalytics(app);
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 160,
-                child: DropdownButtonFormField<String>(
-              value: _cycleTimeProposalType,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.1),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              dropdownColor: const Color(0xFF1A1F2E),
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-              hint: const Text('Type', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              items: ['', 'proposal', 'sow', 'rfi'].map((type) {
-                return DropdownMenuItem<String>(
-                  value: type.isEmpty ? null : type,
-                  child: Text(type.isEmpty ? 'All Types' : type.toUpperCase()),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _cycleTimeProposalType = value;
-                });
-                _loadCycleTimeAnalytics(app);
-              },
-                ),
-              ),
-              if (_cycleTimeStartDate != null || _cycleTimeEndDate != null || _cycleTimeStatus != null || _cycleTimeProposalType != null || _cycleTimeOwner != null)
-                IconButton(
-                  icon: const Icon(Icons.clear, size: 18, color: Colors.white70),
-                  onPressed: () {
-                    setState(() {
-                      _cycleTimeStartDate = null;
-                      _cycleTimeEndDate = null;
-                      _cycleTimeStatus = null;
-                      _cycleTimeOwner = null;
-                      _cycleTimeProposalType = null;
-                    });
-                    _loadCycleTimeAnalytics(app);
-                  },
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
-    final byStage = (cycleTimeAnalytics?['by_stage'] as List?) ?? [];
-    if (byStage.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.timeline_outlined,
-                size: 48,
-                color: Colors.white.withValues(alpha: 0.5),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No cycle time data available yet.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Start sending proposals to see stage metrics here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    String formatDays(num? days) {
-      if (days == null) return '-';
-      if (days < 1) {
-        final hours = days * 24;
-        if (hours < 1) {
-          final minutes = hours * 60;
-          return '${minutes.toStringAsFixed(0)} min';
-        }
-        return '${hours.toStringAsFixed(1)} h';
-      }
-      return '${days.toStringAsFixed(1)} d';
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (cycleTimeAnalytics?['bottleneck'] != null) ...[
-          Text(
-            'Current Bottleneck: ${cycleTimeAnalytics!['bottleneck']['stage']}',
-            style: PremiumTheme.bodyLarge.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-        SizedBox(
-          height: 140,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: byStage.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              final item = byStage[index] as Map<String, dynamic>;
-              final stage = item['stage']?.toString() ?? 'Unknown';
-              final avgDays = item['avg_days'] as num?;
-              final samples = item['samples'] as int? ?? 0;
-
-              final bottleneckStage = cycleTimeAnalytics?['bottleneck']?['stage']?.toString();
-              final isBottleneck = bottleneckStage != null && bottleneckStage == stage;
-
-              return Container(
-                width: 220,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.03),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isBottleneck
-                        ? PremiumTheme.warning.withValues(alpha: 0.6)
-                        : Colors.white.withValues(alpha: 0.08),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      stage,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      formatDays(avgDays),
-                      style: PremiumTheme.displayMedium.copyWith(fontSize: 22),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$samples samples',
-                      style: PremiumTheme.bodyMedium.copyWith(
-                        color: PremiumTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
   }
 }
 
@@ -2430,7 +1763,6 @@ class _AnalyticsSnapshot {
   final double averageDealSize;
   final double winRate;
   final double lossRate;
-  final double completionRate;
   final Map<String, int> statusCounts;
   final List<_MonthlyPoint> monthlyPoints;
   final List<_ProposalPerformanceRow> recentProposals;
@@ -2446,7 +1778,6 @@ class _AnalyticsSnapshot {
     required this.averageDealSize,
     required this.winRate,
     required this.lossRate,
-    required this.completionRate,
     required this.statusCounts,
     required this.monthlyPoints,
     required this.recentProposals,

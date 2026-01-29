@@ -25,7 +25,7 @@ class AIAnalysisService {
     return false;
   }
 
-  // AI-powered risk analysis (Wildcard Challenge)
+  // AI-powered risk analysis (Wildcard Challenge) via Risk Gate endpoint
   static Future<Map<String, dynamic>> analyzeProposalRisks(
       String proposalId) async {
     try {
@@ -35,20 +35,32 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/analyze-risks'),
+        Uri.parse('$_baseUrl/api/risk-gate/analyze'),
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return _convertToUIFormat(data['analysis']);
+        if (data is! Map<String, dynamic>) {
+          throw Exception('Unexpected risk analysis response');
+        }
+
+        // Risk Gate returns: status, risk_score, issues, kb_citations, redaction_summary
+        return data;
+      } else if (response.statusCode == 400) {
+        // Risk Gate may return 400 with BLOCK payload; parse it
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
+          return data;
+        }
+        throw Exception('Risk analysis failed: ${response.body}');
       } else {
-        throw Exception('Risk analysis failed: ${response.statusCode}');
+        throw Exception('Risk analysis failed: ${response.body}');
       }
     } catch (e) {
-      print('AI Risk Analysis Error: $e');
-      return _getMockAnalysis({});
+      print('Risk analysis error: $e');
+      rethrow;
     }
   }
 
@@ -224,6 +236,7 @@ class AIAnalysisService {
       'issues': issues,
       'summary': analysis['summary'] ?? '',
       'required_actions': analysis['required_actions'] ?? [],
+      'kb_recommendations': analysis['kb_recommendations'] ?? {},
     };
   }
 
