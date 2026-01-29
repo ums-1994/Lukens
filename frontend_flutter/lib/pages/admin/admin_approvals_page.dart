@@ -339,11 +339,11 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     final user = AuthService.currentUser ?? app.currentUser ?? {};
     final email = user['email']?.toString() ?? 'admin@example.com';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 620;
+
+        final title = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
             Text(
@@ -356,8 +356,10 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               style: TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ],
-        ),
-        Row(
+        );
+
+        final userControls = Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             ClipOval(
               child: Image.asset(
@@ -368,26 +370,49 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               ),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  email,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    email,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const Text(
-                  'Admin',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
+                  const Text(
+                    'Admin',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ],
-        ),
-      ],
+        );
+
+        if (!isNarrow) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              title,
+              userControls,
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            title,
+            const SizedBox(height: 12),
+            userControls,
+          ],
+        );
+      },
     );
   }
 
@@ -682,33 +707,31 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   Widget _buildApprovalsToolbar() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text(
-                'Approvals Inbox',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 720;
+
+        final title = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'Approvals Inbox',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
               ),
-              SizedBox(height: 4),
-              Text(
-                'Review, approve, or reject proposals awaiting your decision',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 260,
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Review, approve, or reject proposals awaiting your decision',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        );
+
+        final search = SizedBox(
+          width: isNarrow ? constraints.maxWidth : 260,
           child: TextField(
             style: const TextStyle(color: Colors.white, fontSize: 13),
             onChanged: (value) {
@@ -740,9 +763,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Container(
+        );
+
+        final filterButton = Container(
           width: 38,
           height: 38,
           decoration: BoxDecoration(
@@ -755,8 +778,39 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             color: Colors.white70,
             size: 20,
           ),
-        ),
-      ],
+        );
+
+        if (!isNarrow) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: title),
+              const SizedBox(width: 16),
+              search,
+              const SizedBox(width: 8),
+              filterButton,
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            title,
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.start,
+              children: [
+                search,
+                filterButton,
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 

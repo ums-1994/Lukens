@@ -615,14 +615,18 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 640;
+
+                    final title = Text(
                       _getHeaderTitle(userRole),
                       style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                    ),
-                    Row(
+                      overflow: TextOverflow.ellipsis,
+                    );
+
+                    final userControls = Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildNotificationButton(app),
                         const SizedBox(width: 20),
@@ -635,22 +639,25 @@ class _DashboardPageState extends State<DashboardPage>
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _getUserName(app.currentUser),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              userRole,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
+                        Flexible(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _getUserName(app.currentUser),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                userRole,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(width: 10),
                         PopupMenuButton<String>(
@@ -677,8 +684,27 @@ class _DashboardPageState extends State<DashboardPage>
                           ],
                         ),
                       ],
-                    ),
-                  ],
+                    );
+
+                    if (!isNarrow) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: title),
+                          userControls,
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        title,
+                        const SizedBox(height: 8),
+                        userControls,
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

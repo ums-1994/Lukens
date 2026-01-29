@@ -1509,15 +1509,19 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                           ),
                           const SizedBox(height: 20),
                           // Pagination Info
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isNarrow = constraints.maxWidth < 420;
+
+                              final label = Text(
                                 "${startIdx + 1}-${endIdx} of ${filteredItems.length}",
                                 style: const TextStyle(
                                     fontSize: 12, color: Colors.white70),
-                              ),
-                              Row(
+                                overflow: TextOverflow.ellipsis,
+                              );
+
+                              final controls = Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
                                     onPressed: currentPage > 1
@@ -1536,8 +1540,28 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     color: Colors.white70,
                                   ),
                                 ],
-                              ),
-                            ],
+                              );
+
+                              if (!isNarrow) {
+                                return Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    label,
+                                    controls,
+                                  ],
+                                );
+                              }
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  label,
+                                  const SizedBox(height: 8),
+                                  controls,
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 16),
                           // Content List or Grid

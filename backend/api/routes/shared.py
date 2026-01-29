@@ -15,6 +15,7 @@ from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.helpers import (
     log_activity,
+    log_status_change,
     generate_proposal_pdf,
     create_docusign_envelope,
     notify_proposal_collaborators,
@@ -485,9 +486,9 @@ def compare_proposal_versions(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 
-@bp.post("/api/proposals/<int:proposal_id>/docusign/send")
+@bp.post("/proposals/<int:proposal_id>/docusign/send")
 @token_required
-def send_for_signature(username=None, proposal_id=None):
+def send_for_signature(username=None, proposal_id=None, user_id=None, email=None):
     """Send proposal for DocuSign signature"""
     try:
         if not DOCUSIGN_AVAILABLE:
@@ -506,12 +507,17 @@ def send_for_signature(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-
-            current_user_id = current_user['id'] if isinstance(current_user, dict) else current_user[0]
+            # Prefer user_id supplied by Firebase-aware decorator; otherwise resolve by username/email.
+            current_user_id = user_id
+            if not current_user_id:
+                cursor.execute(
+                    'SELECT id FROM users WHERE username = %s OR email = %s',
+                    (username, email or username),
+                )
+                current_user = cursor.fetchone()
+                if not current_user:
+                    return {'detail': 'User not found'}, 404
+                current_user_id = current_user['id'] if isinstance(current_user, dict) else current_user[0]
 
             cursor.execute(
                 """
@@ -584,6 +590,12 @@ def send_for_signature(username=None, proposal_id=None):
                 {'envelope_id': envelope_result['envelope_id'], 'signer_email': signer_email},
             )
             
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = (
+                (srow.get('status') if hasattr(srow, 'get') else (srow[0] if srow else None))
+            )
+
             # Update proposal status and client_email if it's empty or matches the signer
             cursor.execute("""
                 UPDATE proposals 
@@ -593,6 +605,9 @@ def send_for_signature(username=None, proposal_id=None):
                 WHERE id = %s
             """, (signer_email, proposal_id,))
             conn.commit()
+
+            if old_status is not None and old_status != 'Sent for Signature':
+                log_status_change(proposal_id, current_user_id, old_status, 'Sent for Signature')
             
             return {
                 'envelope_id': envelope_result['envelope_id'],
@@ -1228,11 +1243,21 @@ def docusign_webhook():
                 if signature:
                     stored_envelope_id = signature.get('envelope_id')
                     print(f"✅ Signature record matched for webhook envelope {envelope_id} (stored envelope_id={stored_envelope_id})")
+
+                    cursor.execute('SELECT status FROM proposals WHERE id = %s', (signature['proposal_id'],))
+                    srow = cursor.fetchone()
+                    old_status = (
+                        (srow.get('status') if hasattr(srow, 'get') else (srow[0] if srow else None))
+                    )
+
                     cursor.execute("""
                         UPDATE proposals 
                         SET status = 'Signed', updated_at = NOW()
                         WHERE id = %s
                     """, (signature['proposal_id'],))
+
+                    if old_status is not None and old_status != 'Signed':
+                        log_status_change(signature['proposal_id'], None, old_status, 'Signed')
                     
                     log_activity(
                         signature['proposal_id'],

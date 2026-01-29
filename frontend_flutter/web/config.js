@@ -18,7 +18,7 @@ window.APP_CONFIG = {
       : '';
     const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
     const defaultUrl = isLocal
-      ? 'http://127.0.0.1:8002'
+      ? 'http://127.0.0.1:8000'
       : 'https://lukens-wp8w.onrender.com';
     console.log('🌐 Using default API URL:', defaultUrl);
     return defaultUrl;

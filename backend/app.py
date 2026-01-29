@@ -53,7 +53,8 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from asgiref.wsgi import WsgiToAsgi
+from starlette.applications import Starlette
+from starlette.middleware.wsgi import WSGIMiddleware
 import openai
 from dotenv import load_dotenv
 
@@ -90,6 +91,27 @@ CORS(
     },
 )
 
+_CORS_ORIGIN_REGEXES = [re.compile(p) for p in _CORS_ALLOWED_ORIGINS]
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if origin:
+        for rx in _CORS_ORIGIN_REGEXES:
+            if rx.match(origin):
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Vary"] = "Origin"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                if "Access-Control-Allow-Headers" not in response.headers:
+                    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                if "Access-Control-Allow-Methods" not in response.headers:
+                    response.headers["Access-Control-Allow-Methods"] = (
+                        "GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE"
+                    )
+                break
+    return response
+
 @app.route("/", methods=["OPTIONS"])
 @app.route("/<path:remaining>", methods=["OPTIONS"])
 def handle_options_preflight(remaining=None):
@@ -115,6 +137,8 @@ from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 from api.routes.approver import bp as approver_bp
+from api.routes.cycle_time import bp as cycle_time_bp
+from api.utils.decorators import token_required as firebase_token_required
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -124,9 +148,11 @@ app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
+app.register_blueprint(cycle_time_bp, url_prefix='/api')
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
-asgi_app = WsgiToAsgi(app)
+asgi_app = Starlette()
+asgi_app.mount("/", WSGIMiddleware(app))
 
 # Mark if database has been initialized
 _db_initialized = False
@@ -169,19 +195,35 @@ def get_pg_pool():
     if _pg_pool is None:
         import psycopg2.pool
         try:
-            db_config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'proposal_db'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'port': int(os.getenv('DB_PORT', '5432'))
-            }
-            print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
-            _pg_pool = psycopg2.pool.SimpleConnectionPool(
-                minconn=1,
-                maxconn=20,  # Increased max connections
-                **db_config
-            )
+            # Prefer DATABASE_URL when available (Render / prod style).
+            # This prevents accidentally trying to connect to localhost when individual
+            # DB_* vars are missing/overridden.
+            db_url = os.getenv("DATABASE_URL")
+            if db_url:
+                sslmode = os.getenv("DB_SSLMODE") or os.getenv("DB_SSL_MODE")
+                if sslmode and "sslmode=" not in db_url:
+                    joiner = "&" if "?" in db_url else "?"
+                    db_url = f"{db_url}{joiner}sslmode={sslmode}"
+                print("[*] Connecting to PostgreSQL via DATABASE_URL")
+                _pg_pool = psycopg2.pool.SimpleConnectionPool(
+                    minconn=1,
+                    maxconn=20,  # Increased max connections
+                    dsn=db_url,
+                )
+            else:
+                db_config = {
+                    'host': os.getenv('DB_HOST', 'localhost'),
+                    'database': os.getenv('DB_NAME', 'proposal_db'),
+                    'user': os.getenv('DB_USER', 'postgres'),
+                    'password': os.getenv('DB_PASSWORD', ''),
+                    'port': int(os.getenv('DB_PORT', '5432'))
+                }
+                print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+                _pg_pool = psycopg2.pool.SimpleConnectionPool(
+                    minconn=1,
+                    maxconn=20,  # Increased max connections
+                    **db_config
+                )
             print("[OK] PostgreSQL connection pool created successfully")
         except Exception as e:
             print(f"[ERROR] Error creating PostgreSQL connection pool: {e}")
@@ -1199,8 +1241,10 @@ def token_required(f):
             auth_header = request.headers['Authorization']
             if auth_header:
                 try:
-                    token = auth_header.split(" ")[1]
-                    print(f"[TOKEN] Token received: {token[:20]}...{token[-10:]}")
+                    parts = auth_header.split()
+                    token = parts[-1] if parts else None
+                    if token:
+                        print(f"[TOKEN] Token received: {token[:20]}...{token[-10:]}")
                 except (IndexError, AttributeError):
                     print(f"[ERROR] Invalid token format in header: {auth_header}")
                     return {'detail': 'Invalid token format'}, 401
@@ -1208,6 +1252,17 @@ def token_required(f):
         if not token:
             print(f"[ERROR] No token found in Authorization header")
             return {'detail': 'Token is missing'}, 401
+
+        # If this looks like a Firebase JWT, delegate to the Firebase-aware decorator
+        # used by the /api blueprints. This fixes 401s for routes still living in app.py.
+        if isinstance(token, str) and len(token.split('.')) == 3:
+            try:
+                firebase_wrapped = firebase_token_required(f)
+                return firebase_wrapped(*args, **kwargs)
+            except Exception as e:
+                print(f"[ERROR] Firebase token validation error in legacy token_required: {e}")
+                traceback.print_exc()
+                return {'detail': 'Invalid or expired token'}, 401
         
         print(f"[TOKEN] Validating token... (valid_tokens has {len(valid_tokens)} tokens)")
         username = verify_token(token)
@@ -1219,6 +1274,57 @@ def token_required(f):
         print(f"[OK] Token validated for user: {username}")
         return f(username=username, *args, **kwargs)
     return decorated
+
+
+@app.get("/api/comments/document/<int:proposal_id>")
+@token_required
+def get_document_comments(username, proposal_id):
+    """Get all comments for a document with threaded structure (frontend expects this)."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT
+                    dc.*,
+                    u.full_name as author_name,
+                    u.email as author_email,
+                    u.username as author_username,
+                    ru.full_name as resolver_name
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                LEFT JOIN users ru ON dc.resolved_by = ru.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at ASC
+                """,
+                (proposal_id,),
+            )
+            comments = cursor.fetchall()
+
+            # Build threaded structure
+            comments_dict = {}
+            root_comments = []
+
+            for c in comments:
+                cdict = dict(c)
+                cdict['replies'] = []
+                comments_dict[cdict.get('id')] = cdict
+
+            for c in comments_dict.values():
+                parent_id = c.get('parent_id')
+                if parent_id and parent_id in comments_dict:
+                    comments_dict[parent_id]['replies'].append(c)
+                else:
+                    root_comments.append(c)
+
+            root_comments.sort(key=lambda x: x.get('created_at') or datetime.min, reverse=True)
+
+            return {'comments': root_comments}, 200
+    except Exception as e:
+        print(f"❌ Error fetching document comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 def admin_required(f):
     @wraps(f)
@@ -1431,10 +1537,32 @@ def get_user_profile(username):
 @token_required
 def get_content(username):
     try:
+        category = request.args.get('category', None)
         conn = _pg_conn()
         cursor = conn.cursor()
-        cursor.execute('''SELECT id, key, label, content, category, is_folder, parent_id, public_id
-                       FROM content WHERE is_deleted = false ORDER BY created_at DESC''')
+
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'content'
+              AND table_schema = current_schema()
+            """
+        )
+        content_columns = {row[0] for row in cursor.fetchall() if row and row[0]}
+        order_by_col = 'created_at' if 'created_at' in content_columns else 'id'
+
+        query = (
+            "SELECT id, key, label, content, category, is_folder, parent_id, public_id "
+            "FROM content WHERE is_deleted = false"
+        )
+        params = []
+        if category:
+            query += " AND category = %s"
+            params.append(category)
+        query += f" ORDER BY {order_by_col} DESC"
+
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         release_pg_conn(conn)
         content = []
@@ -1452,6 +1580,12 @@ def get_content(username):
         return {'content': content}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
+
+
+@app.get("/api/proposals/<int:proposal_id>/comments")
+@token_required
+def get_proposal_comments_alias(username, proposal_id):
+    return get_document_comments(username, proposal_id)
 
 @app.post("/api/content")
 @app.post("/content")
@@ -1807,6 +1941,13 @@ def submit_for_review(username, proposal_id):
         
         if issues:
             return {'detail': {'issues': issues}}, 400
+
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+        srow = cursor.fetchone()
+        old_status = srow[0] if srow else None
+        release_pg_conn(conn)
         
         # Update status
         conn = _pg_conn()
@@ -1816,6 +1957,17 @@ def submit_for_review(username, proposal_id):
             (proposal_id,)
         )
         result = cursor.fetchone()
+        if old_status is not None and old_status != 'Submitted':
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            u = cursor.fetchone()
+            actor_id = u[0] if u else None
+            log_activity(
+                proposal_id=proposal_id,
+                user_id=actor_id,
+                action_type="status_changed",
+                description=f"Status changed: {old_status} → Submitted",
+                metadata={"from": old_status, "to": "Submitted"},
+            )
         conn.commit()
         release_pg_conn(conn)
         return {'detail': 'Proposal submitted'}, 200
@@ -1851,6 +2003,18 @@ def send_for_approval(username, proposal_id):
                 ('Pending CEO Approval', proposal_id)
             )
             result = cursor.fetchone()
+
+            if current_status is not None and str(current_status) != 'Pending CEO Approval':
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                u = cursor.fetchone()
+                actor_id = u[0] if u else None
+                log_activity(
+                    proposal_id=proposal_id,
+                    user_id=actor_id,
+                    action_type="status_changed",
+                    description=f"Status changed: {current_status} → Pending CEO Approval",
+                    metadata={"from": current_status, "to": "Pending CEO Approval"},
+                )
             conn.commit()
             
             print(f"✅ Proposal {proposal_id} sent for approval")
@@ -1889,6 +2053,10 @@ def approve_proposal(username, proposal_id):
                 return {'detail': 'Proposal not found'}, 404
             
             proposal_id, title, client_name, client_email, creator = proposal
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = srow[0] if srow else None
             
             # Update status to Sent to Client
             cursor.execute(
@@ -1897,6 +2065,18 @@ def approve_proposal(username, proposal_id):
                 ('Sent to Client', proposal_id)
             )
             result = cursor.fetchone()
+
+            if old_status is not None and old_status != 'Sent to Client':
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                u = cursor.fetchone()
+                actor_id = u[0] if u else None
+                log_activity(
+                    proposal_id=proposal_id,
+                    user_id=actor_id,
+                    action_type="status_changed",
+                    description=f"Status changed: {old_status} → Sent to Client",
+                    metadata={"from": old_status, "to": "Sent to Client"},
+                )
             conn.commit()
             
             if result:
@@ -1998,6 +2178,10 @@ def reject_proposal(username, proposal_id):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = srow[0] if srow else None
             
             # Update status to draft (rejected proposals go back to draft for editing)
             cursor.execute(
@@ -2006,6 +2190,18 @@ def reject_proposal(username, proposal_id):
                 ('draft', proposal_id)
             )
             result = cursor.fetchone()
+
+            if old_status is not None and old_status != 'draft':
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                u = cursor.fetchone()
+                actor_id = u[0] if u else None
+                log_activity(
+                    proposal_id=proposal_id,
+                    user_id=actor_id,
+                    action_type="status_changed",
+                    description=f"Status changed: {old_status} → draft",
+                    metadata={"from": old_status, "to": "draft"},
+                )
             conn.commit()
             
             if result:
@@ -2081,10 +2277,24 @@ def send_to_client(username, proposal_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
+        cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+        srow = cursor.fetchone()
+        old_status = srow[0] if srow else None
         cursor.execute(
             '''UPDATE proposals SET status = 'Sent to Client' WHERE id = %s''',
             (proposal_id,)
         )
+        if old_status is not None and old_status != 'Sent to Client':
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            u = cursor.fetchone()
+            actor_id = u[0] if u else None
+            log_activity(
+                proposal_id=proposal_id,
+                user_id=actor_id,
+                action_type="status_changed",
+                description=f"Status changed: {old_status} → Sent to Client",
+                metadata={"from": old_status, "to": "Sent to Client"},
+            )
         conn.commit()
         release_pg_conn(conn)
         return {'detail': 'Proposal sent to client'}, 200
@@ -2099,10 +2309,24 @@ def client_decline_proposal(username, proposal_id):
         
         conn = _pg_conn()
         cursor = conn.cursor()
+        cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+        srow = cursor.fetchone()
+        old_status = srow[0] if srow else None
         cursor.execute(
             '''UPDATE proposals SET status = 'Client Declined' WHERE id = %s''',
             (proposal_id,)
         )
+        if old_status is not None and old_status != 'Client Declined':
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            u = cursor.fetchone()
+            actor_id = u[0] if u else None
+            log_activity(
+                proposal_id=proposal_id,
+                user_id=actor_id,
+                action_type="status_changed",
+                description=f"Status changed: {old_status} → Client Declined",
+                metadata={"from": old_status, "to": "Client Declined"},
+            )
         conn.commit()
         release_pg_conn(conn)
         return {'detail': 'Proposal declined'}, 200
@@ -2183,10 +2407,24 @@ def sign_off(username, proposal_id):
         
         conn = _pg_conn()
         cursor = conn.cursor()
+        cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+        srow = cursor.fetchone()
+        old_status = srow[0] if srow else None
         cursor.execute(
             '''UPDATE proposals SET status = 'Signed' WHERE id = %s''',
             (proposal_id,)
         )
+        if old_status is not None and old_status != 'Signed':
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            u = cursor.fetchone()
+            actor_id = u[0] if u else None
+            log_activity(
+                proposal_id=proposal_id,
+                user_id=actor_id,
+                action_type="status_changed",
+                description=f"Status changed: {old_status} → Signed",
+                metadata={"from": old_status, "to": "Signed"},
+            )
         conn.commit()
         release_pg_conn(conn)
         return {'detail': 'Proposal signed'}, 200
@@ -2205,10 +2443,25 @@ def approve_stage(username, proposal_id):
         
         conn = _pg_conn()
         cursor = conn.cursor()
+        cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+        srow = cursor.fetchone()
+        old_status = srow[0] if srow else None
+        new_status = f'Approved - {stage}'
         cursor.execute(
             '''UPDATE proposals SET status = %s WHERE id = %s''',
-            (f'Approved - {stage}', proposal_id)
+            (new_status, proposal_id)
         )
+        if old_status is not None and old_status != new_status:
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            u = cursor.fetchone()
+            actor_id = u[0] if u else None
+            log_activity(
+                proposal_id=proposal_id,
+                user_id=actor_id,
+                action_type="status_changed",
+                description=f"Status changed: {old_status} → {new_status}",
+                metadata={"from": old_status, "to": new_status},
+            )
         conn.commit()
         release_pg_conn(conn)
         return {'detail': 'Stage approved'}, 200
@@ -2292,10 +2545,24 @@ def client_sign_proposal(username, proposal_id):
         
         conn = _pg_conn()
         cursor = conn.cursor()
+        cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+        srow = cursor.fetchone()
+        old_status = srow[0] if srow else None
         cursor.execute(
             '''UPDATE proposals SET status = 'Client Signed' WHERE id = %s''',
             (proposal_id,)
         )
+        if old_status is not None and old_status != 'Client Signed':
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            u = cursor.fetchone()
+            actor_id = u[0] if u else None
+            log_activity(
+                proposal_id=proposal_id,
+                user_id=actor_id,
+                action_type="status_changed",
+                description=f"Status changed: {old_status} → Client Signed",
+                metadata={"from": old_status, "to": "Client Signed"},
+            )
         conn.commit()
         release_pg_conn(conn)
         return {'detail': 'Proposal signed by client'}, 200
@@ -2825,8 +3092,19 @@ def ai_analyze_risks(username):
             
             # Analyze risks
             risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
-            
-            return risk_analysis, 200
+
+            def _make_json_safe(obj):
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                if isinstance(obj, dict):
+                    return {k: _make_json_safe(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [_make_json_safe(v) for v in obj]
+                if isinstance(obj, tuple):
+                    return [_make_json_safe(v) for v in obj]
+                return obj
+
+            return _make_json_safe(risk_analysis), 200
         
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")
@@ -4894,19 +5172,25 @@ def send_client_invitation(username=None):
 # Get all invitations
 @app.get("/clients/invitations")
 @token_required
-def get_invitations(username=None):
+def get_invitations(username=None, user_id=None, email=None):
     """Get all client invitations for the current user"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
-                return jsonify({"error": "User not found"}), 404
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                if email:
+                    cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+                    user_row = cursor.fetchone()
+                else:
+                    cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+                    user_row = cursor.fetchone()
+                if not user_row:
+                    return jsonify({"error": "User not found"}), 404
+                resolved_user_id = user_row['id'] if isinstance(user_row, dict) else user_row[0]
             
-            user_id = user_row['id']
+            user_id = resolved_user_id
             
             # Get all invitations
             cursor.execute("""
@@ -4919,7 +5203,16 @@ def get_invitations(username=None):
             """, (user_id,))
             
             invitations = cursor.fetchall()
-            return jsonify([dict(inv) for inv in invitations]), 200
+
+            result = []
+            for inv in invitations:
+                inv_dict = dict(inv)
+                for k, v in list(inv_dict.items()):
+                    if isinstance(v, datetime):
+                        inv_dict[k] = v.isoformat()
+                result.append(inv_dict)
+
+            return jsonify(result), 200
             
     except Exception as e:
         print(f"❌ Error fetching invitations: {e}")
@@ -5155,22 +5448,40 @@ def submit_onboarding(token):
 # Get all clients
 @app.get("/clients")
 @token_required
-def get_clients(username=None):
+def get_clients(username=None, user_id=None, email=None):
     """Get all clients for the current user"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
-                return jsonify({"error": "User not found"}), 404
-            
-            user_id = user_row['id']
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                if email:
+                    cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+                    user_row = cursor.fetchone()
+                else:
+                    cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+                    user_row = cursor.fetchone()
+                if not user_row:
+                    return jsonify({"error": "User not found"}), 404
+                resolved_user_id = user_row['id'] if isinstance(user_row, dict) else user_row[0]
+
+            user_id = resolved_user_id
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'clients'
+                  AND table_schema = current_schema()
+                """
+            )
+            client_columns = {row[0] for row in cursor.fetchall() if row and row[0]}
+            order_by_col = 'created_at' if 'created_at' in client_columns else 'id'
             
             # Get all clients
-            cursor.execute("""
+            cursor.execute(
+                f"""
                 SELECT 
                     id, company_name, contact_person, email, phone,
                     industry, company_size, location, business_type,
@@ -5178,11 +5489,22 @@ def get_clients(username=None):
                     status, created_at, updated_at
                 FROM clients
                 WHERE created_by = %s
-                ORDER BY created_at DESC
-            """, (user_id,))
+                ORDER BY {order_by_col} DESC
+                """,
+                (user_id,),
+            )
             
             clients = cursor.fetchall()
-            return jsonify([dict(client) for client in clients]), 200
+
+            result = []
+            for client in clients:
+                client_dict = dict(client)
+                for k, v in list(client_dict.items()):
+                    if isinstance(v, datetime):
+                        client_dict[k] = v.isoformat()
+                result.append(client_dict)
+
+            return jsonify(result), 200
             
     except Exception as e:
         print(f"❌ Error fetching clients: {e}")
@@ -5527,9 +5849,9 @@ if __name__ == '__main__':
 # =============================================================================
 # ANALYTICS: CYCLE TIME METRICS (FIRST PASS)
 # =============================================================================
-@app.get("/api/analytics/cycle-time")
-@token_required
-def analytics_cycle_time(username):
+@app.get("/api/analytics/cycle-time-inline")
+@firebase_token_required
+def analytics_cycle_time(username=None, user_id=None, email=None):
     """
     First-pass cycle time metrics:
       cycle_time = updated_at - created_at
@@ -5551,28 +5873,53 @@ def analytics_cycle_time(username):
         owner_filter = request.args.get("owner")
         proposal_type = request.args.get("proposal_type")
 
-        # Resolve current user's numeric ID, then filter by proposals.owner_id.
-        # In dev (or for freshly created Firebase users), the user may not exist yet.
-        # In that case, return an empty analytics payload instead of an error.
+        # Determine ownership column based on actual schema (owner_id vs user_id).
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            row = cursor.fetchone()
-            if not row:
-                return {
-                    "metric": "cycle_time",
-                    "definition": "updated_at - created_at",
-                    "filters": {
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "status": status,
-                        "owner": owner_filter,
-                        "proposal_type": proposal_type,
-                    },
-                    "bottleneck": None,
-                    "by_stage": [],
-                }, 200
-            default_owner_id = row[0]
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row[0] for row in cursor.fetchall()]
+
+        owner_col = None
+        if 'owner_id' in existing_columns:
+            owner_col = 'owner_id'
+        elif 'user_id' in existing_columns:
+            owner_col = 'user_id'
+
+        if not owner_col:
+            return {"detail": "Proposals table is missing owner column"}, 500
+
+        # Resolve current user's numeric ID.
+        # Prefer user_id supplied by the Firebase-aware decorator.
+        default_owner_id = user_id
+        if not default_owner_id:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id FROM users WHERE username = %s OR email = %s",
+                    (username, email or username),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {
+                        "metric": "cycle_time",
+                        "definition": "updated_at - created_at",
+                        "filters": {
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "status": status,
+                            "owner": owner_filter,
+                            "proposal_type": proposal_type,
+                        },
+                        "bottleneck": None,
+                        "by_stage": [],
+                    }, 200
+                default_owner_id = row[0]
 
         # Determine which owner_id to filter by
         owner_id = default_owner_id
@@ -5604,7 +5951,7 @@ def analytics_cycle_time(username):
                         "by_stage": [],
                     }, 200
 
-        where = ["owner_id = %s", "created_at IS NOT NULL", "updated_at IS NOT NULL"]
+        where = [f"{owner_col} = %s", "created_at IS NOT NULL", "updated_at IS NOT NULL"]
         params = [owner_id]
 
         if start_date:

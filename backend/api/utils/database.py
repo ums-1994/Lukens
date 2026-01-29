@@ -17,28 +17,43 @@ def get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         try:
-            db_config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'proposal_db'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'port': int(os.getenv('DB_PORT', '5432')),
-            }
-            
-            # Add SSL mode for external connections (like Render)
-            # Check if host contains 'render.com' or SSL is explicitly required
-            ssl_mode = os.getenv('DB_SSLMODE', 'prefer')
-            if 'render.com' in db_config['host'].lower() or os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
-                ssl_mode = 'require'
-                db_config['sslmode'] = ssl_mode
-                print(f"[*] Using SSL mode: {ssl_mode} for external connection")
-            
-            print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
-            _pg_pool = psycopg2.pool.SimpleConnectionPool(
-                minconn=1,
-                maxconn=20,
-                **db_config,
-            )
+            # Prefer DATABASE_URL when available (Render/prod style).
+            # This prevents accidentally using localhost when DB_* vars aren't set.
+            db_url = os.getenv("DATABASE_URL")
+            if db_url:
+                sslmode = os.getenv("DB_SSLMODE") or os.getenv("DB_SSL_MODE")
+                if sslmode and "sslmode=" not in db_url:
+                    joiner = "&" if "?" in db_url else "?"
+                    db_url = f"{db_url}{joiner}sslmode={sslmode}"
+                print("[*] Connecting to PostgreSQL via DATABASE_URL")
+                _pg_pool = psycopg2.pool.SimpleConnectionPool(
+                    minconn=1,
+                    maxconn=20,
+                    dsn=db_url,
+                )
+            else:
+                db_config = {
+                    'host': os.getenv('DB_HOST', 'localhost'),
+                    'database': os.getenv('DB_NAME', 'proposal_db'),
+                    'user': os.getenv('DB_USER', 'postgres'),
+                    'password': os.getenv('DB_PASSWORD', ''),
+                    'port': int(os.getenv('DB_PORT', '5432')),
+                }
+                
+                # Add SSL mode for external connections (like Render)
+                # Check if host contains 'render.com' or SSL is explicitly required
+                ssl_mode = os.getenv('DB_SSLMODE', 'prefer')
+                if 'render.com' in db_config['host'].lower() or os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
+                    ssl_mode = 'require'
+                    db_config['sslmode'] = ssl_mode
+                    print(f"[*] Using SSL mode: {ssl_mode} for external connection")
+                
+                print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+                _pg_pool = psycopg2.pool.SimpleConnectionPool(
+                    minconn=1,
+                    maxconn=20,
+                    **db_config,
+                )
             print("[OK] PostgreSQL connection pool created successfully")
         except Exception as exc:
             print(f"[ERROR] Error creating PostgreSQL connection pool: {exc}")

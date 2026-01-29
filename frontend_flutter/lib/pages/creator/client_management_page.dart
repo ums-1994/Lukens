@@ -354,14 +354,18 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 620;
+
+                    final title = Text(
                       'Client Management',
                       style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                    ),
-                    Row(
+                      overflow: TextOverflow.ellipsis,
+                    );
+
+                    final userControls = Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         ClipOval(
                           child: Image.asset(
@@ -372,22 +376,25 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _getUserName(user),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              userRole.toString(),
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
+                        Flexible(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _getUserName(user),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                userRole.toString(),
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(width: 10),
                         PopupMenuButton<String>(
@@ -414,8 +421,27 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                           ],
                         ),
                       ],
-                    ),
-                  ],
+                    );
+
+                    if (!isNarrow) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: title),
+                          userControls,
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        title,
+                        const SizedBox(height: 8),
+                        userControls,
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

@@ -11,6 +11,7 @@ from datetime import datetime
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
+from api.utils.helpers import log_status_change
 
 bp = Blueprint('creator', __name__, url_prefix='')
 
@@ -234,12 +235,19 @@ def submit_for_review(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = srow[0] if srow else None
             
             cursor.execute(
                 '''UPDATE proposals SET status = 'Submitted', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
                 (proposal_id,)
             )
             conn.commit()
+
+            if old_status is not None and old_status != 'Submitted':
+                log_status_change(proposal_id, user_id, old_status, 'Submitted')
             return {'detail': 'Proposal submitted for review'}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
@@ -310,6 +318,10 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = srow[0] if srow else None
             
             # Update status to "Pending CEO Approval" (more descriptive than "In Review")
             cursor.execute(
@@ -317,6 +329,9 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
                 (proposal_id,)
             )
             conn.commit()
+
+            if old_status is not None and old_status != 'Pending CEO Approval':
+                log_status_change(proposal_id, user_id, old_status, 'Pending CEO Approval')
             return {'detail': 'Proposal sent for approval', 'status': 'Pending CEO Approval'}, 200
     except Exception as e:
         print(f"❌ Error sending proposal for approval: {e}")
@@ -361,6 +376,10 @@ def send_to_client(username=None, proposal_id=None):
             
             if not sender:
                 return {'detail': 'User not found'}, 404
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = (srow.get('status') if hasattr(srow, 'get') else (srow[0] if srow else None))
             
             # Update status
             new_status = 'Sent to Client'
@@ -369,6 +388,10 @@ def send_to_client(username=None, proposal_id=None):
                 (new_status, proposal_id)
             )
             conn.commit()
+
+            sender_id = sender.get('id') if hasattr(sender, 'get') else None
+            if old_status is not None and old_status != new_status:
+                log_status_change(proposal_id, sender_id, old_status, new_status)
             
             # Send email to client
             email_sent = False
@@ -846,10 +869,22 @@ def ai_analyze_risks(username=None):
             # Import AI service
             from ai_service import ai_service
             
+            def _make_json_safe(obj):
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                if isinstance(obj, dict):
+                    return {k: _make_json_safe(v) for k, v in obj.items()}
+                if isinstance(obj, list):
+                    return [_make_json_safe(v) for v in obj]
+                if isinstance(obj, tuple):
+                    return [_make_json_safe(v) for v in obj]
+                return obj
+
             # Analyze risks
-            risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
-            
-            return risk_analysis, 200
+            safe_proposal = _make_json_safe(dict(proposal))
+            risk_analysis = ai_service.analyze_proposal_risks(safe_proposal)
+
+            return _make_json_safe(risk_analysis), 200
         
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")
@@ -969,11 +1004,39 @@ def get_proposal_analytics(username=None, proposal_id=None):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Verify proposal exists and user has access
-            cursor.execute("""
-                SELECT id, title, status, client, '' as client_email
-                FROM proposals 
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                  AND table_schema = current_schema()
+                """
+            )
+            cols = cursor.fetchall()
+            existing_columns = [
+                (c['column_name'] if isinstance(c, dict) else c[0]) for c in cols
+            ]
+
+            if 'client' in existing_columns:
+                client_expr = 'client'
+            elif 'client_name' in existing_columns:
+                client_expr = 'client_name'
+            else:
+                client_expr = "NULL::text"
+
+            if 'client_email' in existing_columns:
+                client_email_expr = 'client_email'
+            else:
+                client_email_expr = "''::text"
+
+            cursor.execute(
+                f"""
+                SELECT id, title, status, {client_expr} AS client, {client_email_expr} AS client_email
+                FROM proposals
                 WHERE id = %s OR id::text = %s
-            """, (proposal_id, str(proposal_id)))
+                """,
+                (proposal_id, str(proposal_id)),
+            )
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -1445,6 +1508,13 @@ def archive_proposal(username=None, proposal_id=None):
             
             result = cursor.fetchone()
             conn.commit()
+
+            try:
+                old_status = proposal.get('status')
+                if old_status is not None and old_status != 'Archived':
+                    log_status_change(proposal_id, user_id, old_status, 'Archived')
+            except Exception as e:
+                print(f"⚠️ Error logging status change: {e}")
             
             # Log activity
             try:
@@ -1522,6 +1592,13 @@ def restore_proposal(username=None, proposal_id=None):
             
             result = cursor.fetchone()
             conn.commit()
+
+            try:
+                old_status = proposal.get('status')
+                if old_status is not None and old_status != 'Draft':
+                    log_status_change(proposal_id, user['id'], old_status, 'Draft')
+            except Exception as e:
+                print(f"⚠️ Error logging status change: {e}")
             
             # Log activity
             try:

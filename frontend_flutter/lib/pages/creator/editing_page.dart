@@ -65,18 +65,20 @@ class _EditingPageState extends State<EditingPage> {
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 420;
+                  const title = Text(
                     'Edit & Send Proposal',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
-                  ),
-                  Container(
+                    overflow: TextOverflow.ellipsis,
+                  );
+
+                  final stepPill = Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
@@ -91,8 +93,28 @@ class _EditingPageState extends State<EditingPage> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ),
-                ],
+                  );
+
+                  if (!isNarrow) {
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(child: title),
+                        stepPill,
+                      ],
+                    );
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      title,
+                      const SizedBox(height: 6),
+                      stepPill,
+                    ],
+                  );
+                },
               ),
             ),
           ),

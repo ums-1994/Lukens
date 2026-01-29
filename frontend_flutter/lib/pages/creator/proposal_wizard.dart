@@ -820,25 +820,28 @@ class _ProposalWizardState extends State<ProposalWizard>
         documentLabel = 'Proposal';
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 560;
+
+        final title = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'New $documentLabel',
               style: PremiumTheme.titleLarge,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
             Text(
               'Step ${_currentStep + 1} of $_totalSteps: ${_getStepTitle(_currentStep)} • ${((_currentStep + 1) / _totalSteps * 100).round()}% Complete',
               style: PremiumTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
-        ),
-        TextButton.icon(
+        );
+
+        final backButton = TextButton.icon(
           onPressed: () =>
               Navigator.of(context).pushReplacementNamed('/dashboard'),
           icon: const Icon(Icons.arrow_back, color: Colors.white70),
@@ -846,8 +849,28 @@ class _ProposalWizardState extends State<ProposalWizard>
             'Back to Dashboard',
             style: PremiumTheme.bodyMedium,
           ),
-        ),
-      ],
+        );
+
+        if (!isNarrow) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: title),
+              backButton,
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            title,
+            const SizedBox(height: 8),
+            backButton,
+          ],
+        );
+      },
     );
   }
 

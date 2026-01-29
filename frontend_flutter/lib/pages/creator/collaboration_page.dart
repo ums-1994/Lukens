@@ -113,18 +113,22 @@ class _CollaborationPageState extends State<CollaborationPage> {
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 560;
+
+                  const title = Text(
                     'Proposal & SOW Builder',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
-                  ),
-                  Row(
+                    overflow: TextOverflow.ellipsis,
+                  );
+
+                  final userControls = Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
                         width: 35,
@@ -144,8 +148,13 @@ class _CollaborationPageState extends State<CollaborationPage> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(displayName,
-                          style: const TextStyle(color: Colors.white)),
+                      Flexible(
+                        child: Text(
+                          displayName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
                       const SizedBox(width: 10),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -172,8 +181,28 @@ class _CollaborationPageState extends State<CollaborationPage> {
                         ],
                       ),
                     ],
-                  ),
-                ],
+                  );
+
+                  if (!isNarrow) {
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(child: title),
+                        userControls,
+                      ],
+                    );
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      title,
+                      const SizedBox(height: 8),
+                      userControls,
+                    ],
+                  );
+                },
               ),
             ),
           ),

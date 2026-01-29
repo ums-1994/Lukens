@@ -725,14 +725,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 520;
+                    final title = Text(
                       'Analytics Dashboard',
                       style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                    ),
-                    Row(
+                    );
+
+                    final userControls = Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
                           width: 35,
@@ -752,9 +754,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Text(
-                          userName,
-                          style: const TextStyle(color: Colors.white),
+                        Flexible(
+                          child: Text(
+                            userName,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white),
+                          ),
                         ),
                         const SizedBox(width: 10),
                         PopupMenuButton<String>(
@@ -779,8 +784,27 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           ],
                         ),
                       ],
-                    ),
-                  ],
+                    );
+
+                    if (!isNarrow) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          title,
+                          userControls,
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        title,
+                        const SizedBox(height: 8),
+                        userControls,
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -956,36 +980,68 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                       ),
                                     ],
                                   ),
-                                  Row(
-                                    children: [
-                                      _buildGlassDropdown(),
-                                      const SizedBox(width: 12),
-                                      _buildGlassButton(
-                                        'Export',
-                                        Icons.download,
-                                        _showExportDialog,
-                                      ),
-                                    ],
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final isNarrow = constraints.maxWidth < 420;
+                                      final controls = [
+                                        _buildGlassDropdown(),
+                                        _buildGlassButton(
+                                          'Export',
+                                          Icons.download,
+                                          _showExportDialog,
+                                        ),
+                                      ];
+
+                                      if (!isNarrow) {
+                                        return Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            controls[0],
+                                            const SizedBox(width: 12),
+                                            controls[1],
+                                          ],
+                                        );
+                                      }
+
+                                      return Wrap(
+                                        spacing: 12,
+                                        runSpacing: 12,
+                                        alignment: WrapAlignment.end,
+                                        children: controls,
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 32),
-                              Row(
-                                children: [
-                                  for (int i = 0; i < metrics.length; i++) ...[
-                                    Expanded(
-                                      child: _buildGlassMetricCard(
-                                        metrics[i].title,
-                                        metrics[i].value,
-                                        metrics[i].change,
-                                        metrics[i].isPositive,
-                                        metrics[i].subtitle,
-                                      ),
-                                    ),
-                                    if (i != metrics.length - 1)
-                                      const SizedBox(width: 20),
-                                  ],
-                                ],
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  const minCardWidth = 240.0;
+                                  const spacing = 20.0;
+                                  final maxWidth = constraints.maxWidth;
+                                  final columns = (maxWidth / (minCardWidth + spacing))
+                                      .floor()
+                                      .clamp(1, 4);
+                                  final cardWidth = (maxWidth - (spacing * (columns - 1))) / columns;
+
+                                  return Wrap(
+                                    spacing: spacing,
+                                    runSpacing: spacing,
+                                    children: [
+                                      for (final m in metrics)
+                                        SizedBox(
+                                          width: cardWidth,
+                                          child: _buildGlassMetricCard(
+                                            m.title,
+                                            m.value,
+                                            m.change,
+                                            m.isPositive,
+                                            m.subtitle,
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
                               ),
                               const SizedBox(height: 24),
                               _buildGlassChartCard(
@@ -1238,6 +1294,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(icon, color: Colors.white, size: 18),
                     const SizedBox(width: 8),
@@ -1321,11 +1378,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF6B7280),
+                  Expanded(
+                    child: Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF6B7280),
+                      ),
                     ),
                   ),
                 ],
@@ -2065,11 +2126,26 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           color: Colors.white.withValues(alpha: 0.1),
         ),
       ),
-      child: Row(
-        children: [
-          // Date Range
-          Expanded(
-            child: InkWell(
+      child: Builder(
+        builder: (context) {
+          final app = context.watch<AppState>();
+
+          final owners = <String>{};
+          for (final p in app.proposals) {
+            if (p is Map) {
+              final o = (p['owner_id'] ?? p['user_id'])?.toString();
+              if (o != null && o.isNotEmpty) owners.add(o);
+            }
+          }
+          final ownerItems = owners.toList()..sort();
+
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              SizedBox(
+                width: 220,
+                child: InkWell(
               onTap: () async {
                 final picked = await showDateRangePicker(
                   context: context,
@@ -2084,7 +2160,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     _cycleTimeStartDate = picked.start;
                     _cycleTimeEndDate = picked.end;
                   });
-                  final app = context.read<AppState>();
                   _loadCycleTimeAnalytics(app);
                 }
               },
@@ -2108,12 +2183,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   ],
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Status Filter
-          Expanded(
-            child: DropdownButtonFormField<String>(
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<String>(
               value: _cycleTimeStatus,
               decoration: InputDecoration(
                 filled: true,
@@ -2137,15 +2211,43 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 setState(() {
                   _cycleTimeStatus = value;
                 });
-                final app = context.read<AppState>();
                 _loadCycleTimeAnalytics(app);
               },
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Proposal Type Filter
-          Expanded(
-            child: DropdownButtonFormField<String>(
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<String>(
+                  value: _cycleTimeOwner,
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  dropdownColor: const Color(0xFF1A1F2E),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  hint: const Text('Owner', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  items: [null, ...ownerItems].map((o) {
+                    return DropdownMenuItem<String>(
+                      value: o,
+                      child: Text(o == null ? 'All Owners' : o),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _cycleTimeOwner = value;
+                    });
+                    _loadCycleTimeAnalytics(app);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<String>(
               value: _cycleTimeProposalType,
               decoration: InputDecoration(
                 filled: true,
@@ -2169,27 +2271,27 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 setState(() {
                   _cycleTimeProposalType = value;
                 });
-                final app = context.read<AppState>();
                 _loadCycleTimeAnalytics(app);
               },
-            ),
-          ),
-          // Clear Filters
-          if (_cycleTimeStartDate != null || _cycleTimeEndDate != null || _cycleTimeStatus != null || _cycleTimeProposalType != null)
-            IconButton(
-              icon: const Icon(Icons.clear, size: 18, color: Colors.white70),
-              onPressed: () {
-                setState(() {
-                  _cycleTimeStartDate = null;
-                  _cycleTimeEndDate = null;
-                  _cycleTimeStatus = null;
-                  _cycleTimeProposalType = null;
-                });
-                final app = context.read<AppState>();
-                _loadCycleTimeAnalytics(app);
-              },
-            ),
-        ],
+                ),
+              ),
+              if (_cycleTimeStartDate != null || _cycleTimeEndDate != null || _cycleTimeStatus != null || _cycleTimeProposalType != null || _cycleTimeOwner != null)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 18, color: Colors.white70),
+                  onPressed: () {
+                    setState(() {
+                      _cycleTimeStartDate = null;
+                      _cycleTimeEndDate = null;
+                      _cycleTimeStatus = null;
+                      _cycleTimeOwner = null;
+                      _cycleTimeProposalType = null;
+                    });
+                    _loadCycleTimeAnalytics(app);
+                  },
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2270,6 +2372,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               final avgDays = item['avg_days'] as num?;
               final samples = item['samples'] as int? ?? 0;
 
+              final bottleneckStage = cycleTimeAnalytics?['bottleneck']?['stage']?.toString();
+              final isBottleneck = bottleneckStage != null && bottleneckStage == stage;
+
               return Container(
                 width: 220,
                 padding: const EdgeInsets.all(16),
@@ -2277,7 +2382,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   color: Colors.white.withValues(alpha: 0.03),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: isBottleneck
+                        ? PremiumTheme.warning.withValues(alpha: 0.6)
+                        : Colors.white.withValues(alpha: 0.08),
                   ),
                 ),
                 child: Column(

@@ -4747,10 +4747,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 topRight: Radius.circular(8),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 520;
+
+                final left = Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Drag handle icon (for ReorderableListView)
                     Icon(
@@ -4759,14 +4761,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       color: Colors.grey[600],
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      '${table.type == 'price' ? 'Price' : 'Text'} Table',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 14),
+                    Flexible(
+                      child: Text(
+                        '${table.type == 'price' ? 'Price' : 'Text'} Table',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
-                ),
-                Row(
+                );
+
+                final right = Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 18),
@@ -4802,8 +4809,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       constraints: const BoxConstraints(),
                     ),
                   ],
-                ),
-              ],
+                );
+
+                if (!isNarrow) {
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(child: left),
+                      right,
+                    ],
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    left,
+                    const SizedBox(height: 8),
+                    right,
+                  ],
+                );
+              },
             ),
           ),
           // Table content

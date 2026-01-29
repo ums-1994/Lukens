@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
-from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification
+from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification, log_status_change
 
 bp = Blueprint('approver', __name__)
 
@@ -24,7 +24,19 @@ bp = Blueprint('approver', __name__)
 @bp.route("/proposals/pending_approval", methods=['OPTIONS'])
 def options_pending_approvals():
     """Handle CORS preflight for pending approvals endpoint"""
-    return {}, 200
+    origin = request.headers.get("Origin")
+    resp = jsonify({})
+    if origin and (
+        origin.startswith("http://localhost:")
+        or origin.startswith("http://127.0.0.1:")
+        or origin == "https://proposals2025.netlify.app"
+    ):
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Vary"] = "Origin"
+        resp.headers["Access-Control-Allow-Credentials"] = "true"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE"
+    return resp, 200
 
 @bp.get("/api/proposals/pending_approval")
 @bp.get("/proposals/pending_approval")
@@ -42,12 +54,22 @@ def get_pending_approvals(username=None):
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name = 'proposals'
+                  AND table_schema = current_schema()
                 """
             )
             cols = cursor.fetchall()
             existing_columns = [
                 (c['column_name'] if isinstance(c, dict) else c[0]) for c in cols
             ]
+
+            order_parts = []
+            if 'updated_at' in existing_columns:
+                order_parts.append('updated_at DESC')
+            if 'created_at' in existing_columns:
+                order_parts.append('created_at DESC')
+            if not order_parts:
+                order_parts.append('id DESC')
+            order_by = ', '.join(order_parts)
 
             # Build column expressions that only reference existing columns
             if 'client' in existing_columns:
@@ -88,7 +110,7 @@ def get_pending_approvals(username=None):
                     {budget_expr} AS budget
                 FROM proposals
                 WHERE status IN ('Pending CEO Approval', 'In Review', 'Submitted')
-                ORDER BY updated_at DESC, created_at DESC
+                ORDER BY {order_by}
             '''
 
             cursor.execute(query)
@@ -269,6 +291,12 @@ def approve_proposal(username=None, proposal_id=None):
                 or approver_user.get('email')
                 or username
             ) if approver_user else username
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = (
+                (srow.get('status') if hasattr(srow, 'get') else (srow[0] if srow else None))
+            )
             
             # Update status to Sent to Client
             cursor.execute(
@@ -282,6 +310,9 @@ def approve_proposal(username=None, proposal_id=None):
             if status_row:
                 new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
+
+                if old_status is not None and new_status is not None and str(old_status) != str(new_status):
+                    log_status_change(proposal_id, approver_user_id, old_status, new_status)
 
                 # Notify proposal creator about approval
                 try:
@@ -591,6 +622,14 @@ def reject_proposal(username=None, proposal_id=None):
                 return {'detail': 'Proposal not found'}, 404
 
             proposal_id_db, title, creator_user_id = proposal
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = srow[0] if srow else None
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            urow = cursor.fetchone()
+            actor_id = urow[0] if urow else None
             
             # Update status to Draft
             cursor.execute(
@@ -598,6 +637,9 @@ def reject_proposal(username=None, proposal_id=None):
                 (proposal_id,)
             )
             conn.commit()
+
+            if old_status is not None and old_status != 'Draft':
+                log_status_change(proposal_id, actor_id, old_status, 'Draft')
 
             # Notify proposal creator about rejection
             try:
@@ -651,11 +693,23 @@ def update_proposal_status(username=None, proposal_id=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = srow[0] if srow else None
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            urow = cursor.fetchone()
+            actor_id = urow[0] if urow else None
+
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() WHERE id = %s''',
                 (status, proposal_id)
             )
             conn.commit()
+
+            if old_status is not None and status is not None and str(old_status) != str(status):
+                log_status_change(proposal_id, actor_id, old_status, status)
             return {'detail': 'Status updated'}, 200
     except Exception as e:
         return {'detail': str(e)}, 500

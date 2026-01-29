@@ -5,7 +5,7 @@ Extracted from app.py for better organization
 from flask import Blueprint, request, jsonify
 from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
-from api.utils.helpers import resolve_user_id
+from api.utils.helpers import resolve_user_id, log_status_change
 from api.utils.email import send_email
 import json
 import psycopg2.extras
@@ -104,6 +104,9 @@ def create_proposal(username=None, user_id=None, email=None):
 
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email')
+
+            template_key = data.get('template_key') or data.get('templateKey')
+            template_type = data.get('template_type') or data.get('templateType')
             
             # Insert
             cursor.execute(
@@ -111,6 +114,7 @@ def create_proposal(username=None, user_id=None, email=None):
                 SELECT column_name 
                 FROM information_schema.columns 
                 WHERE table_name = 'proposals'
+                  AND table_schema = current_schema()
                 """
             )
             existing_columns = [row[0] for row in cursor.fetchall()]
@@ -128,6 +132,13 @@ def create_proposal(username=None, user_id=None, email=None):
             if 'client_email' in existing_columns:
                 insert_cols.append('client_email')
                 values.append(client_email)
+
+            if template_key and 'template_key' in existing_columns:
+                insert_cols.append('template_key')
+                values.append(template_key)
+            if template_type and 'template_type' in existing_columns:
+                insert_cols.append('template_type')
+                values.append(template_type)
 
             if 'owner_id' in existing_columns:
                 insert_cols.append('owner_id')
@@ -269,6 +280,7 @@ def get_proposals(username=None, user_id=None, email=None):
                 SELECT column_name 
                 FROM information_schema.columns 
                 WHERE table_name = 'proposals'
+                  AND table_schema = current_schema()
             """)
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
@@ -290,10 +302,12 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('sections')
                 if 'pdf_url' in existing_columns:
                     select_cols.append('pdf_url')
-                
+
+                order_by_col = 'created_at' if 'created_at' in existing_columns else 'id'
+
                 query = f'''SELECT {', '.join(select_cols)}
                      FROM proposals WHERE owner_id = %s
-                     ORDER BY created_at DESC'''
+                     ORDER BY {order_by_col} DESC'''
                 cursor.execute(query, (user_id,))
             elif 'user_id' in existing_columns:
                 select_cols = ['id', 'user_id', 'title', 'content', 'status']
@@ -313,9 +327,11 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('updated_at')
 
                 # Handle legacy schemas where user_id may be stored as VARCHAR
+                order_by_col = 'created_at' if 'created_at' in existing_columns else 'id'
+
                 query = f'''SELECT {', '.join(select_cols)}
                    FROM proposals WHERE user_id::text = %s::text
-                     ORDER BY created_at DESC'''
+                     ORDER BY {order_by_col} DESC'''
                 cursor.execute(query, (str(user_id),))
             else:
                 print(f"⚠️ No owner_id or user_id column found in proposals table")
@@ -428,6 +444,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name = 'proposals'
+                  AND table_schema = current_schema()
                 """
             )
             existing_columns = [row[0] for row in cursor.fetchall()]
@@ -468,6 +485,18 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             
             updates = ['updated_at = NOW()']
             params = []
+
+            old_status = None
+            new_status = None
+            if 'status' in data:
+                new_status = data.get('status')
+                cursor.execute(
+                    "SELECT status FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+                srow = cursor.fetchone()
+                if srow:
+                    old_status = srow[0]
             
             if 'title' in data:
                 updates.append('title = %s')
@@ -508,6 +537,9 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             params.append(proposal_id)
             cursor.execute(f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s''', params)
             conn.commit()
+
+            if new_status is not None and old_status is not None and str(new_status) != str(old_status):
+                log_status_change(proposal_id, user_id, old_status, new_status)
             
             print(f"✅ Proposal {proposal_id} updated successfully")
             return jsonify({'detail': 'Proposal updated'}), 200

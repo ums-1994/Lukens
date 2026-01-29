@@ -114,6 +114,16 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
         print(f"⚠️ Failed to log activity: {e}")
 
 
+def log_status_change(proposal_id, user_id, from_status, to_status):
+    log_activity(
+        proposal_id,
+        user_id,
+        "status_changed",
+        f"Status changed: {from_status} → {to_status}",
+        {"from": from_status, "to": to_status},
+    )
+
+
 def create_notification(
     user_id,
     notification_type,

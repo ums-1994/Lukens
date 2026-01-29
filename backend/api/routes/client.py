@@ -10,6 +10,7 @@ from datetime import datetime
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.jwt_validator import validate_jwt_token, JWTValidationError
+from api.utils.helpers import log_status_change
 
 bp = Blueprint('client', __name__)
 
@@ -596,6 +597,10 @@ def client_approve_proposal(proposal_id):
                             'sent'
                         ))
                     
+                    cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+                    srow = cursor.fetchone()
+                    old_status = srow[0] if srow else None
+
                     # Update proposal status
                     cursor.execute("""
                         UPDATE proposals 
@@ -604,6 +609,9 @@ def client_approve_proposal(proposal_id):
                     """, (proposal_id,))
                     
                     conn.commit()
+
+                    if old_status is not None and old_status != 'Sent for Signature':
+                        log_status_change(proposal_id, None, old_status, 'Sent for Signature')
                     
                     print(f"✅ Created DocuSign envelope for proposal {proposal_id} (client: {client_email})")
                     
@@ -654,6 +662,12 @@ def client_reject_proposal(proposal_id):
             
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = (
+                (srow.get('status') if hasattr(srow, 'get') else (srow[0] if srow else None))
+            )
             
             # Update proposal status - match by collaboration_invitation token only
             cursor.execute("""
@@ -687,6 +701,9 @@ def client_reject_proposal(proposal_id):
                 (proposal_id, comment_text, created_by, status)
                 VALUES (%s, %s, %s, %s)
             """, (proposal_id, rejection_info, client_user_id, 'resolved'))
+
+            if old_status is not None and old_status != 'Client Declined':
+                log_status_change(proposal_id, client_user_id, old_status, 'Client Declined')
             
             conn.commit()
             
@@ -941,11 +958,23 @@ def client_sign_proposal(username=None, proposal_id=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            srow = cursor.fetchone()
+            old_status = srow[0] if srow else None
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            urow = cursor.fetchone()
+            actor_id = urow[0] if urow else None
+
             cursor.execute(
                 '''UPDATE proposals SET status = 'Client Signed' WHERE id = %s''',
                 (proposal_id,)
             )
             conn.commit()
+
+            if old_status is not None and old_status != 'Client Signed':
+                log_status_change(proposal_id, actor_id, old_status, 'Client Signed')
             return {'detail': 'Proposal signed by client'}, 200
     except Exception as e:
         return {'detail': str(e)}, 500

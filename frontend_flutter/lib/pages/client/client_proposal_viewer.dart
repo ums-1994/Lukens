@@ -918,25 +918,45 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 380;
+              final left = const Text(
                 'Sections',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF2C3E50),
                 ),
-              ),
-              Text(
+              );
+              final right = Text(
                 'Section ${index + 1} of $total',
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.grey[600],
                 ),
-              ),
-            ],
+                overflow: TextOverflow.ellipsis,
+              );
+
+              if (!isNarrow) {
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    left,
+                    right,
+                  ],
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  left,
+                  const SizedBox(height: 6),
+                  right,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           SingleChildScrollView(
@@ -986,23 +1006,42 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
             ),
           ),
           const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton.icon(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 520;
+              final prev = TextButton.icon(
                 onPressed:
                     index > 0 ? () => _onSectionChanged(index - 1) : null,
                 icon: const Icon(Icons.chevron_left),
                 label: const Text('Previous section'),
-              ),
-              TextButton.icon(
+              );
+              final next = TextButton.icon(
                 onPressed: index < total - 1
                     ? () => _onSectionChanged(index + 1)
                     : null,
                 label: const Text('Next section'),
                 icon: const Icon(Icons.chevron_right),
-              ),
-            ],
+              );
+
+              if (!isNarrow) {
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    prev,
+                    next,
+                  ],
+                );
+              }
+
+              return Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  prev,
+                  next,
+                ],
+              );
+            },
           ),
         ],
       );

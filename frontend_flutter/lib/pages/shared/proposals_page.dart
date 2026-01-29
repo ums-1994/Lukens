@@ -389,10 +389,11 @@ class _ProposalsPageState extends State<ProposalsPage>
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       gradientStart: const Color(0xFF1D2B64),
       gradientEnd: const Color(0xFF1D4350),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 640;
+
+          final title = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
@@ -409,8 +410,10 @@ class _ProposalsPageState extends State<ProposalsPage>
                 style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ],
-          ),
-          Row(
+          );
+
+          final userControls = Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               ClipOval(
                 child: Image.asset(
@@ -421,21 +424,25 @@ class _ProposalsPageState extends State<ProposalsPage>
                 ),
               ),
               const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _getUserName(app.currentUser),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _getUserName(app.currentUser),
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  Text(
-                    userRole,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
+                    Text(
+                      userRole,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(width: 12),
               PopupMenuButton<String>(
@@ -459,8 +466,27 @@ class _ProposalsPageState extends State<ProposalsPage>
                 ],
               ),
             ],
-          ),
-        ],
+          );
+
+          if (!isNarrow) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                title,
+                userControls,
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              title,
+              const SizedBox(height: 12),
+              userControls,
+            ],
+          );
+        },
       ),
     );
   }

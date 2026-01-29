@@ -261,11 +261,11 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     final displayRole =
         backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 620;
+
+        final title = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -278,8 +278,10 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               style: TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ],
-        ),
-        Row(
+        );
+
+        final userControls = Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             ClipOval(
               child: Image.asset(
@@ -290,26 +292,50 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               ),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  email,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    email,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                Text(
-                  displayRole,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
+                  Text(
+                    displayRole,
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ],
-        ),
-      ],
+        );
+
+        if (!isNarrow) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              title,
+              userControls,
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            title,
+            const SizedBox(height: 12),
+            userControls,
+          ],
+        );
+      },
     );
   }
 

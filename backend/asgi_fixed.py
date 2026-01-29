@@ -12,12 +12,8 @@ if script_dir not in sys.path:
 # Change to backend directory for proper imports
 os.chdir(script_dir)
 
-# Import Flask app
-from app import app as flask_app
-from asgiref.wsgi import WsgiToAsgi
-
-# Create ASGI app by wrapping Flask WSGI app
-app = WsgiToAsgi(flask_app)
+# Import ASGI app (Starlette + WSGIMiddleware) from app.py
+from app import asgi_app as app
 
 # Make sure this is the entry point Uvicorn calls
 __all__ = ['app']
