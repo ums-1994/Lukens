@@ -4,6 +4,8 @@ Risk Gate endpoints
 import hashlib
 import json
 import traceback
+from datetime import date, datetime
+from decimal import Decimal
 from flask import Blueprint, request
 from psycopg2.extras import RealDictCursor
 
@@ -12,6 +14,24 @@ from api.utils.ai_safety import AISafetyError, sanitize_for_external_ai, enforce
 from api.utils.decorators import token_required
 
 bp = Blueprint("risk_gate", __name__, url_prefix="/api/risk-gate")
+
+
+def _json_default(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    return str(value)
+
+
+def _stable_json_dumps(payload) -> str:
+    return json.dumps(payload, default=_json_default, ensure_ascii=False)
+
+
+def _stable_json_hash(payload) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, default=_json_default, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 def _get_user_role(conn, username: str) -> str | None:
@@ -146,9 +166,7 @@ def analyze(username=None):
                     "redaction_summary": {
                         "blocked": True,
                         "reasons": safety_result.block_reasons,
-                        "sanitized_payload_hash": hashlib.sha256(
-                            json.dumps(safety_result.sanitized).encode()
-                        ).hexdigest(),
+                        "sanitized_payload_hash": _stable_json_hash(safety_result.sanitized),
                     },
                 }
 
@@ -163,9 +181,9 @@ def analyze(username=None):
                         username,
                         response_body["status"],
                         response_body["risk_score"],
-                        json.dumps(response_body["issues"]),
-                        json.dumps(response_body["kb_citations"]),
-                        json.dumps(response_body["redaction_summary"]),
+                        _stable_json_dumps(response_body["issues"]),
+                        _stable_json_dumps(response_body["kb_citations"]),
+                        _stable_json_dumps(response_body["redaction_summary"]),
                     ),
                 )
                 run_id = cursor.fetchone()["id"]
@@ -207,9 +225,7 @@ def analyze(username=None):
             redaction_summary = {
                 "blocked": False,
                 "reasons": [],
-                "sanitized_payload_hash": hashlib.sha256(
-                    json.dumps(safety_result.sanitized).encode()
-                ).hexdigest(),
+                "sanitized_payload_hash": _stable_json_hash(safety_result.sanitized),
             }
 
             cursor.execute(
@@ -223,9 +239,9 @@ def analyze(username=None):
                     username,
                     status,
                     int(risk_score or 0),
-                    json.dumps(issues),
-                    json.dumps(kb_citations),
-                    json.dumps(redaction_summary),
+                    _stable_json_dumps(issues),
+                    _stable_json_dumps(kb_citations),
+                    _stable_json_dumps(redaction_summary),
                 ),
             )
             run_id = cursor.fetchone()["id"]
