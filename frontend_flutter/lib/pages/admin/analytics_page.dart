@@ -13,6 +13,7 @@ import 'package:web/web.dart' as web;
 import '../../api.dart';
 import '../../services/asset_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 
