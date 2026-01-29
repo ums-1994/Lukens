@@ -12,6 +12,7 @@ import 'package:web/web.dart' as web;
 
 import '../../api.dart';
 import '../../services/asset_service.dart';
+import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 
@@ -1732,10 +1733,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   Future<Map<String, dynamic>?> _fetchCycleTimeMetrics() async {
     try {
-      final app = context.read<AppState>();
-      final token = app.token;
+      final token = AuthService.token;
+      final baseUrl = AuthService.baseUrl;
+      if (token == null) {
+        print('Cycle time metrics: no auth token');
+        return null;
+      }
       final response = await http.get(
-        Uri.parse('${app.baseUrl}/api/analytics/cycle-time-inline'),
+        Uri.parse('$baseUrl/api/analytics/cycle-time-inline'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       );
       if (response.statusCode == 200) {
@@ -1777,7 +1782,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Text(
                     'Bottleneck: ${bottleneck['stage']} (${(bottleneck['avg_days'] as num)?.toStringAsFixed(1) ?? 'N/A'} days avg)',
-                    style: PremiumTheme.bodySmall.copyWith(color: PremiumTheme.error),
+                    style: PremiumTheme.bodyMedium.copyWith(color: PremiumTheme.error),
                   ),
                 ),
               SizedBox(
@@ -1815,7 +1820,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                         barRods: [
                           BarChartRodData(
                             toY: avg,
-                            color: bottleneck != null && bottleneck['stage'] == stage['stage'] ? PremiumTheme.error : PremiumTheme.primary,
+                            color: bottleneck != null && bottleneck['stage'] == stage['stage'] ? PremiumTheme.error : const Color(0xFF3498DB),
                             width: 20,
                             borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                           ),
