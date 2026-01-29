@@ -196,9 +196,13 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           final riskScore = _parseDouble(proposal['risk_score']);
           final riskLevel =
               (proposal['risk_level'] ?? '').toString().toLowerCase();
+          final riskGateStatus =
+              (proposal['risk_gate_status'] ?? '').toString().toLowerCase();
           if ((riskScore != null && riskScore >= 70) ||
               riskLevel == 'high' ||
-              riskLevel == 'critical') {
+              riskLevel == 'critical' ||
+              riskGateStatus == 'block' ||
+              riskGateStatus == 'blocked') {
             highRiskCount++;
           }
 
