@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from typing import Any, Optional
 
 import requests
@@ -10,6 +11,12 @@ from api.utils.ai_safety import AISafetyError, enforce_safe_for_external_ai
 
 class GeminiSchemaError(Exception):
     pass
+
+
+class GeminiRequestError(Exception):
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class GeminiClient:
@@ -24,13 +31,17 @@ class GeminiClient:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not found in environment variables")
 
+        self.timeout_seconds = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
+        self.max_retries = int(os.getenv("GEMINI_MAX_RETRIES", "2"))
+        self.retry_backoff_seconds = float(os.getenv("GEMINI_RETRY_BACKOFF_SECONDS", "0.6"))
+
     def generate_text(
         self,
         prompt: str,
         *,
         temperature: float = 0.5,
         max_output_tokens: int = 2048,
-        timeout_seconds: int = 60,
+        timeout_seconds: int | None = None,
     ) -> str:
         safe_prompt = enforce_safe_for_external_ai(prompt)
 
@@ -49,23 +60,45 @@ class GeminiClient:
             },
         }
 
-        try:
-            resp = requests.post(url, params=params, json=payload, timeout=timeout_seconds)
-            resp.raise_for_status()
-            data = resp.json()
-        except requests.exceptions.RequestException as e:
-            raise Exception(
-                "Gemini API request failed (HTTP error). Verify GEMINI_API_KEY, GEMINI_MODEL, and GEMINI_BASE_URL."
-            ) from e
+        timeout = self.timeout_seconds if timeout_seconds is None else int(timeout_seconds)
+
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = requests.post(url, params=params, json=payload, timeout=timeout)
+
+                # Retry on transient upstream throttling/outages.
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    raise GeminiRequestError(
+                        f"Gemini API transient error: HTTP {resp.status_code}",
+                        status_code=resp.status_code,
+                    )
+
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except requests.exceptions.Timeout as e:
+                last_exc = e
+            except requests.exceptions.RequestException as e:
+                last_exc = e
+            except GeminiRequestError as e:
+                last_exc = e
+
+            if attempt < self.max_retries:
+                time.sleep(self.retry_backoff_seconds * (2 ** attempt))
+        else:
+            raise GeminiRequestError(
+                "Gemini API request failed after retries. Verify GEMINI_API_KEY, GEMINI_MODEL, and GEMINI_BASE_URL.",
+            ) from last_exc
 
         candidates = data.get("candidates") or []
         if not candidates:
-            raise Exception("Gemini returned no candidates")
+            raise GeminiRequestError("Gemini returned no candidates")
 
         content = candidates[0].get("content") or {}
         parts = content.get("parts") or []
         if not parts or not isinstance(parts[0], dict) or "text" not in parts[0]:
-            raise Exception("Gemini response missing text")
+            raise GeminiRequestError("Gemini response missing text")
 
         return str(parts[0]["text"])
 
@@ -76,7 +109,7 @@ class GeminiClient:
         *,
         temperature: float = 0.3,
         max_output_tokens: int = 2048,
-        timeout_seconds: int = 60,
+        timeout_seconds: int | None = None,
     ) -> BaseModel:
         text = self.generate_text(
             prompt,

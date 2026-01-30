@@ -11,6 +11,49 @@ class AIAnalysisService {
     _authToken = token;
   }
 
+  static Future<Map<String, dynamic>> overrideRiskGateRun({
+    required int runId,
+    required String overrideReason,
+  }) async {
+    final reason = overrideReason.trim();
+    if (reason.isEmpty) {
+      throw Exception('overrideReason is required');
+    }
+
+    final headers = {
+      'Content-Type': 'application/json',
+      if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+    };
+
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/risk-gate/override'),
+      headers: headers,
+      body: jsonEncode({'run_id': runId, 'override_reason': reason}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw Exception('Unexpected override response');
+      }
+      return data;
+    }
+
+    String detail = 'Risk Gate override failed';
+    try {
+      final parsed = jsonDecode(response.body);
+      if (parsed is Map<String, dynamic> && parsed['detail'] != null) {
+        detail = parsed['detail'].toString();
+      } else {
+        detail = response.body;
+      }
+    } catch (_) {
+      detail = response.body;
+    }
+
+    throw Exception(detail);
+  }
+
   // Check if AI is configured (check backend status)
   static Future<bool> get isConfigured async {
     try {
