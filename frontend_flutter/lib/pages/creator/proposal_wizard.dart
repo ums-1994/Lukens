@@ -633,7 +633,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     checkField('clientEmail', 'Client Email');
     checkField('clientHolding', 'Client Holding / Group');
     checkField('clientAddress', 'Client Address');
-    checkField('clientContactName', 'Client Contact Name');
+    // We no longer collect a separate Client Contact Name in the UI,
+    // but we still track a contact email and mobile for readiness.
     checkField('clientContactEmail', 'Client Contact Email');
     checkField('clientContactMobile', 'Client Contact Mobile');
 
@@ -1980,16 +1981,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         text: _formData['clientHolding']?.toString() ?? '');
     final clientAddressController = TextEditingController(
         text: _formData['clientAddress']?.toString() ?? '');
-    final clientContactNameController = TextEditingController(
-        text: _formData['clientContactName']?.toString() ?? '');
-    final clientContactEmailController = TextEditingController(
-        text: _formData['clientContactEmail']?.toString() ?? '');
     final clientContactMobileController = TextEditingController(
         text: _formData['clientContactMobile']?.toString() ?? '');
-    final opportunityNameController = TextEditingController(
-        text: _formData['opportunityName']?.toString() ?? '');
-    final estimatedValueController = TextEditingController(
-        text: _formData['estimatedValue']?.toString() ?? '');
 
     return Directionality(
       textDirection: TextDirection.ltr,
@@ -2110,8 +2103,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                               child: _buildTextField(
                                 'Client Email',
                                 'client@company.com',
-                                (value) => setState(
-                                    () => _formData['clientEmail'] = value),
+                                (value) => setState(() {
+                                  _formData['clientEmail'] = value;
+                                  if ((_formData['clientContactEmail']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)) {
+                                    _formData['clientContactEmail'] = value;
+                                  }
+                                }),
                                 Icons.email_outlined,
                                 keyboardType: TextInputType.emailAddress,
                                 controller: clientEmailController,
@@ -2152,8 +2152,16 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                   ? _buildTextField(
                                       'Client Email',
                                       'client@company.com',
-                                      (value) => setState(() =>
-                                          _formData['clientEmail'] = value),
+                                      (value) => setState(() {
+                                        _formData['clientEmail'] = value;
+                                        if ((_formData['clientContactEmail']
+                                                ?.toString()
+                                                .isEmpty ??
+                                            true)) {
+                                          _formData['clientContactEmail'] =
+                                              value;
+                                        }
+                                      }),
                                       Icons.email_outlined,
                                       keyboardType: TextInputType.emailAddress,
                                       controller: clientEmailController,
@@ -2209,63 +2217,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       const SizedBox(height: 20),
                       if (_useManualEntry ||
                           _selectedClient == null ||
-                          (_formData['clientContactName']?.toString().isEmpty ??
-                              true) ||
-                          (_formData['clientContactEmail']
-                                  ?.toString()
-                                  .isEmpty ??
-                              true))
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTextField(
-                                'Client Contact Name',
-                                'Primary contact person',
-                                (value) => setState(() =>
-                                    _formData['clientContactName'] = value),
-                                Icons.person_outline,
-                                controller: clientContactNameController,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildTextField(
-                                'Client Contact Email',
-                                'contact@client.com',
-                                (value) => setState(() =>
-                                    _formData['clientContactEmail'] = value),
-                                Icons.alternate_email,
-                                keyboardType: TextInputType.emailAddress,
-                                controller: clientContactEmailController,
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildReadOnlyField(
-                                'Client Contact Name',
-                                _formData['clientContactName']?.toString() ??
-                                    '',
-                                Icons.person_outline,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildReadOnlyField(
-                                'Client Contact Email',
-                                _formData['clientContactEmail']?.toString() ??
-                                    '',
-                                Icons.alternate_email,
-                              ),
-                            ),
-                          ],
-                        ),
-                      const SizedBox(height: 20),
-                      if (_useManualEntry ||
-                          _selectedClient == null ||
                           (_formData['clientContactMobile']
                                   ?.toString()
                                   .isEmpty ??
@@ -2285,25 +2236,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           _formData['clientContactMobile']?.toString() ?? '',
                           Icons.phone_iphone,
                         ),
-                      const SizedBox(height: 20),
-                      _buildTextField(
-                        'Project/Opportunity Name',
-                        'Brief project description',
-                        (value) => setState(
-                            () => _formData['opportunityName'] = value),
-                        Icons.lightbulb_outline,
-                        controller: opportunityNameController,
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTextField(
-                        'Estimated Value (Optional)',
-                        '0',
-                        (value) =>
-                            setState(() => _formData['estimatedValue'] = value),
-                        Icons.attach_money,
-                        keyboardType: TextInputType.number,
-                        controller: estimatedValueController,
-                      ),
                     ],
                   ),
                 ),
@@ -2317,6 +2249,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
 
   Widget _buildProjectDetails() {
     // Initialize controllers with current values
+    final opportunityNameController = TextEditingController(
+        text: _formData['opportunityName']?.toString() ?? '');
     final estimatedValueController = TextEditingController(
         text: _formData['estimatedValue']?.toString() ?? '');
     final timelineController =
@@ -2345,6 +2279,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
+                    _buildTextField(
+                      'Project/Opportunity Name',
+                      'Brief project description',
+                      (value) =>
+                          setState(() => _formData['opportunityName'] = value),
+                      Icons.lightbulb_outline,
+                      controller: opportunityNameController,
+                    ),
+                    const SizedBox(height: 20),
                     _buildDropdownField(
                       'Project Type',
                       'Select project type',
