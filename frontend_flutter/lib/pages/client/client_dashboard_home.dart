@@ -402,11 +402,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   style: PremiumTheme.titleMedium,
                 ),
                 const Spacer(),
-                Text(
-                  '${_proposals.length} ${_proposals.length == 1 ? 'proposal' : 'proposals'}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
+                Flexible(
+                  child: Text(
+                    '${_proposals.length} ${_proposals.length == 1 ? 'proposal' : 'proposals'}',
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.white70,
+                    ),
                   ),
                 ),
               ],

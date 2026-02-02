@@ -81,6 +81,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Lukens',
+        debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
           colorSchemeSeed: Colors.blue,
