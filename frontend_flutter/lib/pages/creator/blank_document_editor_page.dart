@@ -3927,328 +3927,356 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 24),
-          // Price
-          Row(
-            children: [
-              Text(
-                '${_getCurrencySymbol()} ',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-              SizedBox(
-                width: 80,
-                child: TextField(
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    // Price value input - ready for future use
-                    setState(() {});
-                  },
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide:
-                          BorderSide(color: Colors.grey[300]!, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF00BCD4),
-                        width: 1,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          // Save status with version info
-          GestureDetector(
-            onTap: _showVersionHistory,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isSaving
-                    ? Colors.blue.withOpacity(0.1)
-                    : (_hasUnsavedChanges
-                        ? Colors.orange.withOpacity(0.1)
-                        : Colors.green.withOpacity(0.1)),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: _isSaving
-                      ? Colors.blue
-                      : (_hasUnsavedChanges ? Colors.orange : Colors.green),
-                  width: 1,
-                ),
-              ),
+          // Trailing actions in scrollable row to avoid overflow
+          Flexible(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_isSaving)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                  // Price
+                  Row(
+                    children: [
+                      Text(
+                        '${_getCurrencySymbol()} ',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
                       ),
-                    )
-                  else
-                    Icon(
-                      _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
-                      size: 14,
-                      color: _hasUnsavedChanges ? Colors.orange : Colors.green,
-                    ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _isSaving
-                        ? 'Saving...'
-                        : (_hasUnsavedChanges
-                            ? 'Unsaved changes'
-                            : (_lastSaved == null ? 'Not Saved' : 'Saved')),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _isSaving
-                          ? Colors.blue[800]
-                          : (_hasUnsavedChanges
-                              ? Colors.orange[800]
-                              : Colors.green[800]),
-                      fontWeight: FontWeight.w500,
+                      SizedBox(
+                        width: 80,
+                        child: TextField(
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          onChanged: (value) {
+                            // Price value input - ready for future use
+                            setState(() {});
+                          },
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: '0.00',
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(
+                                  color: Colors.grey[300]!, width: 1),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF00BCD4),
+                                width: 1,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  // Save status with version info
+                  GestureDetector(
+                    onTap: _showVersionHistory,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _isSaving
+                            ? Colors.blue.withOpacity(0.1)
+                            : (_hasUnsavedChanges
+                                ? Colors.orange.withOpacity(0.1)
+                                : Colors.green.withOpacity(0.1)),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: _isSaving
+                              ? Colors.blue
+                              : (_hasUnsavedChanges
+                                  ? Colors.orange
+                                  : Colors.green),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_isSaving)
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.blue),
+                              ),
+                            )
+                          else
+                            Icon(
+                              _hasUnsavedChanges
+                                  ? Icons.pending
+                                  : Icons.check_circle,
+                              size: 14,
+                              color: _hasUnsavedChanges
+                                  ? Colors.orange
+                                  : Colors.green,
+                            ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isSaving
+                                ? 'Saving...'
+                                : (_hasUnsavedChanges
+                                    ? 'Unsaved changes'
+                                    : (_lastSaved == null
+                                        ? 'Not Saved'
+                                        : 'Saved')),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _isSaving
+                                  ? Colors.blue[800]
+                                  : (_hasUnsavedChanges
+                                      ? Colors.orange[800]
+                                      : Colors.green[800]),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Version history button
-          OutlinedButton.icon(
-            onPressed: _showVersionHistory,
-            icon: const Icon(Icons.history, size: 16),
-            label: Text('v$_currentVersionNumber'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF00BCD4)),
-              foregroundColor: const Color(0xFF00BCD4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Save and Close button
-          ElevatedButton.icon(
-            onPressed: _saveAndClose,
-            icon: const Icon(Icons.save, size: 16),
-            label: const Text('Save and Close'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00BCD4),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Collaboration / Share button
-          OutlinedButton.icon(
-            onPressed: () => _showCollaborationDialog(),
-            icon: Icon(
-              _isCollaborating ? Icons.people : Icons.person_add,
-              size: 16,
-            ),
-            label: Text(_isCollaborating
-                ? 'Collaborators (${_collaborators.length})'
-                : 'Share'),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: _isCollaborating ? Colors.green : Colors.grey,
-              ),
-              foregroundColor: _isCollaborating ? Colors.green : Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Comments button
-          OutlinedButton.icon(
-            onPressed: () {
-              setState(() {
-                _showCommentsPanel = !_showCommentsPanel;
-              });
+                  const SizedBox(width: 12),
+                  // Version history button
+                  OutlinedButton.icon(
+                    onPressed: _showVersionHistory,
+                    icon: const Icon(Icons.history, size: 16),
+                    label: Text('v$_currentVersionNumber'),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF00BCD4)),
+                      foregroundColor: const Color(0xFF00BCD4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Save and Close button
+                  ElevatedButton.icon(
+                    onPressed: _saveAndClose,
+                    icon: const Icon(Icons.save, size: 16),
+                    label: const Text('Save and Close'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00BCD4),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Collaboration / Share button
+                  OutlinedButton.icon(
+                    onPressed: () => _showCollaborationDialog(),
+                    icon: Icon(
+                      _isCollaborating ? Icons.people : Icons.person_add,
+                      size: 16,
+                    ),
+                    label: Text(_isCollaborating
+                        ? 'Collaborators (${_collaborators.length})'
+                        : 'Share'),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: _isCollaborating ? Colors.green : Colors.grey,
+                      ),
+                      foregroundColor:
+                          _isCollaborating ? Colors.green : Colors.black87,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Comments button
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _showCommentsPanel = !_showCommentsPanel;
+                      });
 
-              // Load comments when panel is opened
-              if (_showCommentsPanel && _savedProposalId != null) {
-                _loadCommentsFromDatabase(_savedProposalId!);
-              }
-            },
-            icon: const Icon(Icons.comment, size: 16),
-            label: Text(
-                'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF00BCD4)),
-              foregroundColor: const Color(0xFF00BCD4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // More Actions menu (Share, Archive, etc.)
-          if (_savedProposalId != null)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 20),
-              onSelected: (value) async {
-                switch (value) {
-                  case 'share':
-                    _showCollaborationDialog();
-                    break;
-                  case 'archive':
-                    await _archiveProposal();
-                    break;
-                  case 'restore':
-                    await _restoreProposal();
-                    break;
-                }
-              },
-              itemBuilder: (context) {
-                final isArchived = _proposalStatus?.toLowerCase() == 'archived';
-                return [
-                  const PopupMenuItem(
-                    value: 'share',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person_add_alt_1_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Share / Collaborate'),
-                      ],
+                      // Load comments when panel is opened
+                      if (_showCommentsPanel && _savedProposalId != null) {
+                        _loadCommentsFromDatabase(_savedProposalId!);
+                      }
+                    },
+                    icon: const Icon(Icons.comment, size: 16),
+                    label: Text(
+                        'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF00BCD4)),
+                      foregroundColor: const Color(0xFF00BCD4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
-                  if (!isArchived)
-                    const PopupMenuItem(
-                      value: 'archive',
-                      child: Row(
-                        children: [
-                          Icon(Icons.archive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Archive Proposal'),
-                        ],
+                  const SizedBox(width: 12),
+                  // More Actions menu (Share, Archive, etc.)
+                  if (_savedProposalId != null)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      onSelected: (value) async {
+                        switch (value) {
+                          case 'share':
+                            _showCollaborationDialog();
+                            break;
+                          case 'archive':
+                            await _archiveProposal();
+                            break;
+                          case 'restore':
+                            await _restoreProposal();
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) {
+                        final isArchived =
+                            _proposalStatus?.toLowerCase() == 'archived';
+                        return [
+                          const PopupMenuItem(
+                            value: 'share',
+                            child: Row(
+                              children: [
+                                Icon(Icons.person_add_alt_1_outlined, size: 18),
+                                SizedBox(width: 8),
+                                Text('Share / Collaborate'),
+                              ],
+                            ),
+                          ),
+                          if (!isArchived)
+                            const PopupMenuItem(
+                              value: 'archive',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.archive_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Archive Proposal'),
+                                ],
+                              ),
+                            )
+                          else
+                            const PopupMenuItem(
+                              value: 'restore',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.unarchive_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Restore Proposal'),
+                                ],
+                              ),
+                            ),
+                        ];
+                      },
+                    ),
+                  const SizedBox(width: 12),
+                  // Status Badge
+                  if (_proposalStatus != null && _proposalStatus != 'draft')
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(_proposalStatus!),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    )
-                  else
-                    const PopupMenuItem(
-                      value: 'restore',
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.unarchive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Restore Proposal'),
+                          Icon(_getStatusIcon(_proposalStatus!),
+                              size: 14, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text(
+                            _getStatusLabel(_proposalStatus!),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                ];
-              },
-            ),
-          const SizedBox(width: 12),
-          // Status Badge
-          if (_proposalStatus != null && _proposalStatus != 'draft')
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _getStatusColor(_proposalStatus!),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_getStatusIcon(_proposalStatus!),
-                      size: 14, color: Colors.white),
-                  const SizedBox(width: 6),
-                  Text(
-                    _getStatusLabel(_proposalStatus!),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                  if (_proposalStatus != null && _proposalStatus != 'draft')
+                    const SizedBox(width: 12),
+                  // Send for Approval button
+                  if (_proposalStatus == null || _proposalStatus == 'draft')
+                    ElevatedButton.icon(
+                      onPressed: _sendForApproval,
+                      icon: const Icon(Icons.send, size: 16),
+                      label: const Text('Send for Approval'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2ECC71),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                  if (_proposalStatus == null || _proposalStatus == 'draft')
+                    const SizedBox(width: 12),
+                  // Action buttons
+                  OutlinedButton.icon(
+                    onPressed: _showPreview,
+                    icon: const Icon(Icons.visibility, size: 16),
+                    label: const Text('Preview'),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.grey),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // User initials
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00BCD4),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _getUserInitials(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ),
                 ],
-              ),
-            ),
-          if (_proposalStatus != null && _proposalStatus != 'draft')
-            const SizedBox(width: 12),
-          // Send for Approval button
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            ElevatedButton.icon(
-              onPressed: _sendForApproval,
-              icon: const Icon(Icons.send, size: 16),
-              label: const Text('Send for Approval'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2ECC71),
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            const SizedBox(width: 12),
-          // Action buttons
-          OutlinedButton.icon(
-            onPressed: _showPreview,
-            icon: const Icon(Icons.visibility, size: 16),
-            label: const Text('Preview'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.grey),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // User initials
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text(
-                _getUserInitials(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
               ),
             ),
           ),
