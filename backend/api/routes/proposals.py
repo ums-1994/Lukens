@@ -52,9 +52,15 @@ def create_proposal(username=None, user_id=None, email=None):
                     for strategy_type, strategy_value in lookup_strategies:
                         try:
                             if strategy_type == 'email':
-                                cursor.execute('SELECT id FROM users WHERE email = %s', (strategy_value,))
+                                cursor.execute(
+                                    'SELECT id FROM users WHERE lower(email) = lower(%s) ORDER BY id DESC LIMIT 1',
+                                    (strategy_value,),
+                                )
                             elif strategy_type == 'username':
-                                cursor.execute('SELECT id FROM users WHERE username = %s', (strategy_value,))
+                                cursor.execute(
+                                    'SELECT id FROM users WHERE username = %s ORDER BY id DESC LIMIT 1',
+                                    (strategy_value,),
+                                )
 
                             user_row = cursor.fetchone()
                             if user_row:

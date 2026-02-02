@@ -8,7 +8,8 @@ import hmac
 import secrets
 import smtplib
 import difflib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+from decimal import Decimal
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse, parse_qs
@@ -59,7 +60,7 @@ import openai
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).with_name('.env'))
 
 app = Flask(__name__)
 
@@ -140,6 +141,7 @@ from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.risk_gate import bp as risk_gate_bp
 from api.utils.decorators import token_required as firebase_token_required
+from api.utils.database import get_db_connection as shared_get_db_connection
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -234,7 +236,22 @@ def get_pg_pool():
 
 def _pg_conn():
     try:
-        return get_pg_pool().getconn()
+        conn = get_pg_pool().getconn()
+        try:
+            import psycopg2.extensions as ext
+            tx_status = conn.get_transaction_status()
+            if tx_status in (
+                ext.TRANSACTION_STATUS_INTRANS,
+                ext.TRANSACTION_STATUS_INERROR,
+            ):
+                conn.rollback()
+        except Exception:
+            pass
+
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1')
+        cursor.close()
+        return conn
     except Exception as e:
         print(f"[ERROR] Error getting PostgreSQL connection: {e}")
         raise
@@ -242,6 +259,20 @@ def _pg_conn():
 def release_pg_conn(conn):
     try:
         if conn:
+            try:
+                import psycopg2.extensions as ext
+                tx_status = conn.get_transaction_status()
+                if tx_status in (
+                    ext.TRANSACTION_STATUS_INTRANS,
+                    ext.TRANSACTION_STATUS_INERROR,
+                ):
+                    conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.autocommit = False
+            except Exception:
+                pass
             get_pg_pool().putconn(conn)
     except Exception as e:
         print(f"[WARN] Error releasing PostgreSQL connection: {e}")
@@ -285,6 +316,23 @@ def init_pg_schema():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+
+        try:
+            cursor.execute('''
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(255)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add firebase_uid column (may already exist): {e}")
+
+        try:
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique
+                ON users(firebase_uid)
+                WHERE firebase_uid IS NOT NULL
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not create users_firebase_uid_unique index: {e}")
         
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
@@ -1278,11 +1326,59 @@ def token_required(f):
     return decorated
 
 
+@app.get("/favicon.ico")
+def favicon():
+    return Response(status=204)
+
+
+@app.get("/api/debug/db")
+def debug_db_info():
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        return {'detail': 'Forbidden'}, 403
+
+    def _conn_info(conn):
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+              current_database()::text,
+              COALESCE(inet_server_addr()::text, 'unknown')::text,
+              inet_server_port()::int,
+              current_user::text,
+              current_setting('ssl', true)::text
+            """
+        )
+        row = cursor.fetchone()
+        return {
+            'database': row[0],
+            'server_addr': row[1],
+            'server_port': row[2],
+            'db_user': row[3],
+            'ssl': row[4],
+        }
+
+    try:
+        with get_db_connection() as conn:
+            app_py = _conn_info(conn)
+    except Exception as e:
+        app_py = {'error': str(e)}
+
+    try:
+        with shared_get_db_connection() as conn:
+            shared = _conn_info(conn)
+    except Exception as e:
+        shared = {'error': str(e)}
+
+    return {
+        'app_py_pool': app_py,
+        'shared_pool': shared,
+    }, 200
+
 @app.get("/api/comments/document/<int:proposal_id>")
 @token_required
 def get_document_comments(username, proposal_id):
     """Get all comments for a document with threaded structure (frontend expects this)."""
-    try:
+    def _fetch_document_comments(proposal_id: int):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -1322,9 +1418,59 @@ def get_document_comments(username, proposal_id):
 
             root_comments.sort(key=lambda x: x.get('created_at') or datetime.min, reverse=True)
 
-            return {'comments': root_comments}, 200
+            return {'comments': root_comments}
+
+    try:
+        return _fetch_document_comments(proposal_id), 200
     except Exception as e:
         print(f"❌ Error fetching document comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/api/comments/document/<int:proposal_id>")
+@token_required
+def create_document_comment(username=None, proposal_id=None, user_id=None, email=None):
+    try:
+        data = request.get_json() or {}
+        comment_text = data.get('comment_text') or data.get('comment') or data.get('text')
+        if not comment_text:
+            return {'detail': 'Comment text is required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            resolved_user_id = user_id
+            if resolved_user_id:
+                cursor.execute('SELECT id FROM users WHERE id = %s', (resolved_user_id,))
+                verify_user_id = cursor.fetchone()
+                if not verify_user_id:
+                    resolved_user_id = None
+
+            if not resolved_user_id:
+                lookup_email = email or username
+                cursor.execute(
+                    "SELECT id FROM users WHERE lower(email) = lower(%s) OR username = %s ORDER BY id DESC LIMIT 1",
+                    (lookup_email, username),
+                )
+                user_row = cursor.fetchone()
+                if not user_row:
+                    return {'detail': 'User not found'}, 404
+                resolved_user_id = user_row.get('id')
+
+            cursor.execute(
+                """
+                INSERT INTO document_comments (proposal_id, comment_text, created_by, status)
+                VALUES (%s, %s, %s, 'open')
+                RETURNING id, proposal_id, comment_text, created_by, created_at, status
+                """,
+                (proposal_id, comment_text, resolved_user_id),
+            )
+            result = cursor.fetchone()
+            conn.commit()
+            return dict(result), 201
+    except Exception as e:
+        print(f"❌ Error creating document comment: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
@@ -1478,15 +1624,29 @@ def forgot_password():
 
 @app.get("/me")
 @token_required
-def get_current_user(username):
+def get_current_user(username=None, user_id=None, email=None):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
-               FROM users WHERE username = %s''',
-            (username,)
-        )
+        if user_id:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users WHERE id = %s''',
+                (user_id,),
+            )
+        elif email:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users WHERE lower(email) = lower(%s)
+                   ORDER BY id DESC LIMIT 1''',
+                (email,),
+            )
+        else:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users WHERE username = %s''',
+                (username,),
+            )
         result = cursor.fetchone()
         release_pg_conn(conn)
         if result:
@@ -1506,16 +1666,30 @@ def get_current_user(username):
 
 @app.get("/user/profile")
 @token_required
-def get_user_profile(username):
+def get_user_profile(username=None, user_id=None, email=None):
     """Alias for /me endpoint for Flutter compatibility"""
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
-               FROM users WHERE username = %s''',
-            (username,)
-        )
+        if user_id:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users WHERE id = %s''',
+                (user_id,),
+            )
+        elif email:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users WHERE lower(email) = lower(%s)
+                   ORDER BY id DESC LIMIT 1''',
+                (email,),
+            )
+        else:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users WHERE username = %s''',
+                (username,),
+            )
         result = cursor.fetchone()
         release_pg_conn(conn)
         if result:
@@ -1587,7 +1761,61 @@ def get_content(username):
 @app.get("/api/proposals/<int:proposal_id>/comments")
 @token_required
 def get_proposal_comments_alias(username, proposal_id):
-    return get_document_comments(username, proposal_id)
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT
+                    dc.*,
+                    u.full_name as author_name,
+                    u.email as author_email,
+                    u.username as author_username,
+                    ru.full_name as resolver_name
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                LEFT JOIN users ru ON dc.resolved_by = ru.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at ASC
+                """,
+                (proposal_id,),
+            )
+            comments = cursor.fetchall()
+
+            comments_dict = {}
+            root_comments = []
+
+            for c in comments:
+                cdict = dict(c)
+                cdict['replies'] = []
+                comments_dict[cdict.get('id')] = cdict
+
+            for c in comments_dict.values():
+                parent_id = c.get('parent_id')
+                if parent_id and parent_id in comments_dict:
+                    comments_dict[parent_id]['replies'].append(c)
+                else:
+                    root_comments.append(c)
+
+            root_comments.sort(key=lambda x: x.get('created_at') or datetime.min, reverse=True)
+
+            return {'comments': root_comments}, 200
+    except Exception as e:
+        print(f"❌ Error fetching proposal comments alias: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/api/proposals/<int:proposal_id>/comments")
+@token_required
+def create_proposal_comments_alias(username=None, proposal_id=None, user_id=None, email=None):
+    return create_document_comment(
+        username=username,
+        proposal_id=proposal_id,
+        user_id=user_id,
+        email=email,
+    )
 
 @app.post("/api/content")
 @app.post("/content")
@@ -3150,13 +3378,12 @@ def ai_analyze_risks(username):
             
             # Import AI service
             from ai_service import ai_service
-            
-            # Analyze risks
-            risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
 
             def _make_json_safe(obj):
-                if isinstance(obj, datetime):
+                if isinstance(obj, (datetime, date)):
                     return obj.isoformat()
+                if isinstance(obj, Decimal):
+                    return float(obj)
                 if isinstance(obj, dict):
                     return {k: _make_json_safe(v) for k, v in obj.items()}
                 if isinstance(obj, list):
@@ -3164,6 +3391,10 @@ def ai_analyze_risks(username):
                 if isinstance(obj, tuple):
                     return [_make_json_safe(v) for v in obj]
                 return obj
+
+            # Analyze risks
+            safe_proposal = _make_json_safe(dict(proposal))
+            risk_analysis = ai_service.analyze_proposal_risks(safe_proposal)
 
             return _make_json_safe(risk_analysis), 200
         

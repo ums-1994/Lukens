@@ -67,10 +67,31 @@ def token_required(f):
                     uid = firebase_user['uid']
                     name = firebase_user.get('name') or email.split('@')[0]
 
+                    email_key = (email or '').strip().lower()
+
                     # Fast path: if we've already seen this email in this worker,
                     # reuse the cached user_id/username instead of hitting the DB
                     # again or re-creating the user.
-                    cached = USER_CACHE_BY_EMAIL.get(email)
+                    cached = USER_CACHE_BY_EMAIL.get(email_key)
+                    if cached:
+                        cached_user_id, cached_username = cached
+
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute('SELECT id FROM users WHERE id = %s', (cached_user_id,))
+                            still_exists = cursor.fetchone()
+                            if not still_exists:
+                                cursor.execute(
+                                    'SELECT id, username FROM users WHERE lower(email) = lower(%s) ORDER BY id DESC LIMIT 1',
+                                    (email,),
+                                )
+                                row = cursor.fetchone()
+                                if row:
+                                    cached_user_id = row[0]
+                                    cached_username = row[1]
+                                    cached = (cached_user_id, cached_username)
+                                    USER_CACHE_BY_EMAIL[email_key] = cached
+
                     if cached:
                         cached_user_id, cached_username = cached
                         print(
@@ -101,14 +122,61 @@ def token_required(f):
                             conn.autocommit = False
                         
                         # Ensure we're not in a transaction already (shouldn't be, but check)
-                        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
-                            print(f"[FIREBASE] WARNING: Connection already in transaction, committing first...")
-                            conn.commit()
+                        try:
+                            import psycopg2.extensions as ext
+                            tx_status = conn.get_transaction_status()
+                            if tx_status in (
+                                ext.TRANSACTION_STATUS_INTRANS,
+                                ext.TRANSACTION_STATUS_INERROR,
+                            ):
+                                print(f"[FIREBASE] WARNING: Connection in transaction, rolling back first...")
+                                conn.rollback()
+                        except Exception:
+                            pass
                         
                         cursor = conn.cursor()
+
+                        def _optional_exec(sql, params=(), fetch_one=False):
+                            try:
+                                cursor.execute('SAVEPOINT opt_q')
+                            except Exception:
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
+                                return None
+                            try:
+                                cursor.execute(sql, params)
+                                row = cursor.fetchone() if fetch_one else None
+                                cursor.execute('RELEASE SAVEPOINT opt_q')
+                                return row
+                            except Exception:
+                                try:
+                                    cursor.execute('ROLLBACK TO SAVEPOINT opt_q')
+                                    cursor.execute('RELEASE SAVEPOINT opt_q')
+                                except Exception:
+                                    try:
+                                        conn.rollback()
+                                    except Exception:
+                                        pass
+                                return None
+
+                        _optional_exec('SELECT pg_advisory_xact_lock(hashtext(%s))', (uid or email_key,))
+
+                        result = None
+                        result = _optional_exec(
+                            'SELECT id, username FROM users WHERE firebase_uid = %s ORDER BY id DESC LIMIT 1',
+                            (uid,),
+                            fetch_one=True,
+                        )
+
                         # Look up by email (most reliable since it's unique and comes from Firebase)
-                        cursor.execute('SELECT id, username FROM users WHERE email = %s', (email,))
-                        result = cursor.fetchone()
+                        if not result:
+                            cursor.execute(
+                                'SELECT id, username FROM users WHERE lower(email) = lower(%s) ORDER BY id DESC LIMIT 1',
+                                (email,),
+                            )
+                            result = cursor.fetchone()
                         
                         if result:
                             user_id = result[0]
@@ -123,7 +191,7 @@ def token_required(f):
                                 # This is a serious error, but continue anyway
                             
                             # Cache for subsequent requests in this worker
-                            USER_CACHE_BY_EMAIL[email] = (user_id, username)
+                            USER_CACHE_BY_EMAIL[email_key] = (user_id, username)
 
                             # Pass username, user_id, and email to functions
                             import inspect
@@ -173,15 +241,16 @@ def token_required(f):
                                     user_id = new_user[0]
                                     username = new_user[1]
                                     
-                                    # Try to add firebase_uid if column exists (before committing)
                                     try:
-                                        cursor.execute(
-                                            '''UPDATE users SET firebase_uid = %s WHERE email = %s''',
-                                            (uid, email)
+                                        _optional_exec(
+                                            'UPDATE users SET firebase_uid = %s WHERE id = %s',
+                                            (uid, user_id),
                                         )
                                     except Exception:
-                                        # Column doesn't exist or update failed, that's okay - continue without it
-                                        pass
+                                        try:
+                                            conn.rollback()
+                                        except Exception:
+                                            pass
                                     
                                     # CRITICAL: Commit the transaction and ensure it's persisted
                                     # We already set autocommit=False at the start of the with block
@@ -288,8 +357,18 @@ def token_required(f):
                                     # Retry lookup with small delay to ensure transaction is visible
                                     import time
                                     for retry_attempt in range(3):
-                                        cursor.execute('SELECT id, username FROM users WHERE email = %s', (email,))
-                                        existing_user = cursor.fetchone()
+                                        existing_user = _optional_exec(
+                                            'SELECT id, username FROM users WHERE firebase_uid = %s ORDER BY id DESC LIMIT 1',
+                                            (uid,),
+                                            fetch_one=True,
+                                        )
+
+                                        if not existing_user:
+                                            cursor.execute(
+                                                'SELECT id, username FROM users WHERE lower(email) = lower(%s) ORDER BY id DESC LIMIT 1',
+                                                (email,),
+                                            )
+                                            existing_user = cursor.fetchone()
                                         if existing_user:
                                             user_id = existing_user[0]
                                             username = existing_user[1]
@@ -316,7 +395,7 @@ def token_required(f):
                             time.sleep(0.25)  # Increased from 100ms to 250ms for Render
 
                             # Cache for subsequent requests in this worker
-                            USER_CACHE_BY_EMAIL[email] = (user_id, username)
+                            USER_CACHE_BY_EMAIL[email_key] = (user_id, username)
 
                             import inspect
                             sig = inspect.signature(f)

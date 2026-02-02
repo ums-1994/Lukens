@@ -67,6 +67,20 @@ def _pg_conn():
     for attempt in range(max_retries):
         try:
             conn = get_pg_pool().getconn()
+
+            # If the previous user of this connection left it in a transaction
+            # (or error state), clean it up *before* issuing any SQL.
+            try:
+                import psycopg2.extensions as ext
+                tx_status = conn.get_transaction_status()
+                if tx_status in (
+                    ext.TRANSACTION_STATUS_INTRANS,
+                    ext.TRANSACTION_STATUS_INERROR,
+                ):
+                    conn.rollback()
+            except Exception:
+                pass
+
             # Test the connection is still alive
             cursor = conn.cursor()
             cursor.execute('SELECT 1')
@@ -98,8 +112,12 @@ def release_pg_conn(conn):
             # Check if connection is still valid and reset its state before returning to pool
             try:
                 # Check if connection is in a transaction and rollback if needed
-                import psycopg2.extensions
-                if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                import psycopg2.extensions as ext
+                tx_status = conn.get_transaction_status()
+                if tx_status in (
+                    ext.TRANSACTION_STATUS_INTRANS,
+                    ext.TRANSACTION_STATUS_INERROR,
+                ):
                     print(f"[DB] Connection in transaction, rolling back before returning to pool")
                     conn.rollback()
                 
@@ -172,6 +190,23 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add is_email_verified column (may already exist): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(255)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add firebase_uid column (may already exist): {e}")
+
+        try:
+            cursor.execute('''
+                CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique
+                ON users(firebase_uid)
+                WHERE firebase_uid IS NOT NULL
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not create users_firebase_uid_unique index: {e}")
 
         # Proposals table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
