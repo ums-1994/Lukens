@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
@@ -13,10 +14,10 @@ class ProposalWizard extends StatefulWidget {
   const ProposalWizard({super.key});
 
   @override
-  State<ProposalWizard> createState() => _ProposalWizardState();
+  State<ProposalWizard> createState() => _ProposalWizardPageState();
 }
 
-class _ProposalWizardState extends State<ProposalWizard>
+class _ProposalWizardPageState extends State<ProposalWizard>
     with TickerProviderStateMixin {
   late PageController _pageController;
   late TabController _tabController;
@@ -62,10 +63,31 @@ class _ProposalWizardState extends State<ProposalWizard>
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
 
+  String _riskGateStatusUpper() {
+    return (_riskAssessment['status'] ?? '').toString().trim().toUpperCase();
+  }
+
+  bool _hasRiskGateOverride() {
+    if (_riskAssessment['overridden'] == true) return true;
+    final override = _riskAssessment['override'];
+    return override is Map<String, dynamic>;
+  }
+
+  bool _isRiskGateBlockedWithoutOverride() {
+    return _riskGateStatusUpper() == 'BLOCK' && !_hasRiskGateOverride();
+  }
+
   // Scroll controllers
   final ScrollController _composeScrollController = ScrollController();
   final ScrollController _governScrollController = ScrollController();
   final ScrollController _riskScrollController = ScrollController();
+  final ScrollController _previewScrollController = ScrollController();
+  final ScrollController _internalSignoffScrollController = ScrollController();
+  final ScrollController _contentEditorScrollController = ScrollController();
+  final ScrollController _clientDetailsScrollController = ScrollController();
+  final ScrollController _templateGridScrollController = ScrollController();
+  final ScrollController _contentModulesScrollController = ScrollController();
+  final ScrollController _projectDetailsScrollController = ScrollController();
 
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
@@ -320,6 +342,13 @@ class _ProposalWizardState extends State<ProposalWizard>
     _composeScrollController.dispose();
     _governScrollController.dispose();
     _riskScrollController.dispose();
+    _previewScrollController.dispose();
+    _internalSignoffScrollController.dispose();
+    _contentEditorScrollController.dispose();
+    _clientDetailsScrollController.dispose();
+    _templateGridScrollController.dispose();
+    _contentModulesScrollController.dispose();
+    _projectDetailsScrollController.dispose();
     super.dispose();
   }
 
@@ -363,20 +392,20 @@ class _ProposalWizardState extends State<ProposalWizard>
       return false;
     }
 
-    final String aiStatus =
-        (_riskAssessment['ai_status'] ?? '').toString().toUpperCase();
-    final String riskLevel =
-        (_riskAssessment['risk_level'] ?? '').toString().toUpperCase();
-
-    final bool isBlocked = aiStatus == 'BLOCKED' || riskLevel == 'HIGH';
+    final status = _riskGateStatusUpper();
+    final bool isBlocked = status == 'BLOCK';
 
     // For low/medium risk we allow progression without extra confirmation
     if (!isBlocked) {
       return true;
     }
 
-    final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final risks = List.from(_riskAssessment['risks'] ?? const []);
+    final num riskScore = (_riskAssessment['risk_score'] as num?) ?? 0;
+    final issues = List<Map<String, dynamic>>.from(
+      _riskAssessment['issues'] ?? const [],
+    );
+
+    final reasonController = TextEditingController();
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -396,7 +425,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Risk Level: ${_riskAssessment['risk_level'] ?? 'High'}',
+                  'Decision: ${status.isEmpty ? 'BLOCK' : status}',
                   style: PremiumTheme.bodyMedium,
                 ),
                 const SizedBox(height: 4),
@@ -404,7 +433,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                   'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
                   style: PremiumTheme.bodyMedium,
                 ),
-                if (risks.isNotEmpty) ...[
+                if (issues.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
                     'Key risks identified:',
@@ -413,9 +442,11 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  ...risks.take(3).map((r) => Padding(
+                  ...issues.take(3).map((issue) => Padding(
                         padding: const EdgeInsets.only(bottom: 4),
-                        child: Text('• ${r.toString()}'),
+                        child: Text(
+                          '• ${(issue['title'] ?? issue['section'] ?? issue['category'] ?? 'Issue').toString()}',
+                        ),
                       )),
                 ],
                 const SizedBox(height: 16),
@@ -423,6 +454,22 @@ class _ProposalWizardState extends State<ProposalWizard>
                   'Proceeding may violate internal governance or expose the client to unmanaged risk. Only override if you are confident the issues are understood and accepted.',
                   style: PremiumTheme.bodyMedium.copyWith(
                     color: PremiumTheme.error,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Override reason (required):',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText:
+                        'Explain why you are overriding the BLOCK decision',
                   ),
                 ),
               ],
@@ -438,7 +485,19 @@ class _ProposalWizardState extends State<ProposalWizard>
                 backgroundColor: PremiumTheme.error,
                 foregroundColor: Colors.white,
               ),
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Override reason is required.'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(context).pop(true);
+              },
               child: const Text('Override and Proceed'),
             ),
           ],
@@ -446,7 +505,63 @@ class _ProposalWizardState extends State<ProposalWizard>
       },
     );
 
-    return confirmed ?? false;
+    if (confirmed != true) {
+      return false;
+    }
+
+    final runIdRaw = _riskAssessment['run_id'];
+    final int? runId = runIdRaw is int
+        ? runIdRaw
+        : (runIdRaw is String ? int.tryParse(runIdRaw) : null);
+    if (runId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Missing Risk Gate run id; cannot override.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
+
+    final reason = reasonController.text.trim();
+    try {
+      setState(() => _isLoading = true);
+
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final overrideResult = await AIAnalysisService.overrideRiskGateRun(
+        runId: runId,
+        overrideReason: reason,
+      );
+
+      setState(() {
+        _riskAssessment = {
+          ..._riskAssessment,
+          'overridden': true,
+          'override': overrideResult['override'] ??
+              {
+                'approved_by': overrideResult['approved_by'],
+                'approved_at': overrideResult['approved_at'],
+                'override_reason': reason,
+              },
+        };
+        _isLoading = false;
+      });
+
+      return true;
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Risk Gate override failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
   }
 
   String _getStepTitle(int step) {
@@ -1088,6 +1203,7 @@ class _ProposalWizardState extends State<ProposalWizard>
       context: context,
       builder: (dialogContext) {
         final controller = TextEditingController(text: content);
+        final scrollController = ScrollController();
 
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -1109,7 +1225,9 @@ class _ProposalWizardState extends State<ProposalWizard>
                   SizedBox(
                     height: 260,
                     child: CustomScrollbar(
+                      controller: scrollController,
                       child: SingleChildScrollView(
+                        controller: scrollController,
                         physics: const AlwaysScrollableScrollPhysics(),
                         child: TextFormField(
                           controller: controller,
@@ -1265,10 +1383,13 @@ class _ProposalWizardState extends State<ProposalWizard>
           'Fill in the selected sections (you can complete this later)',
           style: PremiumTheme.bodyMedium,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Expanded(
           child: CustomScrollbar(
+            controller: _contentEditorScrollController,
+            scrollbarOrientation: ScrollbarOrientation.left,
             child: SingleChildScrollView(
+              controller: _contentEditorScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 children: selectedIds.map((moduleId) {
@@ -1278,7 +1399,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                   final controller =
                       TextEditingController(text: contents[moduleId] ?? '');
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 18.0),
+                    padding: const EdgeInsets.only(bottom: 12.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1291,7 +1412,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                         const SizedBox(height: 8),
                         GlassContainer(
                           borderRadius: 16,
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(12),
                           child: Column(
                             children: [
                               TextFormField(
@@ -1306,7 +1427,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                                   c[moduleId] = v;
                                   _formData['moduleContents'] = c;
                                 },
-                                maxLines: 6,
+                                minLines: 3,
+                                maxLines: 4,
                                 decoration: InputDecoration(
                                   hintText:
                                       'Provide a high-level overview of the project...',
@@ -1733,6 +1855,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                   ),
                 )
               : CustomScrollbar(
+                  controller: _templateGridScrollController,
                   child: LayoutBuilder(builder: (context, constraints) {
                     // responsive columns: 3 on wide, 2 on medium, 1 on small
                     int crossAxisCount = 1;
@@ -1745,6 +1868,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     }
 
                     return GridView.builder(
+                      controller: _templateGridScrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: crossAxisCount,
@@ -1878,7 +2002,9 @@ class _ProposalWizardState extends State<ProposalWizard>
             const SizedBox(height: 24),
             Expanded(
               child: CustomScrollbar(
+                controller: _clientDetailsScrollController,
                 child: SingleChildScrollView(
+                  controller: _clientDetailsScrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   child: Column(
                     children: [
@@ -2206,7 +2332,9 @@ class _ProposalWizardState extends State<ProposalWizard>
           const SizedBox(height: 24),
           Expanded(
             child: CustomScrollbar(
+              controller: _projectDetailsScrollController,
               child: SingleChildScrollView(
+                controller: _projectDetailsScrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
@@ -2321,7 +2449,10 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _contentModulesScrollController,
+            scrollbarOrientation: ScrollbarOrientation.left,
             child: SingleChildScrollView(
+              controller: _contentModulesScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3083,14 +3214,19 @@ class _ProposalWizardState extends State<ProposalWizard>
       );
     }
 
-    final riskLevel = _riskAssessment['risk_level'] ?? 'Low';
+    final status = _riskAssessment['status'] ?? 'PASS';
+    final riskLevel = status; // Map Risk Gate status to UI display
     final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final risks = _riskAssessment['risks'] ?? [];
-    final recommendations = _riskAssessment['recommendations'] ?? [];
+    final issues = List<Map<String, dynamic>>.from(
+      _riskAssessment['issues'] ?? const [],
+    );
+    final kbCitations = List<Map<String, dynamic>>.from(
+      _riskAssessment['kb_citations'] ?? const [],
+    );
 
     Color riskColor = PremiumTheme.success;
-    if (riskLevel == 'Medium') riskColor = Colors.orange;
-    if (riskLevel == 'High') riskColor = PremiumTheme.error;
+    if (riskLevel == 'REVIEW') riskColor = Colors.orange;
+    if (riskLevel == 'BLOCK') riskColor = PremiumTheme.error;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3141,74 +3277,200 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
         ),
         const SizedBox(height: 16),
-        // Identified Risks
-        if (risks.isNotEmpty) ...[
+        if (issues.isNotEmpty) ...[
           Text(
-            'Identified Risks',
+            'Flagged Issues',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          ...risks.map<Widget>((risk) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: GlassContainer(
-                  borderRadius: 16,
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.flag_outlined,
-                        color: PremiumTheme.error,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          risk.toString(),
-                          style: PremiumTheme.bodyMedium,
+          ...issues.map<Widget>((issue) {
+            final title = issue['title']?.toString() ??
+                issue['section']?.toString() ??
+                'Issue';
+            final description = issue['description']?.toString() ?? '';
+            final action = issue['recommendation']?.toString() ?? '';
+            final severity = issue['severity']?.toString().toLowerCase() ?? '';
+
+            final kbTitle = kbCitations.isNotEmpty
+                ? (kbCitations.first['title']?.toString() ?? '')
+                : '';
+
+            Color iconColor = PremiumTheme.info;
+            if (severity == 'critical' || severity == 'high') {
+              iconColor = PremiumTheme.error;
+            } else if (severity == 'medium') {
+              iconColor = Colors.orange;
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassContainer(
+                borderRadius: 16,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.flag_outlined,
+                          color: iconColor,
+                          size: 20,
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: PremiumTheme.bodyLarge.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (description.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  description,
+                                  style: PremiumTheme.bodyMedium,
+                                ),
+                              ],
+                              if (action.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Recommendation:',
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  action,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                              if (kbTitle.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  'KB citation:',
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  kbTitle,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        if (action.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Copy fix',
+                            onPressed: () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: action),
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Fix copied'),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.copy, size: 18),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                 ),
-              )),
-          const SizedBox(height: 16),
+              ),
+            );
+          }),
+          const SizedBox(height: 4),
         ],
-        // Recommendations
-        if (recommendations.isNotEmpty) ...[
+        // KB Citations
+        if (kbCitations.isNotEmpty) ...[
           Text(
-            'Recommendations',
+            'KB Citations',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          ...recommendations.map<Widget>((rec) => Padding(
+          ...kbCitations.map<Widget>((citation) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GlassContainer(
                   borderRadius: 16,
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.lightbulb_outline,
-                        color: PremiumTheme.info,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          rec.toString(),
-                          style: PremiumTheme.bodyMedium,
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.library_books_outlined,
+                            color: PremiumTheme.info,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  citation['title']?.toString() ?? 'KB Clause',
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Category: ${citation['category']?.toString() ?? ''}',
+                                  style: PremiumTheme.labelMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
+                                ),
+                                if (citation['recommended_text']
+                                        ?.toString()
+                                        .isNotEmpty ==
+                                    true) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Recommended:',
+                                    style: PremiumTheme.labelMedium.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    citation['recommended_text'],
+                                    style: PremiumTheme.bodyMedium,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               )),
+          const SizedBox(height: 4),
         ],
       ],
     );
@@ -3216,6 +3478,18 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   // Internal Approval Builder
   Widget _buildInternalApproval() {
+    final bool sendBlockedByRiskGate = _isRiskGateBlockedWithoutOverride();
+    final override = _riskAssessment['override'];
+    final overrideBy = override is Map
+        ? (override['approved_by']?.toString() ?? '').trim()
+        : '';
+    final overrideAt = override is Map
+        ? (override['approved_at']?.toString() ?? '').trim()
+        : '';
+    final overrideReason = override is Map
+        ? (override['override_reason']?.toString() ?? '').trim()
+        : '';
+
     return Column(
       children: [
         GlassContainer(
@@ -3240,6 +3514,53 @@ class _ProposalWizardState extends State<ProposalWizard>
               _buildApprovalChecklistItem('✓ Risk assessment completed'),
               _buildApprovalChecklistItem('✓ All required sections complete'),
               _buildApprovalChecklistItem('✓ Content reviewed for accuracy'),
+              if (_hasRiskGateOverride()) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Risk Gate Override Active',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      if (overrideBy.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Approved by: $overrideBy',
+                            style: PremiumTheme.bodyMedium,
+                          ),
+                        ),
+                      if (overrideAt.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            'Approved at: $overrideAt',
+                            style: PremiumTheme.bodyMedium,
+                          ),
+                        ),
+                      if (overrideReason.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'Reason: $overrideReason',
+                            style: PremiumTheme.bodyMedium,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               if (_isInternalApproved)
                 Container(
@@ -3277,6 +3598,37 @@ class _ProposalWizardState extends State<ProposalWizard>
                         horizontal: 24, vertical: 16),
                   ),
                 ),
+              if (_isInternalApproved && !_isClientSigned) ...[
+                const SizedBox(height: 16),
+                if (sendBlockedByRiskGate)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: PremiumTheme.error.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: PremiumTheme.error),
+                    ),
+                    child: Text(
+                      'Sending is blocked because AI Risk Gate returned BLOCK and no override exists. Go back to the AI Risk Gate step and submit an override to proceed.',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: PremiumTheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: sendBlockedByRiskGate ? null : _sendToClient,
+                  icon: const Icon(Icons.mark_email_read_outlined),
+                  label: const Text('Send to Client'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -3411,50 +3763,28 @@ class _ProposalWizardState extends State<ProposalWizard>
         AIAnalysisService.setAuthToken(app.authToken!);
       }
 
-      final proposalData = _buildProposalDataForAI();
-
-      final analysis =
-          await AIAnalysisService.analyzeProposalContent(proposalData);
-
-      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
-      String riskLevel;
-      if (rawRiskScore <= 10) {
-        riskLevel = 'Low';
-      } else if (rawRiskScore <= 20) {
-        riskLevel = 'Medium';
-      } else {
-        riskLevel = 'High';
+      if (_proposalId == null || _proposalId!.toString().startsWith('draft')) {
+        final created = await app.createProposal(
+          (_formData['opportunityName']?.toString().isNotEmpty ?? false)
+              ? _formData['opportunityName'].toString()
+              : (_formData['proposalTitle']?.toString() ?? 'Untitled Proposal'),
+          (_formData['clientName']?.toString() ?? ''),
+          templateKey: _formData['templateId']?.toString().isNotEmpty == true
+              ? _formData['templateId'].toString()
+              : null,
+        );
+        final createdId = created?['id']?.toString();
+        if (createdId == null || createdId.isEmpty) {
+          throw Exception('Failed to create proposal');
+        }
+        _proposalId = createdId;
       }
 
-      final issues = List<Map<String, dynamic>>.from(
-        analysis['issues'] ?? const [],
-      );
-
-      final risks = issues.map((issue) {
-        return issue['title']?.toString() ?? 'Issue';
-      }).toList();
-
-      final recommendations = issues
-          .map((issue) {
-            return issue['action']?.toString() ??
-                issue['description']?.toString() ??
-                '';
-          })
-          .where((r) => r.isNotEmpty)
-          .toList();
-
-      // Convert raw risk points into a 0-100"score" where higher is better
-      final double displayScore = (100 - rawRiskScore).clamp(0, 100).toDouble();
+      final analysis =
+          await AIAnalysisService.analyzeProposalRisks(_proposalId!.toString());
 
       setState(() {
-        _riskAssessment = {
-          'risk_level': riskLevel,
-          'risk_score': displayScore,
-          'risks': risks,
-          'recommendations': recommendations,
-          'ai_status': analysis['status'] ?? 'Ready',
-          'ai_riskScore': rawRiskScore,
-        };
+        _riskAssessment = analysis;
         _isLoading = false;
       });
     } catch (e) {
@@ -3591,6 +3921,17 @@ class _ProposalWizardState extends State<ProposalWizard>
   }
 
   Future<void> _sendToClient() async {
+    if (_isRiskGateBlockedWithoutOverride()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Cannot send: AI Risk Gate returned BLOCK and no override exists.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (!_isInternalApproved) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

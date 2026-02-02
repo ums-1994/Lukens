@@ -21,6 +21,7 @@ import psycopg2
 import psycopg2.extras
 import cloudinary
 import cloudinary.uploader
+import cloudinary.api
 
 # PDF Generation
 try:
@@ -56,6 +57,7 @@ from werkzeug.utils import secure_filename
 from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
+from api.utils.ai_safety import AISafetyError
 
 # Load environment variables
 load_dotenv()
@@ -68,6 +70,8 @@ CORS(
         r"/*": {
             "origins": [
                 "https://proposals2025.netlify.app",
+                r"^http://localhost(:\\d+)?$",
+                r"^http://127\\.0\\.0\\.1(:\\d+)?$",
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
@@ -92,6 +96,7 @@ from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 from api.routes.approver import bp as approver_bp
+from api.routes.risk_gate import bp as risk_gate_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -101,6 +106,7 @@ app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
+app.register_blueprint(risk_gate_bp)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -141,18 +147,61 @@ BACKEND_TYPE = 'postgresql'
 # PostgreSQL connection pool
 _pg_pool = None
 
+
+def _build_db_config_from_env():
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        from urllib.parse import urlparse, parse_qs
+
+        parsed = urlparse(database_url)
+        if parsed.scheme not in ('postgres', 'postgresql'):
+            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+
+        db_config = {
+            'host': parsed.hostname,
+            'database': (parsed.path or '').lstrip('/'),
+            'user': parsed.username,
+            'password': parsed.password,
+            'port': parsed.port or 5432,
+        }
+
+        query = parse_qs(parsed.query or '')
+        sslmode_from_url = (query.get('sslmode') or [None])[0]
+
+        ssl_mode = sslmode_from_url or os.getenv('DB_SSLMODE')
+        if not ssl_mode:
+            if os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
+                ssl_mode = 'require'
+            elif db_config.get('host') and 'render.com' in db_config['host'].lower():
+                ssl_mode = 'require'
+            else:
+                ssl_mode = 'prefer'
+
+        if ssl_mode:
+            db_config['sslmode'] = ssl_mode
+
+        missing = [k for k in ('host', 'database', 'user') if not db_config.get(k)]
+        if missing:
+            raise ValueError(f"DATABASE_URL missing required parts: {', '.join(missing)}")
+
+        return db_config
+
+    return {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'database': os.getenv('DB_NAME', 'proposal_db'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+        'port': int(os.getenv('DB_PORT', '5432')),
+    }
+
 def get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         import psycopg2.pool
         try:
-            db_config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'proposal_db'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'port': int(os.getenv('DB_PORT', '5432'))
-            }
+            db_config = _build_db_config_from_env()
+            if 'sslmode' in db_config:
+                print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
                 minconn=1,
@@ -235,6 +284,48 @@ def init_pg_schema():
         client_can_edit BOOLEAN DEFAULT false,
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
+
+        # Risk Gate runs + override audit trail
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_runs (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            requested_by VARCHAR(255),
+            status VARCHAR(20) NOT NULL,
+            risk_score INTEGER NOT NULL,
+            issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+            kb_citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+            redaction_summary JSONB,
+            overridden BOOLEAN NOT NULL DEFAULT FALSE,
+            override_reason TEXT,
+            overridden_by VARCHAR(255),
+            overridden_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_runs_proposal_id
+               ON risk_gate_runs(proposal_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_overrides (
+            id SERIAL PRIMARY KEY,
+            run_id INTEGER NOT NULL,
+            override_reason TEXT NOT NULL,
+            approved_by VARCHAR(255) NOT NULL,
+            approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (run_id) REFERENCES risk_gate_runs(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_overrides_run_id
+               ON risk_gate_overrides(run_id, approved_at DESC)'''
+        )
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
         id SERIAL PRIMARY KEY,
@@ -2685,9 +2776,14 @@ def ai_improve_content(username):
         
         return result, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error improving content: {e}")
-        return {'detail': str(e)}, 500
+        return {
+            "detail": "Upstream AI provider error",
+            "blocked": False,
+        }, 502
 
 @app.post("/ai/generate-full-proposal")
 @token_required

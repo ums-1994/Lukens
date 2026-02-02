@@ -2,17 +2,457 @@
 Creator role routes - Content management, proposal CRUD, AI features, uploads
 """
 from flask import Blueprint, request, jsonify
+import io
+import json
 import os
+import re
 import traceback
 import cloudinary
+import cloudinary.api
 import cloudinary.uploader
 import psycopg2.extras
 from datetime import datetime
+import requests
+
+try:
+    from PyPDF2 import PdfReader
+except ImportError:
+    PdfReader = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
+from api.utils.ai_safety import AISafetyError
 
 bp = Blueprint('creator', __name__, url_prefix='')
+
+
+def _normalize_kb_filter(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def _kb_clause_keys_for_issue(issue: dict):
+    category = str(issue.get("category") or "").lower()
+    description = str(issue.get("description") or "").lower()
+    recommendation = str(issue.get("recommendation") or "").lower()
+    combined = " ".join([category, description, recommendation])
+
+    clause_keys = set()
+
+    if any(t in combined for t in ["credential", "api key", "apikey", "secret", "token", "password"]):
+        clause_keys.add("no_credentials_minimum")
+
+    if any(
+        t in combined
+        for t in [
+            "pii",
+            "personal data",
+            "personal information",
+            "id number",
+            "passport",
+            "email",
+            "phone",
+        ]
+    ):
+        clause_keys.add("pii_handling_minimum")
+
+    if any(t in combined for t in ["confidential", "confidentiality", "nda", "non-disclosure"]):
+        clause_keys.add("confidentiality_minimum")
+
+    return sorted(clause_keys)
+
+
+def _kb_recommendations_for_issues(conn, issues):
+    if not issues:
+        return {
+            "clause_keys": [],
+            "clauses": [],
+        }
+
+    clause_keys = set()
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        for key in _kb_clause_keys_for_issue(issue):
+            clause_keys.add(key)
+
+    clause_keys = sorted(clause_keys)
+    if not clause_keys:
+        return {
+            "clause_keys": [],
+            "clauses": [],
+        }
+
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        """
+        SELECT
+            c.id,
+            d.key AS document_key,
+            c.clause_key,
+            c.title,
+            c.category,
+            c.severity,
+            c.clause_text,
+            c.recommended_text,
+            c.tags,
+            c.is_active,
+            c.created_at,
+            c.updated_at
+        FROM kb_clauses c
+        JOIN kb_documents d ON d.id = c.document_id
+        WHERE c.is_active = TRUE
+          AND c.clause_key = ANY(%s)
+        ORDER BY c.id
+        """,
+        (clause_keys,),
+    )
+    clauses = cursor.fetchall() or []
+    return {
+        "clause_keys": clause_keys,
+        "clauses": [dict(r) for r in clauses],
+    }
+
+
+@bp.get("/kb/documents")
+@token_required
+def kb_list_documents(username=None):
+    try:
+        keys = request.args.getlist("key") or None
+        include_inactive = (request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
+
+        where = ["1=1"]
+        params = []
+        if not include_inactive:
+            where.append("is_active = TRUE")
+        if keys:
+            where.append("key = ANY(%s)")
+            params.append(keys)
+
+        where_sql = " AND ".join(where)
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                f"""
+                SELECT id, key, title, doc_type, tags, body, version, is_active, created_at, updated_at
+                FROM kb_documents
+                WHERE {where_sql}
+                ORDER BY id
+                """,
+                tuple(params),
+            )
+            docs = cursor.fetchall() or []
+            return {"documents": [dict(r) for r in docs]}, 200
+    except Exception as e:
+        print(f"❌ Error listing kb documents: {e}")
+        traceback.print_exc()
+        return {"detail": str(e)}, 500
+
+
+@bp.get("/kb/clauses")
+@token_required
+def kb_list_clauses(username=None):
+    try:
+        document_key = _normalize_kb_filter(request.args.get("document_key"))
+        category = _normalize_kb_filter(request.args.get("category"))
+        severity = _normalize_kb_filter(request.args.get("severity"))
+        clause_keys = request.args.getlist("clause_key") or None
+        include_inactive = (request.args.get("include_inactive") or "").lower() in ("1", "true", "yes")
+
+        where = ["1=1"]
+        params = []
+        if not include_inactive:
+            where.append("c.is_active = TRUE")
+        if document_key:
+            where.append("d.key = %s")
+            params.append(document_key)
+        if clause_keys:
+            where.append("c.clause_key = ANY(%s)")
+            params.append(clause_keys)
+        if category:
+            where.append("LOWER(c.category) = LOWER(%s)")
+            params.append(category)
+        if severity:
+            where.append("LOWER(c.severity) = LOWER(%s)")
+            params.append(severity)
+
+        where_sql = " AND ".join(where)
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                f"""
+                SELECT
+                    c.id,
+                    d.key AS document_key,
+                    c.clause_key,
+                    c.title,
+                    c.category,
+                    c.severity,
+                    c.clause_text,
+                    c.recommended_text,
+                    c.tags,
+                    c.is_active,
+                    c.created_at,
+                    c.updated_at
+                FROM kb_clauses c
+                JOIN kb_documents d ON d.id = c.document_id
+                WHERE {where_sql}
+                ORDER BY c.id
+                """,
+                tuple(params),
+            )
+            clauses = cursor.fetchall() or []
+            return {"clauses": [dict(r) for r in clauses]}, 200
+    except Exception as e:
+        print(f"❌ Error listing kb clauses: {e}")
+        traceback.print_exc()
+        return {"detail": str(e)}, 500
+
+
+def _slugify(value: str) -> str:
+    value = (value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value).strip("_")
+    return value or "kb_doc"
+
+
+def _download_asset_bytes(*, url: str) -> tuple[bytes, str | None]:
+    resp = requests.get(url, timeout=60)
+    resp.raise_for_status()
+    content_type = resp.headers.get("content-type")
+    return resp.content, content_type
+
+
+def _extract_text_from_file_bytes(file_bytes: bytes, content_type: str | None, filename: str | None) -> str:
+    lowered_name = (filename or "").lower()
+    lowered_ct = (content_type or "").lower()
+
+    if lowered_name.endswith(".pdf") or "application/pdf" in lowered_ct:
+        if PdfReader is None:
+            raise ValueError("PDF extraction requires PyPDF2 to be installed")
+        reader = PdfReader(io.BytesIO(file_bytes))
+        parts = []
+        for page in reader.pages:
+            try:
+                parts.append(page.extract_text() or "")
+            except Exception:
+                parts.append("")
+        return "\n".join(parts).strip()
+
+    if lowered_name.endswith(".docx") or "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in lowered_ct:
+        if docx is None:
+            raise ValueError("DOCX extraction requires python-docx to be installed")
+        doc = docx.Document(io.BytesIO(file_bytes))
+        return "\n".join([p.text for p in doc.paragraphs if p.text]).strip()
+
+    if lowered_name.endswith(".txt") or lowered_ct.startswith("text/"):
+        return file_bytes.decode("utf-8", errors="ignore").strip()
+
+    return file_bytes.decode("utf-8", errors="ignore").strip()
+
+
+@bp.post("/kb/import/cloudinary")
+@token_required
+def kb_import_from_cloudinary(username=None):
+    try:
+        data = request.get_json() or {}
+
+        public_id = (data.get("public_id") or "").strip() or None
+        url = (data.get("url") or "").strip() or None
+
+        document_key = (data.get("document_key") or "").strip() or None
+        title = (data.get("title") or "").strip() or None
+        doc_type = (data.get("doc_type") or "policy").strip() or "policy"
+        tags = data.get("tags")
+        version = (data.get("version") or "").strip() or None
+
+        if not public_id and not url:
+            return {"detail": "public_id or url is required"}, 400
+
+        if public_id and not url:
+            resource = cloudinary.api.resource(public_id, resource_type="raw")
+            url = resource.get("secure_url") or resource.get("url")
+            if not title:
+                title = resource.get("original_filename")
+            filename = resource.get("original_filename")
+            ext = resource.get("format")
+            if filename and ext and not filename.lower().endswith(f".{ext}"):
+                filename = f"{filename}.{ext}"
+        else:
+            filename = None
+
+        if not url:
+            return {"detail": "Could not resolve asset url"}, 400
+
+        file_bytes, content_type = _download_asset_bytes(url=url)
+        extracted_text = _extract_text_from_file_bytes(file_bytes, content_type, filename)
+        if not extracted_text:
+            return {"detail": "Could not extract text from document"}, 400
+
+        from ai_service import ai_service
+        from api.utils.ai_safety import sanitize_for_external_ai, AISafetyError
+
+        safety_result = sanitize_for_external_ai({"kb_source_text": extracted_text[:200000]})
+        if safety_result.blocked:
+            raise AISafetyError(
+                "Blocked outbound AI KB import due to sensitive data detected.",
+                reasons=safety_result.block_reasons,
+            )
+
+        kb_title = title or "KB Document"
+        kb_key = document_key or _slugify(kb_title)
+
+        prompt = f"""You are a compliance and governance assistant. Extract reusable knowledge base clauses from the provided document.
+
+Document Title: {kb_title}
+
+Document Text:
+{safety_result.sanitized.get('kb_source_text')}
+
+Return ONLY valid JSON in this exact shape:
+{{
+  "document": {{
+    "key": "string",
+    "title": "string",
+    "doc_type": "policy|template|legal|security|process|other",
+    "version": "string|null",
+    "tags": ["tag1", "tag2"],
+    "source_url": "string|null"
+  }},
+  "clauses": [
+    {{
+      "clause_key": "string",
+      "title": "string",
+      "category": "security|legal|privacy|governance|quality|delivery|other",
+      "severity": "low|medium|high|critical",
+      "clause_text": "string",
+      "recommended_text": "string",
+      "tags": ["tag1", "tag2"]
+    }}
+  ]
+}}
+
+Rules:
+- Produce 5-20 clauses max.
+- clause_key must be unique, snake_case, and stable.
+- Keep clause_text concise.
+"""
+
+        messages = [
+            {"role": "system", "content": "You extract structured KB clauses. Always return valid JSON only."},
+            {"role": "user", "content": prompt},
+        ]
+
+        response_text = ai_service._make_request(messages, temperature=0.2, max_tokens=2000)
+        start_idx = response_text.find("{")
+        end_idx = response_text.rfind("}") + 1
+        payload = response_text[start_idx:end_idx]
+        parsed = json.loads(payload)
+
+        parsed_doc = parsed.get("document") or {}
+        clauses = parsed.get("clauses") or []
+
+        doc_tags = parsed_doc.get("tags")
+        if not isinstance(doc_tags, list):
+            doc_tags = []
+        if isinstance(tags, list):
+            doc_tags = list(dict.fromkeys([*doc_tags, *tags]))
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """
+                INSERT INTO kb_documents (key, title, doc_type, tags, body, version)
+                VALUES (%s, %s, %s, %s::jsonb, %s, %s)
+                ON CONFLICT (key)
+                DO UPDATE SET
+                  title = EXCLUDED.title,
+                  doc_type = EXCLUDED.doc_type,
+                  tags = EXCLUDED.tags,
+                  body = EXCLUDED.body,
+                  version = EXCLUDED.version,
+                  updated_at = CURRENT_TIMESTAMP
+                RETURNING id
+                """,
+                (
+                    kb_key,
+                    parsed_doc.get("title") or kb_title,
+                    parsed_doc.get("doc_type") or doc_type,
+                    json.dumps(doc_tags),
+                    (parsed_doc.get("source_url") or url),
+                    parsed_doc.get("version") or version,
+                ),
+            )
+            document_id = (cursor.fetchone() or {}).get("id")
+
+            inserted = 0
+            for idx, clause in enumerate(clauses):
+                if not isinstance(clause, dict):
+                    continue
+                clause_key = (clause.get("clause_key") or "").strip()
+                clause_title = (clause.get("title") or "").strip() or f"Clause {idx + 1}"
+                category = (clause.get("category") or "other").strip() or "other"
+                severity = (clause.get("severity") or "medium").strip() or "medium"
+                clause_text = (clause.get("clause_text") or "").strip()
+                recommended_text = (clause.get("recommended_text") or "").strip() or None
+                clause_tags = clause.get("tags")
+                if not isinstance(clause_tags, list):
+                    clause_tags = []
+
+                if not clause_text:
+                    continue
+
+                if not clause_key:
+                    clause_key = f"{kb_key}_{_slugify(clause_title)}"
+
+                cursor.execute(
+                    """
+                    INSERT INTO kb_clauses (document_id, clause_key, title, category, severity, clause_text, recommended_text, tags)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (clause_key)
+                    DO UPDATE SET
+                      title = EXCLUDED.title,
+                      category = EXCLUDED.category,
+                      severity = EXCLUDED.severity,
+                      clause_text = EXCLUDED.clause_text,
+                      recommended_text = EXCLUDED.recommended_text,
+                      tags = EXCLUDED.tags,
+                      updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        document_id,
+                        clause_key,
+                        clause_title,
+                        category,
+                        severity,
+                        clause_text,
+                        recommended_text,
+                        json.dumps(clause_tags),
+                    ),
+                )
+                inserted += 1
+
+            conn.commit()
+
+        return {
+            "document_key": kb_key,
+            "title": kb_title,
+            "source_url": url,
+            "clauses_upserted": inserted,
+        }, 200
+
+    except Exception as e:
+        print(f"❌ KB import error: {e}")
+        traceback.print_exc()
+        return {"detail": "Internal error"}, 500
 
 # ============================================================================
 # CONTENT LIBRARY ROUTES
@@ -716,6 +1156,8 @@ def ai_generate_content(username=None):
             'section_type': section_type
         }, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error generating AI content: {e}")
         return {'detail': str(e)}, 500
@@ -760,9 +1202,14 @@ def ai_improve_content(username=None):
         
         return result, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error improving content: {e}")
-        return {'detail': str(e)}, 500
+        return {
+            "detail": "Upstream AI provider error",
+            "blocked": False,
+        }, 502
 
 @bp.post("/ai/generate-full-proposal")
 @token_required
@@ -816,6 +1263,8 @@ def ai_generate_full_proposal(username=None):
             'section_count': len(sections)
         }, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error generating full proposal: {e}")
         return {'detail': str(e)}, 500
@@ -848,9 +1297,14 @@ def ai_analyze_risks(username=None):
             
             # Analyze risks
             risk_analysis = ai_service.analyze_proposal_risks(dict(proposal))
+
+            kb_recommendations = _kb_recommendations_for_issues(conn, risk_analysis.get("issues") or [])
+            risk_analysis["kb_recommendations"] = kb_recommendations
             
             return risk_analysis, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error analyzing risks: {e}")
         return {'detail': str(e)}, 500
