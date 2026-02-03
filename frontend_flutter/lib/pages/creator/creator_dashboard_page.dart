@@ -1019,7 +1019,6 @@ class _DashboardPageState extends State<DashboardPage>
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        // Templates functionality - redirect to content library for now
         Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':

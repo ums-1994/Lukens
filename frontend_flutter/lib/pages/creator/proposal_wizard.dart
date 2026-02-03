@@ -1,24 +1,23 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
-import '../../services/api_service.dart';
+import '../../services/client_service.dart';
+import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
 import 'template_library_page.dart';
-import 'blank_document_editor/services/document_proposal_service.dart';
 
 class ProposalWizard extends StatefulWidget {
   const ProposalWizard({super.key});
 
   @override
-  State<ProposalWizard> createState() => _ProposalWizardState();
+  State<ProposalWizard> createState() => _ProposalWizardPageState();
 }
 
-class _ProposalWizardState extends State<ProposalWizard>
+class _ProposalWizardPageState extends State<ProposalWizard>
     with TickerProviderStateMixin {
   late PageController _pageController;
   late TabController _tabController;
@@ -28,6 +27,12 @@ class _ProposalWizardState extends State<ProposalWizard>
   bool _isLoadingTemplates = true;
   List<Template> _availableTemplates = [];
 
+  // Client management
+  List<Map<String, dynamic>> _clients = [];
+  bool _isLoadingClients = false;
+  Map<String, dynamic>? _selectedClient;
+  bool _useManualEntry = false;
+
   // Form data
   final Map<String, dynamic> _formData = {
     'templateId': '',
@@ -35,6 +40,12 @@ class _ProposalWizardState extends State<ProposalWizard>
     'proposalTitle': '',
     'clientName': '',
     'clientEmail': '',
+    'clientHolding': '',
+    'clientAddress': '',
+    'clientContactName': '',
+    'clientContactEmail': '',
+    'clientContactMobile': '',
+    'clientId': null,
     'opportunityName': '',
     'projectType': '',
     'estimatedValue': '',
@@ -52,20 +63,39 @@ class _ProposalWizardState extends State<ProposalWizard>
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
 
+  String _riskGateStatusUpper() {
+    return (_riskAssessment['status'] ?? '').toString().trim().toUpperCase();
+  }
+
+  bool _hasRiskGateOverride() {
+    if (_riskAssessment['overridden'] == true) return true;
+    final override = _riskAssessment['override'];
+    return override is Map<String, dynamic>;
+  }
+
+  bool _isRiskGateBlockedWithoutOverride() {
+    return _riskGateStatusUpper() == 'BLOCK' && !_hasRiskGateOverride();
+  }
+
   // Scroll controllers
   final ScrollController _composeScrollController = ScrollController();
   final ScrollController _governScrollController = ScrollController();
   final ScrollController _riskScrollController = ScrollController();
   final ScrollController _previewScrollController = ScrollController();
   final ScrollController _internalSignoffScrollController = ScrollController();
+  final ScrollController _contentEditorScrollController = ScrollController();
+  final ScrollController _clientDetailsScrollController = ScrollController();
+  final ScrollController _templateGridScrollController = ScrollController();
+  final ScrollController _contentModulesScrollController = ScrollController();
+  final ScrollController _projectDetailsScrollController = ScrollController();
 
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
     {'number': '1', 'label': 'Compose'},
     {'number': '2', 'label': 'Govern'},
     {'number': '3', 'label': 'AI Risk Gate'},
-    {'number': '4', 'label': 'Preview'},
-    {'number': '5', 'label': 'Internal Sign-off'},
+    {'number': '4', 'label': 'Internal Sign-off'},
+    {'number': '5', 'label': 'Client Sign-off'},
   ];
 
   // Content modules
@@ -154,6 +184,64 @@ class _ProposalWizardState extends State<ProposalWizard>
     _formData['moduleContents'] = <String, String>{};
     // Load templates from template library
     _loadTemplatesFromLibrary();
+    // Load clients for dropdown
+    _loadClients();
+  }
+
+  Future<void> _loadClients() async {
+    setState(() => _isLoadingClients = true);
+    try {
+      final token = AuthService.token;
+      if (token != null) {
+        final clients = await ClientService.getClients(token);
+        if (mounted) {
+          setState(() {
+            _clients = List<Map<String, dynamic>>.from(clients);
+            _isLoadingClients = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading clients: $e');
+      if (mounted) {
+        setState(() => _isLoadingClients = false);
+      }
+    }
+  }
+
+  void _onClientSelected(Map<String, dynamic>? client) {
+    setState(() {
+      _selectedClient = client;
+      _useManualEntry = client == null;
+
+      if (client != null) {
+        // Auto-populate client details
+        _formData['clientName'] =
+            client['company_name'] ?? client['name'] ?? '';
+        _formData['clientEmail'] = client['email'] ?? '';
+        _formData['clientHolding'] =
+            client['organization'] ?? client['holding'] ?? '';
+        _formData['clientAddress'] =
+            client['location'] ?? client['address'] ?? '';
+        _formData['clientContactName'] =
+            client['contact_person'] ?? client['contact_name'] ?? '';
+        _formData['clientContactEmail'] =
+            client['contact_email'] ?? client['email'] ?? '';
+        _formData['clientContactMobile'] =
+            client['phone'] ?? client['mobile'] ?? '';
+        _formData['clientId'] = client['id'];
+      } else {
+        // Clear fields when switching to manual entry
+        _formData['clientName'] = '';
+        _formData['clientEmail'] = '';
+        _formData['clientHolding'] = '';
+        _formData['clientAddress'] = '';
+        _formData['clientContactName'] = '';
+        _formData['clientContactEmail'] = '';
+        _formData['clientContactMobile'] = '';
+        _formData['clientId'] = null;
+      }
+    });
   }
 
   Future<void> _loadTemplatesFromLibrary() async {
@@ -256,6 +344,11 @@ class _ProposalWizardState extends State<ProposalWizard>
     _riskScrollController.dispose();
     _previewScrollController.dispose();
     _internalSignoffScrollController.dispose();
+    _contentEditorScrollController.dispose();
+    _clientDetailsScrollController.dispose();
+    _templateGridScrollController.dispose();
+    _contentModulesScrollController.dispose();
+    _projectDetailsScrollController.dispose();
     super.dispose();
   }
 
@@ -299,20 +392,20 @@ class _ProposalWizardState extends State<ProposalWizard>
       return false;
     }
 
-    final String aiStatus =
-        (_riskAssessment['ai_status'] ?? '').toString().toUpperCase();
-    final String riskLevel =
-        (_riskAssessment['risk_level'] ?? '').toString().toUpperCase();
-
-    final bool isBlocked = aiStatus == 'BLOCKED' || riskLevel == 'HIGH';
+    final status = _riskGateStatusUpper();
+    final bool isBlocked = status == 'BLOCK';
 
     // For low/medium risk we allow progression without extra confirmation
     if (!isBlocked) {
       return true;
     }
 
-    final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final risks = List.from(_riskAssessment['risks'] ?? const []);
+    final num riskScore = (_riskAssessment['risk_score'] as num?) ?? 0;
+    final issues = List<Map<String, dynamic>>.from(
+      _riskAssessment['issues'] ?? const [],
+    );
+
+    final reasonController = TextEditingController();
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -332,7 +425,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Risk Level: ${_riskAssessment['risk_level'] ?? 'High'}',
+                  'Decision: ${status.isEmpty ? 'BLOCK' : status}',
                   style: PremiumTheme.bodyMedium,
                 ),
                 const SizedBox(height: 4),
@@ -340,7 +433,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                   'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
                   style: PremiumTheme.bodyMedium,
                 ),
-                if (risks.isNotEmpty) ...[
+                if (issues.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
                     'Key risks identified:',
@@ -349,9 +442,11 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  ...risks.take(3).map((r) => Padding(
+                  ...issues.take(3).map((issue) => Padding(
                         padding: const EdgeInsets.only(bottom: 4),
-                        child: Text('• ${r.toString()}'),
+                        child: Text(
+                          '• ${(issue['title'] ?? issue['section'] ?? issue['category'] ?? 'Issue').toString()}',
+                        ),
                       )),
                 ],
                 const SizedBox(height: 16),
@@ -359,6 +454,22 @@ class _ProposalWizardState extends State<ProposalWizard>
                   'Proceeding may violate internal governance or expose the client to unmanaged risk. Only override if you are confident the issues are understood and accepted.',
                   style: PremiumTheme.bodyMedium.copyWith(
                     color: PremiumTheme.error,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Override reason (required):',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText:
+                        'Explain why you are overriding the BLOCK decision',
                   ),
                 ),
               ],
@@ -374,7 +485,19 @@ class _ProposalWizardState extends State<ProposalWizard>
                 backgroundColor: PremiumTheme.error,
                 foregroundColor: Colors.white,
               ),
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Override reason is required.'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(context).pop(true);
+              },
               child: const Text('Override and Proceed'),
             ),
           ],
@@ -382,7 +505,63 @@ class _ProposalWizardState extends State<ProposalWizard>
       },
     );
 
-    return confirmed ?? false;
+    if (confirmed != true) {
+      return false;
+    }
+
+    final runIdRaw = _riskAssessment['run_id'];
+    final int? runId = runIdRaw is int
+        ? runIdRaw
+        : (runIdRaw is String ? int.tryParse(runIdRaw) : null);
+    if (runId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Missing Risk Gate run id; cannot override.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
+
+    final reason = reasonController.text.trim();
+    try {
+      setState(() => _isLoading = true);
+
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final overrideResult = await AIAnalysisService.overrideRiskGateRun(
+        runId: runId,
+        overrideReason: reason,
+      );
+
+      setState(() {
+        _riskAssessment = {
+          ..._riskAssessment,
+          'overridden': true,
+          'override': overrideResult['override'] ??
+              {
+                'approved_by': overrideResult['approved_by'],
+                'approved_at': overrideResult['approved_at'],
+                'override_reason': reason,
+              },
+        };
+        _isLoading = false;
+      });
+
+      return true;
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Risk Gate override failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return false;
+    }
   }
 
   String _getStepTitle(int step) {
@@ -503,104 +682,109 @@ class _ProposalWizardState extends State<ProposalWizard>
         return _governanceResults.isNotEmpty;
       case 2: // AI Risk Gate - require risk assessment to have run
         return _riskAssessment.isNotEmpty;
-      case 3: // Preview - document review step
-        return true;
-      case 4: // Internal Sign-off - always allow clicking Submit (method enforces rules)
-        return true;
+      case 3: // Internal Sign-off - require internal approval flag
+        return _isInternalApproved;
+      case 4: // Client Sign-off - Review
+        return true; // review/confirm step
       default:
         return false;
     }
   }
 
   Future<void> _createProposal() async {
-    if (_isLoading) return;
-
     setState(() => _isLoading = true);
 
     try {
       final app = context.read<AppState>();
 
-      final String opportunityName =
-          (_formData['opportunityName']?.toString().isNotEmpty ?? false)
-              ? _formData['opportunityName'].toString()
-              : 'Untitled Proposal';
-      final String clientName =
-          (_formData['clientName']?.toString().isNotEmpty ?? false)
-              ? _formData['clientName'].toString()
-              : 'Client';
-
-      // 1) Create proposal using legacy AppState so dashboards and lists update
+      // Create proposal in backend so that downstream flows have a real ID
       final created = await app.createProposal(
-        opportunityName,
-        clientName,
+        _formData['opportunityName'],
+        _formData['clientName'],
         templateKey: _formData['templateId']?.toString().isNotEmpty == true
             ? _formData['templateId'].toString()
             : null,
+        clientId: _formData['clientId'],
       );
 
-      String? proposalId;
-      int? proposalIdInt;
-      if (created != null && created['id'] != null) {
-        proposalId = created['id'].toString();
-        proposalIdInt = int.tryParse(proposalId);
-      }
+      final proposalId = (created != null && created['id'] != null)
+          ? created['id'].toString()
+          : 'draft-${DateTime.now().millisecondsSinceEpoch}';
 
-      if (proposalId == null || proposalIdInt == null) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Could not create a proposal record. Please try again before submitting for approval.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
+      _proposalId = proposalId;
 
-      // 2) Enrich proposal in new API layer so approver flow has client email & content
-      final token = app.authToken;
-      if (token != null && token.isNotEmpty) {
-        try {
-          final serializedContent = _serializeWizardContentForBackend(
-            title: opportunityName,
-          );
+      // Build initial proposal data to seed EnhancedCompose
+      final Map<String, String> moduleContents =
+          Map<String, String>.from(_formData['moduleContents'] ?? {});
 
-          await ApiService.updateProposal(
-            token: token,
-            id: proposalIdInt,
-            title: opportunityName,
-            content: serializedContent,
-            clientName:
-                (_formData['clientName']?.toString().isNotEmpty ?? false)
-                    ? _formData['clientName'].toString()
-                    : null,
-            clientEmail:
-                (_formData['clientEmail']?.toString().isNotEmpty ?? false)
-                    ? _formData['clientEmail'].toString()
-                    : null,
-            status: 'draft',
-          );
-        } catch (e) {
-          debugPrint('⚠️ Error enriching proposal with client email: $e');
-        }
-      }
+      final String? opportunityId =
+          created != null && created['opportunity_id'] != null
+              ? created['opportunity_id'].toString()
+              : null;
+      final String? engagementStage =
+          created != null && created['engagement_stage'] != null
+              ? created['engagement_stage'].toString()
+              : null;
+      final String? engagementOpenedAt =
+          created != null && created['engagement_opened_at'] != null
+              ? created['engagement_opened_at'].toString()
+              : null;
 
-      // 3) Store proposal ID locally and move user to Internal Sign-off (step 5)
-      setState(() {
-        _proposalId = proposalId;
-        _isLoading = false;
-        _currentStep = 4;
+      final String? createdAt = created != null && created['created_at'] != null
+          ? created['created_at'].toString()
+          : null;
+
+      final currentUser = app.currentUser;
+      final String? ownerName =
+          currentUser != null && currentUser['full_name'] != null
+              ? currentUser['full_name'].toString()
+              : null;
+
+      final Map<String, dynamic> initialData = {
+        'clientName': _formData['clientName'] ?? '',
+        'clientEmail': _formData['clientEmail'] ?? '',
+        'projectType': _formData['projectType'] ?? '',
+        'estimatedValue': _formData['estimatedValue'] ?? '',
+        'timeline': _formData['timeline'] ?? '',
+        'opportunityName': _formData['opportunityName'] ?? '',
+        'opportunityId': opportunityId ?? '',
+        'engagementStage': engagementStage ?? 'Proposal Drafted',
+        'engagementOpenedAt': engagementOpenedAt ?? '',
+        'ownerName': ownerName ?? '',
+        'createdAt': createdAt ?? '',
+        'versionNumber': 1,
+      };
+
+      moduleContents.forEach((key, value) {
+        initialData[key] = value;
       });
 
-      _pageController.jumpToPage(4);
+      final proposalTitle =
+          (_formData['proposalTitle']?.toString().isNotEmpty ?? false)
+              ? _formData['proposalTitle'].toString()
+              : _formData['opportunityName'];
+
+      // Navigate to enhanced compose page
+      Navigator.pushReplacementNamed(
+        context,
+        '/enhanced-compose',
+        arguments: {
+          'proposalId': proposalId,
+          'proposalTitle': proposalTitle,
+          'templateType': _formData['templateType'],
+          'selectedModules': _formData['selectedModules'],
+          'initialData': initialData,
+        },
+      );
     } catch (e) {
-      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error creating proposal: $e'),
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -640,23 +824,22 @@ class _ProposalWizardState extends State<ProposalWizard>
                 children: [
                   // Header
                   _buildHeader(),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                   // Proposal Workflow
                   GlassContainer(
                     borderRadius: 16,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           'Proposal Workflow',
-                          style: PremiumTheme.bodyMedium.copyWith(
+                          style: PremiumTheme.bodyLarge.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: _workflowSteps.map((step) {
@@ -691,21 +874,20 @@ class _ProposalWizardState extends State<ProposalWizard>
                             child: _buildRiskGateStep(),
                           ), // Step 3: AI Risk Gate
                           SizedBox.expand(
-                            child: _buildReviewPage(),
-                          ), // Step 4: Preview
-                          SizedBox.expand(
                             child: _buildInternalSignoffStep(),
-                          ), // Step 5: Internal Sign-off
+                          ), // Step 4: Internal Sign-off
+                          SizedBox.expand(
+                            child: _buildClientSignoffStep(),
+                          ), // Step 5: Client Sign-off
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 24),
                   // Navigation buttons
                   GlassContainer(
                     borderRadius: 24,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.all(20),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -714,7 +896,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                             onPressed: _previousStep,
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 24, vertical: 8),
+                                  horizontal: 24, vertical: 12),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -729,17 +911,15 @@ class _ProposalWizardState extends State<ProposalWizard>
                         const SizedBox(width: 12),
                         ElevatedButton(
                           onPressed: _canProceed()
-                              ? (_currentStep == 3
+                              ? (_currentStep == _totalSteps - 1
                                   ? _createProposal
-                                  : _currentStep == _totalSteps - 1
-                                      ? _submitForInternalApproval
-                                      : _nextStep)
+                                  : _nextStep)
                               : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: PremiumTheme.teal,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 24, vertical: 8),
+                                horizontal: 24, vertical: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -756,11 +936,9 @@ class _ProposalWizardState extends State<ProposalWizard>
                                   ),
                                 )
                               : Text(
-                                  _currentStep == 3
+                                  _currentStep == _totalSteps - 1
                                       ? 'Create Proposal'
-                                      : _currentStep == _totalSteps - 1
-                                          ? 'Submit for Approval'
-                                          : 'Next',
+                                      : 'Next',
                                   style: PremiumTheme.bodyMedium.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
@@ -852,188 +1030,138 @@ class _ProposalWizardState extends State<ProposalWizard>
   }
 
   Widget _buildReviewPage() {
-    final proposalTitle =
-        (_formData['proposalTitle']?.toString().isNotEmpty ?? false)
-            ? _formData['proposalTitle'].toString()
-            : 'Untitled Proposal';
-    final clientName = (_formData['clientName']?.toString().isNotEmpty ?? false)
-        ? _formData['clientName'].toString()
-        : 'Client Name';
-    final opportunityName =
-        (_formData['opportunityName']?.toString().isNotEmpty ?? false)
-            ? _formData['opportunityName'].toString()
-            : null;
+    // Get template details from library
+    final templateId = _formData['templateId']?.toString() ?? '';
+    final template = _availableTemplates.firstWhere(
+      (t) => t.id == templateId,
+      orElse: () => Template(
+        id: '',
+        name: 'Unknown Template',
+        templateType: '',
+        approvalStatus: '',
+        isPublic: false,
+        isApproved: false,
+        version: 1,
+        sections: [],
+        dynamicFields: [],
+        usageCount: 0,
+        createdBy: '',
+        createdDate: DateTime.now(),
+      ),
+    );
 
+    // Get selected modules with names instead of IDs
     final selectedModuleIds =
-        List<String>.from(_formData['selectedModules'] ?? const []);
-    final moduleContents =
-        Map<String, String>.from(_formData['moduleContents'] ?? {});
-
-    final date = DateTime.now();
-    final dateLabel = '${date.day}/${date.month}/${date.year}';
+        List<String>.from(_formData['selectedModules'] ?? []);
+    final selectedModules = _contentModules
+        .where((m) => selectedModuleIds.contains(m['id']))
+        .map((m) => m['name'] as String)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Document Preview',
+          'Review & Create',
           style: PremiumTheme.titleMedium,
         ),
         const SizedBox(height: 8),
         Text(
-          'Review the proposal as your client will see it',
+          'Review your proposal details and create',
           style: PremiumTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
-            controller: _previewScrollController,
             child: SingleChildScrollView(
-              controller: _previewScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 900),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.06),
-                              blurRadius: 18,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              height: 4,
-                              width: 60,
-                              decoration: BoxDecoration(
-                                color: PremiumTheme.teal,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              proposalTitle,
-                              style: const TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Prepared for: $clientName',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Color(0xFF4B5563),
-                              ),
-                            ),
-                            if (opportunityName != null) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                opportunityName,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF6B7280),
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 4),
-                            Text(
-                              'Date: $dateLabel',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF6B7280),
-                              ),
-                            ),
-                          ],
-                        ),
+              child: GlassContainer(
+                borderRadius: 24,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Proposal Summary',
+                      style: PremiumTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(height: 24),
-                      // Content sections
-                      ...selectedModuleIds.map((moduleId) {
-                        final module = _contentModules.firstWhere(
-                          (m) => m['id'] == moduleId,
-                          orElse: () => {
-                            'id': moduleId,
-                            'name': moduleId.toString().replaceAll('_', ' '),
-                          },
-                        );
-
-                        final title =
-                            module['name']?.toString() ?? moduleId.toString();
-                        final content =
-                            _mergePlaceholders(moduleContents[moduleId] ?? '');
-
-                        if (content.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 24),
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
-                                blurRadius: 14,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                height: 3,
-                                width: 40,
-                                decoration: BoxDecoration(
-                                  color: PremiumTheme.teal.withOpacity(0.9),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                title,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF0F172A),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                content,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF2C3E50),
-                                  height: 1.6,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 24),
+                    _buildReviewRow('Template:', template.name),
+                    _buildReviewRow('Client:', _formData['clientName'] ?? ''),
+                    _buildReviewRow(
+                        'Project:', _formData['opportunityName'] ?? ''),
+                    _buildReviewRow(
+                        'Modules:', '${selectedModules.length} selected'),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Next Steps',
+                      style: PremiumTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildNextStepItem(
+                        '• Your proposal will be created in draft status',
+                        PremiumTheme.info),
+                    _buildNextStepItem(
+                        '• You can continue editing and adding content',
+                        PremiumTheme.info),
+                    _buildNextStepItem(
+                        '• Submit for approval when ready', PremiumTheme.info),
+                    _buildNextStepItem(
+                        '• Track progress through the approval workflow',
+                        PremiumTheme.info),
+                  ],
                 ),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildReviewRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNextStepItem(String text, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        text,
+        style: PremiumTheme.bodyMedium.copyWith(
+          color: color,
+          height: 1.5,
+        ),
+      ),
     );
   }
 
@@ -1082,6 +1210,7 @@ class _ProposalWizardState extends State<ProposalWizard>
       context: context,
       builder: (dialogContext) {
         final controller = TextEditingController(text: content);
+        final scrollController = ScrollController();
 
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -1103,7 +1232,9 @@ class _ProposalWizardState extends State<ProposalWizard>
                   SizedBox(
                     height: 260,
                     child: CustomScrollbar(
+                      controller: scrollController,
                       child: SingleChildScrollView(
+                        controller: scrollController,
                         physics: const AlwaysScrollableScrollPhysics(),
                         child: TextFormField(
                           controller: controller,
@@ -1259,10 +1390,13 @@ class _ProposalWizardState extends State<ProposalWizard>
           'Fill in the selected sections (you can complete this later)',
           style: PremiumTheme.bodyMedium,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
         Expanded(
           child: CustomScrollbar(
+            controller: _contentEditorScrollController,
+            scrollbarOrientation: ScrollbarOrientation.left,
             child: SingleChildScrollView(
+              controller: _contentEditorScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 children: selectedIds.map((moduleId) {
@@ -1272,7 +1406,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                   final controller =
                       TextEditingController(text: contents[moduleId] ?? '');
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 18.0),
+                    padding: const EdgeInsets.only(bottom: 12.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1285,7 +1419,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                         const SizedBox(height: 8),
                         GlassContainer(
                           borderRadius: 16,
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(12),
                           child: Column(
                             children: [
                               TextFormField(
@@ -1300,7 +1434,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                                   c[moduleId] = v;
                                   _formData['moduleContents'] = c;
                                 },
-                                maxLines: 6,
+                                minLines: 3,
+                                maxLines: 4,
                                 decoration: InputDecoration(
                                   hintText:
                                       'Provide a high-level overview of the project...',
@@ -1360,8 +1495,8 @@ class _ProposalWizardState extends State<ProposalWizard>
         child: Column(
           children: [
             Container(
-              width: 28,
-              height: 28,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: isCompleted
                     ? PremiumTheme.success
@@ -1382,7 +1517,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     : Text(
                         number,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: isActive
                               ? PremiumTheme.info // Blue text
@@ -1391,7 +1526,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                       ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               label,
               style: PremiumTheme.bodyMedium.copyWith(
@@ -1399,7 +1534,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     ? PremiumTheme.textPrimary
                     : PremiumTheme.textSecondary,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                fontSize: 10,
+                fontSize: 11,
               ),
               textAlign: TextAlign.center,
               maxLines: 2,
@@ -1617,7 +1752,7 @@ class _ProposalWizardState extends State<ProposalWizard>
     );
   }
 
-  // Step 5: Internal Sign-off
+  // Step 4: Internal Sign-off
   Widget _buildInternalSignoffStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1634,11 +1769,36 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
-            controller: _internalSignoffScrollController,
             child: SingleChildScrollView(
-              controller: _internalSignoffScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: _buildInternalApproval(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Step 5: Client Sign-off
+  Widget _buildClientSignoffStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Client Sign-off',
+          style: PremiumTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Send proposal to client for review and signature',
+          style: PremiumTheme.bodyMedium,
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: CustomScrollbar(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: _buildClientSignature(),
             ),
           ),
         ),
@@ -1702,6 +1862,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                   ),
                 )
               : CustomScrollbar(
+                  controller: _templateGridScrollController,
                   child: LayoutBuilder(builder: (context, constraints) {
                     // responsive columns: 3 on wide, 2 on medium, 1 on small
                     int crossAxisCount = 1;
@@ -1714,6 +1875,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                     }
 
                     return GridView.builder(
+                      controller: _templateGridScrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: crossAxisCount,
@@ -1847,7 +2009,9 @@ class _ProposalWizardState extends State<ProposalWizard>
             const SizedBox(height: 24),
             Expanded(
               child: CustomScrollbar(
+                controller: _clientDetailsScrollController,
                 child: SingleChildScrollView(
+                  controller: _clientDetailsScrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   child: Column(
                     children: [
@@ -1860,87 +2024,267 @@ class _ProposalWizardState extends State<ProposalWizard>
                         controller: proposalTitleController,
                       ),
                       const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Name',
-                              'Company or contact name',
-                              (value) => setState(
-                                  () => _formData['clientName'] = value),
-                              Icons.business_outlined,
-                              controller: clientNameController,
+                      // Client Selection Dropdown (active clients only)
+                      _buildClientDropdown(),
+                      const SizedBox(height: 20),
+                      // Client Details Fields (auto-populated or manual)
+                      if (!_useManualEntry && _selectedClient != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.green.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.check_circle,
+                                  color: Colors.green, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Client details auto-filled from database. Update the client record in Client Management to change these values.',
+                                  style: TextStyle(
+                                      color: Colors.green.shade300,
+                                      fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if ((_formData['clientName']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientEmail']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientContactName']
+                                    ?.toString()
+                                    .isEmpty ??
+                                true) ||
+                            (_formData['clientContactEmail']
+                                    ?.toString()
+                                    .isEmpty ??
+                                true))
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.orange.withOpacity(0.4)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    color: Colors.orange, size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'Some client details are missing. You can temporarily fill in the missing fields here (manual override).',
+                                    style: TextStyle(
+                                      color: Colors.orange,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Email',
-                              'client@company.com',
-                              (value) => setState(
-                                  () => _formData['clientEmail'] = value),
-                              Icons.email_outlined,
-                              keyboardType: TextInputType.emailAddress,
-                              controller: clientEmailController,
+                      ],
+                      if (_useManualEntry || _selectedClient == null) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Name',
+                                'Company or contact name',
+                                (value) => setState(
+                                    () => _formData['clientName'] = value),
+                                Icons.business_outlined,
+                                controller: clientNameController,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTextField(
-                        'Client Holding / Group',
-                        'Parent company or group',
-                        (value) =>
-                            setState(() => _formData['clientHolding'] = value),
-                        Icons.account_tree_outlined,
-                        controller: clientHoldingController,
-                      ),
-                      const SizedBox(height: 20),
-                      _buildTextField(
-                        'Client Address',
-                        'Physical or postal address',
-                        (value) =>
-                            setState(() => _formData['clientAddress'] = value),
-                        Icons.location_on_outlined,
-                        controller: clientAddressController,
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Contact Name',
-                              'Primary contact person',
-                              (value) => setState(
-                                  () => _formData['clientContactName'] = value),
-                              Icons.person_outline,
-                              controller: clientContactNameController,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Email',
+                                'client@company.com',
+                                (value) => setState(
+                                    () => _formData['clientEmail'] = value),
+                                Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: clientEmailController,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTextField(
-                              'Client Contact Email',
-                              'contact@client.com',
-                              (value) => setState(() =>
-                                  _formData['clientContactEmail'] = value),
-                              Icons.alternate_email,
-                              keyboardType: TextInputType.emailAddress,
-                              controller: clientContactEmailController,
+                          ],
+                        ),
+                      ] else ...[
+                        // When a client is selected, keep populated fields read-only
+                        // but allow manual override for any missing core fields.
+                        Row(
+                          children: [
+                            Expanded(
+                              child: (_formData['clientName']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Name',
+                                      'Company or contact name',
+                                      (value) => setState(() =>
+                                          _formData['clientName'] = value),
+                                      Icons.business_outlined,
+                                      controller: clientNameController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Name',
+                                      _formData['clientName']?.toString() ?? '',
+                                      Icons.business_outlined,
+                                    ),
                             ),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: (_formData['clientEmail']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Email',
+                                      'client@company.com',
+                                      (value) => setState(() =>
+                                          _formData['clientEmail'] = value),
+                                      Icons.email_outlined,
+                                      keyboardType: TextInputType.emailAddress,
+                                      controller: clientEmailController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Email',
+                                      _formData['clientEmail']?.toString() ??
+                                          '',
+                                      Icons.email_outlined,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 20),
-                      _buildTextField(
-                        'Client Contact Mobile',
-                        'Mobile number',
-                        (value) => setState(
-                            () => _formData['clientContactMobile'] = value),
-                        Icons.phone_iphone,
-                        keyboardType: TextInputType.phone,
-                        controller: clientContactMobileController,
-                      ),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientHolding']?.toString().isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Holding / Group',
+                          'Parent company or group',
+                          (value) => setState(
+                              () => _formData['clientHolding'] = value),
+                          Icons.account_tree_outlined,
+                          controller: clientHoldingController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Holding / Group',
+                          _formData['clientHolding']?.toString() ?? '',
+                          Icons.account_tree_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientAddress']?.toString().isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Address',
+                          'Physical or postal address',
+                          (value) => setState(
+                              () => _formData['clientAddress'] = value),
+                          Icons.location_on_outlined,
+                          controller: clientAddressController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Address',
+                          _formData['clientAddress']?.toString() ?? '',
+                          Icons.location_on_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientContactName']?.toString().isEmpty ??
+                              true) ||
+                          (_formData['clientContactEmail']
+                                  ?.toString()
+                                  .isEmpty ??
+                              true))
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Contact Name',
+                                'Primary contact person',
+                                (value) => setState(() =>
+                                    _formData['clientContactName'] = value),
+                                Icons.person_outline,
+                                controller: clientContactNameController,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Contact Email',
+                                'contact@client.com',
+                                (value) => setState(() =>
+                                    _formData['clientContactEmail'] = value),
+                                Icons.alternate_email,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: clientContactEmailController,
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Client Contact Name',
+                                _formData['clientContactName']?.toString() ??
+                                    '',
+                                Icons.person_outline,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildReadOnlyField(
+                                'Client Contact Email',
+                                _formData['clientContactEmail']?.toString() ??
+                                    '',
+                                Icons.alternate_email,
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientContactMobile']
+                                  ?.toString()
+                                  .isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Contact Mobile',
+                          'Mobile number',
+                          (value) => setState(
+                              () => _formData['clientContactMobile'] = value),
+                          Icons.phone_iphone,
+                          keyboardType: TextInputType.phone,
+                          controller: clientContactMobileController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Contact Mobile',
+                          _formData['clientContactMobile']?.toString() ?? '',
+                          Icons.phone_iphone,
+                        ),
                       const SizedBox(height: 20),
                       _buildTextField(
                         'Project/Opportunity Name',
@@ -1995,7 +2339,9 @@ class _ProposalWizardState extends State<ProposalWizard>
           const SizedBox(height: 24),
           Expanded(
             child: CustomScrollbar(
+              controller: _projectDetailsScrollController,
               child: SingleChildScrollView(
+                controller: _projectDetailsScrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
                   children: [
@@ -2110,7 +2456,10 @@ class _ProposalWizardState extends State<ProposalWizard>
         const SizedBox(height: 24),
         Expanded(
           child: CustomScrollbar(
+            controller: _contentModulesScrollController,
+            scrollbarOrientation: ScrollbarOrientation.left,
             child: SingleChildScrollView(
+              controller: _contentModulesScrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2321,6 +2670,144 @@ class _ProposalWizardState extends State<ProposalWizard>
           );
         }).toList(),
         onChanged: (value) => onChanged(value ?? ''),
+      ),
+    );
+  }
+
+  Widget _buildClientDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.business, color: PremiumTheme.teal, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Select Client',
+              style: PremiumTheme.bodyLarge.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: DropdownButtonFormField<Map<String, dynamic>>(
+            value: _selectedClient,
+            style: PremiumTheme.bodyMedium.copyWith(
+              color: PremiumTheme.textPrimary,
+            ),
+            decoration: InputDecoration(
+              labelText: 'Client from Database',
+              hintText: _isLoadingClients
+                  ? 'Loading clients...'
+                  : 'Select a client or enter manually',
+              labelStyle: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textSecondary,
+              ),
+              hintStyle: PremiumTheme.bodyMedium.copyWith(
+                color: PremiumTheme.textTertiary,
+              ),
+              prefixIcon: Icon(Icons.search, color: PremiumTheme.teal),
+              filled: true,
+              fillColor: PremiumTheme.glassWhite,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
+              ),
+            ),
+            dropdownColor: PremiumTheme.darkBg2,
+            items: [
+              DropdownMenuItem<Map<String, dynamic>>(
+                value: null,
+                child: Text(
+                  'Enter manually',
+                  style: PremiumTheme.bodyMedium,
+                ),
+              ),
+              ..._clients.where((client) {
+                final status = client['status']?.toString().toLowerCase() ?? '';
+                // Only allow active clients; treat missing/empty status as active
+                return status.isEmpty || status == 'active';
+              }).map((client) {
+                final name = client['company_name'] ??
+                    client['name'] ??
+                    client['email'] ??
+                    'Unknown';
+                final email = client['email'] ?? '';
+                return DropdownMenuItem<Map<String, dynamic>>(
+                  value: client,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (email.isNotEmpty)
+                        Text(
+                          email,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+            onChanged: (client) => _onClientSelected(client),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadOnlyField(String label, String value, IconData icon) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: TextFormField(
+        initialValue: value,
+        readOnly: true,
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.left,
+        style: PremiumTheme.bodyMedium.copyWith(
+          color: PremiumTheme.textPrimary,
+        ),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: PremiumTheme.bodyMedium.copyWith(
+            color: PremiumTheme.textSecondary,
+          ),
+          prefixIcon: Icon(icon, color: PremiumTheme.teal),
+          filled: true,
+          fillColor: PremiumTheme.glassWhite.withOpacity(0.5),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: PremiumTheme.teal, width: 2),
+          ),
+        ),
       ),
     );
   }
@@ -2580,7 +3067,7 @@ class _ProposalWizardState extends State<ProposalWizard>
               );
             }
 
-            final issue = raw as Map<String, dynamic>;
+            final issue = raw;
             final title = issue['title']?.toString() ?? 'Issue';
             final description = issue['description']?.toString() ?? '';
             final action = issue['action']?.toString();
@@ -2653,10 +3140,8 @@ class _ProposalWizardState extends State<ProposalWizard>
                           children: [
                             TextButton(
                               onPressed: () async {
-                                if (sectionId != null) {
-                                  _ensureModuleSelected(sectionId);
-                                  await _openContentLibraryAndInsert(sectionId);
-                                }
+                                _ensureModuleSelected(sectionId);
+                                await _openContentLibraryAndInsert(sectionId);
                               },
                               child: const Text('Add module'),
                             ),
@@ -2671,9 +3156,7 @@ class _ProposalWizardState extends State<ProposalWizard>
                                 ),
                               ),
                               onPressed: () {
-                                if (sectionId != null) {
-                                  _addModuleWithAI(sectionId);
-                                }
+                                _addModuleWithAI(sectionId);
                               },
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Add with AI'),
@@ -2817,6 +3300,9 @@ class _ProposalWizardState extends State<ProposalWizard>
             final action = issue['recommendation']?.toString() ?? '';
             final severity = issue['severity']?.toString().toLowerCase() ?? '';
 
+            final kbTitle = kbCitations.isNotEmpty
+                ? (kbCitations.first['title']?.toString() ?? '')
+                : '';
             Color iconColor = PremiumTheme.info;
             if (severity == 'critical' || severity == 'high') {
               iconColor = PremiumTheme.error;
@@ -2874,9 +3360,45 @@ class _ProposalWizardState extends State<ProposalWizard>
                                   ),
                                 ),
                               ],
+
+                              if (kbTitle.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  'KB citation:',
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  kbTitle,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
+                        if (action.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Copy fix',
+                            onPressed: () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: action),
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Fix copied'),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.copy, size: 18),
+                          ),
+                        ],
                       ],
                     ),
                   ],
@@ -2963,6 +3485,18 @@ class _ProposalWizardState extends State<ProposalWizard>
 
   // Internal Approval Builder
   Widget _buildInternalApproval() {
+    final bool sendBlockedByRiskGate = _isRiskGateBlockedWithoutOverride();
+    final override = _riskAssessment['override'];
+    final overrideBy = override is Map
+        ? (override['approved_by']?.toString() ?? '').trim()
+        : '';
+    final overrideAt = override is Map
+        ? (override['approved_at']?.toString() ?? '').trim()
+        : '';
+    final overrideReason = override is Map
+        ? (override['override_reason']?.toString() ?? '').trim()
+        : '';
+
     return Column(
       children: [
         GlassContainer(
@@ -2987,6 +3521,53 @@ class _ProposalWizardState extends State<ProposalWizard>
               _buildApprovalChecklistItem('✓ Risk assessment completed'),
               _buildApprovalChecklistItem('✓ All required sections complete'),
               _buildApprovalChecklistItem('✓ Content reviewed for accuracy'),
+              if (_hasRiskGateOverride()) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Risk Gate Override Active',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      if (overrideBy.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Approved by: $overrideBy',
+                            style: PremiumTheme.bodyMedium,
+                          ),
+                        ),
+                      if (overrideAt.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            'Approved at: $overrideAt',
+                            style: PremiumTheme.bodyMedium,
+                          ),
+                        ),
+                      if (overrideReason.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'Reason: $overrideReason',
+                            style: PremiumTheme.bodyMedium,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               if (_isInternalApproved)
                 Container(
@@ -3024,6 +3605,37 @@ class _ProposalWizardState extends State<ProposalWizard>
                         horizontal: 24, vertical: 16),
                   ),
                 ),
+              if (_isInternalApproved && !_isClientSigned) ...[
+                const SizedBox(height: 16),
+                if (sendBlockedByRiskGate)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: PremiumTheme.error.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: PremiumTheme.error),
+                    ),
+                    child: Text(
+                      'Sending is blocked because AI Risk Gate returned BLOCK and no override exists. Go back to the AI Risk Gate step and submit an override to proceed.',
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: PremiumTheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: sendBlockedByRiskGate ? null : _sendToClient,
+                  icon: const Icon(Icons.mark_email_read_outlined),
+                  label: const Text('Send to Client'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -3047,6 +3659,76 @@ class _ProposalWizardState extends State<ProposalWizard>
           ),
         ],
       ),
+    );
+  }
+
+  // Client Signature Builder
+  Widget _buildClientSignature() {
+    return Column(
+      children: [
+        GlassContainer(
+          borderRadius: 24,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Send to Client',
+                style: PremiumTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Client Information:',
+                style: PremiumTheme.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildInfoRow(
+                  'Name:', _formData['clientName'] ?? 'Not specified'),
+              _buildInfoRow(
+                  'Email:', _formData['clientEmail'] ?? 'Not specified'),
+              const SizedBox(height: 24),
+              if (_isClientSigned)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.success.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: PremiumTheme.success),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: PremiumTheme.success),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Proposal signed by client',
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.success,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ElevatedButton.icon(
+                  onPressed: _sendToClient,
+                  icon: const Icon(Icons.send),
+                  label: const Text('Send to Client'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -3088,52 +3770,28 @@ class _ProposalWizardState extends State<ProposalWizard>
         AIAnalysisService.setAuthToken(app.authToken!);
       }
 
-      final proposalData = _buildProposalDataForAI();
-
-      final analysis =
-          await AIAnalysisService.analyzeProposalContent(proposalData);
-
-      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
-      String riskLevel;
-      if (rawRiskScore <= 10) {
-        riskLevel = 'Low';
-      } else if (rawRiskScore <= 20) {
-        riskLevel = 'Medium';
-      } else {
-        riskLevel = 'High';
+      if (_proposalId == null || _proposalId!.toString().startsWith('draft')) {
+        final created = await app.createProposal(
+          (_formData['opportunityName']?.toString().isNotEmpty ?? false)
+              ? _formData['opportunityName'].toString()
+              : (_formData['proposalTitle']?.toString() ?? 'Untitled Proposal'),
+          (_formData['clientName']?.toString() ?? ''),
+          templateKey: _formData['templateId']?.toString().isNotEmpty == true
+              ? _formData['templateId'].toString()
+              : null,
+        );
+        final createdId = created?['id']?.toString();
+        if (createdId == null || createdId.isEmpty) {
+          throw Exception('Failed to create proposal');
+        }
+        _proposalId = createdId;
       }
 
-      final issues = List<Map<String, dynamic>>.from(
-        analysis['issues'] ?? const [],
-      );
-
-      final risks = issues.map((issue) {
-        return issue['title']?.toString() ?? 'Issue';
-      }).toList();
-
-      final recommendations = issues
-          .map((issue) {
-            return issue['action']?.toString() ??
-                issue['description']?.toString() ??
-                '';
-          })
-          .where((r) => r.isNotEmpty)
-          .toList();
-
-      // Convert raw risk points into a 0-100"score" where higher is better
-      final double displayScore = (100 - rawRiskScore).clamp(0, 100).toDouble();
+      final analysis =
+          await AIAnalysisService.analyzeProposalRisks(_proposalId!.toString());
 
       setState(() {
-        _riskAssessment = {
-          'risk_level': riskLevel,
-          'risk_score': displayScore,
-          'risks': risks,
-          'recommendations': recommendations,
-          'issues': issues,
-          'kb_recommendations': analysis['kb_recommendations'] ?? {},
-          'ai_status': analysis['status'] ?? 'Ready',
-          'ai_riskScore': rawRiskScore,
-        };
+        _riskAssessment = analysis;
         _isLoading = false;
       });
     } catch (e) {
@@ -3167,77 +3825,6 @@ class _ProposalWizardState extends State<ProposalWizard>
     }
 
     return data;
-  }
-
-  String _mergePlaceholders(String content) {
-    if (content.isEmpty) return content;
-
-    final Map<String, String> replacements = {
-      'project name': _formData['opportunityName']?.toString() ?? '',
-      'client name': _formData['clientName']?.toString() ?? '',
-      'client': _formData['clientName']?.toString() ?? '',
-      'client email': _formData['clientEmail']?.toString() ?? '',
-      'timeline': _formData['timeline']?.toString() ?? '',
-      'estimated value': _formData['estimatedValue']?.toString() ?? '',
-    };
-
-    return content.replaceAllMapped(
-      RegExp(r'\{\{\s*([^}]+?)\s*\}\}', caseSensitive: false),
-      (match) {
-        final key = match.group(1)!.toLowerCase().trim();
-        final normalized = key.replaceAll('_', ' ');
-        final value = replacements[normalized];
-        if (value == null || value.isEmpty) {
-          return match.group(0)!; // leave placeholder as-is
-        }
-        return value;
-      },
-    );
-  }
-
-  String _serializeWizardContentForBackend({required String title}) {
-    final selectedModules =
-        List<String>.from(_formData['selectedModules'] ?? const []);
-    final moduleContents =
-        Map<String, String>.from(_formData['moduleContents'] ?? {});
-
-    final sections = <Map<String, dynamic>>[];
-
-    for (final moduleId in selectedModules) {
-      final rawContent = moduleContents[moduleId] ?? '';
-      final content = _mergePlaceholders(rawContent);
-      if (content.isEmpty) continue;
-
-      final module = _contentModules.firstWhere(
-        (m) => m['id'] == moduleId,
-        orElse: () => {
-          'id': moduleId,
-          'name': moduleId.replaceAll('_', ' '),
-        },
-      );
-
-      sections.add({
-        'title': module['name']?.toString() ?? moduleId.replaceAll('_', ' '),
-        'content': content,
-        'backgroundColor': const Color(0xFFFFFFFF).value,
-        'backgroundImageUrl': null,
-        'sectionType': 'content',
-        'isCoverPage': false,
-        'inlineImages': <dynamic>[],
-        'tables': <dynamic>[],
-      });
-    }
-
-    final documentData = <String, dynamic>{
-      'title': title,
-      'sections': sections,
-      'metadata': {
-        'source': 'wizard_v2',
-        'last_modified': DateTime.now().toIso8601String(),
-      },
-    };
-
-    return json.encode(documentData);
   }
 
   // Run AI Governance Check
@@ -3318,61 +3905,17 @@ class _ProposalWizardState extends State<ProposalWizard>
         return;
       }
 
-      final app = context.read<AppState>();
-      final token = app.authToken;
-
-      if (token == null || token.isEmpty) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('You must be logged in to submit for approval'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      int? proposalId;
-      if (_proposalId != null) {
-        proposalId = int.tryParse(_proposalId!);
-      }
-
-      if (proposalId == null && app.currentProposal != null) {
-        final dynamic rawId = app.currentProposal!['id'];
-        if (rawId is int) {
-          proposalId = rawId;
-        } else if (rawId is String) {
-          proposalId = int.tryParse(rawId);
-        }
-      }
-
-      if (proposalId == null) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'No saved proposal found. Please create and save the proposal before submitting for approval.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final response = await DocumentProposalService.sendForApproval(
-        proposalId,
-        token,
-      );
+      // Simulate API call - replace with actual
+      await Future.delayed(const Duration(seconds: 1));
 
       setState(() {
         _isInternalApproved = true;
         _isLoading = false;
       });
 
-      final status = response?['status']?.toString() ?? 'Pending CEO Approval';
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Proposal submitted for internal approval ($status)'),
+        const SnackBar(
+          content: Text('Proposal submitted for internal approval'),
           backgroundColor: Colors.green,
         ),
       );
@@ -3385,6 +3928,17 @@ class _ProposalWizardState extends State<ProposalWizard>
   }
 
   Future<void> _sendToClient() async {
+    if (_isRiskGateBlockedWithoutOverride()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Cannot send: AI Risk Gate returned BLOCK and no override exists.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (!_isInternalApproved) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3398,70 +3952,8 @@ class _ProposalWizardState extends State<ProposalWizard>
     setState(() => _isLoading = true);
 
     try {
-      final app = context.read<AppState>();
-
-      int? proposalId;
-      if (_proposalId != null) {
-        proposalId = int.tryParse(_proposalId!);
-      }
-
-      if (proposalId == null && app.currentProposal != null) {
-        final dynamic rawId = app.currentProposal!['id'];
-        if (rawId is int) {
-          proposalId = rawId;
-        } else if (rawId is String) {
-          proposalId = int.tryParse(rawId);
-        }
-      }
-
-      if (proposalId == null) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'No saved proposal found. Please create and save the proposal before sending to the client.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final clientName =
-          (_formData['clientName']?.toString().isNotEmpty ?? false)
-              ? _formData['clientName'].toString()
-              : 'Client';
-      final clientEmail =
-          (_formData['clientEmail']?.toString().isNotEmpty ?? false)
-              ? _formData['clientEmail'].toString()
-              : '';
-
-      if (clientEmail.isEmpty || !clientEmail.contains('@')) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please provide a valid client email before sending'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      final result = await app.sendProposalForSignature(
-        proposalId: proposalId,
-        signerName: clientName,
-        signerEmail: clientEmail,
-      );
-
-      if (result == null) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to send proposal to client'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
+      // Simulate API call - replace with actual
+      await Future.delayed(const Duration(seconds: 1));
 
       setState(() {
         _isClientSigned = true;

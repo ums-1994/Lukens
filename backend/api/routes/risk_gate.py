@@ -6,6 +6,8 @@ import json
 import traceback
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Optional
+
 from flask import Blueprint, request, jsonify
 from psycopg2.extras import RealDictCursor
 
@@ -16,7 +18,7 @@ from api.utils.decorators import token_required
 bp = Blueprint("risk_gate", __name__)
 
 
-def _parse_datetime_param(value: str | None):
+def _parse_datetime_param(value: Optional[str]):
     if not value:
         return None
     try:
@@ -43,14 +45,14 @@ def _stable_json_hash(payload) -> str:
     ).hexdigest()
 
 
-def _get_user_role(conn, username: str) -> str | None:
+def _get_user_role(conn, username: str) -> Optional[str]:
     cursor = conn.cursor()
     cursor.execute("SELECT role FROM users WHERE username = %s", (username,))
     row = cursor.fetchone()
     return row[0] if row else None
 
 
-def _is_override_authorized(role: str | None) -> bool:
+def _is_override_authorized(role: Optional[str]) -> bool:
     if not role:
         return False
     role_lower = str(role).strip().lower()
@@ -64,7 +66,7 @@ def _is_override_authorized(role: str | None) -> bool:
     }
 
 
-def _dev_bypass_user_role_hint() -> str | None:
+def _dev_bypass_user_role_hint() -> Optional[str]:
     """When DEV bypass auth is enabled, the bypass user may not exist in the DB.
 
     In that case, allow a role hint based on the X-Dev-Bypass-User header if it
@@ -199,7 +201,7 @@ def analyze(username=None):
                 conn.commit()
 
                 response_body["run_id"] = run_id
-                return response_body, 200
+                return response_body, 400
 
             # Run AI analysis
             from ai_service import ai_service
@@ -276,7 +278,7 @@ def analyze(username=None):
                 "reasons": getattr(e, "reasons", []),
                 "sanitized_payload_hash": None,
             },
-        }, 200
+        }, 400
     except Exception as e:
         print(f"❌ Risk Gate analyze error: {e}")
         traceback.print_exc()
