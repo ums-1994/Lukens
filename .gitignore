@@ -124,4 +124,7 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-e
+
+# Virtual environments
+.venv/
+frontend_flutter/.venv/
