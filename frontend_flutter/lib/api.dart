@@ -570,12 +570,81 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getCompletionRatesAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/completion-rates").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty) 'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching completion rates analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getProposalPipelineAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    String? stage,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/proposal-pipeline").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty) 'department': department,
+          if (stage != null && stage.isNotEmpty) 'stage': stage,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching proposal pipeline analytics: $e');
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> getClientEngagementAnalytics({
     String? startDate,
     String? endDate,
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
     String? scope,
     String? department,
   }) async {
@@ -588,6 +657,7 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,

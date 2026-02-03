@@ -30,10 +30,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   bool _cycleTimeAutoRefresh = true;
   int _cycleTimeRefreshTick = 0;
   Timer? _cycleTimeRefreshTimer;
+  String? _pipelineStageFilter;
   final TextEditingController _cycleTimeOwnerCtrl = TextEditingController();
   final TextEditingController _cycleTimeProposalTypeCtrl =
       TextEditingController();
   final TextEditingController _globalClientCtrl = TextEditingController();
+  final TextEditingController _globalRegionCtrl = TextEditingController();
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
   bool _isSidebarCollapsed = true;
@@ -77,6 +79,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
+      final region = _globalRegionCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -86,6 +89,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
+            region: region.isEmpty ? null : region,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -94,6 +98,561 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       print('Client engagement exception: $e');
       return null;
     }
+  }
+
+  Future<Map<String, dynamic>?> _fetchPipelineBundle() async {
+    try {
+      final now = DateTime.now();
+      final start = _periodStart(now);
+      final fmt = DateFormat('yyyy-MM-dd');
+      final startDate = start != null ? fmt.format(start) : null;
+      final endDate = fmt.format(now);
+
+      final owner = _globalOwnerCtrl.text.trim();
+      final proposalType = _globalProposalTypeCtrl.text.trim();
+      final client = _globalClientCtrl.text.trim();
+      final currentUser = context.read<AppState>().currentUser;
+      final department = (currentUser?['department'] ?? '').toString().trim();
+      final app = context.read<AppState>();
+
+      final results = await Future.wait([
+        app.getProposalPipelineAnalytics(
+          startDate: startDate,
+          endDate: endDate,
+          owner: owner.isEmpty ? null : owner,
+          proposalType: proposalType.isEmpty ? null : proposalType,
+          client: client.isEmpty ? null : client,
+          scope: _cycleTimeScope,
+          department: department.isEmpty ? null : department,
+          stage: _pipelineStageFilter,
+        ),
+        app.getCompletionRatesAnalytics(
+          startDate: startDate,
+          endDate: endDate,
+          owner: owner.isEmpty ? null : owner,
+          proposalType: proposalType.isEmpty ? null : proposalType,
+          client: client.isEmpty ? null : client,
+          scope: _cycleTimeScope,
+          department: department.isEmpty ? null : department,
+        ),
+      ]);
+
+      return {
+        'pipeline': results[0],
+        'completion_rates': results[1],
+      };
+    } catch (e) {
+      print('Pipeline bundle exception: $e');
+      return null;
+    }
+  }
+
+  Map<String, int> _pipelineCountsFromResponse(Map<String, dynamic>? data) {
+    final counts = <String, int>{
+      'Draft': 0,
+      'In Review': 0,
+      'Released': 0,
+      'Signed': 0,
+      'Archived': 0,
+    };
+    final stages = (data?['stages'] as List?) ?? [];
+    for (final s in stages) {
+      if (s is! Map) continue;
+      final stageName = (s['stage'] ?? '').toString();
+      final cnt = (s['count'] is num) ? (s['count'] as num).toInt() : 0;
+      if (counts.containsKey(stageName)) {
+        counts[stageName] = cnt;
+      }
+    }
+    return counts;
+  }
+
+  Future<void> _showCompletionRatesDialog(Map<String, dynamic>? data) async {
+    try {
+      final low = (data?['low_proposals'] as List?) ?? [];
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  constraints:
+                      const BoxConstraints(maxWidth: 980, maxHeight: 720),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withValues(alpha: 0.12),
+                        Colors.white.withValues(alpha: 0.06),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: PremiumTheme.glassWhiteBorder,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Completion Rates: Low Readiness',
+                              style: PremiumTheme.titleLarge
+                                  .copyWith(color: Colors.white),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (low.isEmpty)
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              'All proposals are passing mandatory section checks under the current filters.',
+                              style: PremiumTheme.bodyMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.separated(
+                            itemCount: low.length,
+                            separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.08),
+                            ),
+                            itemBuilder: (context, i) {
+                              final p = (low[i] as Map).cast<String, dynamic>();
+                              final id = (p['proposal_id'] ?? '').toString();
+                              final title =
+                                  (p['title'] ?? 'Untitled').toString();
+                              final clientName = (p['client'] ?? '').toString();
+                              final status = (p['status'] ?? '').toString();
+                              final score = (p['readiness_score'] is num)
+                                  ? (p['readiness_score'] as num).toInt()
+                                  : int.tryParse((p['readiness_score'] ?? '')
+                                          .toString()) ??
+                                      0;
+                              final issues =
+                                  (p['readiness_issues'] as List?) ?? const [];
+
+                              return InkWell(
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  Navigator.pushNamed(
+                                    this.context,
+                                    '/proposal_review',
+                                    arguments: {
+                                      'id': id,
+                                      'title': title,
+                                    },
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 12),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 4,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title,
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              issues.isEmpty
+                                                  ? ''
+                                                  : (issues
+                                                      .take(2)
+                                                      .join(' • ')),
+                                              style: PremiumTheme.bodySmall
+                                                  .copyWith(
+                                                color: Colors.white70,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                          clientName.isEmpty ? '-' : clientName,
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
+                                            color: Colors.white70,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          status.isEmpty ? '-' : status,
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
+                                            color: Colors.white70,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          '$score%',
+                                          textAlign: TextAlign.right,
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
+                                            color: score >= 90
+                                                ? PremiumTheme.success
+                                                : score >= 60
+                                                    ? PremiumTheme.warning
+                                                    : PremiumTheme.error,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      print('Completion rates dialog error: $e');
+    }
+  }
+
+  Widget _buildProposalPipelineView(Map<String, dynamic>? data) {
+    final stagesRaw = (data?['stages'] as List?) ?? [];
+    if (stagesRaw.isEmpty) {
+      return Center(
+        child: Text(
+          'No pipeline proposals match these filters yet',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        ),
+      );
+    }
+
+    final stages = <Map<String, dynamic>>[];
+    for (final item in stagesRaw) {
+      if (item is Map) {
+        stages.add(item.cast<String, dynamic>());
+      }
+    }
+
+    String formatDate(String? iso) {
+      if (iso == null || iso.isEmpty) return '--';
+      try {
+        final dt = DateTime.parse(iso);
+        return DateFormat('MMM d').format(dt);
+      } catch (_) {
+        return iso.length >= 10 ? iso.substring(0, 10) : iso;
+      }
+    }
+
+    Color stageColor(String stage) {
+      switch (stage) {
+        case 'Signed':
+          return PremiumTheme.success;
+        case 'Released':
+          return PremiumTheme.info;
+        case 'In Review':
+          return PremiumTheme.warning;
+        case 'Archived':
+          return Colors.white70;
+        default:
+          return PremiumTheme.orange;
+      }
+    }
+
+    Widget stageHeader(String stage, int count) {
+      final active =
+          (_pipelineStageFilter ?? '').toLowerCase() == stage.toLowerCase();
+      return InkWell(
+        onTap: () {
+          setState(() {
+            if (active) {
+              _pipelineStageFilter = null;
+            } else {
+              _pipelineStageFilter = stage;
+            }
+            _cycleTimeRefreshTick++;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: stageColor(stage).withValues(alpha: active ? 0.22 : 0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: stageColor(stage).withValues(alpha: active ? 0.55 : 0.25),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  stage,
+                  overflow: TextOverflow.ellipsis,
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: PremiumTheme.labelMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget proposalCard(Map<String, dynamic> p) {
+      final id = (p['proposal_id'] ?? '').toString();
+      final title = (p['title'] ?? 'Untitled').toString();
+      final client = (p['client'] ?? '').toString();
+      final owner = (p['owner'] ?? '').toString();
+      final updated = (p['updated_at'] ?? p['created_at'])?.toString();
+      final status = (p['status'] ?? '').toString();
+      return InkWell(
+        onTap: () {
+          Navigator.pushNamed(
+            context,
+            '/proposal_review',
+            arguments: {
+              'id': id,
+              'title': title,
+            },
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: PremiumTheme.bodyMedium.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      client.isEmpty ? '-' : client,
+                      overflow: TextOverflow.ellipsis,
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatDate(updated),
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      owner.isEmpty ? '-' : owner,
+                      overflow: TextOverflow.ellipsis,
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    status.isEmpty ? '-' : status,
+                    overflow: TextOverflow.ellipsis,
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget stageColumn(Map<String, dynamic> stage) {
+      final stageName = (stage['stage'] ?? '').toString();
+      final count =
+          (stage['count'] is num) ? (stage['count'] as num).toInt() : 0;
+      final proposals = (stage['proposals'] as List?) ?? [];
+      final cards = <Map<String, dynamic>>[];
+      for (final p in proposals) {
+        if (p is Map) {
+          cards.add(p.cast<String, dynamic>());
+        }
+      }
+      return SizedBox(
+        width: 260,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            stageHeader(stageName, count),
+            const SizedBox(height: 10),
+            Expanded(
+              child: cards.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No proposals',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: cards.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) => proposalCard(cards[i]),
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if ((_pipelineStageFilter ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(999),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                  ),
+                  child: Text(
+                    'Filtered: ${_pipelineStageFilter!}',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                _buildGlassButton(
+                  'Clear',
+                  Icons.close,
+                  () {
+                    setState(() {
+                      _pipelineStageFilter = null;
+                      _cycleTimeRefreshTick++;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: math.max(constraints.maxWidth,
+                      260.0 * stages.length + 20.0 * (stages.length - 1)),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (int i = 0; i < stages.length; i++) ...[
+                        Expanded(
+                          child: stageColumn(stages[i]),
+                        ),
+                        if (i != stages.length - 1) const SizedBox(width: 20),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   String _formatDurationSeconds(int seconds) {
@@ -269,6 +828,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final avgDaysLabel =
         avgDays == null ? '--' : '${avgDays.toStringAsFixed(1)} days';
 
+    final conversion = (data?['conversion'] as Map?) ?? {};
+    final released = n(conversion['released']);
+    final signed = n(conversion['signed']);
+    final rateRaw = conversion['rate_percent'];
+    final rate = (rateRaw is num) ? rateRaw.toDouble() : null;
+    final conversionLabel =
+        rate == null ? '--' : '${rate.toStringAsFixed(1)}% ($signed/$released)';
+
     Widget statChip(String label, String value, Color color) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -302,6 +869,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             statChip('Time Spent', _formatDurationSeconds(timeSpentSeconds),
                 PremiumTheme.teal),
             statChip('Sessions', sessionsCount.toString(), PremiumTheme.info),
+            statChip('Conversion', conversionLabel, PremiumTheme.success),
             statChip('Avg Time To Sign', avgDaysLabel, PremiumTheme.purple),
             statChip('Samples', ttsSamples.toString(), Colors.white70),
           ],
@@ -500,6 +1068,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     _cycleTimeOwnerCtrl.dispose();
     _cycleTimeProposalTypeCtrl.dispose();
     _globalClientCtrl.dispose();
+    _globalRegionCtrl.dispose();
     _globalOwnerCtrl.dispose();
     _globalProposalTypeCtrl.dispose();
     super.dispose();
@@ -1519,6 +2088,22 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             ),
           ),
         ),
+        SizedBox(
+          width: 220,
+          child: glassField(
+            child: TextField(
+              controller: _globalRegionCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Region (optional)',
+                hintStyle: TextStyle(color: Colors.white54),
+              ),
+              onSubmitted: (_) => setState(() {}),
+            ),
+          ),
+        ),
         glassField(
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1529,6 +2114,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 onPressed: () {
                   setState(() {
                     _globalClientCtrl.clear();
+                    _globalRegionCtrl.clear();
                     _globalOwnerCtrl.clear();
                     _globalProposalTypeCtrl.clear();
                     _cycleTimeRefreshTick++;
@@ -1761,49 +2347,67 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  Widget _buildCompletionRateGauge({required int signed, required int total}) {
-    final ratio = total <= 0 ? 0.0 : (signed / total).clamp(0.0, 1.0);
-    final percent = ratio * 100;
+  Widget _buildCompletionRateGauge(Map<String, dynamic>? data) {
+    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final total =
+        (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
+    final passed =
+        (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
+    final passRate =
+        (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
+    final ratio = total <= 0 ? 0.0 : (passed / total).clamp(0.0, 1.0);
+
     return Center(
-      child: SizedBox(
-        width: 180,
-        height: 180,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 180,
-              height: 180,
-              child: CircularProgressIndicator(
-                value: ratio,
-                strokeWidth: 12,
-                backgroundColor: Colors.white.withValues(alpha: 0.10),
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  ratio >= 0.75
-                      ? PremiumTheme.success
-                      : ratio >= 0.4
-                          ? PremiumTheme.warning
-                          : PremiumTheme.error,
-                ),
-              ),
-            ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${percent.toStringAsFixed(0)}%',
-                  style: PremiumTheme.displayMedium.copyWith(fontSize: 34),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '$signed of $total signed',
-                  style: PremiumTheme.bodyMedium.copyWith(
-                    color: PremiumTheme.textSecondary,
+      child: InkWell(
+        onTap: () => _showCompletionRatesDialog(data),
+        child: SizedBox(
+          width: 180,
+          height: 180,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 180,
+                height: 180,
+                child: CircularProgressIndicator(
+                  value: ratio,
+                  strokeWidth: 12,
+                  backgroundColor: Colors.white.withValues(alpha: 0.10),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    passRate >= 90
+                        ? PremiumTheme.success
+                        : passRate >= 60
+                            ? PremiumTheme.warning
+                            : PremiumTheme.error,
                   ),
                 ),
-              ],
-            ),
-          ],
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$passRate%',
+                    style: PremiumTheme.displayMedium.copyWith(fontSize: 34),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$passed of $total passing',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: PremiumTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap to drill down',
+                    style: PremiumTheme.bodySmall.copyWith(
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2164,22 +2768,49 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               const SizedBox(height: 32),
                               _buildGlobalFilterBar(),
                               const SizedBox(height: 24),
-                              Row(
-                                children: [
-                                  for (int i = 0; i < metrics.length; i++) ...[
-                                    Expanded(
-                                      child: _buildGlassMetricCard(
-                                        metrics[i].title,
-                                        metrics[i].value,
-                                        metrics[i].change,
-                                        metrics[i].isPositive,
-                                        metrics[i].subtitle,
-                                      ),
-                                    ),
-                                    if (i != metrics.length - 1)
-                                      const SizedBox(width: 20),
-                                  ],
-                                ],
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final compact = constraints.maxWidth < 900;
+                                  if (compact) {
+                                    return Column(
+                                      children: [
+                                        for (int i = 0;
+                                            i < metrics.length;
+                                            i++) ...[
+                                          _buildGlassMetricCard(
+                                            metrics[i].title,
+                                            metrics[i].value,
+                                            metrics[i].change,
+                                            metrics[i].isPositive,
+                                            metrics[i].subtitle,
+                                          ),
+                                          if (i != metrics.length - 1)
+                                            const SizedBox(height: 20),
+                                        ],
+                                      ],
+                                    );
+                                  }
+
+                                  return Row(
+                                    children: [
+                                      for (int i = 0;
+                                          i < metrics.length;
+                                          i++) ...[
+                                        Expanded(
+                                          child: _buildGlassMetricCard(
+                                            metrics[i].title,
+                                            metrics[i].value,
+                                            metrics[i].change,
+                                            metrics[i].isPositive,
+                                            metrics[i].subtitle,
+                                          ),
+                                        ),
+                                        if (i != metrics.length - 1)
+                                          const SizedBox(width: 20),
+                                      ],
+                                    ],
+                                  );
+                                },
                               ),
                               const SizedBox(height: 32),
                               _buildGlassChartCard(
@@ -2192,23 +2823,97 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
-                                    flex: 2,
-                                    child: _buildGlassChartCard(
-                                      'Proposal Pipeline',
-                                      _buildProposalPipelineFunnel(
-                                          pipelineCounts),
-                                      height: 220,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 20),
-                                  Expanded(
-                                    child: _buildGlassChartCard(
-                                      'Completion Rate',
-                                      _buildCompletionRateGauge(
-                                        signed: signedCount,
-                                        total: pipelineTotal,
-                                      ),
-                                      height: 220,
+                                    child: FutureBuilder<Map<String, dynamic>?>(
+                                      key: ValueKey(
+                                          'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
+                                      future: _fetchPipelineBundle(),
+                                      builder: (context, snapshot) {
+                                        final waiting =
+                                            snapshot.connectionState ==
+                                                ConnectionState.waiting;
+                                        final hasError = snapshot.hasError;
+                                        final bundle = snapshot.data;
+                                        final pipelineData =
+                                            (bundle?['pipeline'] as Map?)
+                                                ?.cast<String, dynamic>();
+                                        final completionData =
+                                            (bundle?['completion_rates']
+                                                    as Map?)
+                                                ?.cast<String, dynamic>();
+
+                                        Widget pipelineBody;
+                                        if (waiting) {
+                                          pipelineBody = const Center(
+                                            child: CircularProgressIndicator(),
+                                          );
+                                        } else if (hasError) {
+                                          pipelineBody = Center(
+                                            child: Text(
+                                              'Failed to load pipeline view.',
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                      color: Colors.white70),
+                                            ),
+                                          );
+                                        } else if (pipelineData == null) {
+                                          pipelineBody = Center(
+                                            child: Text(
+                                              'Failed to load pipeline view.',
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                      color: Colors.white70),
+                                            ),
+                                          );
+                                        } else {
+                                          pipelineBody =
+                                              _buildProposalPipelineView(
+                                                  pipelineData);
+                                        }
+
+                                        Widget completionBody;
+                                        if (waiting) {
+                                          completionBody = const Center(
+                                            child: CircularProgressIndicator(),
+                                          );
+                                        } else if (hasError ||
+                                            completionData == null) {
+                                          completionBody = Center(
+                                            child: Text(
+                                              'Failed to load completion rates.',
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                      color: Colors.white70),
+                                            ),
+                                          );
+                                        } else {
+                                          completionBody =
+                                              _buildCompletionRateGauge(
+                                                  completionData);
+                                        }
+
+                                        return Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              flex: 2,
+                                              child: _buildGlassChartCard(
+                                                'Proposal Pipeline View',
+                                                pipelineBody,
+                                                height: 520,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 20),
+                                            Expanded(
+                                              child: _buildGlassChartCard(
+                                                'Completion Rate',
+                                                completionBody,
+                                                height: 520,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
                                     ),
                                   ),
                                 ],
