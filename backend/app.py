@@ -1678,32 +1678,50 @@ def get_db():
     """Get PostgreSQL connection"""
     return _pg_conn()
 
+
 def hash_password(password):
+    """Hash a password using werkzeug"""
     return generate_password_hash(password)
 
+
 def verify_password(stored_hash, password):
+    """Verify a password against a stored hash"""
     return check_password_hash(stored_hash, password)
 
+
 def generate_token(username):
+    """Generate a new authentication token for a user"""
     token = secrets.token_urlsafe(32)
     valid_tokens[token] = {
         'username': username,
         'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(days=7)
+        'expires_at': datetime.now() + timedelta(days=7),
     }
     save_tokens()  # Persist to file
     print(f"[TOKEN] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
     print(f"[TOKEN] Total valid tokens: {len(valid_tokens)}")
     return token
 
+
 def verify_token(token):
+    """Verify a token and return the username if valid"""
+    global valid_tokens
     # Dev bypass for testing
     if token == 'dev-bypass-token':
         print("[DEV] Using dev-bypass-token for username: admin")
         return 'admin'
-    
+
+    # First check in-memory tokens
     if token not in valid_tokens:
-        return None
+        # Reload from file to sync tokens across multiple workers/processes
+        try:
+            valid_tokens = load_tokens()
+            print(f"[TOKEN] Reloaded tokens from file, now have {len(valid_tokens)} tokens")
+        except Exception as e:
+            print(f"[WARN] Could not reload tokens from file: {e}")
+        if token not in valid_tokens:
+            return None
+
     token_data = valid_tokens[token]
     if datetime.now() > token_data['expires_at']:
         del valid_tokens[token]
