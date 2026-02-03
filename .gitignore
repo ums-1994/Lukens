@@ -128,3 +128,4 @@ __pycache__/
 # Virtual environments
 .venv/
 frontend_flutter/.venv/
+.venv*/

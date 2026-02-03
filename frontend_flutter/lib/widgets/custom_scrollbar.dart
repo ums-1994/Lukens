@@ -8,11 +8,13 @@ class CustomScrollbar extends StatelessWidget {
   final Color? thumbColor;
   final Color? trackColor;
   final Color? trackBorderColor;
+  final ScrollbarOrientation? scrollbarOrientation;
 
   const CustomScrollbar({
     super.key,
     required this.child,
     this.controller,
+    this.scrollbarOrientation,
     this.thickness = 16,
     // Use a vivid blue to make the scrollbar clearly visible
     this.thumbColor = const Color(0xFF3498DB),
@@ -24,6 +26,7 @@ class CustomScrollbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return RawScrollbar(
       controller: controller,
+      scrollbarOrientation: scrollbarOrientation,
       thumbVisibility: true,
       thickness: thickness,
       radius: const Radius.circular(8),

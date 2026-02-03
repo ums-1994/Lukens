@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:js' as js;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
@@ -6,18 +7,46 @@ import 'package:web/web.dart' as web;
 class AuthService {
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
+    if (kIsWeb) {
+      try {
+        final config = js.context['APP_CONFIG'];
+        if (config != null) {
+          final configObj = config as js.JsObject;
+          final apiUrl = configObj['API_URL'];
+          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+            final url = apiUrl.toString().replaceAll('"', '').trim();
+            print('🌐 Using API URL from APP_CONFIG: $url');
+            return url;
+          }
+        }
+
+        final envUrl = js.context['REACT_APP_API_URL'];
+        if (envUrl != null && envUrl.toString().isNotEmpty) {
+          final url = envUrl.toString().replaceAll('"', '').trim();
+          print('🌐 Using API URL from REACT_APP_API_URL: $url');
+          return url;
+        }
+      } catch (e) {
+        print('⚠️ AuthService: Could not read API URL from config: $e');
+      }
+    }
+
     // Check if we're in production (not localhost)
     if (kIsWeb) {
       final hostname = web.window.location.hostname;
-      final isProduction = hostname.contains('netlify.app') ||
-          hostname.contains('onrender.com') ||
-          !hostname.contains('localhost');
+      final isLocalhost = hostname.contains('localhost') || hostname == '127.0.0.1';
+      if (isLocalhost) {
+        print('🌐 Using local API URL: http://127.0.0.1:8000');
+        return 'http://127.0.0.1:8000';
+      }
 
+      final isProduction = hostname.contains('netlify.app') || hostname.contains('onrender.com');
       if (isProduction) {
         print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
         return 'https://lukens-wp8w.onrender.com';
       }
     }
+
     // Default to Render backend (production)
     print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';

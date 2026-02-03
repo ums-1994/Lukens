@@ -36,10 +36,13 @@ class ApiService {
     if (kIsWeb) {
       final hostname = html.window.location.hostname;
       if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
+        final isLocalhost = hostname.contains('localhost') || hostname == '127.0.0.1';
+        if (isLocalhost) {
+          print('🌐 ApiService: Using local API URL: http://127.0.0.1:8000');
+          return 'http://127.0.0.1:8000';
+        }
 
+        final isProduction = hostname.contains('netlify.app') || hostname.contains('onrender.com');
         if (isProduction) {
           print(
               '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
@@ -47,6 +50,7 @@ class ApiService {
         }
       }
     }
+
     // Default to Render backend (production)
     print(
         '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
