@@ -11,6 +11,7 @@ import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
+import '../../widgets/header.dart';
 import 'governance_panel.dart';
 // Import models from document_editor
 import '../../document_editor/models/document_section.dart';
@@ -60,6 +61,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
+  String? _headerLogoUrl;
+  String? _footerLogoUrl;
+  String _headerLogoPosition = 'left'; // 'left', 'center', 'right'
+  double _headerLogoDragDelta = 0; // track drag distance
+  String? _headerBackgroundImageUrl;
   String _signatureSearchQuery = '';
   String _uploadTabSelected = 'this_document'; // 'this_document' or 'library'
   bool _showSectionsSidebar = false; // Toggle sections sidebar visibility
@@ -446,6 +452,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             if (contentData['metadata'] != null) {
               final metadata = contentData['metadata'];
               _selectedCurrency = metadata['currency'] ?? _selectedCurrency;
+              _headerLogoUrl = metadata['headerLogoUrl'] as String?;
+              _footerLogoUrl = metadata['footerLogoUrl'] as String?;
+              _headerLogoPosition =
+                  (metadata['headerLogoPosition'] as String?) ?? 'left';
+              _headerBackgroundImageUrl =
+                  metadata['headerBackgroundImageUrl'] as String?;
             }
           });
 
@@ -811,6 +823,56 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  Future<void> _pickHeaderLogo() async {
+    final selectedModule = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const ContentLibrarySelectionDialog(),
+    );
+
+    if (selectedModule == null) return;
+
+    final content = selectedModule['content'] ?? '';
+    final isUrl = content is String &&
+        (content.startsWith('http://') || content.startsWith('https://'));
+
+    if (isUrl) {
+      await _handleImageForBranding(content as String);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select an image item for the header logo.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickFooterLogo() async {
+    final selectedModule = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const ContentLibrarySelectionDialog(),
+    );
+
+    if (selectedModule == null) return;
+
+    final content = selectedModule['content'] ?? '';
+    final isUrl = content is String &&
+        (content.startsWith('http://') || content.startsWith('https://'));
+
+    if (isUrl) {
+      await _handleImageForBranding(content as String);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select an image item for the footer logo.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   void _createSnippet(int index) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -819,6 +881,81 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _handleImageForBranding(String imageUrl) async {
+    if (imageUrl.isEmpty) return;
+
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Use Image'),
+        content: const Text(
+          'How would you like to use this image? You can set it as a header logo, footer logo, header background, or insert it into the page.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'header'),
+            child: const Text('Header Logo'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'footer'),
+            child: const Text('Footer Logo'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'header_background'),
+            child: const Text('Header Background'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'page'),
+            child: const Text('Insert into Page'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null) return;
+
+    if (choice == 'header') {
+      setState(() {
+        _headerLogoUrl = imageUrl;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Header logo updated'),
+          backgroundColor: Color(0xFF27AE60),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else if (choice == 'footer') {
+      setState(() {
+        _footerLogoUrl = imageUrl;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Footer logo updated'),
+          backgroundColor: Color(0xFF27AE60),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else if (choice == 'header_background') {
+      setState(() {
+        _headerBackgroundImageUrl = imageUrl;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Header background updated'),
+          backgroundColor: Color(0xFF27AE60),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else if (choice == 'page') {
+      _addImageToSection(imageUrl);
+    }
   }
 
   Widget _buildAIAnalysisIcon() {
@@ -2083,6 +2220,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         'currency': _selectedCurrency,
         'version': _currentVersionNumber,
         'last_modified': DateTime.now().toIso8601String(),
+        'headerLogoUrl': _headerLogoUrl,
+        'footerLogoUrl': _footerLogoUrl,
+        'headerLogoPosition': _headerLogoPosition,
+        'headerBackgroundImageUrl': _headerBackgroundImageUrl,
       }
     };
     return json.encode(documentData);
@@ -4284,6 +4425,51 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  Widget? _buildHeaderLogoWidget() {
+    if (_headerLogoUrl == null || _headerLogoUrl!.trim().isEmpty) {
+      return null;
+    }
+
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        _headerLogoDragDelta += details.delta.dx;
+      },
+      onHorizontalDragEnd: (details) {
+        const threshold = 8.0;
+        if (_headerLogoDragDelta.abs() < threshold) {
+          _headerLogoDragDelta = 0;
+          return;
+        }
+
+        setState(() {
+          if (_headerLogoDragDelta > 0) {
+            // Dragged to the right: move alignment rightwards
+            if (_headerLogoPosition == 'left') {
+              _headerLogoPosition = 'center';
+            } else if (_headerLogoPosition == 'center') {
+              _headerLogoPosition = 'right';
+            }
+          } else {
+            // Dragged to the left: move alignment leftwards
+            if (_headerLogoPosition == 'right') {
+              _headerLogoPosition = 'center';
+            } else if (_headerLogoPosition == 'center') {
+              _headerLogoPosition = 'left';
+            }
+          }
+          _headerLogoDragDelta = 0;
+        });
+      },
+      child: SizedBox(
+        height: 32,
+        child: Image.network(
+          _headerLogoUrl!,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildA4Pages() {
     // A4 dimensions: 210mm x 297mm (aspect ratio 0.707)
     // Using larger width of 900px for better visibility
@@ -4295,12 +4481,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.length,
       (index) {
         final section = _sections[index];
+        final rawTitle = _titleController.text.trim();
+        final displayTitle = rawTitle.isEmpty || rawTitle == 'Untitled Document'
+            ? null
+            : rawTitle;
+        final rawSubtitle = section.title.trim();
+        final displaySubtitle =
+            rawSubtitle.isEmpty || rawSubtitle == 'Untitled Section'
+                ? null
+                : rawSubtitle;
+        final headerLogoWidget = _buildHeaderLogoWidget();
         return Container(
           width: pageWidth,
-          constraints: const BoxConstraints(
-            minHeight: 600,
-            maxHeight: pageHeight,
-          ),
+          height: pageHeight,
           margin: const EdgeInsets.only(bottom: 32),
           decoration: BoxDecoration(
             color: section.backgroundImageUrl == null
@@ -4327,35 +4520,46 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ],
           ),
-          child: Stack(
+          child: Column(
             children: [
-              SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(60),
-                  child: _buildSectionContent(index),
+              DocumentHeader(
+                title: displayTitle,
+                subtitle: displaySubtitle,
+                leading:
+                    _headerLogoPosition == 'left' ? headerLogoWidget : null,
+                center:
+                    _headerLogoPosition == 'center' ? headerLogoWidget : null,
+                trailing:
+                    _headerLogoPosition == 'right' ? headerLogoWidget : null,
+                backgroundImageUrl: _headerBackgroundImageUrl,
+                onTap: _pickHeaderLogo,
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 60,
+                      vertical: 24,
+                    ),
+                    child: _buildSectionContent(index),
+                  ),
                 ),
               ),
-              // Page number indicator at bottom
-              Positioned(
-                bottom: 20,
-                right: 60,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100]!.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Text(
-                    'Page ${index + 1} of ${_sections.length}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
+              DocumentFooter(
+                pageNumber: index + 1,
+                totalPages: _sections.length,
+                leading:
+                    _footerLogoUrl != null && _footerLogoUrl!.trim().isNotEmpty
+                        ? SizedBox(
+                            width: 80,
+                            height: 32,
+                            child: Image.network(
+                              _footerLogoUrl!,
+                              fit: BoxFit.contain,
+                            ),
+                          )
+                        : null,
+                onTap: _pickFooterLogo,
               ),
             ],
           ),
@@ -6593,7 +6797,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: InkWell(
                     onTap: () {
-                      _addImageToSection(_uploadedImages[index]);
+                      _handleImageForBranding(_uploadedImages[index]);
                     },
                     borderRadius: BorderRadius.circular(6),
                     child: Container(
@@ -6702,7 +6906,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: InkWell(
                     onTap: () {
-                      _addImageToSection(_libraryImages[index]['content']);
+                      _handleImageForBranding(
+                        _libraryImages[index]['content']?.toString() ?? '',
+                      );
                     },
                     borderRadius: BorderRadius.circular(6),
                     child: Container(
