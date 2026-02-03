@@ -705,7 +705,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         templateKey: _formData['templateId']?.toString().isNotEmpty == true
             ? _formData['templateId'].toString()
             : null,
-        clientId: _formData['clientId'],
       );
 
       final proposalId = (created != null && created['id'] != null)
