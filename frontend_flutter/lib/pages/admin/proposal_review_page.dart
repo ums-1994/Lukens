@@ -31,6 +31,11 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
 
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -45,7 +50,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   }
 
   Future<void> _loadProposal() async {
-    setState(() {
+    _safeSetState(() {
       _isLoading = true;
       _error = null;
     });
@@ -53,7 +58,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     try {
       final token = AuthService.token;
       if (token == null) {
-        setState(() {
+        _safeSetState(() {
           _error = 'Not authenticated';
           _isLoading = false;
         });
@@ -62,7 +67,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
       final proposalId = int.tryParse(widget.proposalId);
       if (proposalId == null) {
-        setState(() {
+        _safeSetState(() {
           _error = 'Invalid proposal ID';
           _isLoading = false;
         });
@@ -136,7 +141,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       }
 
       if (proposal == null || proposal.isEmpty) {
-        setState(() {
+        _safeSetState(() {
           _error = 'Proposal not found';
           _isLoading = false;
         });
@@ -149,12 +154,12 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       // Load comments
       await _loadComments(proposalId, token);
 
-      setState(() {
+      _safeSetState(() {
         _proposal = proposal;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
+      _safeSetState(() {
         _error = 'Error loading proposal: $e';
         _isLoading = false;
       });
@@ -193,7 +198,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           return normalized;
         }).toList();
 
-        setState(() {
+        _safeSetState(() {
           _versions = versions;
         });
       }
@@ -236,7 +241,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           comments = [Map<String, dynamic>.from(data)];
         }
 
-        setState(() {
+        _safeSetState(() {
           _comments = comments.map((c) {
             // Normalize comment structure
             final authorName = c['author_name'] ??
@@ -265,7 +270,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   Future<void> _submitComment() async {
     if (_commentController.text.trim().isEmpty) return;
 
-    setState(() => _isSubmittingComment = true);
+    _safeSetState(() => _isSubmittingComment = true);
 
     try {
       final token = AuthService.token;
@@ -322,7 +327,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         );
       }
     } finally {
-      setState(() => _isSubmittingComment = false);
+      _safeSetState(() => _isSubmittingComment = false);
     }
   }
 
@@ -610,7 +615,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
             ),
             IconButton(
               icon: const Icon(Icons.history, color: Colors.white),
-              onPressed: () => setState(() => _showVersions = !_showVersions),
+              onPressed: () =>
+                  _safeSetState(() => _showVersions = !_showVersions),
               tooltip: 'Versions',
             ),
             IconButton(

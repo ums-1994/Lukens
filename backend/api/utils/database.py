@@ -130,7 +130,13 @@ def release_pg_conn(conn):
                 cursor.close()
                 
                 # Connection is clean and valid, return to pool
-                get_pg_pool().putconn(conn)
+                try:
+                    get_pg_pool().putconn(conn)
+                except psycopg2.pool.PoolError:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
             except (psycopg2.OperationalError, psycopg2.InterfaceError):
                 # Connection is corrupted, close it instead of returning to pool
                 print(f"[WARN] Connection corrupted, closing instead of returning to pool")
@@ -314,6 +320,14 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add contact_person column (may already exist): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE clients
+                ADD COLUMN IF NOT EXISTS region VARCHAR(80)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add region column (may already exist): {e}")
 
         # Proposal versions table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
