@@ -4,6 +4,12 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
+  errors:
+    # Suppress deprecated API usage warnings (pre-existing)
+    deprecated_member_use: ignore
+    # Suppress unused variable/field warnings (pre-existing)
+    unused_local_variable: ignore
+    unused_field: ignore
 
 linter:
   rules:
@@ -12,13 +18,3 @@ linter:
     prefer_const_literals_to_create_immutables: true
     avoid_print: false  # Allow print statements for debugging
     prefer_single_quotes: true
-
-# Suppress existing deprecation warnings across the codebase
-# These are pre-existing issues not related to the JWT token input
-analyzer:
-  errors:
-    # Suppress deprecated API usage warnings (pre-existing)
-    deprecated_member_use: ignore
-    # Suppress unused variable/field warnings (pre-existing)
-    unused_local_variable: ignore
-    unused_field: ignore

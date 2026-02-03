@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
-import '../config/api_config.dart';
 
 class AIAnalysisService {
-  static String get _baseUrl => ApiConfig.backendBaseUrl;
+  static String get _baseUrl => ApiService.baseUrl;
   static String? _authToken;
 
   // Set authentication token
@@ -12,10 +11,53 @@ class AIAnalysisService {
     _authToken = token;
   }
 
+  static Future<Map<String, dynamic>> overrideRiskGateRun({
+    required int runId,
+    required String overrideReason,
+  }) async {
+    final reason = overrideReason.trim();
+    if (reason.isEmpty) {
+      throw Exception('overrideReason is required');
+    }
+
+    final headers = {
+      'Content-Type': 'application/json',
+      if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+    };
+
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/risk-gate/override'),
+      headers: headers,
+      body: jsonEncode({'run_id': runId, 'override_reason': reason}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw Exception('Unexpected override response');
+      }
+      return data;
+    }
+
+    String detail = 'Risk Gate override failed';
+    try {
+      final parsed = jsonDecode(response.body);
+      if (parsed is Map<String, dynamic> && parsed['detail'] != null) {
+        detail = parsed['detail'].toString();
+      } else {
+        detail = response.body;
+      }
+    } catch (_) {
+      detail = response.body;
+    }
+
+    throw Exception(detail);
+  }
+
   // Check if AI is configured (check backend status)
   static Future<bool> get isConfigured async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.backendBaseUrl}/ai/status'));
+      final response = await http.get(Uri.parse('$_baseUrl/ai/status'));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['ai_enabled'] == true;
@@ -26,7 +68,7 @@ class AIAnalysisService {
     return false;
   }
 
-  // AI-powered risk analysis (Wildcard Challenge)
+  // AI-powered risk analysis (Wildcard Challenge) via Risk Gate endpoint
   static Future<Map<String, dynamic>> analyzeProposalRisks(
       String proposalId) async {
     try {
@@ -36,20 +78,32 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('${ApiConfig.backendBaseUrl}/ai/analyze-risks'),
+        Uri.parse('$_baseUrl/api/risk-gate/analyze'),
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return _convertToUIFormat(data['analysis']);
+        if (data is! Map<String, dynamic>) {
+          throw Exception('Unexpected risk analysis response');
+        }
+
+        // Risk Gate returns: status, risk_score, issues, kb_citations, redaction_summary
+        return data;
+      } else if (response.statusCode == 400) {
+        // Risk Gate may return 400 with BLOCK payload; parse it
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
+          return data;
+        }
+        throw Exception('Risk analysis failed: ${response.body}');
       } else {
-        throw Exception('Risk analysis failed: ${response.statusCode}');
+        throw Exception('Risk analysis failed: ${response.body}');
       }
     } catch (e) {
-      print('AI Risk Analysis Error: $e');
-      return _getMockAnalysis({});
+      print('Risk analysis error: $e');
+      rethrow;
     }
   }
 
@@ -144,7 +198,7 @@ class AIAnalysisService {
       };
 
       final response = await http.post(
-        Uri.parse('${ApiConfig.backendBaseUrl}/ai/check-compliance'),
+        Uri.parse('$_baseUrl/ai/check-compliance'),
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
       );
@@ -225,6 +279,7 @@ class AIAnalysisService {
       'issues': issues,
       'summary': analysis['summary'] ?? '',
       'required_actions': analysis['required_actions'] ?? [],
+      'kb_recommendations': analysis['kb_recommendations'] ?? {},
     };
   }
 
