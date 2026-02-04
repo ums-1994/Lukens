@@ -2,9 +2,9 @@
 Database connection and schema utilities
 """
 import os
-import psycopg2
-import psycopg2.extras
-import psycopg2.pool
+import psycopg
+from psycopg_pool import ConnectionPool
+from psycopg.rows import dict_row
 from contextlib import contextmanager
 
 # PostgreSQL connection pool
@@ -33,11 +33,23 @@ def get_pg_pool():
                 db_config['sslmode'] = ssl_mode
                 print(f"[*] Using SSL mode: {ssl_mode} for external connection")
             
+            # Build connection string for psycopg3
+            conn_string = (
+                f"host={db_config['host']} "
+                f"port={db_config['port']} "
+                f"dbname={db_config['database']} "
+                f"user={db_config['user']} "
+                f"password={db_config['password']}"
+            )
+            
+            if 'sslmode' in db_config:
+                conn_string += f" sslmode={db_config['sslmode']}"
+            
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
-            _pg_pool = psycopg2.pool.SimpleConnectionPool(
-                minconn=1,
-                maxconn=20,
-                **db_config,
+            _pg_pool = ConnectionPool(
+                conn_string,
+                min_size=1,
+                max_size=20,
             )
             print("[OK] PostgreSQL connection pool created successfully")
         except Exception as exc:
@@ -57,7 +69,7 @@ def _pg_conn():
             cursor.execute('SELECT 1')
             cursor.close()
             return conn
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        except (psycopg.OperationalError, psycopg.InterfaceError) as exc:
             if attempt < max_retries - 1:
                 print(f"[WARN] Connection error (attempt {attempt + 1}/{max_retries}): {exc}. Retrying...")
                 import time
@@ -83,8 +95,7 @@ def release_pg_conn(conn):
             # Check if connection is still valid and reset its state before returning to pool
             try:
                 # Check if connection is in a transaction and rollback if needed
-                import psycopg2.extensions
-                if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                if conn.info.transaction_status == psycopg.pq.TransactionStatus.INTRANS:
                     print(f"[DB] Connection in transaction, rolling back before returning to pool")
                     conn.rollback()
                 
@@ -98,7 +109,7 @@ def release_pg_conn(conn):
                 
                 # Connection is clean and valid, return to pool
                 get_pg_pool().putconn(conn)
-            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            except (psycopg.OperationalError, psycopg.InterfaceError):
                 # Connection is corrupted, close it instead of returning to pool
                 print(f"[WARN] Connection corrupted, closing instead of returning to pool")
                 try:
