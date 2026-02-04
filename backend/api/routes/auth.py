@@ -22,10 +22,17 @@ bp = Blueprint('auth', __name__)
 
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:
-    initialize_firebase()
+    print("[AUTH] Initializing Firebase Admin SDK...")
+    result = initialize_firebase()
+    if result:
+        print("[AUTH] ✅ Firebase initialization succeeded")
+    else:
+        print("[AUTH] ⚠️  Firebase initialization returned None - check logs above")
 except Exception as e:
-    print(f"[AUTH] WARNING: Firebase initialization failed, but auth blueprint will still work: {e}")
-    print("   Firebase authentication features may not be available until Firebase is properly configured.")
+    import traceback
+    print(f"[AUTH] ❌ Firebase initialization failed: {e}")
+    print(f"[AUTH] Stack trace: {traceback.format_exc()}")
+    print("[AUTH]    Firebase authentication features may not be available until Firebase is properly configured.")
 
 def generate_verification_token(user_id, email):
     """Generate a verification token for email verification and store in database"""
@@ -383,12 +390,7 @@ def firebase_auth():
             return {'detail': 'Firebase ID token required'}, 400
         
         # Get role from request (for new registrations)
-        # Use None as default to distinguish between "not provided" and "explicitly set to user"
-        requested_role = data.get('role') if 'role' in data else None
-        print(f'🔍 Backend received role from request: "{requested_role}" (provided: {"role" in data})')
-        print(f'🔍 Full request data keys: {list(data.keys())}')
-        if 'role' in data:
-            print(f'🔍 Role value type: {type(data.get("role"))}, value: {repr(data.get("role"))}')
+        requested_role = data.get('role', 'user')
         
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)
@@ -423,38 +425,12 @@ def firebase_auth():
                 username = user[1]
                 user_role = user[4]  # Get role from database
                 
-                # If a role was provided in the request, normalize and update it (for role updates during registration)
-                # Otherwise, use the role from the database
-                if requested_role is not None:
-                    # Normalize the requested role first
-                    requested_normalized = requested_role.lower().strip()
-                    if requested_normalized in ['admin', 'ceo']:
-                        new_role = 'admin'
-                    elif requested_normalized in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
-                        new_role = 'finance_manager'
-                    elif requested_normalized in ['manager', 'creator', 'user']:
-                        new_role = 'manager'
-                    else:
-                        # Unknown role: ignore update rather than writing invalid roles to DB
-                        new_role = None
-                        print(f'⚠️ Unknown requested role "{requested_role}", ignoring role update')
-                    
-                    # Update role in database if it's different
-                    if new_role is not None and new_role != user_role:
-                        print(f'🔄 Updating user role from "{user_role}" to "{new_role}"')
-                        cursor.execute(
-                            '''UPDATE users SET role = %s WHERE id = %s''',
-                            (new_role, user_id)
-                        )
-                        conn.commit()
-                        user_role = new_role
-                
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'
                 role_lower = user_role.lower().strip() if user_role else 'user'
                 if role_lower in ['admin', 'ceo']:
                     normalized_role = 'admin'
-                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
+                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager']:
                     # Preserve a distinct finance manager role so frontend can route to finance dashboard
                     normalized_role = 'finance_manager'
                 elif role_lower in ['manager', 'creator', 'user']:
@@ -510,7 +486,7 @@ def firebase_auth():
                 
                 # Use requested role if provided, otherwise default to 'manager'
                 # Supported roles: 'admin', 'manager', 'finance_manager'
-                normalized_role = requested_role.lower().strip() if requested_role is not None else 'manager'
+                normalized_role = requested_role.lower().strip() if requested_role else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
                 elif normalized_role in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
