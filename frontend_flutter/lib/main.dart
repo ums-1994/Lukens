@@ -319,6 +319,7 @@ class MyApp extends StatelessWidget {
                 readOnly: args['readOnly'] ?? false,
                 requireVersionDescription:
                     args['requireVersionDescription'] ?? false,
+                isCollaborator: args['isCollaborator'] ?? false,
               );
             }
 

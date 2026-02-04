@@ -8,6 +8,7 @@ class DocumentHeader extends StatelessWidget {
   final VoidCallback? onTap;
   final Widget? center;
   final String? backgroundImageUrl;
+  final bool showDivider;
 
   const DocumentHeader({
     super.key,
@@ -18,6 +19,7 @@ class DocumentHeader extends StatelessWidget {
     this.onTap,
     this.center,
     this.backgroundImageUrl,
+    this.showDivider = true,
   });
 
   @override
@@ -67,9 +69,11 @@ class DocumentHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: const Border(
-          bottom: BorderSide(color: Color(0xFFE5E7EB)),
-        ),
+        border: showDivider
+            ? const Border(
+                bottom: BorderSide(color: Color(0xFFE5E7EB)),
+              )
+            : null,
         image:
             backgroundImageUrl != null && backgroundImageUrl!.trim().isNotEmpty
                 ? DecorationImage(
@@ -118,6 +122,7 @@ class DocumentFooter extends StatelessWidget {
   final Widget? leading;
   final Widget? trailing;
   final VoidCallback? onTap;
+  final bool showDivider;
 
   const DocumentFooter({
     super.key,
@@ -126,6 +131,7 @@ class DocumentFooter extends StatelessWidget {
     this.leading,
     this.trailing,
     this.onTap,
+    this.showDivider = true,
   });
 
   @override
@@ -133,37 +139,53 @@ class DocumentFooter extends StatelessWidget {
     final footerContent = Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Color(0xFFE5E7EB)),
-        ),
+        border: showDivider
+            ? const Border(
+                top: BorderSide(color: Color(0xFFE5E7EB)),
+              )
+            : null,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (leading != null) leading!,
-          const Spacer(),
-          if (pageNumber != null && totalPages != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.grey[100]!.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: Text(
-                'Page $pageNumber of $totalPages',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+          if (leading != null ||
+              (pageNumber != null && totalPages != null) ||
+              trailing != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (leading != null) leading!,
+                if (pageNumber != null && totalPages != null)
+                  Padding(
+                    padding: EdgeInsets.only(top: leading != null ? 4.0 : 0.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100]!.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Text(
+                        'Page $pageNumber of $totalPages',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (trailing != null)
+                  const SizedBox(
+                    height: 4,
+                  ),
+                if (trailing != null) trailing!,
+              ],
             ),
-          if (trailing != null) ...[
-            const SizedBox(width: 12),
-            trailing!,
-          ],
+          const Spacer(),
         ],
       ),
     );

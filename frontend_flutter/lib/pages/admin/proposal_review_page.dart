@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/header.dart';
 import 'package:intl/intl.dart';
 
 class ProposalReviewPage extends StatefulWidget {
@@ -590,6 +591,9 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         'readOnly': false,
         // Enforce mandatory change descriptions for new versions
         'requireVersionDescription': true,
+        // Use collaborator mode to hide the creator navigation/sidebar while
+        // still allowing full editing from the admin review context.
+        'isCollaborator': true,
       },
     );
   }
@@ -613,6 +617,301 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       }
     }
     return content.toString();
+  }
+
+  // Decode the structured document JSON produced by the blank document editor.
+  Map<String, dynamic>? _parseDocumentData() {
+    final raw = _proposal?['content'];
+    if (raw is! String || raw.trim().isEmpty) return null;
+
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+    } catch (e) {
+      print(
+          '⚠️ Failed to parse proposal document content for admin preview: $e');
+    }
+    return null;
+  }
+
+  Alignment _alignmentForFooterPosition(String? position) {
+    switch (position) {
+      case 'left':
+        return Alignment.centerLeft;
+      case 'right':
+        return Alignment.centerRight;
+      case 'center':
+      default:
+        return Alignment.center;
+    }
+  }
+
+  Widget _buildAdminHeader(
+    Map<String, dynamic> metadata,
+    String? documentTitle,
+  ) {
+    final headerLogoUrl = metadata['headerLogoUrl'] as String?;
+    final headerLogoPosition =
+        (metadata['headerLogoPosition'] as String?) ?? 'left';
+    final headerBackgroundImageUrl =
+        metadata['headerBackgroundImageUrl'] as String?;
+
+    Widget? logoWidget;
+    if (headerLogoUrl != null && headerLogoUrl.trim().isNotEmpty) {
+      logoWidget = SizedBox(
+        height: 32,
+        child: Image.network(
+          headerLogoUrl,
+          fit: BoxFit.contain,
+        ),
+      );
+    }
+
+    final titleText = documentTitle?.trim();
+
+    return DocumentHeader(
+      title: titleText != null && titleText.isNotEmpty ? titleText : null,
+      subtitle: null,
+      leading: headerLogoPosition == 'left' ? logoWidget : null,
+      center: headerLogoPosition == 'center' ? logoWidget : null,
+      trailing: headerLogoPosition == 'right' ? logoWidget : null,
+      backgroundImageUrl: headerBackgroundImageUrl,
+      showDivider: false,
+    );
+  }
+
+  Widget _buildAdminFooter({
+    required Map<String, dynamic> metadata,
+    required int pageNumber,
+    required int totalPages,
+  }) {
+    final footerLogoUrl = metadata['footerLogoUrl'] as String?;
+    final footerLogoPosition =
+        (metadata['footerLogoPosition'] as String?) ?? 'left';
+    final footerPageNumberPosition =
+        (metadata['footerPageNumberPosition'] as String?) ?? 'center';
+    final footerProposalIdPosition =
+        (metadata['footerProposalIdPosition'] as String?) ?? 'right';
+
+    // Safely derive the numeric proposal ID from the loaded proposal map.
+    int? proposalId;
+    final dynamic rawId = _proposal?['id'];
+    if (rawId is int) {
+      proposalId = rawId;
+    } else if (rawId is String) {
+      proposalId = int.tryParse(rawId);
+    } else if (rawId != null) {
+      proposalId = int.tryParse(rawId.toString());
+    }
+
+    Widget? logo;
+    if (footerLogoUrl != null && footerLogoUrl.trim().isNotEmpty) {
+      logo = Align(
+        alignment: _alignmentForFooterPosition(footerLogoPosition),
+        child: SizedBox(
+          width: 80,
+          height: 32,
+          child: Image.network(
+            footerLogoUrl,
+            fit: BoxFit.contain,
+          ),
+        ),
+      );
+    }
+
+    final pageChip = Align(
+      alignment: _alignmentForFooterPosition(footerPageNumberPosition),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.grey[100]!.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Text(
+          'Page $pageNumber of $totalPages',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+
+    Widget? proposalIdWidget;
+    if (proposalId != null) {
+      proposalIdWidget = Align(
+        alignment: _alignmentForFooterPosition(footerProposalIdPosition),
+        child: Text(
+          'Proposal ID: $proposalId',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+      ),
+      child: Stack(
+        children: [
+          if (logo != null) logo,
+          pageChip,
+          if (proposalIdWidget != null) proposalIdWidget,
+        ],
+      ),
+    );
+  }
+
+  /// Build an A4-style preview of the proposal content using the same
+  /// document structure as the creator's blank document editor.
+  Widget _buildStructuredDocumentPreview() {
+    final data = _parseDocumentData();
+    if (data == null) {
+      return Text(
+        _formatContent(_proposal!['content']),
+        style: const TextStyle(
+          color: Colors.black87,
+          fontSize: 14,
+          height: 1.6,
+        ),
+      );
+    }
+
+    final sectionsRaw = data['sections'];
+    if (sectionsRaw is! List || sectionsRaw.isEmpty) {
+      return Text(
+        _formatContent(_proposal!['content']),
+        style: const TextStyle(
+          color: Colors.black87,
+          fontSize: 14,
+          height: 1.6,
+        ),
+      );
+    }
+
+    final List<Map<String, dynamic>> sections = sectionsRaw
+        .whereType<Map>()
+        .map((s) => Map<String, dynamic>.from(s))
+        .toList();
+
+    final metadata = (data['metadata'] is Map)
+        ? Map<String, dynamic>.from(data['metadata'] as Map)
+        : <String, dynamic>{};
+
+    final String documentTitle =
+        (data['title'] ?? _proposal?['title'] ?? 'Untitled Document')
+            .toString();
+
+    const double pageWidth = 900;
+    const double pageHeight = 1273;
+
+    return Center(
+      child: Column(
+        children: [
+          ...sections.asMap().entries.map((entry) {
+            final index = entry.key;
+            final section = entry.value;
+
+            final sectionTitle =
+                (section['title'] ?? 'Untitled Section').toString();
+            final sectionContent = (section['content'] ?? '').toString();
+
+            final int? bgColorValue = section['backgroundColor'] is int
+                ? section['backgroundColor'] as int
+                : int.tryParse(section['backgroundColor']?.toString() ?? '');
+            final Color backgroundColor =
+                bgColorValue != null ? Color(bgColorValue) : Colors.white;
+            final String? backgroundImageUrl =
+                section['backgroundImageUrl'] as String?;
+
+            return Container(
+              width: pageWidth,
+              height: pageHeight,
+              margin: const EdgeInsets.only(bottom: 32),
+              decoration: BoxDecoration(
+                color:
+                    backgroundImageUrl == null ? backgroundColor : Colors.white,
+                image: backgroundImageUrl != null
+                    ? DecorationImage(
+                        image: NetworkImage(backgroundImageUrl),
+                        fit: BoxFit.cover,
+                        opacity: 0.7,
+                      )
+                    : null,
+                borderRadius: BorderRadius.circular(4),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 20,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  _buildAdminHeader(metadata, documentTitle),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 60,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              sectionTitle.isEmpty
+                                  ? 'Untitled Section'
+                                  : sectionTitle,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1A3A52),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              sectionContent.isEmpty
+                                  ? '(No content in this section)'
+                                  : sectionContent,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF1A1A1A),
+                                height: 1.8,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  _buildAdminFooter(
+                    metadata: metadata,
+                    pageNumber: index + 1,
+                    totalPages: sections.length,
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
   }
 
   @override
@@ -799,14 +1098,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                           borderRadius:
                                               BorderRadius.circular(12),
                                         ),
-                                        child: Text(
-                                          _formatContent(_proposal!['content']),
-                                          style: const TextStyle(
-                                            color: Colors.black87,
-                                            fontSize: 14,
-                                            height: 1.6,
-                                          ),
-                                        ),
+                                        child:
+                                            _buildStructuredDocumentPreview(),
                                       ),
                                     ],
                                   ),
