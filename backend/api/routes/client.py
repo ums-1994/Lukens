@@ -250,6 +250,21 @@ def get_client_proposals():
             column_info = _get_proposal_column_info(cursor)
             client_name_expr = column_info['client_name_expr']
             client_email_expr = column_info['client_email_expr']
+            columns = column_info['columns']
+
+            engagement_select_parts = []
+            if 'opportunity_id' in columns:
+                engagement_select_parts.append('p.opportunity_id')
+            if 'engagement_stage' in columns:
+                engagement_select_parts.append('p.engagement_stage')
+            if 'engagement_opened_at' in columns:
+                engagement_select_parts.append('p.engagement_opened_at')
+            if 'engagement_target_close_at' in columns:
+                engagement_select_parts.append('p.engagement_target_close_at')
+
+            engagement_select_sql = ''
+            if engagement_select_parts:
+                engagement_select_sql = ', ' + ', '.join(engagement_select_parts)
 
             query = f"""
                 SELECT DISTINCT
@@ -263,6 +278,7 @@ def get_client_proposals():
                     ps.signing_url,
                     ps.status AS signature_status,
                     ps.envelope_id
+                    {engagement_select_sql}
                 FROM proposals p
                 LEFT JOIN LATERAL (
                     SELECT envelope_id, signing_url, status
@@ -330,6 +346,20 @@ def get_client_proposal_details(proposal_id):
                 owner_select_expr = 'NULL'
                 user_join_clause = 'LEFT JOIN users u ON 1 = 0'
 
+            engagement_select_parts = []
+            if 'opportunity_id' in columns:
+                engagement_select_parts.append('p.opportunity_id')
+            if 'engagement_stage' in columns:
+                engagement_select_parts.append('p.engagement_stage')
+            if 'engagement_opened_at' in columns:
+                engagement_select_parts.append('p.engagement_opened_at')
+            if 'engagement_target_close_at' in columns:
+                engagement_select_parts.append('p.engagement_target_close_at')
+
+            engagement_select_sql = ''
+            if engagement_select_parts:
+                engagement_select_sql = ', ' + ', '.join(engagement_select_parts)
+
             query = f"""
                 SELECT 
                     p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
@@ -337,6 +367,7 @@ def get_client_proposal_details(proposal_id):
                     {client_email_expr} AS client_email,
                     {owner_select_expr} AS user_id,
                     u.full_name as owner_name, u.email as owner_email
+                    {engagement_select_sql}
                 FROM proposals p
                 {user_join_clause}
                 LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id AND ci.access_token = %s
@@ -348,6 +379,31 @@ def get_client_proposal_details(proposal_id):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
+
+            proposal_dict = dict(proposal)
+
+            version_info = None
+            try:
+                cursor.execute(
+                    '''SELECT version_number, created_at
+                       FROM proposal_versions
+                       WHERE proposal_id = %s
+                       ORDER BY version_number DESC
+                       LIMIT 1''',
+                    (proposal_id,),
+                )
+                version_row = cursor.fetchone()
+                if version_row:
+                    version_info = {
+                        'version_number': version_row.get('version_number'),
+                        'created_at': version_row['created_at'].isoformat() if version_row.get('created_at') else None,
+                    }
+            except Exception as version_err:
+                print(f"❌ Error fetching latest proposal version for client view: {version_err}")
+
+            if version_info:
+                proposal_dict['version_number'] = version_info['version_number']
+                proposal_dict['version_created_at'] = version_info['created_at']
             
             cursor.execute("""
                 SELECT envelope_id, signing_url, status, sent_at, signed_at
@@ -371,7 +427,7 @@ def get_client_proposal_details(proposal_id):
             comments = cursor.fetchall()
             
             return {
-                'proposal': dict(proposal),
+                'proposal': proposal_dict,
                 'signature': dict(signature) if signature else None,
                 'comments': [dict(c) for c in comments]
             }, 200

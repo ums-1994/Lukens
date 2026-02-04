@@ -17,9 +17,11 @@ from email.mime.multipart import MIMEMultipart
 import traceback
 from io import BytesIO
 
-from api.utils.database import get_pg_pool, get_db_connection, init_database
+import psycopg2
+import psycopg2.extras
 import cloudinary
 import cloudinary.uploader
+import cloudinary.api
 
 # PDF Generation
 try:
@@ -55,6 +57,7 @@ from werkzeug.utils import secure_filename
 from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
+from api.utils.ai_safety import AISafetyError
 
 # Load environment variables
 load_dotenv()
@@ -67,6 +70,8 @@ CORS(
         r"/*": {
             "origins": [
                 "https://proposals2025.netlify.app",
+                r"^http://localhost(:\\d+)?$",
+                r"^http://127\\.0\\.0\\.1(:\\d+)?$",
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
@@ -91,6 +96,7 @@ from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 from api.routes.approver import bp as approver_bp
+from api.routes.risk_gate import bp as risk_gate_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -100,6 +106,7 @@ app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
+app.register_blueprint(risk_gate_bp)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -137,7 +144,103 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 # Database initialization - PostgreSQL only
 BACKEND_TYPE = 'postgresql'
 
-# Database connection is now handled by api.utils.database
+# PostgreSQL connection pool
+_pg_pool = None
+
+
+def _build_db_config_from_env():
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        from urllib.parse import urlparse, parse_qs
+
+        parsed = urlparse(database_url)
+        if parsed.scheme not in ('postgres', 'postgresql'):
+            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+
+        db_config = {
+            'host': parsed.hostname,
+            'database': (parsed.path or '').lstrip('/'),
+            'user': parsed.username,
+            'password': parsed.password,
+            'port': parsed.port or 5432,
+        }
+
+        query = parse_qs(parsed.query or '')
+        sslmode_from_url = (query.get('sslmode') or [None])[0]
+
+        ssl_mode = sslmode_from_url or os.getenv('DB_SSLMODE')
+        if not ssl_mode:
+            if os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
+                ssl_mode = 'require'
+            elif db_config.get('host') and 'render.com' in db_config['host'].lower():
+                ssl_mode = 'require'
+            else:
+                ssl_mode = 'prefer'
+
+        if ssl_mode:
+            db_config['sslmode'] = ssl_mode
+
+        missing = [k for k in ('host', 'database', 'user') if not db_config.get(k)]
+        if missing:
+            raise ValueError(f"DATABASE_URL missing required parts: {', '.join(missing)}")
+
+        return db_config
+
+    return {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'database': os.getenv('DB_NAME', 'proposal_db'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+        'port': int(os.getenv('DB_PORT', '5432')),
+    }
+
+def get_pg_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        import psycopg2.pool
+        try:
+            db_config = _build_db_config_from_env()
+            if 'sslmode' in db_config:
+                print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
+            print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+            _pg_pool = psycopg2.pool.SimpleConnectionPool(
+                minconn=1,
+                maxconn=20,  # Increased max connections
+                **db_config
+            )
+            print("[OK] PostgreSQL connection pool created successfully")
+        except Exception as e:
+            print(f"[ERROR] Error creating PostgreSQL connection pool: {e}")
+            raise
+    return _pg_pool
+
+def _pg_conn():
+    try:
+        return get_pg_pool().getconn()
+    except Exception as e:
+        print(f"[ERROR] Error getting PostgreSQL connection: {e}")
+        raise
+
+def release_pg_conn(conn):
+    try:
+        if conn:
+            get_pg_pool().putconn(conn)
+    except Exception as e:
+        print(f"[WARN] Error releasing PostgreSQL connection: {e}")
+
+# Context manager for automatic connection cleanup
+from contextlib import contextmanager
+
+@contextmanager
+def get_db_connection():
+    """Context manager that ensures connections are always returned to pool"""
+    conn = None
+    try:
+        conn = _pg_conn()
+        yield conn
+    finally:
+        if conn:
+            release_pg_conn(conn)
 
 # Token for encryption
 ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', 'dev-key-change-in-production')
@@ -145,9 +248,273 @@ cipher = Fernet(base64.urlsafe_b64encode(ENCRYPTION_KEY.ljust(32)[:32].encode())
 
 def init_pg_schema():
     """Initialize PostgreSQL schema on app startup"""
-    # Use the new database utilities
-    from api.utils.database import init_pg_schema as new_init_pg_schema
-    new_init_pg_schema()
+    conn = None
+    try:
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        
+        # Users table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255),
+        role VARCHAR(50) DEFAULT 'user',
+        department VARCHAR(255),
+        is_active BOOLEAN DEFAULT true,
+        is_email_verified BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(500) NOT NULL,
+        client VARCHAR(500) NOT NULL,
+        owner_id INTEGER NOT NULL,
+        status VARCHAR(50) DEFAULT 'Draft',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        template_key VARCHAR(255),
+        content TEXT,
+        sections TEXT,
+        pdf_url TEXT,
+        client_can_edit BOOLEAN DEFAULT false,
+        FOREIGN KEY (owner_id) REFERENCES users(id)
+        )''')
+
+        # Risk Gate runs + override audit trail
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_runs (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            requested_by VARCHAR(255),
+            status VARCHAR(20) NOT NULL,
+            risk_score INTEGER NOT NULL,
+            issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+            kb_citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+            redaction_summary JSONB,
+            overridden BOOLEAN NOT NULL DEFAULT FALSE,
+            override_reason TEXT,
+            overridden_by VARCHAR(255),
+            overridden_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_runs_proposal_id
+               ON risk_gate_runs(proposal_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_overrides (
+            id SERIAL PRIMARY KEY,
+            run_id INTEGER NOT NULL,
+            override_reason TEXT NOT NULL,
+            approved_by VARCHAR(255) NOT NULL,
+            approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (run_id) REFERENCES risk_gate_runs(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_overrides_run_id
+               ON risk_gate_overrides(run_id, approved_at DESC)'''
+        )
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS content (
+        id SERIAL PRIMARY KEY,
+        key VARCHAR(255) UNIQUE NOT NULL,
+        label VARCHAR(500) NOT NULL,
+        content TEXT,
+        category VARCHAR(100) DEFAULT 'Templates',
+        is_folder BOOLEAN DEFAULT false,
+        parent_id INTEGER,
+        public_id VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_deleted BOOLEAN DEFAULT false,
+        FOREIGN KEY (parent_id) REFERENCES content(id)
+        )''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS settings (
+        id SERIAL PRIMARY KEY,
+        key VARCHAR(255) UNIQUE NOT NULL,
+        value TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        version_number INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by INTEGER,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id),
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        # Document comments table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS document_comments (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        comment_text TEXT NOT NULL,
+        created_by INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        section_index INTEGER,
+        highlighted_text TEXT,
+        status VARCHAR(50) DEFAULT 'open',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_by INTEGER,
+        resolved_at TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id),
+        FOREIGN KEY (created_by) REFERENCES users(id),
+        FOREIGN KEY (resolved_by) REFERENCES users(id)
+        )''')
+        
+        # Collaboration invitations table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        invited_email VARCHAR(255) NOT NULL,
+        invited_by INTEGER NOT NULL,
+        access_token VARCHAR(500) UNIQUE NOT NULL,
+        permission_level VARCHAR(50) DEFAULT 'comment',
+        status VARCHAR(50) DEFAULT 'pending',
+        invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        accessed_at TIMESTAMP,
+        expires_at TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (invited_by) REFERENCES users(id)
+        )''')
+        
+        # Suggested changes table for suggest mode
+        cursor.execute('''CREATE TABLE IF NOT EXISTS suggested_changes (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        section_id VARCHAR(255),
+        suggested_by INTEGER NOT NULL,
+        suggestion_text TEXT NOT NULL,
+        original_text TEXT,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP,
+        resolved_by INTEGER,
+        resolution_action VARCHAR(50),
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (suggested_by) REFERENCES users(id),
+        FOREIGN KEY (resolved_by) REFERENCES users(id)
+        )''')
+        
+        # Section locks table for soft locking
+        cursor.execute('''CREATE TABLE IF NOT EXISTS section_locks (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        section_id VARCHAR(255) NOT NULL,
+        locked_by INTEGER NOT NULL,
+        locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (locked_by) REFERENCES users(id),
+        UNIQUE(proposal_id, section_id)
+        )''')
+        
+        # Activity log table for comprehensive timeline
+        cursor.execute('''CREATE TABLE IF NOT EXISTS activity_log (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        user_id INTEGER,
+        action_type VARCHAR(100) NOT NULL,
+        action_description TEXT NOT NULL,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
+        
+        # Create index for faster activity queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_log_proposal 
+                         ON activity_log(proposal_id, created_at DESC)''')
+        
+        # Notifications table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        proposal_id INTEGER,
+        notification_type VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        metadata JSONB,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        read_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+        
+        # Create index for faster notification queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user 
+                         ON notifications(user_id, is_read, created_at DESC)''')
+        
+        # Mentions table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS comment_mentions (
+        id SERIAL PRIMARY KEY,
+        comment_id INTEGER NOT NULL,
+        mentioned_user_id INTEGER NOT NULL,
+        mentioned_by_user_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read BOOLEAN DEFAULT FALSE,
+        FOREIGN KEY (comment_id) REFERENCES document_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (mentioned_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (mentioned_by_user_id) REFERENCES users(id)
+        )''')
+        
+        # Create index for faster mention queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
+                         ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
+        
+        # DocuSign signatures table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        envelope_id VARCHAR(255) UNIQUE,
+        signer_name VARCHAR(255) NOT NULL,
+        signer_email VARCHAR(255) NOT NULL,
+        signer_title VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'sent',
+        signing_url TEXT,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        signed_at TIMESTAMP,
+        declined_at TIMESTAMP,
+        decline_reason TEXT,
+        signed_document_url TEXT,
+        created_by INTEGER,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        # Create index for faster signature queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
+                         ON proposal_signatures(proposal_id, status, sent_at DESC)''')
+        
+        conn.commit()
+        release_pg_conn(conn)
+        print("[OK] PostgreSQL schema initialized successfully")
+    except Exception as e:
+        print(f"[ERROR] Error initializing PostgreSQL schema: {e}")
+        if conn:
+            try:
+                release_pg_conn(conn)
+            except:
+                pass
+        raise
 
 # Initialize database schema on first request
 @app.before_request
@@ -782,35 +1149,52 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
 # Utility functions
 def get_db():
     """Get PostgreSQL connection"""
-    with get_db_connection() as conn:
-        return conn
+    return _pg_conn()
+
 
 def hash_password(password):
+    """Hash a password using werkzeug"""
     return generate_password_hash(password)
 
+
 def verify_password(stored_hash, password):
+    """Verify a password against a stored hash"""
     return check_password_hash(stored_hash, password)
 
+
 def generate_token(username):
+    """Generate a new authentication token for a user"""
     token = secrets.token_urlsafe(32)
     valid_tokens[token] = {
         'username': username,
         'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(days=7)
+        'expires_at': datetime.now() + timedelta(days=7),
     }
     save_tokens()  # Persist to file
     print(f"[TOKEN] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
     print(f"[TOKEN] Total valid tokens: {len(valid_tokens)}")
     return token
 
+
 def verify_token(token):
+    """Verify a token and return the username if valid"""
+    global valid_tokens
     # Dev bypass for testing
     if token == 'dev-bypass-token':
         print("[DEV] Using dev-bypass-token for username: admin")
         return 'admin'
-    
+
+    # First check in-memory tokens
     if token not in valid_tokens:
-        return None
+        # Reload from file to sync tokens across multiple workers/processes
+        try:
+            valid_tokens = load_tokens()
+            print(f"[TOKEN] Reloaded tokens from file, now have {len(valid_tokens)} tokens")
+        except Exception as e:
+            print(f"[WARN] Could not reload tokens from file: {e}")
+        if token not in valid_tokens:
+            return None
+
     token_data = valid_tokens[token]
     if datetime.now() > token_data['expires_at']:
         del valid_tokens[token]
@@ -2410,9 +2794,14 @@ def ai_improve_content(username):
         
         return result, 200
         
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error improving content: {e}")
-        return {'detail': str(e)}, 500
+        return {
+            "detail": "Upstream AI provider error",
+            "blocked": False,
+        }, 502
 
 @app.post("/ai/generate-full-proposal")
 @token_required
