@@ -2694,7 +2694,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         Directionality(
           textDirection: TextDirection.ltr,
           child: DropdownButtonFormField<Map<String, dynamic>>(
-            value: _selectedClient,
+            initialValue: _selectedClient,
             style: PremiumTheme.bodyMedium.copyWith(
               color: PremiumTheme.textPrimary,
             ),

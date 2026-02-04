@@ -1,7 +1,4 @@
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
-import 'package:jwt_decode/jwt_decode.dart';
-import '../config/jwt_config.dart';
 
 class JwtService {
   /// Decrypt and validate JWT token
@@ -26,17 +23,11 @@ class JwtService {
       }
 
       // First decode the JWT to get the payload
-      final payload = Jwt.parseJwt(normalized);
+      final payload = _parseJwtPayload(normalized);
       print('✅ JWT payload decoded successfully');
 
-      // Verify the token signature (simplified version)
-      if (!_verifyTokenSignature(normalized)) {
-        print('❌ JWT signature verification failed');
-        throw Exception('Invalid token signature');
-      }
-
       // Check if token is expired
-      if (Jwt.isExpired(normalized)) {
+      if (_isExpiredFromPayload(payload)) {
         print('❌ JWT token has expired');
         throw Exception('Token has expired');
       }
@@ -95,42 +86,36 @@ class JwtService {
     return t;
   }
 
-  /// Verify JWT token signature (simplified implementation)
-  static bool _verifyTokenSignature(String token) {
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return false;
-
-      final header = parts[0];
-      final payload = parts[1];
-      final signature = parts[2];
-
-      // Create the signing input
-      final signingInput = '$header.$payload';
-
-      // Create HMAC SHA256 signature
-      final key = utf8.encode(JwtConfig.jwtSecret);
-      final bytes = utf8.encode(signingInput);
-      final hmacSha256 = Hmac(sha256, key);
-      final digest = hmacSha256.convert(bytes);
-
-      // Base64 url encode the signature
-      final computedSignature = base64Url.encode(digest.bytes);
-
-      // Compare signatures (remove padding if present)
-      final cleanComputed = _removeBase64Padding(computedSignature);
-      final cleanSignature = _removeBase64Padding(signature);
-
-      return cleanComputed == cleanSignature;
-    } catch (e) {
-      print('Signature verification error: $e');
-      return false;
+  /// Parse the JWT payload (claims) without verifying signature.
+  ///
+  /// Note: In a client app you typically **do not** have the secret key, so you
+  /// can’t (and shouldn’t) verify HMAC signatures here. Treat this as claim
+  /// extraction only; the backend must validate the token.
+  static Map<String, dynamic> _parseJwtPayload(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) {
+      throw const FormatException('Invalid JWT format');
     }
+
+    final payloadPart = parts[1];
+    final normalized = base64Url.normalize(payloadPart);
+    final decodedJson = utf8.decode(base64Url.decode(normalized));
+    final decoded = json.decode(decodedJson);
+
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) {
+      return decoded.map((k, v) => MapEntry(k.toString(), v));
+    }
+
+    throw const FormatException('Invalid JWT payload JSON');
   }
 
-  /// Remove base64 padding for comparison
-  static String _removeBase64Padding(String base64) {
-    return base64.replaceAll('=', '');
+  static bool _isExpiredFromPayload(Map<String, dynamic> payload) {
+    final exp = payload['exp'];
+    if (exp is! num) return false; // if no expiry claim, treat as non-expiring
+
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return exp.toInt() <= nowSeconds;
   }
 
   /// Get user information from decrypted token
@@ -183,12 +168,12 @@ class JwtService {
   /// Check if token will expire within the specified minutes
   static bool willExpireSoon(String token, {int minutesWithin = 5}) {
     try {
-      final payload = Jwt.parseJwt(token);
-      final exp = payload['exp'] as int?;
-      if (exp == null) return false;
+      final payload = _parseJwtPayload(_normalizeToken(token));
+      final exp = payload['exp'];
+      if (exp is! num) return false;
 
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final timeUntilExpiry = exp - now;
+      final timeUntilExpiry = exp.toInt() - now;
 
       return timeUntilExpiry <= (minutesWithin * 60);
     } catch (e) {

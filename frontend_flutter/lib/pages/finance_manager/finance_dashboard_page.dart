@@ -72,7 +72,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
     return proposals.where((raw) {
       if (raw is! Map) return false;
-      final p = raw as Map;
+      final p = raw;
 
       final title = (p['title'] ?? '').toString().toLowerCase();
       final client =
@@ -109,7 +109,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   double _extractAmount(dynamic raw) {
     if (raw is! Map) return 0;
-    final p = raw as Map;
+    final p = raw;
     const keys = [
       'budget',
       'amount',
@@ -529,7 +529,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              value: _statusFilter,
+              initialValue: _statusFilter,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
@@ -695,7 +695,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   Widget _buildTableRow(dynamic raw) {
     if (raw is! Map) return const SizedBox.shrink();
-    final p = raw as Map;
+    final p = raw;
 
     final title = (p['title'] ?? 'Untitled Proposal').toString();
     final client = (p['client_name'] ?? p['client'] ?? 'Unknown').toString();
@@ -777,8 +777,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
   }
 
+  // NOTE: Duplicate/unfinished dashboard implementation below was causing a
+  // duplicate `build()` method error and many undefined references.
+  // It’s commented out to keep this page compiling; remove if not needed.
+  /*
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -2337,4 +2343,7 @@ class _BarChartPainter extends CustomPainter {
         oldDelegate.maxValue != maxValue ||
         oldDelegate.color != color;
   }
+}
+
+*/
 }

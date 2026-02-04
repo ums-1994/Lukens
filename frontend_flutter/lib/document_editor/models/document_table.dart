@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 
 class DocumentTable {
   String type; // 'text' or 'price'
