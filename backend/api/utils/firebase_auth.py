@@ -81,14 +81,14 @@ def initialize_firebase():
                 # Try default credentials (for local development with gcloud auth)
                 try:
                     _firebase_app = firebase_admin.initialize_app()
-                    print("[FIREBASE] ✅ Firebase Admin SDK initialized with default credentials")
+                    print("[FIREBASE] [OK] Firebase Admin SDK initialized with default credentials")
                 except Exception as e:
-                    print(f"[FIREBASE] ❌ WARNING: Firebase Admin SDK not initialized: {e}")
+                    print(f"[FIREBASE] [ERROR] WARNING: Firebase Admin SDK not initialized: {e}")
                     print("[FIREBASE]    Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON")
                     return None
     except Exception as e:
         import traceback
-        print(f"[FIREBASE] ❌ ERROR: Error initializing Firebase Admin SDK: {e}")
+        print(f"[FIREBASE] [ERROR] Error initializing Firebase Admin SDK: {e}")
         print(f"[FIREBASE] Stack trace: {traceback.format_exc()}")
         return None
     
