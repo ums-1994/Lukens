@@ -63,20 +63,28 @@ def get_tables_from_dump():
         conn = connect_render()
         if not conn:
             return False
-        
+
         cursor = conn.cursor()
-        
+
+        # WARNING: this will wipe the current schema and all data
+        # in the "public" schema before restoring from the dump.
+        # This is safe for a fresh Render database that you want
+        # to completely replace with the local contents.
+        print("🧹 Dropping existing public schema (if any)...")
+        cursor.execute("DROP SCHEMA IF EXISTS public CASCADE;")
+        cursor.execute("CREATE SCHEMA public;")
+        conn.commit()
+
         print(f"📖 Restoring from {dump_file}...")
-        with open(dump_file, 'r') as f:
+        with open(dump_file, 'r', encoding='utf-8') as f:
             sql_content = f.read()
-        
-        # Execute dump
+
         cursor.execute(sql_content)
         conn.commit()
-        
+
         cursor.close()
         conn.close()
-        
+
         print("✅ Database restored successfully!")
         return True
         
