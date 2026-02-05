@@ -1,36 +1,52 @@
 #!/usr/bin/env python
 """
-Migration script to be deployed to Render
-Runs during deployment to migrate data from local backup to Render DB
+Migration script to be deployed to Render.
+
+It restores a SQL dump (local_db_backup.sql) into the database
+configured via the usual DB_* environment variables. This means:
+
+- When run on Render, it will connect using the same internal
+  host/credentials that your app uses.
+- When run locally, it will connect to whatever DB_* or DATABASE_URL
+  you have configured (for example, the Render external URL).
 """
-import psycopg2
-from psycopg2 import sql
 import os
 import sys
 
-# Source: Local database (will be loaded from dump)
-LOCAL_DB = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'proposal_sow_builder',
-    'user': 'postgres',
-    'password': 'Password123'
-}
+import psycopg2
 
-# Target: Render database (from environment or hardcoded)
-RENDER_CONNECTION_STRING = os.getenv(
-    'DATABASE_URL',
-    'postgresql://sowbuilder_jdyx_user:LvUDRxCLtJSQn7tTKhux50kfCsL89cuF@dpg-d61mhge3jp1c7390jcm0-a/sowbuilder_jdyx'
-)
+
+def build_connection_dsn() -> str:
+    """Build a psycopg2 DSN from environment variables."""
+    # Prefer DATABASE_URL if it is explicitly set
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return database_url
+
+    host = os.getenv("DB_HOST", "localhost")
+    port = os.getenv("DB_PORT", "5432")
+    name = os.getenv("DB_NAME", "proposal_sow_builder")
+    user = os.getenv("DB_USER", "postgres")
+    password = os.getenv("DB_PASSWORD", "Password123")
+    sslmode = os.getenv("DB_SSLMODE", "prefer")
+
+    return (
+        f"postgresql://{user}:{password}@{host}:{port}/{name}"
+        f"?sslmode={sslmode}"
+    )
+
 
 def connect_render():
-    """Connect to Render database (runs inside Render environment)"""
+    """Connect to target database (Render when running there)."""
+    dsn = build_connection_dsn()
+    print(f"Connecting with DSN: {dsn}")
+
     try:
-        conn = psycopg2.connect(RENDER_CONNECTION_STRING)
-        print("✅ Connected to Render database (internal)")
+        conn = psycopg2.connect(dsn)
+        print("✅ Connected to target database")
         return conn
     except Exception as e:
-        print(f"❌ Failed to connect to Render: {e}")
+        print(f"❌ Failed to connect to database: {e}")
         return None
 
 def get_tables_from_dump():
