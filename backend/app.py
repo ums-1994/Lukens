@@ -155,8 +155,16 @@ def _build_db_config_from_env():
         from urllib.parse import urlparse, parse_qs
 
         parsed = urlparse(database_url)
-        if parsed.scheme not in ('postgres', 'postgresql'):
-            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+        # Accept common Postgres URL scheme variants.
+        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
+        scheme = (parsed.scheme or '').lower()
+        if scheme.startswith('postgresql+'):
+            scheme = 'postgresql'
+        if scheme not in ('postgres', 'postgresql'):
+            raise ValueError(
+                'DATABASE_URL must start with postgres:// or postgresql:// '
+                '(optionally with a driver like postgresql+psycopg2://)'
+            )
 
         db_config = {
             'host': parsed.hostname,
@@ -201,6 +209,18 @@ def get_pg_pool():
         import psycopg2.pool
         try:
             db_config = _build_db_config_from_env()
+            # Helpful hint for a common Render misconfiguration:
+            # Render "Internal Database URL" hosts often look like "dpg-xxxx-a" (no dots).
+            # That value won't resolve outside Render's internal network; in that case you
+            # must use the External Database URL / full host like "dpg-xxxx-a.<region>-postgres.render.com".
+            host = (db_config.get('host') or '').strip()
+            if host.startswith('dpg-') and '.' not in host:
+                print(
+                    "[WARN] DB host looks like a Render internal hostname without a domain "
+                    f"({host!r}). If this service is not on Render's private network, "
+                    "set DATABASE_URL to the External Database URL (with a full *.render.com hostname) "
+                    "or set DB_HOST to the full hostname."
+                )
             if 'sslmode' in db_config:
                 print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
