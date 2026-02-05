@@ -31,6 +31,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   ];
 
   int _currentFrameIndex = 0;
+  bool _framesPrecached = false;
 
   @override
   void initState() {
@@ -51,13 +52,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    _precacheFrames();
     _cycleBackgrounds();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // `precacheImage` depends on inherited widgets (e.g. MediaQuery), so it must
+    // not be called from `initState`.
+    if (_framesPrecached) return;
+    _framesPrecached = true;
+    _precacheFrames();
   }
 
   Future<void> _precacheFrames() async {
     for (final imagePath in _backgroundImages) {
-      await precacheImage(AssetImage(imagePath), context);
+      try {
+        await precacheImage(AssetImage(imagePath), context);
+      } catch (e) {
+        // Non-fatal: page can still render if precache fails.
+        // ignore: avoid_print
+        print('⚠️ Failed to precache image "$imagePath": $e');
+      }
     }
   }
 

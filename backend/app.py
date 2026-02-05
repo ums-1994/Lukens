@@ -70,8 +70,9 @@ CORS(
         r"/*": {
             "origins": [
                 "https://proposals2025.netlify.app",
-                r"^http://localhost(:\\d+)?$",
-                r"^http://127\\.0\\.0\\.1(:\\d+)?$",
+                # Allow Flutter web dev server ports (e.g. http://localhost:56886)
+                r"^http://localhost(:\d+)?$",
+                r"^http://127\.0\.0\.1(:\d+)?$",
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
