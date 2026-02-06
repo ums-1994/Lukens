@@ -41,10 +41,10 @@ try:
     from docusign_esign.client.api_exception import ApiException
     import jwt
     DOCUSIGN_AVAILABLE = True
-    print("✅ DocuSign SDK imported successfully")
+    print("[OK] DocuSign SDK imported successfully")
 except ImportError as e:
     DOCUSIGN_AVAILABLE = False
-    print(f"⚠️ DocuSign SDK not available: {e}")
+    print(f"[WARNING] DocuSign SDK not available: {e}")
     print("   Install with: pip install docusign-esign")
 
 def resolve_user_id(cursor, identifier):
