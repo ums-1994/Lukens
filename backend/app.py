@@ -17,8 +17,6 @@ from email.mime.multipart import MIMEMultipart
 import traceback
 from io import BytesIO
 
-import psycopg2
-import psycopg2.extras
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api

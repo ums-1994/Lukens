@@ -47,10 +47,9 @@ class ApiService {
         }
       }
     }
-    // Default to Render backend (production)
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to localhost backend for development
+    print('🌐 ApiService: Using localhost API URL: http://localhost:8000');
+    return 'http://localhost:8000';
   }
 
   // Get headers with Firebase token

@@ -22,6 +22,17 @@ load_dotenv()
 
 
 def _build_db_config_from_env():
+    # Use local PostgreSQL credentials for development
+    return {
+        'host': '192.168.137.147',
+        'database': 'lukens_db',
+        'user': 'postgres',
+        'password': 'property007',
+        'port': 5432,
+        'sslmode': 'disable'
+    }
+
+    # Original code commented out - using local credentials above
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         parsed = urlparse(database_url)

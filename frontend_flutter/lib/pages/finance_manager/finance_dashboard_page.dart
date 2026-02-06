@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
@@ -24,6 +26,18 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  // Missing variables that are referenced in the build method
+  List<dynamic> _pendingProposals = [];
+  List<dynamic> _approvedProposals = [];
+  List<dynamic> _rejectedProposals = [];
+  List<dynamic> _allProposals = [];
+  String? _loadError;
+  Map<String, dynamic>? _selectedProposal;
+  String? _selectedProposalId;
+  final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController();
+  DateTimeRange? _dateRange;
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +50,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _commentController.dispose();
+    _priceController.dispose();
     super.dispose();
   }
 
@@ -58,11 +74,41 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     try {
       await app.fetchProposals();
       await app.fetchDashboard();
+
+      // Populate the proposal lists
+      if (mounted) {
+        _allProposals = app.proposals;
+        _categorizeProposals();
+      }
     } catch (e) {
       debugPrint('Error loading finance dashboard data: $e');
+      if (mounted) {
+        setState(() => _loadError = e.toString());
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _categorizeProposals() {
+    _pendingProposals = [];
+    _approvedProposals = [];
+    _rejectedProposals = [];
+
+    for (final proposal in _allProposals) {
+      if (proposal is! Map) continue;
+      final status = (proposal['status'] ?? '').toString().toLowerCase();
+
+      if (status.contains('pending') || status.contains('review')) {
+        _pendingProposals.add(proposal);
+      } else if (status.contains('approved') ||
+          status.contains('signed') ||
+          status.contains('released')) {
+        _approvedProposals.add(proposal);
+      } else if (status.contains('rejected') || status.contains('declined')) {
+        _rejectedProposals.add(proposal);
       }
     }
   }
@@ -144,6 +190,106 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       }
     }
     return 'R${buf.toString()}';
+  }
+
+  // Missing helper methods
+  List<dynamic> _filtered(List<dynamic> proposals) {
+    return _filteredProposals(proposals);
+  }
+
+  double _sumAmount(List<dynamic> proposals) {
+    double total = 0;
+    for (final proposal in proposals) {
+      total += _extractAmount(proposal);
+    }
+    return total;
+  }
+
+  double _avgAmount(List<dynamic> proposals) {
+    if (proposals.isEmpty) return 0;
+    return _sumAmount(proposals) / proposals.length;
+  }
+
+  String _formatMoney(double amount) {
+    return _formatCurrency(amount);
+  }
+
+  void _selectProposal(Map<String, dynamic> proposal) {
+    setState(() {
+      _selectedProposal = proposal;
+      _selectedProposalId = proposal['id']?.toString();
+    });
+  }
+
+  // Missing helper methods
+  DateTime? _extractDate(dynamic proposal) {
+    if (proposal is! Map) return null;
+    final p = proposal as Map;
+    final dateStr = p['created_at'] ?? p['date'];
+    if (dateStr == null) return null;
+    return DateTime.tryParse(dateStr.toString());
+  }
+
+  bool _matchesFilters(dynamic proposal) {
+    if (proposal is! Map) return false;
+    final p = proposal as Map;
+
+    // Search filter
+    final query = _searchController.text.toLowerCase().trim();
+    if (query.isNotEmpty) {
+      final title = (p['title'] ?? '').toString().toLowerCase();
+      final client =
+          (p['client_name'] ?? p['client'] ?? '').toString().toLowerCase();
+      if (!title.contains(query) && !client.contains(query)) {
+        return false;
+      }
+    }
+
+    // Status filter
+    final status = (p['status'] ?? '').toString().toLowerCase();
+    switch (_statusFilter) {
+      case 'pending':
+        return status.contains('pending') || status.contains('review');
+      case 'approved':
+        return status.contains('approved') ||
+            status.contains('signed') ||
+            status.contains('released');
+      case 'rejected':
+        return status.contains('rejected') || status.contains('declined');
+      case 'all':
+      default:
+        return true;
+    }
+  }
+
+  BoxDecoration _cardDecoration() {
+    return BoxDecoration(
+      color: PremiumTheme.darkBg2.withOpacity(0.9),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: Colors.white.withOpacity(0.06)),
+    );
+  }
+
+  void _handleFinanceAction(String action, Map<String, dynamic>? proposal) {
+    // Handle finance-specific actions
+    switch (action) {
+      case 'approve':
+        // Handle approval
+        break;
+      case 'reject':
+        // Handle rejection
+        break;
+      case 'review':
+        // Handle review
+        break;
+      default:
+        // Default action
+        break;
+    }
+  }
+
+  void _loadFinanceData() {
+    _loadData();
   }
 
   @override
@@ -777,702 +923,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    final size = MediaQuery.of(context).size;
-    final isMobile = size.width < 900;
-    final isDesktop = size.width >= 1100;
-
-    final filteredPending = _filtered(_pendingProposals);
-    final filteredApproved = _filtered(_approvedProposals);
-    final filteredRejected = _filtered(_rejectedProposals);
-
-    final pendingSum = _sumAmount(filteredPending);
-    final approvedSum = _sumAmount(filteredApproved);
-    final rejectedSum = _sumAmount(filteredRejected);
-    final avgDeal = _avgAmount(_filtered(_allProposals));
-
-    final totalDecided = filteredApproved.length + filteredRejected.length;
-    final approvalRate = totalDecided == 0
-        ? 0.0
-        : (filteredApproved.length / totalDecided).clamp(0.0, 1.0);
-
-    final userRole = 'Finance';
-    final userName = app.currentUser?['full_name'] ?? 'Finance User';
-
-    return Scaffold(
-      body: Container(
-        color: Colors.transparent,
-        child: Column(
-          children: [
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Finance Dashboard',
-                        style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'Refresh',
-                          onPressed: _isLoading ? null : _loadFinanceData,
-                          icon: const Icon(Icons.refresh, color: Colors.white),
-                        ),
-                        ClipOval(
-                          child: Image.asset(
-                            'assets/images/User_Profile.png',
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        if (!isMobile) ...[
-                          const SizedBox(width: 10),
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                userName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Text(
-                                userRole,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              app.logout();
-                              AuthService.logout();
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => const [
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child:
-                          CircularProgressIndicator(color: PremiumTheme.teal),
-                    )
-                  : _loadError != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _loadError!,
-                                  textAlign: TextAlign.center,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: Colors.white.withOpacity(0.85),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                ElevatedButton.icon(
-                                  onPressed: _loadFinanceData,
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('Retry'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: PremiumTheme.teal,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : Row(
-                          children: [
-                            _buildSidebar(),
-                            Expanded(
-                              child: CustomScrollbar(
-                                controller: _scrollController,
-                                child: SingleChildScrollView(
-                                  controller: _scrollController,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: Align(
-                                      alignment: Alignment.topCenter,
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                            maxWidth: 1280),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Review proposals pending financial approval.',
-                                              style: PremiumTheme.bodyMedium
-                                                  .copyWith(
-                                                color:
-                                                    PremiumTheme.textSecondary,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 20),
-                                            _buildKpiRow(
-                                              pendingCount:
-                                                  filteredPending.length,
-                                              approvedCount:
-                                                  filteredApproved.length,
-                                              rejectedCount:
-                                                  filteredRejected.length,
-                                              pendingSum: pendingSum,
-                                              approvedSum: approvedSum,
-                                              rejectedSum: rejectedSum,
-                                              avgDeal: avgDeal,
-                                            ),
-                                            const SizedBox(height: 20),
-                                            _buildFiltersCard(),
-                                            const SizedBox(height: 20),
-                                            _buildChartsRow(
-                                              pendingSum: pendingSum,
-                                              approvedSum: approvedSum,
-                                              rejectedSum: rejectedSum,
-                                              approvalRate: approvalRate,
-                                            ),
-                                            const SizedBox(height: 28),
-                                            Builder(
-                                              builder: (context) {
-                                                void openProposal(
-                                                    Map<String, dynamic>
-                                                        proposal) {
-                                                  _selectProposal(proposal);
-                                                }
-
-                                                final leftColumn = Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment
-                                                          .stretch,
-                                                  children: [
-                                                    _buildProposalSection(
-                                                      title:
-                                                          'Pending Finance Review',
-                                                      subtitle:
-                                                          'Awaiting finance decision',
-                                                      color: Colors.orange,
-                                                      icon:
-                                                          Icons.hourglass_empty,
-                                                      proposals:
-                                                          filteredPending,
-                                                      onOpen: openProposal,
-                                                    ),
-                                                    const SizedBox(height: 20),
-                                                    _buildProposalSection(
-                                                      title:
-                                                          'Recently Approved',
-                                                      subtitle:
-                                                          'Latest finance approvals',
-                                                      color: Colors.green,
-                                                      icon: Icons.check_circle,
-                                                      proposals:
-                                                          filteredApproved
-                                                              .take(6)
-                                                              .toList(),
-                                                      onOpen: openProposal,
-                                                    ),
-                                                    const SizedBox(height: 20),
-                                                    _buildProposalSection(
-                                                      title:
-                                                          'Recently Rejected',
-                                                      subtitle:
-                                                          'Latest finance rejections',
-                                                      color: Colors.red,
-                                                      icon: Icons.cancel,
-                                                      proposals:
-                                                          filteredRejected
-                                                              .take(6)
-                                                              .toList(),
-                                                      onOpen: openProposal,
-                                                    ),
-                                                  ],
-                                                );
-
-                                                if (isDesktop) {
-                                                  return Row(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Expanded(
-                                                          flex: 7,
-                                                          child: leftColumn),
-                                                      const SizedBox(width: 18),
-                                                      Expanded(
-                                                        flex: 5,
-                                                        child:
-                                                            _buildDetailsPanel(),
-                                                      ),
-                                                    ],
-                                                  );
-                                                }
-
-                                                return Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment
-                                                          .stretch,
-                                                  children: [
-                                                    leftColumn,
-                                                    const SizedBox(height: 20),
-                                                    _buildDetailsPanel(),
-                                                  ],
-                                                );
-                                              },
-                                            ),
-                                            const SizedBox(height: 24),
-                                            const Footer(),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  void _selectProposal(Map<String, dynamic> proposal) {
-    final amount = _extractAmount(proposal);
-    setState(() {
-      _selectedProposal = proposal;
-      _selectedProposalId = proposal['id']?.toString();
-      _commentController.text = '';
-      _priceController.text = amount <= 0 ? '' : amount.toStringAsFixed(2);
-    });
-  }
+  String _formatDateRange() {
+    if (_dateRange == null) return 'Any date';
 
-  Widget _buildKpiRow({
-    required int pendingCount,
-    required int approvedCount,
-    required int rejectedCount,
-    required double pendingSum,
-    required double approvedSum,
-    required double rejectedSum,
-    required double avgDeal,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final kpis = [
-          _KpiData(
-            label: 'Pending',
-            value: pendingCount,
-            subValue: _formatMoney(pendingSum),
-            icon: Icons.hourglass_top,
-            color: Colors.orange,
-          ),
-          _KpiData(
-            label: 'Approved',
-            value: approvedCount,
-            subValue: _formatMoney(approvedSum),
-            icon: Icons.check_circle,
-            color: Colors.green,
-          ),
-          _KpiData(
-            label: 'Rejected',
-            value: rejectedCount,
-            subValue: _formatMoney(rejectedSum),
-            icon: Icons.cancel,
-            color: Colors.red,
-          ),
-          _KpiData(
-            label: 'Avg Deal',
-            value: 0,
-            subValue: _formatMoney(avgDeal),
-            icon: Icons.trending_up,
-            color: PremiumTheme.teal,
-          ),
-        ];
-
-        final width = constraints.hasBoundedWidth
-            ? constraints.maxWidth
-            : MediaQuery.of(context).size.width;
-        final columns = width >= 1150
-            ? 4
-            : width >= 820
-                ? 2
-                : 1;
-        const spacing = 12.0;
-        final usableWidth = (width.isFinite ? width : 1200.0);
-        final safeWidth = usableWidth <= 0 ? 1200.0 : usableWidth;
-        final itemWidth = columns == 1
-            ? safeWidth
-            : ((safeWidth - (spacing * (columns - 1))) / columns);
-        final safeItemWidth =
-            itemWidth.isFinite && itemWidth > 0 ? itemWidth : 280.0;
-
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: [
-            for (final kpi in kpis)
-              SizedBox(
-                width: safeItemWidth,
-                child: _buildKpiCard(kpi),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildKpiCard(_KpiData data) {
-    Gradient gradient;
-    switch (data.label) {
-      case 'Pending':
-        gradient = PremiumTheme.orangeGradient;
-        break;
-      case 'Approved':
-        gradient = PremiumTheme.tealGradient;
-        break;
-      case 'Rejected':
-        gradient = PremiumTheme.redGradient;
-        break;
-      case 'Avg Deal':
-        gradient = PremiumTheme.blueGradient;
-        break;
-      default:
-        gradient = PremiumTheme.blueGradient;
-    }
-
-    final title = data.label;
-    final hasCount = data.value > 0;
-
-    final valueText =
-        hasCount ? data.value.toString() : (data.subValue ?? '--');
-    final subtitleText = hasCount
-        ? ((data.subValue ?? '').isNotEmpty ? data.subValue : null)
-        : (data.label == 'Avg Deal' ? 'Average' : null);
-
-    final linearGradient = gradient is LinearGradient ? gradient : null;
-    final glassGradient = linearGradient == null
-        ? null
-        : LinearGradient(
-            colors: linearGradient.colors
-                .map((c) => c.withOpacity(0.40))
-                .toList(growable: false),
-            begin: linearGradient.begin,
-            end: linearGradient.end,
-            stops: linearGradient.stops,
-            tileMode: linearGradient.tileMode,
-            transform: linearGradient.transform,
-          );
-
-    return SizedBox(
-      height: 170,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: glassGradient,
-              color:
-                  glassGradient == null ? Colors.white.withOpacity(0.06) : null,
-              borderRadius: BorderRadius.circular(20),
-              border:
-                  Border.all(color: Colors.white.withOpacity(0.10), width: 1.2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
-                  blurRadius: 16,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: PremiumTheme.bodyMedium.copyWith(
-                          color: Colors.white.withOpacity(0.92),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(10),
-                        border:
-                            Border.all(color: Colors.white.withOpacity(0.12)),
-                      ),
-                      child: Icon(data.icon, color: Colors.white, size: 20),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  valueText,
-                  style: PremiumTheme.displayMedium.copyWith(
-                    fontSize: 32,
-                    color: Colors.white,
-                  ),
-                ),
-                if (subtitleText != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitleText,
-                    style: PremiumTheme.labelMedium.copyWith(
-                      color: Colors.white.withOpacity(0.72),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFiltersCard() {
-    final dateLabel = _dateRange == null
-        ? 'Any date'
-        : '${_dateRange!.start.year}-${_dateRange!.start.month.toString().padLeft(2, '0')}-${_dateRange!.start.day.toString().padLeft(2, '0')} '
-            '→ ${_dateRange!.end.year}-${_dateRange!.end.month.toString().padLeft(2, '0')}-${_dateRange!.end.day.toString().padLeft(2, '0')}';
-
-    return Container(
-      decoration: _cardDecoration(),
-      padding: const EdgeInsets.all(16),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 900;
-
-          final search = TextField(
-            controller: _searchController,
-            onChanged: (_) => setState(() {}),
-            style: const TextStyle(color: Colors.white),
-            cursorColor: PremiumTheme.teal,
-            decoration: InputDecoration(
-              hintText: 'Search proposals or clients…',
-              prefixIcon: const Icon(Icons.search),
-              prefixIconColor: Colors.white.withOpacity(0.8),
-              filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
-              hintStyle: TextStyle(color: Colors.white.withOpacity(0.55)),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: PremiumTheme.teal.withOpacity(0.7)),
-              ),
-            ),
-          );
-
-          final status = DropdownButtonFormField<String>(
-            value: _statusFilter,
-            dropdownColor: PremiumTheme.darkBg1,
-            items: const [
-              DropdownMenuItem(value: 'All', child: Text('All statuses')),
-              DropdownMenuItem(value: 'Pending', child: Text('Pending')),
-              DropdownMenuItem(value: 'Approved', child: Text('Approved')),
-              DropdownMenuItem(value: 'Rejected', child: Text('Rejected')),
-            ],
-            onChanged: (v) => setState(() => _statusFilter = v ?? 'All'),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
-              labelText: 'Status',
-              labelStyle: TextStyle(color: Colors.white.withOpacity(0.85)),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: PremiumTheme.teal.withOpacity(0.7)),
-              ),
-            ),
-            style: const TextStyle(color: Colors.white),
-            iconEnabledColor: Colors.white,
-          );
-
-          final date = OutlinedButton.icon(
-            onPressed: () async {
-              final picked = await showDateRangePicker(
-                context: context,
-                firstDate: DateTime(2020, 1, 1),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-                initialDateRange: _dateRange,
-              );
-              if (picked == null) return;
-              setState(() => _dateRange = picked);
-            },
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: BorderSide(color: Colors.white.withOpacity(0.12)),
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            icon: const Icon(Icons.date_range),
-            label: Text(dateLabel, overflow: TextOverflow.ellipsis),
-          );
-
-          final clear = TextButton.icon(
-            onPressed: () {
-              setState(() {
-                _searchController.text = '';
-                _statusFilter = 'All';
-                _dateRange = null;
-              });
-            },
-            icon: const Icon(Icons.clear),
-            label: const Text('Clear'),
-          );
-
-          if (isNarrow) {
-            return Column(
-              children: [
-                search,
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: status),
-                    const SizedBox(width: 12),
-                    Expanded(child: date),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Align(alignment: Alignment.centerRight, child: clear),
-              ],
-            );
-          }
-
-          final availableWidth = constraints.hasBoundedWidth
-              ? constraints.maxWidth
-              : MediaQuery.of(context).size.width;
-
-          final safeAvailableWidth =
-              availableWidth.isFinite && availableWidth > 0
-                  ? availableWidth
-                  : 1200.0;
-
-          final searchMax = math.min(640.0, safeAvailableWidth).toDouble();
-          final searchMin = math.min(320.0, searchMax).toDouble();
-
-          final statusMax = math.min(320.0, safeAvailableWidth).toDouble();
-          final statusMin = math.min(220.0, statusMax).toDouble();
-
-          final dateMax = math.min(420.0, safeAvailableWidth).toDouble();
-          final dateMin = math.min(240.0, dateMax).toDouble();
-
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: searchMin,
-                  maxWidth: searchMax,
-                ),
-                child: search,
-              ),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: statusMin,
-                  maxWidth: statusMax,
-                ),
-                child: status,
-              ),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: dateMin,
-                  maxWidth: dateMax,
-                ),
-                child: date,
-              ),
-              clear,
-            ],
-          );
-        },
-      ),
-    );
+    return '${_dateRange!.start.year}-${_dateRange!.start.month.toString().padLeft(2, '0')}-${_dateRange!.start.day.toString().padLeft(2, '0')} '
+        '→ ${_dateRange!.end.year}-${_dateRange!.end.month.toString().padLeft(2, '0')}-${_dateRange!.end.day.toString().padLeft(2, '0')}';
   }
 
   Widget _buildChartsRow({
@@ -2001,9 +1460,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                         onPressed: _selectedProposalId == null
                             ? null
                             : () => _handleFinanceAction(
-                                  proposalId: _selectedProposalId!,
-                                  action: 'approve',
-                                ),
+                                'approve', _selectedProposal),
                         icon: const Icon(Icons.check),
                         label: const Text('Approve'),
                         style: ElevatedButton.styleFrom(
@@ -2022,9 +1479,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                         onPressed: _selectedProposalId == null
                             ? null
                             : () => _handleFinanceAction(
-                                  proposalId: _selectedProposalId!,
-                                  action: 'reject',
-                                ),
+                                'reject', _selectedProposal),
                         icon: const Icon(Icons.close),
                         label: const Text('Reject'),
                         style: ElevatedButton.styleFrom(
@@ -2176,9 +1631,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                               onPressed: _selectedProposalId == null
                                   ? null
                                   : () => _handleFinanceAction(
-                                        proposalId: _selectedProposalId!,
-                                        action: 'approve',
-                                      ),
+                                      'approve', _selectedProposal),
                               icon: const Icon(Icons.check),
                               label: const Text('Approve'),
                               style: ElevatedButton.styleFrom(
@@ -2193,9 +1646,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                               onPressed: _selectedProposalId == null
                                   ? null
                                   : () => _handleFinanceAction(
-                                        proposalId: _selectedProposalId!,
-                                        action: 'reject',
-                                      ),
+                                      'reject', _selectedProposal),
                               icon: const Icon(Icons.cancel),
                               label: const Text('Reject'),
                               style: ElevatedButton.styleFrom(
