@@ -48,7 +48,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -63,20 +63,38 @@ from api.utils.ai_safety import AISafetyError
 load_dotenv()
 
 app = Flask(__name__)
+
+# Flask-Cors origin matching is strict unless you provide regex objects.
+# Use compiled regexes so localhost dev ports (Flutter web) are allowed.
+_cors_origins = [
+    "https://proposals2025.netlify.app",
+    # Allow Flutter web dev server ports (e.g. http://localhost:56886)
+    re.compile(r"^http://localhost(:\d+)?$"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
+    # Common local dev ports
+    "http://localhost:5173",
+    "http://localhost:5000",
+    "http://localhost:8081",
+]
+
+# Also allow a configured frontend origin (Render/Netlify/custom domain).
+# FRONTEND_URL may contain a path; CORS needs just the origin.
+try:
+    _frontend_url = (os.getenv("FRONTEND_URL") or "").strip()
+    if _frontend_url:
+        parsed_frontend = urlparse(_frontend_url)
+        if parsed_frontend.scheme and parsed_frontend.netloc:
+            _cors_origins.append(f"{parsed_frontend.scheme}://{parsed_frontend.netloc}")
+except Exception:
+    # Never fail app startup due to CORS parsing.
+    pass
+
 CORS(
     app,
     supports_credentials=True,
     resources={
         r"/*": {
-            "origins": [
-                "https://proposals2025.netlify.app",
-                # Allow Flutter web dev server ports (e.g. http://localhost:56886)
-                r"^http://localhost(:\d+)?$",
-                r"^http://127\.0\.0\.1(:\d+)?$",
-                "http://localhost:5173",
-                "http://localhost:5000",
-                "http://localhost:8081",
-            ],
+            "origins": _cors_origins,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
         }
@@ -542,6 +560,16 @@ def init_pg_schema():
 def init_db():
     """Initialize PostgreSQL schema on first request"""
     global _db_initialized
+    # If someone calls init_db() manually (e.g., from __main__ or a script),
+    # Flask's request proxy won't be available. Handle that gracefully.
+    if not has_request_context():
+        if _db_initialized:
+            return
+        print("[*] Initializing PostgreSQL schema (no request context)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
+        return
     # Skip initialization for CORS preflight requests to avoid non-2xx responses
     # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
@@ -5602,7 +5630,12 @@ def initialize_database():
 if __name__ == '__main__':
     # When running with 'python app.py'
     try:
-        init_db()  # Initialize database before running
+        # Initialize schema up-front for local runs. Don't call init_db() here
+        # because it expects a Flask request context.
+        print("[*] Initializing PostgreSQL schema (startup)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
     app.run(debug=True, host='0.0.0.0', port=8000)

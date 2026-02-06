@@ -2,121 +2,13 @@
 node_modules/
 .packages
 .pub-cache/
-
-# Build outputs
-build/
-dist/
-.dart_tool/
-# Exception: Allow frontend_flutter/build/web for Render deployment
-!frontend_flutter/build/web/
-
-# Environment files
-.env
-.env.local
-.env.production
-
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-
-# Auth tokens (session persistence)
-auth_tokens.json
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Flutter specific
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
 .pub/
-build/
-# Exception: Allow frontend_flutter/build/web for Render deployment
-!frontend_flutter/build/web/
 
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variables file
-.env
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# next.js build output
-.next
-
-# nuxt.js build output
-.nuxt
-
-# vuepress build output
-.vuepress/dist
-
-# Serverless directories
-.serverless
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# Firebase service account credentials
-firebase-service-account.json
-**/firebase-service-account.json
-
-# DocuSign RSA Keys (NEVER commit these!)
-docusign_private.key
-docusign_public.key
-backend/docusign_private.key
-backend/docusign_public.key
-generate_docusign_keys.py
+# Python virtualenvs
+.venv/
+venv/
+backend/.venv/
+**/.venv/
 
 # Python bytecode
 __pycache__/
@@ -124,18 +16,57 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-e
 
+# Build outputs
+build/
+dist/
+.dart_tool/
+.next/
+.nuxt/
+.vuepress/dist
+coverage/
+.nyc_output
 
-    "type": "service_account",
-    "project_id": "lukens-e17d6",
-    "private_key_id": "1c2668844cb3b7abb4f3d864e3c579a7fe5ec606",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCI9HQnUPdMQ0ES\nAkSf90w6Ro6gD1vxW2nByH/fMDBYawzxBQMNNk4n4axb2Y8nMgkVlTGVqMY/ql64\n81OwTKvpynZDZP3+rhN4sGyjus65vJ5m+sWNgnnsFXiW7z/vagx/l6B0OIlfx/xH\nqpFLuXceFj7ITdWMlIZAEssOA6amR5PWFlB8aDKqkD8q9F0ZaqeLcW3xyXuWaQpS\nHPhecwHivyTRJkvJQxw+dff+x7ExRuwMEkMfXVs3XXLkEIbhexu8FA7VnAQy3Dq7\nU6AYQZlVOaPlIXVHyDk0WyQCX88lC1olNEbsG32jbJo1Hr+GRENksmzZj43eZNH0\nyxkDJwFlAgMBAAECggEACvdmGKLZVoQ5IOfJFnUPJ8hwEb2BG3u6JW/4W0cIy/+w\nbtk7pBJx4iwmKMmsNpOBWjbS3FzCGSV7hbxIOoD9MBCL9TwQQZUvTnX0EQ07kfBa\nT70rVfg5ao/SkuVv/WwEua/Kw5umVmLVXui3zzQ351MZLmFbJPFcqaNHmqTssnpB\nTc/UFBhM9uYKq/KqUj9bimLSUsY7uosBE9IWe/Xt5f63tPoSQJ4Vr7Y4kSg3cb35\n6UDnI3c6M55hEae1TuNiaWWcM8IC39gocRNP0NzLY2HXI75RxcQbBGgj1szaT3PK\nHz8Qbr6kT8GMx8altAaptoOegcURygn8zC5yOoLT0QKBgQC7wnd4x30bnyauMW9Z\n/4vveq9gzPT6Jl1ZrAr4q3ALYiLp1aJ4bCq2EObE2eWDxoUiRVQQyA8ZZOANNpZz\nkklT+koGc0P6AHvlpg119DkNuo3FAi8tdBodSPprP44Oqwt8sZ8f/xAx8bVd+BAm\nYr5r7ThqfNlTK/698JrycCmRtQKBgQC6uwMiGq9mvvgqz9F3TlPCYiJsfDWk7Qcv\nFxFQLSTAeqcyWcMPtgKKs6r3zkSano5W2FN3EfrLM78ik0E4icLSRKXkXU8RzT95\nsgZ4xShaCEA0tz0vkMGMIapY7hrPmLcv7eV9FfHjqFsxS5XsODm3dN/5+hf5l0Yx\nxACdwK8+8QKBgEWe9Uf+yKAuYlxjDkQT4uKY3mEJfqknAqRWi/brMu+1ovaL9eOr\nUCcUm01Q8q7rNMChbmuOkzK6We3sWNtf2freqwY7RXB1L3vXF9SuC13Q1/K+PZog\nG/LR9bFA7r73o5nIDxYBMRMj6jl+2xYwtSU14B50Tu1tOddaWUoeVvulAoGBAJX/\nhgvOTdoGS8nwOL5S4DvEowxsVpdOhDfSmujB6sTnggmTS3sCZVZP72Wyfy+JcKPY\nkGuUuNakkcRPb9Pf7e0EkhI41jxhmLzEQiifj8OK3zC5hWABM0jC/lkDo+vhLD5H\nJtLtXurWobKemicwH0T8kLL4sGuhlhSB81DFqMCxAoGAOaKAGUdZubl9Xp/oETQA\nqa1nWWQvnvk+7q2MJGh9QYa08d/GY3fxa2ozmFPQsvmEVVQG0b8jIY8WNqdsY25W\nd65X9mhsTuKuJODit+A6hCnn3ETIenMkgr08XvCK0Ro+KNHaTNshc783WQOm3vKJ\nrkTkF4AzU7nSD1WxLATtp/g=\n-----END PRIVATE KEY-----\n",
-    "client_email": "firebase-adminsdk-fbsvc@lukens-e17d6.iam.gserviceaccount.com",
-    "client_id": "107876608848709746594",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40lukens-e17d6.iam.gserviceaccount.com",
-    "universe_domain": "googleapis.com"
-  
+# Exception: Allow frontend_flutter/build/web for Render deployment
+!frontend_flutter/build/web/
+
+# Environment files
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE / OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Auth tokens (session persistence)
+auth_tokens.json
+backend/auth_tokens.json
+
+# Firebase service account credentials (NEVER commit)
+firebase-service-account.json
+**/firebase-service-account.json
+
+# DocuSign keys (NEVER commit)
+docusign_private.key
+docusign_public.key
+backend/docusign_private.key
+backend/docusign_public.key
+

@@ -890,7 +890,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -915,7 +915,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
