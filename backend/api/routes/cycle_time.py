@@ -48,6 +48,8 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
         status = request.args.get("status")
         owner_filter = request.args.get("owner")
         proposal_type = request.args.get("proposal_type")
+        client_filter = (request.args.get("client") or "").strip()
+        industry_filter = (request.args.get("industry") or "").strip()
         scope = (request.args.get("scope") or "self").strip().lower()
         department_filter = (request.args.get("department") or "").strip()
 
@@ -89,6 +91,15 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
             proposal_type_col = "template_type"
         elif "template_key" in existing_columns:
             proposal_type_col = "template_key"
+
+        if "client" in existing_columns:
+            client_expr = "client"
+        elif "client_name" in existing_columns:
+            client_expr = "client_name"
+        elif "client_email" in existing_columns:
+            client_expr = "client_email"
+        else:
+            client_expr = None
 
         # Resolve current user id
         # Prefer the trusted numeric user_id supplied by token_required (Firebase flow)
@@ -231,13 +242,38 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
                 where.append("template_key ILIKE %s")
                 params.append(f"%{proposal_type}%")
 
+        if client_filter and client_expr:
+            where.append(f"{client_expr} ILIKE %s")
+            params.append(f"%{client_filter}%")
+
+        clients_join = ""
+        industry_where = ""
+        if industry_filter:
+            has_clients = False
+            try:
+                cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                has_clients = cursor.fetchone()[0] is not None
+            except Exception:
+                has_clients = False
+            if has_clients:
+                join_cond = None
+                if "client_id" in existing_columns:
+                    join_cond = "c.id = p.client_id"
+                elif "client_email" in existing_columns:
+                    join_cond = "c.email = p.client_email"
+                if join_cond:
+                    clients_join = f"LEFT JOIN clients c ON {join_cond}"
+                    industry_where = " AND c.industry ILIKE %s"
+                    params.append(f"%{industry_filter}%")
+
         where_sql = " AND ".join(where)
 
         cursor.execute(
             f"""
             SELECT id, created_at, COALESCE(updated_at, created_at), status
-            FROM proposals
-            WHERE {where_sql}
+            FROM proposals p
+            {clients_join}
+            WHERE {where_sql}{industry_where}
             """,
             params,
         )
@@ -364,6 +400,7 @@ def client_engagement(username=None, user_id=None, email=None):
         proposal_type = request.args.get("proposal_type")
         client_filter = (request.args.get("client") or "").strip()
         region_filter = (request.args.get("region") or "").strip()
+        industry_filter = (request.args.get("industry") or "").strip()
         scope = (request.args.get("scope") or "self").strip().lower()
         department_filter = (request.args.get("department") or "").strip()
 
@@ -386,6 +423,16 @@ def client_engagement(username=None, user_id=None, email=None):
 
         clients_cols = set()
         if region_filter and _table_exists(cursor, "clients"):
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'clients'
+                """
+            )
+            clients_cols = {r[0] for r in cursor.fetchall() or []}
+
+        if industry_filter and _table_exists(cursor, "clients") and not clients_cols:
             cursor.execute(
                 """
                 SELECT column_name
@@ -613,26 +660,125 @@ def client_engagement(username=None, user_id=None, email=None):
             where.append("id = ANY(%s)")
             params.append(region_proposal_ids)
 
+        if industry_filter and "industry" in clients_cols:
+            industry_proposal_ids = []
+            try:
+                if "client_id" in existing_columns:
+                    cursor.execute(
+                        """
+                        SELECT p.id
+                        FROM proposals p
+                        JOIN clients c ON c.id = p.client_id
+                        WHERE c.industry ILIKE %s
+                        """,
+                        (f"%{industry_filter}%",),
+                    )
+                    industry_proposal_ids = [r[0] for r in cursor.fetchall() or []]
+                elif "client_email" in existing_columns:
+                    cursor.execute(
+                        """
+                        SELECT p.id
+                        FROM proposals p
+                        JOIN clients c ON c.email = p.client_email
+                        WHERE c.industry ILIKE %s
+                        """,
+                        (f"%{industry_filter}%",),
+                    )
+                    industry_proposal_ids = [r[0] for r in cursor.fetchall() or []]
+            except Exception:
+                industry_proposal_ids = []
+
+            if not industry_proposal_ids:
+                return jsonify(
+                    {
+                        "metric": "client_engagement",
+                        "definition": "daily views (open events) + time spent + time-to-sign",
+                        "filters": {
+                            "start_date": start_date_raw,
+                            "end_date": end_date_raw,
+                            "owner": owner_filter,
+                            "proposal_type": proposal_type,
+                            "client": client_filter or None,
+                            "region": region_filter or None,
+                            "industry": industry_filter or None,
+                            "scope": scope,
+                            "department": department_filter or None,
+                        },
+                        "views_total": 0,
+                        "views_by_day": [],
+                        "unique_clients": 0,
+                        "time_spent_seconds": 0,
+                        "sessions_count": 0,
+                        "time_to_sign": {"samples": 0, "avg_days": None},
+                        "conversion": {"released": 0, "signed": 0, "rate_percent": 0.0},
+                    }
+                ), 200
+
+            where.append("id = ANY(%s)")
+            params.append(industry_proposal_ids)
+
         where_sql = " AND ".join(where)
 
-        release_expr = "NULL::timestamp"
+        release_sql_expr = "NULL::timestamp"
         if "released_at" in existing_columns:
-            release_expr = "released_at"
+            release_sql_expr = "p.released_at"
         elif "sent_to_client_at" in existing_columns:
-            release_expr = "sent_to_client_at"
+            release_sql_expr = "p.sent_to_client_at"
         elif "sent_at" in existing_columns:
-            release_expr = "sent_at"
+            release_sql_expr = "p.sent_at"
 
-        signed_expr = "NULL::timestamp"
+        signed_sql_expr = "NULL::timestamp"
         if "signed_at" in existing_columns:
-            signed_expr = "signed_at"
+            signed_sql_expr = "p.signed_at"
         elif "signed_date" in existing_columns:
-            signed_expr = "signed_date"
+            signed_sql_expr = "p.signed_date"
 
+        # Derive released_at and signed_at using best-effort fallbacks when schema
+        # doesn't include explicit timestamp columns.
         cursor.execute(
             f"""
-            SELECT id, created_at, {release_expr} AS released_at, {signed_expr} AS signed_at
-            FROM proposals
+            SELECT
+                p.id,
+                p.created_at,
+                COALESCE(
+                    {release_sql_expr},
+                    rel_log.released_at
+                ) AS released_at,
+                COALESCE(
+                    {signed_sql_expr},
+                    sig.signed_at,
+                    signed_log.signed_at
+                ) AS signed_at
+            FROM proposals p
+            LEFT JOIN LATERAL (
+                SELECT al.created_at AS released_at
+                FROM activity_log al
+                WHERE al.proposal_id = p.id
+                  AND al.action_type = 'status_changed'
+                  AND (
+                    LOWER(COALESCE(al.metadata->>'to', al.metadata->>'new_status', '')) LIKE '%%sent to client%%'
+                    OR LOWER(COALESCE(al.metadata->>'to', al.metadata->>'new_status', '')) LIKE '%%released%%'
+                  )
+                ORDER BY al.created_at ASC
+                LIMIT 1
+            ) rel_log ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT ps.signed_at
+                FROM proposal_signatures ps
+                WHERE ps.proposal_id = p.id
+                  AND ps.signed_at IS NOT NULL
+                ORDER BY ps.signed_at DESC
+                LIMIT 1
+            ) sig ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT al.created_at AS signed_at
+                FROM activity_log al
+                WHERE al.proposal_id = p.id
+                  AND al.action_type = 'status_changed'
+                  AND LOWER(COALESCE(al.metadata->>'to', al.metadata->>'new_status', '')) LIKE '%%signed%%'
+                ORDER BY al.created_at ASC
+                LIMIT 1
+            ) signed_log ON TRUE
             WHERE {where_sql}
             """,
             params,
@@ -826,6 +972,7 @@ def collaboration_load(username=None, user_id=None, email=None):
             owner_filter = request.args.get("owner")
             proposal_type = request.args.get("proposal_type")
             client_filter = (request.args.get("client") or "").strip()
+            industry_filter = (request.args.get("industry") or "").strip()
             scope = (request.args.get("scope") or "self").strip().lower()
             department_filter = (request.args.get("department") or "").strip()
 
@@ -871,6 +1018,25 @@ def collaboration_load(username=None, user_id=None, email=None):
                 client_expr = "client_email"
             else:
                 client_expr = "NULL::text"
+
+            clients_join = ""
+            industry_where = ""
+            if industry_filter:
+                has_clients = False
+                try:
+                    cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                    has_clients = cursor.fetchone()[0] is not None
+                except Exception:
+                    has_clients = False
+                if has_clients:
+                    join_cond = None
+                    if "client_id" in existing_columns:
+                        join_cond = "c.id = p.client_id"
+                    elif "client_email" in existing_columns:
+                        join_cond = "c.email = p.client_email"
+                    if join_cond:
+                        clients_join = f"JOIN clients c ON {join_cond}"
+                        industry_where = " AND c.industry ILIKE %s"
 
             owner_id = user_id
             if not owner_id:
@@ -1030,12 +1196,16 @@ def collaboration_load(username=None, user_id=None, email=None):
                 where.append(f"{client_expr} ILIKE %s")
                 params.append(f"%{client_filter}%")
 
+            if industry_filter and clients_join:
+                params.append(f"%{industry_filter}%")
+
             where_sql = " AND ".join(where)
             cursor.execute(
                 f"""
                 SELECT id, title, status, {client_expr} AS client
-                FROM proposals
-                WHERE {where_sql}
+                FROM proposals p
+                {clients_join}
+                WHERE {where_sql}{industry_where}
                 """,
                 params,
             )
@@ -1053,6 +1223,9 @@ def collaboration_load(username=None, user_id=None, email=None):
 
             comments_by_proposal = {}
             versions_by_proposal = {}
+            approvals_by_proposal = {}
+            reviewers_by_proposal = {}
+            turnaround_seconds_by_proposal = {}
             activity_by_proposal = {}
 
             if proposal_ids and _table_exists(cursor, "document_comments"):
@@ -1121,17 +1294,169 @@ def collaboration_load(username=None, user_id=None, email=None):
                 for pid, cnt in cursor.fetchall() or []:
                     activity_by_proposal[int(pid)] = int(cnt)
 
+            # Approvals: prefer approvals table when present, else infer via status_changed transitions.
+            if proposal_ids:
+                if _table_exists(cursor, "approvals"):
+                    appr_where = ["proposal_id = ANY(%s)"]
+                    appr_params = [proposal_ids]
+                    if start_date:
+                        appr_where.append("approved_at >= %s")
+                        appr_params.append(start_date)
+                    if end_date:
+                        appr_where.append("approved_at <= %s")
+                        appr_params.append(end_date)
+                    appr_where_sql = " AND ".join(appr_where)
+                    cursor.execute(
+                        f"""
+                        SELECT proposal_id, COUNT(*)
+                        FROM approvals
+                        WHERE {appr_where_sql}
+                        GROUP BY proposal_id
+                        """,
+                        appr_params,
+                    )
+                    for pid, cnt in cursor.fetchall() or []:
+                        approvals_by_proposal[int(pid)] = int(cnt)
+                elif _table_exists(cursor, "activity_log"):
+                    appr_where = ["proposal_id = ANY(%s)", "action_type = 'status_changed'"]
+                    appr_params = [proposal_ids]
+                    if start_date:
+                        appr_where.append("created_at >= %s")
+                        appr_params.append(start_date)
+                    if end_date:
+                        appr_where.append("created_at <= %s")
+                        appr_params.append(end_date)
+                    appr_where_sql = " AND ".join(appr_where)
+                    cursor.execute(
+                        f"""
+                        SELECT proposal_id, COUNT(*)
+                        FROM activity_log
+                        WHERE {appr_where_sql}
+                          AND (
+                            LOWER(COALESCE(metadata->>'to', metadata->>'new_status', '')) LIKE '%%sent to client%%'
+                            OR LOWER(COALESCE(metadata->>'to', metadata->>'new_status', '')) LIKE '%%sent for signature%%'
+                            OR LOWER(COALESCE(metadata->>'to', metadata->>'new_status', '')) LIKE '%%approved%%'
+                          )
+                        GROUP BY proposal_id
+                        """,
+                        appr_params,
+                    )
+                    for pid, cnt in cursor.fetchall() or []:
+                        approvals_by_proposal[int(pid)] = int(cnt)
+
+            # Reviewers: count distinct internal user ids that commented, versioned, or produced activity.
+            if proposal_ids:
+                reviewer_union = []
+                reviewer_params = []
+                if _table_exists(cursor, "document_comments"):
+                    reviewer_union.append("SELECT proposal_id, created_by AS user_id, created_at FROM document_comments WHERE proposal_id = ANY(%s)")
+                    reviewer_params.append(proposal_ids)
+                if _table_exists(cursor, "proposal_versions"):
+                    reviewer_union.append("SELECT proposal_id, created_by AS user_id, created_at FROM proposal_versions WHERE proposal_id = ANY(%s)")
+                    reviewer_params.append(proposal_ids)
+                if _table_exists(cursor, "activity_log"):
+                    reviewer_union.append("SELECT proposal_id, user_id, created_at FROM activity_log WHERE proposal_id = ANY(%s)")
+                    reviewer_params.append(proposal_ids)
+
+                if reviewer_union:
+                    reviewer_sql = " UNION ALL ".join(reviewer_union)
+
+                    r_where = []
+                    r_params = list(reviewer_params)
+                    if start_date:
+                        r_where.append("created_at >= %s")
+                        r_params.append(start_date)
+                    if end_date:
+                        r_where.append("created_at <= %s")
+                        r_params.append(end_date)
+                    r_where_sql = ("WHERE " + " AND ".join(r_where)) if r_where else ""
+
+                    cursor.execute(
+                        f"""
+                        SELECT proposal_id, COUNT(DISTINCT user_id)
+                        FROM (
+                            {reviewer_sql}
+                        ) u
+                        {r_where_sql}
+                          AND user_id IS NOT NULL
+                        GROUP BY proposal_id
+                        """,
+                        r_params,
+                    )
+                    for pid, cnt in cursor.fetchall() or []:
+                        reviewers_by_proposal[int(pid)] = int(cnt)
+
+            # Reviewer turnaround: best-effort from status_changed events.
+            if proposal_ids and _table_exists(cursor, "activity_log"):
+                cursor.execute(
+                    """
+                    SELECT
+                        p.id,
+                        review_log.reviewed_at,
+                        approve_log.approved_at
+                    FROM proposals p
+                    LEFT JOIN LATERAL (
+                        SELECT al.created_at AS reviewed_at
+                        FROM activity_log al
+                        WHERE al.proposal_id = p.id
+                          AND al.action_type = 'status_changed'
+                          AND LOWER(COALESCE(al.metadata->>'to', al.metadata->>'new_status', '')) IN (
+                            'submitted',
+                            'in review',
+                            'pending ceo approval'
+                          )
+                        ORDER BY al.created_at ASC
+                        LIMIT 1
+                    ) review_log ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT al.created_at AS approved_at
+                        FROM activity_log al
+                        WHERE al.proposal_id = p.id
+                          AND al.action_type = 'status_changed'
+                          AND (
+                            LOWER(COALESCE(al.metadata->>'to', al.metadata->>'new_status', '')) LIKE '%%sent to client%%'
+                            OR LOWER(COALESCE(al.metadata->>'to', al.metadata->>'new_status', '')) LIKE '%%sent for signature%%'
+                            OR LOWER(COALESCE(al.metadata->>'to', al.metadata->>'new_status', '')) LIKE '%%approved%%'
+                          )
+                        ORDER BY al.created_at ASC
+                        LIMIT 1
+                    ) approve_log ON TRUE
+                    WHERE p.id = ANY(%s)
+                    """,
+                    (proposal_ids,),
+                )
+                for pid, reviewed_at, approved_at in cursor.fetchall() or []:
+                    try:
+                        if reviewed_at and approved_at and approved_at >= reviewed_at:
+                            turnaround_seconds_by_proposal[int(pid)] = int((approved_at - reviewed_at).total_seconds())
+                    except Exception:
+                        continue
+
             total_comments = sum(comments_by_proposal.values())
             total_versions = sum(versions_by_proposal.values())
+            total_approvals = sum(approvals_by_proposal.values())
+            total_reviewers = sum(reviewers_by_proposal.values())
             total_activity = sum(activity_by_proposal.values())
-            total_interactions = total_comments + total_versions + total_activity
+            total_interactions = total_comments + total_versions + total_approvals + total_activity
+
+            high_load_threshold = 10
+            if proposal_ids:
+                try:
+                    avg_interactions = float(total_interactions) / len(proposal_ids)
+                    high_load_threshold = max(10, int(round(avg_interactions + 5)))
+                except Exception:
+                    high_load_threshold = 10
 
             rows = []
             for pid in proposal_ids:
                 meta = proposal_meta.get(pid) or {"proposal_id": pid, "title": None, "status": None, "client": None}
                 c = int(comments_by_proposal.get(pid, 0))
                 v = int(versions_by_proposal.get(pid, 0))
+                ap = int(approvals_by_proposal.get(pid, 0))
                 a = int(activity_by_proposal.get(pid, 0))
+                reviewers = int(reviewers_by_proposal.get(pid, 0))
+                turnaround_seconds = turnaround_seconds_by_proposal.get(pid)
+                interactions = c + v + ap + a
                 rows.append(
                     {
                         "proposal_id": meta.get("proposal_id"),
@@ -1140,8 +1465,12 @@ def collaboration_load(username=None, user_id=None, email=None):
                         "client": meta.get("client"),
                         "comments": c,
                         "versions": v,
+                        "approvals": ap,
                         "activity_events": a,
-                        "interactions": c + v + a,
+                        "reviewers": reviewers,
+                        "review_turnaround_seconds": turnaround_seconds,
+                        "interactions": interactions,
+                        "high_load": interactions >= high_load_threshold,
                     }
                 )
 
@@ -1153,9 +1482,67 @@ def collaboration_load(username=None, user_id=None, email=None):
                 avg_per_proposal = {
                     "comments": float(total_comments) / len(proposal_ids),
                     "versions": float(total_versions) / len(proposal_ids),
+                    "approvals": float(total_approvals) / len(proposal_ids),
+                    "reviewers": float(total_reviewers) / len(proposal_ids),
                     "activity_events": float(total_activity) / len(proposal_ids),
                     "interactions": float(total_interactions) / len(proposal_ids),
                 }
+
+            turnaround_samples = list(turnaround_seconds_by_proposal.values())
+            turnaround_avg_hours = None
+            turnaround_avg_days = None
+            if turnaround_samples:
+                avg_seconds = float(sum(turnaround_samples)) / len(turnaround_samples)
+                turnaround_avg_hours = avg_seconds / 3600.0
+                turnaround_avg_days = avg_seconds / 86400.0
+
+            # Heatmap: interactions by day (all proposals combined), for simple visualization.
+            heatmap_by_day = []
+            if proposal_ids:
+                day_counts = {}
+                if _table_exists(cursor, "document_comments"):
+                    cursor.execute(
+                        """
+                        SELECT DATE(created_at) AS day, COUNT(*)
+                        FROM document_comments
+                        WHERE proposal_id = ANY(%s)
+                        GROUP BY DATE(created_at)
+                        """,
+                        (proposal_ids,),
+                    )
+                    for d, cnt in cursor.fetchall() or []:
+                        day_counts[d] = day_counts.get(d, 0) + int(cnt)
+                if _table_exists(cursor, "proposal_versions"):
+                    cursor.execute(
+                        """
+                        SELECT DATE(created_at) AS day, COUNT(*)
+                        FROM proposal_versions
+                        WHERE proposal_id = ANY(%s)
+                        GROUP BY DATE(created_at)
+                        """,
+                        (proposal_ids,),
+                    )
+                    for d, cnt in cursor.fetchall() or []:
+                        day_counts[d] = day_counts.get(d, 0) + int(cnt)
+                if _table_exists(cursor, "activity_log"):
+                    cursor.execute(
+                        """
+                        SELECT DATE(created_at) AS day, COUNT(*)
+                        FROM activity_log
+                        WHERE proposal_id = ANY(%s)
+                          AND action_type <> 'status_changed'
+                        GROUP BY DATE(created_at)
+                        """,
+                        (proposal_ids,),
+                    )
+                    for d, cnt in cursor.fetchall() or []:
+                        day_counts[d] = day_counts.get(d, 0) + int(cnt)
+
+                for d in sorted(day_counts.keys()):
+                    heatmap_by_day.append({"date": d.isoformat(), "interactions": int(day_counts[d])})
+
+            high_load_proposals = [r for r in rows if r.get("high_load")]
+            high_load_proposals.sort(key=lambda r: (-int(r.get("interactions") or 0), str(r.get("title") or "")))
 
             return jsonify(
                 {
@@ -1173,11 +1560,26 @@ def collaboration_load(username=None, user_id=None, email=None):
                     "totals": {
                         "comments": int(total_comments),
                         "versions": int(total_versions),
+                        "approvals": int(total_approvals),
+                        "reviewers": int(total_reviewers),
                         "activity_events": int(total_activity),
                         "interactions": int(total_interactions),
                     },
                     "total_proposals": int(len(proposal_ids)),
                     "avg_per_proposal": avg_per_proposal,
+                    "reviewer_turnaround": {
+                        "samples": int(len(turnaround_samples)),
+                        "avg_hours": turnaround_avg_hours,
+                        "avg_days": turnaround_avg_days,
+                    },
+                    "heatmap": {
+                        "by_day": heatmap_by_day,
+                    },
+                    "high_load": {
+                        "threshold": int(high_load_threshold),
+                        "count": int(len(high_load_proposals)),
+                        "proposals": high_load_proposals[:10],
+                    },
                     "top_proposals": top_proposals,
                 }
             ), 200

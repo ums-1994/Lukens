@@ -73,6 +73,7 @@ def proposal_pipeline(username=None, user_id=None, email=None):
         owner_filter = request.args.get("owner")
         proposal_type = request.args.get("proposal_type")
         client_filter = (request.args.get("client") or "").strip()
+        industry_filter = (request.args.get("industry") or "").strip()
         scope = (request.args.get("scope") or "self").strip().lower()
         department_filter = (request.args.get("department") or "").strip()
         stage_filter = (request.args.get("stage") or "").strip()
@@ -110,6 +111,25 @@ def proposal_pipeline(username=None, user_id=None, email=None):
             proposal_type_col = "template_type"
         elif "template_key" in existing_columns:
             proposal_type_col = "template_key"
+
+        clients_join = ""
+        industry_where = ""
+        if industry_filter:
+            try:
+                cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                has_clients = cursor.fetchone()[0] is not None
+            except Exception:
+                has_clients = False
+            if has_clients:
+                join_cond = None
+                if "client_id" in existing_columns:
+                    join_cond = "c.id = p.client_id"
+                elif "client_email" in existing_columns:
+                    join_cond = "c.email = p.client_email"
+                if join_cond:
+                    clients_join = f"LEFT JOIN clients c ON {join_cond}"
+                    industry_where = " AND c.industry ILIKE %s"
+                    params.append(f"%{industry_filter}%")
 
         updated_expr = "p.created_at"
         if "updated_at" in existing_columns:
@@ -290,7 +310,8 @@ def proposal_pipeline(username=None, user_id=None, email=None):
                 COALESCE(u.full_name, u.username, u.email) AS owner
             FROM proposals p
             LEFT JOIN users u ON {join_cond}
-            WHERE {where_sql}
+            {clients_join}
+            WHERE {where_sql}{industry_where}
             ORDER BY updated_at DESC NULLS LAST, p.id DESC
             """,
             params,
@@ -369,6 +390,7 @@ def completion_rates(username=None, user_id=None, email=None):
         owner_filter = request.args.get("owner")
         proposal_type = request.args.get("proposal_type")
         client_filter = (request.args.get("client") or "").strip()
+        industry_filter = (request.args.get("industry") or "").strip()
         scope = (request.args.get("scope") or "self").strip().lower()
         department_filter = (request.args.get("department") or "").strip()
 
@@ -422,6 +444,25 @@ def completion_rates(username=None, user_id=None, email=None):
         sections_expr = "NULL::text"
         if "sections" in existing_columns:
             sections_expr = "p.sections"
+
+        clients_join = ""
+        industry_where = ""
+        if industry_filter:
+            try:
+                cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                has_clients = cursor.fetchone()[0] is not None
+            except Exception:
+                has_clients = False
+            if has_clients:
+                join_cond = None
+                if "client_id" in existing_columns:
+                    join_cond = "c.id = p.client_id"
+                elif "client_email" in existing_columns:
+                    join_cond = "c.email = p.client_email"
+                if join_cond:
+                    clients_join = f"LEFT JOIN clients c ON {join_cond}"
+                    industry_where = " AND c.industry ILIKE %s"
+                    params.append(f"%{industry_filter}%")
 
         owner_id = user_id
         if not owner_id:
@@ -605,7 +646,8 @@ def completion_rates(username=None, user_id=None, email=None):
                 {sections_expr} AS sections
             FROM proposals p
             LEFT JOIN users u ON {join_cond}
-            WHERE {where_sql}
+            {clients_join}
+            WHERE {where_sql}{industry_where}
             ORDER BY updated_at DESC NULLS LAST, p.id DESC
             """,
             params,

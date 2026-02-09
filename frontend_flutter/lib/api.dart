@@ -531,6 +531,7 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -543,6 +544,7 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty) 'department': department,
         },
@@ -564,6 +566,7 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? industry,
     String? scope,
     String? department,
     String? stage,
@@ -577,6 +580,7 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty) 'department': department,
           if (stage != null && stage.isNotEmpty) 'stage': stage,
@@ -600,6 +604,7 @@ class AppState extends ChangeNotifier {
     String? proposalType,
     String? client,
     String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -613,6 +618,7 @@ class AppState extends ChangeNotifier {
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
           if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty) 'department': department,
         },
@@ -634,6 +640,7 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -646,6 +653,7 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty) 'department': department,
         },
@@ -668,6 +676,7 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? industry,
     String? scope,
     String? department,
     int? limit,
@@ -682,6 +691,7 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty) 'department': department,
           if (limit != null) 'limit': limit.toString(),
@@ -704,6 +714,7 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -716,6 +727,7 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty) 'department': department,
         },
@@ -1037,6 +1049,8 @@ class AppState extends ChangeNotifier {
     String? status,
     String? owner,
     String? proposalType,
+    String? client,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -1048,6 +1062,8 @@ class AppState extends ChangeNotifier {
           if (status != null && status.isNotEmpty) 'status': status,
           if (owner != null && owner.isNotEmpty) 'owner': owner,
           if (proposalType != null && proposalType.isNotEmpty) 'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty) 'department': department,
         },

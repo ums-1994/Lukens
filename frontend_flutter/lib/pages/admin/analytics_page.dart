@@ -35,6 +35,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       TextEditingController();
   final TextEditingController _globalClientCtrl = TextEditingController();
   final TextEditingController _globalRegionCtrl = TextEditingController();
+  final TextEditingController _globalIndustryCtrl = TextEditingController();
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
   bool _isSidebarCollapsed = true;
@@ -79,6 +80,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
       final region = _globalRegionCtrl.text.trim();
+      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -89,6 +91,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
             region: region.isEmpty ? null : region,
+            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -110,6 +113,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
+      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
       final app = context.read<AppState>();
@@ -121,6 +125,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
+          industry: industry.isEmpty ? null : industry,
           scope: _cycleTimeScope,
           department: department.isEmpty ? null : department,
           stage: _pipelineStageFilter,
@@ -131,6 +136,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
+          industry: industry.isEmpty ? null : industry,
           scope: _cycleTimeScope,
           department: department.isEmpty ? null : department,
         ),
@@ -862,6 +868,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
+      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -871,6 +878,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
+            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -895,10 +903,26 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
     final comments = n(totals['comments']);
     final versions = n(totals['versions']);
+    final approvals = n(totals['approvals']);
+    final reviewers = n(totals['reviewers']);
     final events = n(totals['activity_events']);
     final interactions = n(totals['interactions']);
 
     final top = (data?['top_proposals'] as List?) ?? [];
+
+    final reviewerTurnaround = (data?['reviewer_turnaround'] as Map?) ?? {};
+    final turnaroundSamples = n(reviewerTurnaround['samples']);
+    final turnaroundAvgDays = (reviewerTurnaround['avg_days'] is num)
+        ? (reviewerTurnaround['avg_days'] as num).toDouble()
+        : null;
+
+    final heatmap = (data?['heatmap'] as Map?) ?? {};
+    final heatmapByDay = (heatmap['by_day'] as List?) ?? const [];
+
+    final highLoad = (data?['high_load'] as Map?) ?? {};
+    final highLoadThreshold = n(highLoad['threshold']);
+    final highLoadCount = n(highLoad['count']);
+    final highLoadProposals = (highLoad['proposals'] as List?) ?? const [];
 
     Widget statChip(String label, int value, Color color) {
       return Container(
@@ -919,69 +943,255 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            statChip('Interactions', interactions, Colors.white.withValues(alpha: 0.9)),
-            statChip('Comments', comments, PremiumTheme.teal),
-            statChip('Versions', versions, PremiumTheme.purple),
-            statChip('Activity', events, PremiumTheme.info),
-            statChip('Proposals', totalProposals, Colors.white70),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Top active proposals',
-          style: PremiumTheme.titleMedium.copyWith(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 10),
-        if (top.isEmpty)
-          Text(
-            'No collaboration activity found in this period.',
-            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-          )
-        else
-          SizedBox(
-            height: 220,
-            child: ListView.separated(
-              itemCount: top.length,
-              separatorBuilder: (_, __) => Divider(
-                height: 1,
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
-              itemBuilder: (context, i) {
-                final row = top[i];
-                final id = (row['proposal_id'] ?? '').toString();
-                final title = (row['title'] ?? 'Untitled').toString();
-                final client = (row['client'] ?? '').toString();
-                final status = (row['status'] ?? '').toString();
-                final rowInteractions = n(row['interactions']);
+    String fmtDays(double? days) {
+      if (days == null) return '--';
+      if (days >= 1.0) return '${days.toStringAsFixed(1)}d';
+      final hours = days * 24.0;
+      if (hours >= 1.0) return '${hours.toStringAsFixed(1)}h';
+      final minutes = hours * 60.0;
+      return '${minutes.toStringAsFixed(0)}m';
+    }
 
-                return InkWell(
-                  onTap: () {
-                    Navigator.pushNamed(
-                      context,
-                      '/proposal_review',
-                      arguments: {
-                        'id': id,
-                        'title': title,
-                      },
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+    Widget buildHeatmap() {
+      if (heatmapByDay.isEmpty) {
+        return Text(
+          'No collaboration heatmap data yet.',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        );
+      }
+
+      final points = <Map<String, dynamic>>[];
+      for (final raw in heatmapByDay) {
+        if (raw is Map) {
+          points.add({
+            'date': (raw['date'] ?? '').toString(),
+            'interactions': n(raw['interactions']),
+          });
+        }
+      }
+      if (points.isEmpty) {
+        return Text(
+          'No collaboration heatmap data yet.',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        );
+      }
+
+      final maxVal = points.fold<int>(0, (p, e) => math.max(p, n(e['interactions'])));
+      final squares = points.take(28).toList();
+
+      Color cellColor(int v) {
+        if (v <= 0) return Colors.white.withValues(alpha: 0.06);
+        final denom = maxVal <= 0 ? 1 : maxVal;
+        final t = (v / denom).clamp(0.0, 1.0);
+        final a = 0.14 + (0.55 * t);
+        return PremiumTheme.teal.withValues(alpha: a);
+      }
+
+      return Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final p in squares)
+            Tooltip(
+              message: '${p['date']}: ${n(p['interactions'])} interactions',
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: cellColor(n(p['interactions'])),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              statChip('Interactions', interactions, Colors.white.withValues(alpha: 0.9)),
+              statChip('Comments', comments, PremiumTheme.teal),
+              statChip('Versions', versions, PremiumTheme.purple),
+              statChip('Approvals', approvals, PremiumTheme.success),
+              statChip('Reviewers', reviewers, Colors.white70),
+              statChip('Activity', events, PremiumTheme.info),
+              statChip('Proposals', totalProposals, Colors.white70),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Reviewer turnaround: ${fmtDays(turnaroundAvgDays)}'
+                  ' (${turnaroundSamples.toString()} sample${turnaroundSamples == 1 ? '' : 's'})',
+                  style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (highLoadCount > 0)
+                Text(
+                  'High-load: $highLoadCount (≥$highLoadThreshold)',
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: PremiumTheme.warning,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          buildHeatmap(),
+          const SizedBox(height: 16),
+          Text(
+            'Top active proposals',
+            style: PremiumTheme.titleMedium.copyWith(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (top.isEmpty)
+            Text(
+              'No collaboration activity found in this period.',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+            )
+          else
+            SizedBox(
+              height: 220,
+              child: ListView.separated(
+                itemCount: top.length,
+                separatorBuilder: (_, __) => Divider(
+                  height: 1,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+                itemBuilder: (context, i) {
+                  final row = top[i];
+                  final id = (row['proposal_id'] ?? '').toString();
+                  final title = (row['title'] ?? 'Untitled').toString();
+                  final client = (row['client'] ?? '').toString();
+                  final status = (row['status'] ?? '').toString();
+                  final rowInteractions = n(row['interactions']);
+                  final rowComments = n(row['comments']);
+                  final rowVersions = n(row['versions']);
+                  final rowApprovals = n(row['approvals']);
+                  final rowReviewers = n(row['reviewers']);
+                  final isHighLoad = (row['high_load'] == true);
+
+                  return InkWell(
+                    onTap: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/proposal_review',
+                        arguments: {
+                          'id': id,
+                          'title': title,
+                        },
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: Text(
+                              title,
+                              style: PremiumTheme.bodyMedium.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              client.isEmpty ? '-' : client,
+                              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              status.isEmpty ? '-' : status,
+                              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 170,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  rowInteractions.toString(),
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: isHighLoad
+                                        ? PremiumTheme.warning
+                                        : Colors.white70,
+                                    fontWeight: isHighLoad ? FontWeight.w700 : FontWeight.w500,
+                                  ),
+                                  textAlign: TextAlign.right,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'C$rowComments  V$rowVersions  A$rowApprovals  R$rowReviewers',
+                                  style: PremiumTheme.bodySmall.copyWith(
+                                    color: Colors.white.withValues(alpha: 0.55),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.right,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          if (highLoadProposals.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'High-load proposals',
+              style: PremiumTheme.titleMedium.copyWith(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 110,
+              child: ListView.separated(
+                itemCount: math.min(5, highLoadProposals.length),
+                separatorBuilder: (_, __) => Divider(
+                  height: 1,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+                itemBuilder: (context, i) {
+                  final row = highLoadProposals[i];
+                  final title = (row['title'] ?? 'Untitled').toString();
+                  final value = n(row['interactions']);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     child: Row(
                       children: [
                         Expanded(
-                          flex: 5,
                           child: Text(
                             title,
                             style: PremiumTheme.bodyMedium.copyWith(
@@ -991,38 +1201,23 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        Expanded(
-                          flex: 3,
-                          child: Text(
-                            client.isEmpty ? '-' : client,
-                            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            status.isEmpty ? '-' : status,
-                            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 110,
-                          child: Text(
-                            rowInteractions.toString(),
-                            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-                            textAlign: TextAlign.right,
+                        const SizedBox(width: 12),
+                        Text(
+                          value.toString(),
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: PremiumTheme.warning,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
-      ],
+          ],
+        ],
+      ),
     );
   }
 
@@ -1035,6 +1230,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     _cycleTimeProposalTypeCtrl.dispose();
     _globalClientCtrl.dispose();
     _globalRegionCtrl.dispose();
+    _globalIndustryCtrl.dispose();
     _globalOwnerCtrl.dispose();
     _globalProposalTypeCtrl.dispose();
     super.dispose();
@@ -1191,6 +1387,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
+      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -1200,6 +1397,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
+            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -1221,6 +1419,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
+      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -1280,6 +1479,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 owner: owner.isEmpty ? null : owner,
                                 proposalType: proposalType.isEmpty ? null : proposalType,
                                 client: client.isEmpty ? null : client,
+                                industry: industry.isEmpty ? null : industry,
                                 scope: _cycleTimeScope,
                                 department: department.isEmpty ? null : department,
                                 limit: 250,
@@ -1314,6 +1514,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 final status = (p['proposal_status'] ?? '').toString();
                                 final risk = (p['risk_status'] ?? 'NONE').toString();
                                 final score = p['risk_score'];
+                                final readiness = p['readiness_score'];
+                                final issuesCount = p['issues_count'];
+                                final canRelease = (p['can_release'] == true);
 
                                 return InkWell(
                                   onTap: () {
@@ -1368,20 +1571,37 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                           child: Text(
                                             risk,
                                             style: PremiumTheme.bodyMedium.copyWith(
-                                              color: Colors.white70,
+                                              color: canRelease
+                                                  ? Colors.white70
+                                                  : PremiumTheme.error,
+                                              fontWeight: canRelease ? FontWeight.w500 : FontWeight.w700,
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         SizedBox(
-                                          width: 90,
-                                          child: Text(
-                                            score == null ? '-' : score.toString(),
-                                            style: PremiumTheme.bodyMedium.copyWith(
-                                              color: Colors.white70,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                            textAlign: TextAlign.right,
+                                          width: 160,
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                score == null ? '-' : score.toString(),
+                                                style: PremiumTheme.bodyMedium.copyWith(
+                                                  color: Colors.white70,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: TextAlign.right,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Ready: ${readiness ?? '--'}%  •  Issues: ${issuesCount ?? 0}',
+                                                style: PremiumTheme.bodySmall.copyWith(
+                                                  color: Colors.white.withValues(alpha: 0.55),
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                                textAlign: TextAlign.right,
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],
@@ -1420,6 +1640,17 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         }
       }
     }
+
+    final avgReadiness = (data?['avg_readiness_score'] is num)
+        ? (data?['avg_readiness_score'] as num).toInt()
+        : null;
+    final issuesSummary = (data?['issues_summary'] as Map?) ?? {};
+    final issuesTotal = (issuesSummary['total'] is num)
+        ? (issuesSummary['total'] as num).toInt()
+        : 0;
+    final proposalsWithIssues = (issuesSummary['proposals_with_issues'] is num)
+        ? (issuesSummary['proposals_with_issues'] as num).toInt()
+        : 0;
 
     Color levelColor() {
       switch (overall) {
@@ -1503,6 +1734,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             chip('BLOCK', counts['BLOCK'] ?? 0, PremiumTheme.error),
             chip('NONE', counts['NONE'] ?? 0, Colors.white.withValues(alpha: 0.7)),
           ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Readiness: ${avgReadiness == null ? "--" : "$avgReadiness%"}  •  Issues: $issuesTotal'
+          '${proposalsWithIssues > 0 ? " across $proposalsWithIssues proposal${proposalsWithIssues == 1 ? "" : "s"}" : ""}',
+          style: PremiumTheme.bodyMedium.copyWith(
+            color: Colors.white70,
+          ),
+          overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 12),
         Text(
@@ -1908,6 +2148,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final clientQ = _globalClientCtrl.text.trim().toLowerCase();
     final ownerQ = _globalOwnerCtrl.text.trim().toLowerCase();
     final typeQ = _globalProposalTypeCtrl.text.trim().toLowerCase();
+    final industryQ = _globalIndustryCtrl.text.trim().toLowerCase();
 
     bool matchesAny(dynamic value, String query) {
       if (query.isEmpty) return true;
@@ -1943,6 +2184,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             matchesAny(p['templateType'], typeQ) ||
             matchesAny(p['template_key'], typeQ) ||
             matchesAny(p['templateKey'], typeQ);
+        if (!ok) return false;
+      }
+
+      if (industryQ.isNotEmpty) {
+        final ok = matchesAny(p['industry'], industryQ) ||
+            matchesAny(p['client_industry'], industryQ) ||
+            matchesAny(p['clientIndustry'], industryQ);
         if (!ok) return false;
       }
 
@@ -2046,6 +2294,22 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             ),
           ),
         ),
+        SizedBox(
+          width: 240,
+          child: glassField(
+            child: TextField(
+              controller: _globalIndustryCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Industry (optional)',
+                hintStyle: TextStyle(color: Colors.white54),
+              ),
+              onSubmitted: (_) => setState(() {}),
+            ),
+          ),
+        ),
         glassField(
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -2057,6 +2321,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   setState(() {
                     _globalClientCtrl.clear();
                     _globalRegionCtrl.clear();
+                    _globalIndustryCtrl.clear();
                     _globalOwnerCtrl.clear();
                     _globalProposalTypeCtrl.clear();
                     _cycleTimeRefreshTick++;
@@ -2709,7 +2974,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 children: [
                                   Expanded(
                                     child: FutureBuilder<Map<String, dynamic>?>(
-                                      key: ValueKey('pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
+                                      key: ValueKey('pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
                                       future: _fetchPipelineBundle(),
                                       builder: (context, snapshot) {
                                         final waiting = snapshot.connectionState == ConnectionState.waiting;
@@ -2811,7 +3076,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               _buildGlassChartCard(
                                 'Risk Gate',
                                 FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey('risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                  key: ValueKey('risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchRiskGateSummary(),
                                   builder: (context, snapshot) {
                                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2837,7 +3102,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               _buildGlassChartCard(
                                 'Collaboration Load',
                                 FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey('collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                  key: ValueKey('collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchCollaborationLoad(),
                                   builder: (context, snapshot) {
                                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2862,7 +3127,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               _buildGlassChartCard(
                                 'Client Engagement',
                                 FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey('engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                  key: ValueKey('engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchClientEngagement(),
                                   builder: (context, snapshot) {
                                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -3727,6 +3992,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final proposalType = _cycleTimeProposalTypeCtrl.text.trim().isNotEmpty
           ? _cycleTimeProposalTypeCtrl.text.trim()
           : _globalProposalTypeCtrl.text.trim();
+      final client = _globalClientCtrl.text.trim();
+      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -3735,6 +4002,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             endDate: endDate,
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
+            client: client.isEmpty ? null : client,
+            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );

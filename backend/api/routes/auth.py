@@ -412,7 +412,9 @@ def firebase_auth():
             # Try to find user by email or create firebase_uid column if needed
             cursor.execute(
                 '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE email = %s''',
+                   FROM users WHERE lower(email) = lower(%s)
+                   ORDER BY id DESC
+                   LIMIT 1''',
                 (email,)
             )
             user = cursor.fetchone()
@@ -590,7 +592,9 @@ def verify_firebase_auth(firebase_user=None, firebase_uid=None, firebase_email=N
         try:
             cursor.execute(
                 '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE email = %s''',
+                   FROM users WHERE lower(email) = lower(%s)
+                   ORDER BY id DESC
+                   LIMIT 1''',
                 (firebase_email,)
             )
             user = cursor.fetchone()

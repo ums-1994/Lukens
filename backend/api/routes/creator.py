@@ -798,15 +798,35 @@ def send_to_client(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
-            # Run compound risk gate check
-            risk_result = evaluate_compound_risk(dict(proposal))
-            if risk_result.get('blocked'):
-                return {
-                    'detail': 'Proposal blocked by risk gate',
-                    'risk_score': risk_result.get('score'),
-                    'flags': risk_result.get('flags', []),
-                    'message': 'This proposal has too many risk factors. Please address the issues before sending to client.'
-                }, 400                
+
+            # Block release if latest Risk Gate run is BLOCK without override.
+            try:
+                cursor.execute(
+                    """
+                    SELECT id, status, risk_score, overridden, override_reason, created_at
+                    FROM risk_gate_runs
+                    WHERE proposal_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (proposal_id,),
+                )
+                rg = cursor.fetchone()
+                if rg and str(rg.get('status') or '').strip().upper() == 'BLOCK' and rg.get('overridden') is not True:
+                    return {
+                        'detail': 'Proposal blocked by risk gate',
+                        'message': 'This proposal is blocked by Risk Gate. Resolve issues or request an override before sending to client.',
+                        'risk_gate': {
+                            'run_id': rg.get('id'),
+                            'status': rg.get('status'),
+                            'risk_score': rg.get('risk_score'),
+                            'overridden': False,
+                            'override_reason': rg.get('override_reason'),
+                            'run_created_at': rg.get('created_at').isoformat() if rg.get('created_at') else None,
+                        },
+                    }, 400
+            except Exception as rg_err:
+                print(f"[WARN] Risk Gate check failed for send_to_client proposal {proposal_id}: {rg_err}")
             
             cursor.execute(
                 "SELECT id, full_name, username, email FROM users WHERE username = %s",

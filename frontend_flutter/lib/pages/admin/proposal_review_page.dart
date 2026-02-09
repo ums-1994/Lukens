@@ -31,6 +31,30 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
 
+  DateTime? _parseAnyDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    final s = value.toString().trim();
+    if (s.isEmpty) return null;
+
+    final iso = DateTime.tryParse(s);
+    if (iso != null) return iso;
+
+    try {
+      return DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", 'en_US')
+          .parseUTC(s)
+          .toLocal();
+    } catch (_) {}
+
+    try {
+      return DateFormat('EEE, dd MMM yyyy HH:mm:ss zzz', 'en_US')
+          .parseUTC(s)
+          .toLocal();
+    } catch (_) {}
+
+    return null;
+  }
+
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
     setState(fn);
@@ -738,11 +762,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                           const SizedBox(width: 12),
                                           _buildInfoChip(
                                             Icons.calendar_today,
-                                            _proposal!['updated_at'] != null
-                                                ? DateFormat('dd MMM yyyy')
-                                                    .format(DateTime.parse(
-                                                        _proposal![
-                                                            'updated_at']))
+                                            _parseAnyDate(_proposal!['updated_at']) != null
+                                                ? DateFormat('dd MMM yyyy').format(
+                                                    _parseAnyDate(_proposal!['updated_at'])!,
+                                                  )
                                                 : 'Unknown date',
                                           ),
                                         ],
@@ -891,9 +914,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                                 null
                                                             ? DateFormat(
                                                                     'dd MMM yyyy HH:mm')
-                                                                .format(DateTime
-                                                                    .parse(version[
-                                                                        'created_at']))
+                                                                .format(
+                                                                  _parseAnyDate(version['created_at']) ??
+                                                                      DateTime.fromMillisecondsSinceEpoch(0),
+                                                                )
                                                             : '',
                                                         style: TextStyle(
                                                           color: Colors.white70,
@@ -1021,9 +1045,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                           Text(
                                                             DateFormat(
                                                                     'dd MMM yyyy HH:mm')
-                                                                .format(DateTime
-                                                                    .parse(comment[
-                                                                        'created_at'])),
+                                                                .format(
+                                                                  _parseAnyDate(comment['created_at']) ??
+                                                                      DateTime.fromMillisecondsSinceEpoch(0),
+                                                                ),
                                                             style: TextStyle(
                                                               color: Colors
                                                                   .white70,

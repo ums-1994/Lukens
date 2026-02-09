@@ -18,7 +18,31 @@ _db_initialized = False
 
 # Load environment variables from .env so DATABASE_URL works when this module
 # is imported directly (e.g., python -c ... from the backend folder).
+_backend_env_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', '..', '.env')
+)
+load_dotenv(dotenv_path=_backend_env_path)
 load_dotenv()
+
+
+def _safe_ddl(cursor, sql, params=None, warn_prefix=None):
+    sp = f"ddl_{os.urandom(4).hex()}"
+    try:
+        cursor.execute(f"SAVEPOINT {sp}")
+        cursor.execute(sql, params or None)
+        cursor.execute(f"RELEASE SAVEPOINT {sp}")
+        return True
+    except Exception as e:
+        try:
+            cursor.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+            cursor.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            pass
+        if warn_prefix:
+            print(f"{warn_prefix}: {e}")
+        else:
+            print(f"[WARN] DDL failed: {e}")
+        return False
 
 
 def _build_db_config_from_env():
@@ -76,12 +100,44 @@ def _build_db_config_from_env():
     }
 
 
+def _build_local_db_config_from_env():
+    cfg = {
+        'host': os.getenv('LOCAL_DB_HOST', os.getenv('DB_HOST', 'localhost')),
+        'database': os.getenv('LOCAL_DB_NAME', os.getenv('DB_NAME', 'proposal_db')),
+        'user': os.getenv('LOCAL_DB_USER', os.getenv('DB_USER', 'postgres')),
+        'password': os.getenv('LOCAL_DB_PASSWORD', os.getenv('DB_PASSWORD', '')),
+        'port': int(os.getenv('LOCAL_DB_PORT', os.getenv('DB_PORT', '5432'))),
+    }
+
+    ssl_mode = os.getenv('LOCAL_DB_SSLMODE') or os.getenv('DB_SSLMODE')
+    if ssl_mode:
+        cfg['sslmode'] = ssl_mode
+
+    return cfg
+
+
 def get_pg_pool():
     """Get or create PostgreSQL connection pool"""
     global _pg_pool
     if _pg_pool is None:
         try:
-            db_config = _build_db_config_from_env()
+            local_env_set = any(
+                os.getenv(k)
+                for k in (
+                    'LOCAL_DB_HOST',
+                    'LOCAL_DB_NAME',
+                    'LOCAL_DB_USER',
+                    'LOCAL_DB_PASSWORD',
+                    'LOCAL_DB_PORT',
+                )
+            )
+            prefer_local = os.getenv('DB_PREFER_LOCAL', 'true').lower() == 'true'
+            if local_env_set and prefer_local:
+                db_config = _build_local_db_config_from_env()
+                print("[*] DB config source: LOCAL_DB_*")
+            else:
+                db_config = _build_db_config_from_env()
+                print("[*] DB config source: DATABASE_URL/DB_*")
             
             # Add SSL mode for external connections (like Render)
             # Check if host contains 'render.com' or SSL is explicitly required
@@ -97,7 +153,24 @@ def get_pg_pool():
             print("[OK] PostgreSQL connection pool created successfully")
         except Exception as exc:
             print(f"[ERROR] Error creating PostgreSQL connection pool: {exc}")
-            raise
+
+            try:
+                local_cfg = _build_local_db_config_from_env()
+                if db_config.get('host') != local_cfg.get('host') or db_config.get('database') != local_cfg.get('database'):
+                    print(
+                        f"[WARN] Falling back to LOCAL_DB_* (or localhost defaults) for dev. "
+                        f"Trying: {local_cfg.get('host')}:{local_cfg.get('port')}/{local_cfg.get('database')}"
+                    )
+                    _pg_pool = psycopg2.pool.SimpleConnectionPool(
+                        minconn=1,
+                        maxconn=20,
+                        **local_cfg,
+                    )
+                    print("[OK] PostgreSQL connection pool created successfully (local fallback)")
+                else:
+                    raise
+            except Exception:
+                raise
     return _pg_pool
 
 
@@ -377,14 +450,15 @@ def init_pg_schema():
         )''')
 
         # Ensure proposals.client_id has a foreign key to clients.id
-        try:
-            cursor.execute('''
+        _safe_ddl(
+            cursor,
+            '''
                 ALTER TABLE proposals
                 ADD CONSTRAINT proposals_client_id_fkey
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
-            ''')
-        except Exception as e:
-            print(f"[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible): {e}")
+            ''',
+            warn_prefix='[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible)',
+        )
         
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
@@ -438,6 +512,18 @@ def init_pg_schema():
         FOREIGN KEY (proposal_id) REFERENCES proposals(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS approvals (
+        id SERIAL PRIMARY KEY,
+        approver_name VARCHAR(150) NOT NULL,
+        approver_email VARCHAR(150) NOT NULL,
+        approved_pdf_path TEXT,
+        approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        proposal_id INTEGER REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_approvals_proposal_id
+                         ON approvals(proposal_id, approved_at DESC)''')
 
         # Document comments table
         cursor.execute('''CREATE TABLE IF NOT EXISTS document_comments (

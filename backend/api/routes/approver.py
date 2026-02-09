@@ -207,6 +207,44 @@ def approve_proposal(username=None, proposal_id=None):
             
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+
+            # Block release if latest Risk Gate run is BLOCK without override.
+            try:
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'risk_gate_runs'
+                    """
+                )
+                has_risk_gate = cursor.fetchone() is not None
+                if has_risk_gate:
+                    cursor.execute(
+                        """
+                        SELECT id, status, risk_score, overridden, override_reason, created_at
+                        FROM risk_gate_runs
+                        WHERE proposal_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """,
+                        (proposal_id,),
+                    )
+                    rg = cursor.fetchone()
+                    if rg and str(rg.get('status') or '').strip().upper() == 'BLOCK' and rg.get('overridden') is not True:
+                        return {
+                            'detail': 'Proposal blocked by risk gate',
+                            'message': 'This proposal is blocked by Risk Gate. Resolve issues or request an override before approving/sending to client.',
+                            'risk_gate': {
+                                'run_id': rg.get('id'),
+                                'status': rg.get('status'),
+                                'risk_score': rg.get('risk_score'),
+                                'overridden': False,
+                                'override_reason': rg.get('override_reason'),
+                                'run_created_at': rg.get('created_at').isoformat() if rg.get('created_at') else None,
+                            },
+                        }, 400
+            except Exception as rg_err:
+                print(f"[WARN] Risk Gate check failed for approver approve proposal {proposal_id}: {rg_err}")
             
             title = proposal.get('title')
             client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
@@ -305,6 +343,31 @@ def approve_proposal(username=None, proposal_id=None):
                 ('Sent to Client', proposal_id)
             )
             status_row = cursor.fetchone()
+
+            # Record approval event (best-effort).
+            try:
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'approvals'
+                    """
+                )
+                has_approvals_table = cursor.fetchone() is not None
+                if has_approvals_table:
+                    cursor.execute(
+                        """
+                        INSERT INTO approvals (approver_name, approver_email, approved_pdf_path, proposal_id)
+                        VALUES (%s, %s, NULL, %s)
+                        """,
+                        (
+                            str(approver_name or username or 'Unknown'),
+                            str((approver_user or {}).get('email') or username or 'unknown'),
+                            proposal_id,
+                        ),
+                    )
+            except Exception as approval_log_err:
+                print(f"[WARN] Failed to record approval event for proposal {proposal_id}: {approval_log_err}")
             conn.commit()
             
             if status_row:

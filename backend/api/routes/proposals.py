@@ -339,6 +339,16 @@ def get_proposals(username=None, user_id=None, email=None):
             """)
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
+
+            cursor.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                  AND table_schema = current_schema()
+                """
+            )
+            col_types = {r[0]: r[1] for r in (cursor.fetchall() or [])}
             
             # Build query dynamically based on available columns
             if 'owner_id' in existing_columns:
@@ -347,6 +357,10 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client')
                 elif 'client_name' in existing_columns:
                     select_cols.append('client_name')
+                if 'budget' in existing_columns:
+                    select_cols.append('budget')
+                if 'timeline_days' in existing_columns:
+                    select_cols.append('timeline_days')
                 if 'created_at' in existing_columns:
                     select_cols.append('created_at')
                 if 'updated_at' in existing_columns:
@@ -357,13 +371,48 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('sections')
                 if 'pdf_url' in existing_columns:
                     select_cols.append('pdf_url')
+                if 'client_email' in existing_columns:
+                    select_cols.append('client_email')
+                if 'client_id' in existing_columns:
+                    select_cols.append('client_id')
 
                 order_by_col = 'created_at' if 'created_at' in existing_columns else 'id'
 
-                query = f'''SELECT {', '.join(select_cols)}
-                     FROM proposals WHERE owner_id = %s
+                industry_join = ''
+                industry_select = ''
+                try:
+                    cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                    has_clients = cursor.fetchone()[0] is not None
+                except Exception:
+                    has_clients = False
+                if has_clients and ('client_id' in existing_columns or 'client_email' in existing_columns):
+                    if 'client_id' in existing_columns:
+                        industry_join = ' LEFT JOIN clients c ON c.id = proposals.client_id '
+                    else:
+                        industry_join = ' LEFT JOIN clients c ON c.email = proposals.client_email '
+                    industry_select = ', c.industry AS industry'
+
+                owner_type = (col_types.get('owner_id') or '').lower()
+                owner_is_text = owner_type in {'character varying', 'varchar', 'text'}
+
+                if owner_is_text:
+                    where_sql = "(owner_id::text = %s::text"
+                    params = [str(user_id)]
+                    if email:
+                        where_sql += " OR lower(owner_id::text) = lower(%s::text)"
+                        params.append(email)
+                    if username:
+                        where_sql += " OR lower(owner_id::text) = lower(%s::text)"
+                        params.append(username)
+                    where_sql += ")"
+                else:
+                    where_sql = "owner_id = %s"
+                    params = [user_id]
+
+                query = f'''SELECT {', '.join(select_cols)}{industry_select}
+                     FROM proposals{industry_join} WHERE {where_sql}
                      ORDER BY {order_by_col} DESC'''
-                cursor.execute(query, (user_id,))
+                cursor.execute(query, tuple(params))
             elif 'user_id' in existing_columns:
                 select_cols = ['id', 'user_id', 'title', 'content', 'status']
                 if 'client' in existing_columns:
@@ -372,6 +421,8 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client_name')
                 if 'client_email' in existing_columns:
                     select_cols.append('client_email')
+                if 'client_id' in existing_columns:
+                    select_cols.append('client_id')
                 if 'budget' in existing_columns:
                     select_cols.append('budget')
                 if 'timeline_days' in existing_columns:
@@ -384,10 +435,33 @@ def get_proposals(username=None, user_id=None, email=None):
                 # Handle legacy schemas where user_id may be stored as VARCHAR
                 order_by_col = 'created_at' if 'created_at' in existing_columns else 'id'
 
-                query = f'''SELECT {', '.join(select_cols)}
-                   FROM proposals WHERE user_id::text = %s::text
+                industry_join = ''
+                industry_select = ''
+                try:
+                    cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                    has_clients = cursor.fetchone()[0] is not None
+                except Exception:
+                    has_clients = False
+                if has_clients and ('client_id' in existing_columns or 'client_email' in existing_columns):
+                    if 'client_id' in existing_columns:
+                        industry_join = ' LEFT JOIN clients c ON c.id = proposals.client_id '
+                    else:
+                        industry_join = ' LEFT JOIN clients c ON c.email = proposals.client_email '
+                    industry_select = ', c.industry AS industry'
+
+                user_col_type = (col_types.get('user_id') or '').lower()
+                user_col_is_text = user_col_type in {'character varying', 'varchar', 'text'}
+                if user_col_is_text:
+                    where_sql = "user_id::text = %s::text"
+                    params = [str(user_id)]
+                else:
+                    where_sql = "user_id = %s"
+                    params = [user_id]
+
+                query = f'''SELECT {', '.join(select_cols)}{industry_select}
+                   FROM proposals{industry_join} WHERE {where_sql}
                      ORDER BY {order_by_col} DESC'''
-                cursor.execute(query, (str(user_id),))
+                cursor.execute(query, tuple(params))
             else:
                 print(f"⚠️ No owner_id or user_id column found in proposals table")
                 return jsonify([]), 200
@@ -440,6 +514,10 @@ def get_proposals(username=None, user_id=None, email=None):
                         proposal['client_name'] = ''
                     
                     proposal['client_email'] = row_dict.get('client_email') or ''
+                    if 'client_id' in row_dict:
+                        proposal['client_id'] = row_dict.get('client_id')
+                    if 'industry' in row_dict:
+                        proposal['industry'] = row_dict.get('industry')
                     
                     # Handle budget
                     if 'budget' in row_dict:

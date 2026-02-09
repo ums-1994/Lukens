@@ -245,12 +245,52 @@ def _build_db_config_from_env():
         'port': int(os.getenv('DB_PORT', '5432')),
     }
 
+
+def _is_dev_mode():
+    return (
+        os.getenv('FLASK_ENV', '').lower() == 'development'
+        or os.getenv('DEBUG', '').lower() in ('1', 'true', 'yes')
+        or os.getenv('DEV_BYPASS_AUTH', '').lower() in ('1', 'true', 'yes')
+    )
+
+
+def _build_local_fallback_db_config():
+    cfg = {
+        'host': os.getenv('LOCAL_DB_HOST', os.getenv('DB_HOST', 'localhost')),
+        'database': os.getenv('LOCAL_DB_NAME', os.getenv('DB_NAME', 'proposal_db')),
+        'user': os.getenv('LOCAL_DB_USER', os.getenv('DB_USER', 'postgres')),
+        'password': os.getenv('LOCAL_DB_PASSWORD', os.getenv('DB_PASSWORD', '')),
+        'port': int(os.getenv('LOCAL_DB_PORT', os.getenv('DB_PORT', '5432'))),
+    }
+
+    ssl_mode = os.getenv('LOCAL_DB_SSLMODE') or os.getenv('DB_SSLMODE')
+    if ssl_mode:
+        cfg['sslmode'] = ssl_mode
+
+    return cfg
+
 def get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         import psycopg2.pool
         try:
-            db_config = _build_db_config_from_env()
+            local_fallback_env_set = any(
+                os.getenv(k)
+                for k in (
+                    'LOCAL_DB_HOST',
+                    'LOCAL_DB_NAME',
+                    'LOCAL_DB_USER',
+                    'LOCAL_DB_PASSWORD',
+                    'LOCAL_DB_PORT',
+                )
+            )
+            prefer_local = os.getenv('DB_PREFER_LOCAL', 'true').lower() == 'true'
+            if local_fallback_env_set and prefer_local:
+                db_config = _build_local_fallback_db_config()
+                print("[*] DB config source: LOCAL_DB_*")
+            else:
+                db_config = _build_db_config_from_env()
+                print("[*] DB config source: DATABASE_URL/DB_*")
             if 'sslmode' in db_config:
                 print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
@@ -262,7 +302,35 @@ def get_pg_pool():
             print("[OK] PostgreSQL connection pool created successfully")
         except Exception as e:
             print(f"[ERROR] Error creating PostgreSQL connection pool: {e}")
-            raise
+
+            try:
+                host = (locals().get('db_config') or {}).get('host') or ''
+                fallback_disabled = os.getenv('DB_DISABLE_LOCAL_FALLBACK', 'false').lower() == 'true'
+                should_try_fallback = (
+                    _is_dev_mode()
+                    and not fallback_disabled
+                    and isinstance(host, str)
+                    and (
+                        local_fallback_env_set
+                        or ('render.com' in host.lower())
+                    )
+                )
+                if should_try_fallback:
+                    fallback = _build_local_fallback_db_config()
+                    print(
+                        "[WARN] Falling back to LOCAL_DB_* (or localhost defaults) for dev. "
+                        f"Trying: {fallback.get('host')}:{fallback.get('port')}/{fallback.get('database')}"
+                    )
+                    _pg_pool = psycopg2.pool.SimpleConnectionPool(
+                        minconn=1,
+                        maxconn=20,
+                        **fallback,
+                    )
+                    print("[OK] PostgreSQL connection pool created successfully (local fallback)")
+                else:
+                    raise
+            except Exception:
+                raise
     return _pg_pool
 
 def _pg_conn():
@@ -333,6 +401,122 @@ def get_db_connection():
 ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', 'dev-key-change-in-production')
 cipher = Fernet(base64.urlsafe_b64encode(ENCRYPTION_KEY.ljust(32)[:32].encode()))
 
+
+def _seed_default_content_if_empty(cursor):
+    try:
+        cursor.execute("SELECT COUNT(*) FROM content WHERE is_deleted = false")
+        row = cursor.fetchone()
+        existing = row[0] if row else 0
+    except Exception:
+        return
+
+    if existing and existing > 0:
+        return
+
+    blocks = []
+    images = []
+
+    try:
+        from seed_content_blocks import CONTENT_BLOCKS as _CONTENT_BLOCKS
+        from seed_content_blocks import build_content as _build_content
+
+        for block in _CONTENT_BLOCKS:
+            try:
+                blocks.append(
+                    {
+                        'key': block['key'],
+                        'label': block['label'],
+                        'category': block.get('category') or 'Templates',
+                        'content': _build_content(block),
+                    }
+                )
+            except Exception:
+                continue
+    except Exception:
+        blocks = []
+
+    try:
+        from add_sample_images import SAMPLE_IMAGES as _SAMPLE_IMAGES
+        for img in _SAMPLE_IMAGES:
+            try:
+                images.append(
+                    {
+                        'key': img['key'],
+                        'label': img['label'],
+                        'category': img.get('category') or 'Images',
+                        'content': img.get('content') or '',
+                        'public_id': img.get('public_id'),
+                    }
+                )
+            except Exception:
+                continue
+    except Exception:
+        images = []
+
+    if not blocks and not images:
+        return
+
+    now = datetime.utcnow()
+
+    for item in blocks:
+        cursor.execute(
+            """
+            INSERT INTO content (key, label, content, category, is_folder, parent_id, public_id, created_at, updated_at, is_deleted)
+            VALUES (%s, %s, %s, %s, FALSE, NULL, NULL, %s, %s, FALSE)
+            ON CONFLICT (key) DO UPDATE
+            SET label = EXCLUDED.label,
+                content = EXCLUDED.content,
+                category = EXCLUDED.category,
+                updated_at = EXCLUDED.updated_at,
+                is_deleted = FALSE
+            """,
+            (item['key'], item['label'], item['content'], item['category'], now, now),
+        )
+
+    for item in images:
+        cursor.execute(
+            """
+            INSERT INTO content (key, label, content, category, is_folder, parent_id, public_id, created_at, updated_at, is_deleted)
+            VALUES (%s, %s, %s, %s, FALSE, NULL, %s, %s, %s, FALSE)
+            ON CONFLICT (key) DO UPDATE
+            SET label = EXCLUDED.label,
+                content = EXCLUDED.content,
+                category = EXCLUDED.category,
+                public_id = EXCLUDED.public_id,
+                updated_at = EXCLUDED.updated_at,
+                is_deleted = FALSE
+            """,
+            (
+                item['key'],
+                item['label'],
+                item['content'],
+                item['category'],
+                item.get('public_id'),
+                now,
+                now,
+            ),
+        )
+
+
+def _safe_ddl(cursor, sql, params=None, warn_prefix=None):
+    sp = f"ddl_{secrets.token_hex(8)}"
+    try:
+        cursor.execute(f"SAVEPOINT {sp}")
+        cursor.execute(sql, params or None)
+        cursor.execute(f"RELEASE SAVEPOINT {sp}")
+        return True
+    except Exception as e:
+        try:
+            cursor.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+            cursor.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            pass
+        if warn_prefix:
+            print(f"{warn_prefix}: {e}")
+        else:
+            print(f"[WARN] DDL failed: {e}")
+        return False
+
 def init_pg_schema():
     """Initialize PostgreSQL schema on app startup"""
     conn = None
@@ -388,6 +572,76 @@ def init_pg_schema():
         client_can_edit BOOLEAN DEFAULT false,
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
+
+        try:
+            cursor.execute(
+                '''
+                ALTER TABLE proposals
+                ADD COLUMN IF NOT EXISTS client_email VARCHAR(255)
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute(
+                '''
+                ALTER TABLE proposals
+                ADD COLUMN IF NOT EXISTS opportunity_id VARCHAR(50)
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add opportunity_id column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute(
+                '''
+                ALTER TABLE proposals
+                ADD COLUMN IF NOT EXISTS engagement_stage VARCHAR(50)
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_stage column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute(
+                '''
+                ALTER TABLE proposals
+                ADD COLUMN IF NOT EXISTS engagement_opened_at TIMESTAMP
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_opened_at column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute(
+                '''
+                ALTER TABLE proposals
+                ADD COLUMN IF NOT EXISTS engagement_target_close_at TIMESTAMP
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_target_close_at column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute(
+                '''
+                ALTER TABLE proposals
+                ADD COLUMN IF NOT EXISTS client_id INTEGER
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add client_id column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute(
+                '''
+                CREATE INDEX IF NOT EXISTS idx_proposals_client_id
+                ON proposals(client_id)
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
 
         # Risk Gate runs + override audit trail
         cursor.execute(
@@ -445,6 +699,48 @@ def init_pg_schema():
         is_deleted BOOLEAN DEFAULT false,
         FOREIGN KEY (parent_id) REFERENCES content(id)
         )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        company_name VARCHAR(255) NOT NULL,
+        contact_person VARCHAR(255),
+        email VARCHAR(255) UNIQUE NOT NULL,
+        phone VARCHAR(100),
+        industry VARCHAR(255),
+        company_size VARCHAR(100),
+        location VARCHAR(255),
+        business_type VARCHAR(255),
+        project_needs TEXT,
+        budget_range VARCHAR(100),
+        timeline VARCHAR(255),
+        additional_info TEXT,
+        status VARCHAR(50) DEFAULT 'active',
+        onboarding_token VARCHAR(255),
+        created_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+
+        _safe_ddl(
+            cursor,
+            '''
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_client_id_fkey
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+            ''',
+            warn_prefix='[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible)',
+        )
+
+        try:
+            cursor.execute(
+                '''
+                ALTER TABLE clients
+                ADD COLUMN IF NOT EXISTS region VARCHAR(80)
+            '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add region column (may already exist): {e}")
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS settings (
         id SERIAL PRIMARY KEY,
@@ -463,6 +759,83 @@ def init_pg_schema():
         created_by INTEGER,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS approvals (
+        id SERIAL PRIMARY KEY,
+        approver_name VARCHAR(150) NOT NULL,
+        approver_email VARCHAR(150) NOT NULL,
+        approved_pdf_path TEXT,
+        approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        proposal_id INTEGER REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_approvals_proposal_id
+                         ON approvals(proposal_id, approved_at DESC)''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS client_onboarding_invitations (
+        id SERIAL PRIMARY KEY,
+        access_token VARCHAR(255) UNIQUE NOT NULL,
+        invited_email VARCHAR(255) NOT NULL,
+        invited_by INTEGER NOT NULL,
+        expected_company VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'pending',
+        invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        expires_at TIMESTAMP,
+        client_id INTEGER,
+        email_verified_at TIMESTAMP,
+        verification_code_hash VARCHAR(255),
+        code_expires_at TIMESTAMP,
+        verification_attempts INTEGER DEFAULT 0,
+        last_code_sent_at TIMESTAMP,
+        FOREIGN KEY (invited_by) REFERENCES users(id),
+        FOREIGN KEY (client_id) REFERENCES clients(id)
+        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS client_notes (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL,
+        note_text TEXT NOT NULL,
+        created_by INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS client_proposals (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL,
+        proposal_id INTEGER NOT NULL,
+        relationship_type VARCHAR(50) DEFAULT 'primary',
+        linked_by INTEGER,
+        linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (client_id, proposal_id),
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (linked_by) REFERENCES users(id)
+        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS email_verification_events (
+        id SERIAL PRIMARY KEY,
+        invitation_id INTEGER NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        event_type VARCHAR(50) NOT NULL,
+        event_detail TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (invitation_id) REFERENCES client_onboarding_invitations(id) ON DELETE CASCADE
+        )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS user_email_verification_tokens (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        token VARCHAR(255) UNIQUE NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )''')
         
         # Document comments table
@@ -607,6 +980,45 @@ def init_pg_schema():
         # Create index for faster signature queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
                          ON proposal_signatures(proposal_id, status, sent_at DESC)''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_client_activity (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        client_id INTEGER,
+        event_type VARCHAR(50) NOT NULL,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_proposal_id
+                         ON proposal_client_activity(proposal_id)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_client_id
+                         ON proposal_client_activity(client_id)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_event_type
+                         ON proposal_client_activity(event_type)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_created_at
+                         ON proposal_client_activity(created_at)''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_client_session (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        client_id INTEGER,
+        session_start TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        session_end TIMESTAMP,
+        total_seconds INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_session_proposal_id
+                         ON proposal_client_session(proposal_id)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_session_client_id
+                         ON proposal_client_session(client_id)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_session_start
+                         ON proposal_client_session(session_start)''')
+
+        _seed_default_content_if_empty(cursor)
         
         conn.commit()
         release_pg_conn(conn)
@@ -615,6 +1027,10 @@ def init_pg_schema():
         print(f"[ERROR] Error initializing PostgreSQL schema: {e}")
         if conn:
             try:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 release_pg_conn(conn)
             except:
                 pass
@@ -639,7 +1055,14 @@ def init_db():
         print("[OK] Database schema initialized successfully")
     except Exception as e:
         print(f"[ERROR] Database initialization error: {e}")
-        raise
+        # Do not raise here; raising prevents Flask from producing a response
+        # with CORS headers and makes browsers report a misleading CORS failure.
+        return jsonify(
+            {
+                'detail': 'Database unavailable',
+                'error': str(e),
+            }
+        ), 503
 
 # Auth token storage (in production, use Redis or session manager)
 # File-based persistence to survive restarts
@@ -1504,6 +1927,209 @@ def get_document_comments(username, proposal_id):
         return _fetch_document_comments(proposal_id), 200
     except Exception as e:
         print(f"❌ Error fetching document comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/api/client/activity")
+def log_client_activity():
+    try:
+        data = request.get_json()
+        if not data:
+            return {'detail': 'Request body required'}, 400
+
+        token = data.get('token')
+        proposal_id = data.get('proposal_id')
+        event_type = data.get('event_type')
+        metadata = data.get('metadata', {})
+
+        if not token or proposal_id is None or not event_type:
+            return {'detail': 'Token, proposal_id, and event_type required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT ci.invited_email
+                FROM collaboration_invitations ci
+                WHERE ci.access_token = %s
+                """,
+                (token,),
+            )
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+
+            cursor.execute(
+                """
+                SELECT id
+                FROM proposals
+                WHERE id = %s OR id::text = %s
+                """,
+                (proposal_id, str(proposal_id)),
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            client_id = None
+            try:
+                cursor.execute(
+                    """SELECT id FROM clients WHERE email = %s""",
+                    (invitation.get('invited_email'),),
+                )
+                c = cursor.fetchone()
+                client_id = c.get('id') if c else None
+            except Exception:
+                client_id = None
+
+            import json as json_module
+
+            cursor.execute(
+                """
+                INSERT INTO proposal_client_activity
+                (proposal_id, client_id, event_type, metadata, created_at)
+                VALUES (%s, %s, %s, %s::jsonb, NOW())
+                RETURNING id, created_at
+                """,
+                (proposal['id'], client_id, event_type, json_module.dumps(metadata or {})),
+            )
+            row = cursor.fetchone()
+            conn.commit()
+
+            return {
+                'success': True,
+                'activity_id': str(row['id']),
+                'created_at': row['created_at'].isoformat() if row.get('created_at') else None,
+            }, 201
+    except Exception as e:
+        print(f"❌ Error logging client activity: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/api/client/session/start")
+def start_client_session():
+    try:
+        data = request.get_json()
+        if not data:
+            return {'detail': 'Request body required'}, 400
+
+        token = data.get('token')
+        proposal_id = data.get('proposal_id')
+        if not token or proposal_id is None:
+            return {'detail': 'Token and proposal_id required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT ci.invited_email
+                FROM collaboration_invitations ci
+                WHERE ci.access_token = %s
+                """,
+                (token,),
+            )
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+
+            cursor.execute(
+                """
+                SELECT id
+                FROM proposals
+                WHERE id = %s OR id::text = %s
+                """,
+                (proposal_id, str(proposal_id)),
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            client_id = None
+            try:
+                cursor.execute(
+                    """SELECT id FROM clients WHERE email = %s""",
+                    (invitation.get('invited_email'),),
+                )
+                c = cursor.fetchone()
+                client_id = c.get('id') if c else None
+            except Exception:
+                client_id = None
+
+            cursor.execute(
+                """
+                INSERT INTO proposal_client_session
+                (proposal_id, client_id, session_start)
+                VALUES (%s, %s, NOW())
+                RETURNING id, session_start
+                """,
+                (proposal['id'], client_id),
+            )
+            row = cursor.fetchone()
+            conn.commit()
+            return {
+                'success': True,
+                'session_id': str(row['id']),
+                'session_start': row['session_start'].isoformat() if row.get('session_start') else None,
+            }, 201
+    except Exception as e:
+        print(f"❌ Error starting client session: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post("/api/client/session/end")
+def end_client_session():
+    try:
+        data = request.get_json()
+        if not data:
+            return {'detail': 'Request body required'}, 400
+
+        session_id = data.get('session_id')
+        if not session_id:
+            return {'detail': 'session_id required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """
+                SELECT id, session_start
+                FROM proposal_client_session
+                WHERE id = %s OR id::text = %s
+                """,
+                (session_id, str(session_id)),
+            )
+            session = cursor.fetchone()
+            if not session:
+                return {'detail': 'Session not found'}, 404
+
+            session_end = datetime.now()
+            session_start = session.get('session_start')
+            total_seconds = int((session_end - session_start).total_seconds()) if session_start else 0
+            if total_seconds < 0:
+                total_seconds = 0
+
+            cursor.execute(
+                """
+                UPDATE proposal_client_session
+                SET session_end = %s, total_seconds = %s
+                WHERE id = %s
+                RETURNING id, total_seconds
+                """,
+                (session_end, total_seconds, session['id']),
+            )
+            updated = cursor.fetchone()
+            conn.commit()
+            return {
+                'success': True,
+                'session_id': str(updated['id']),
+                'total_seconds': int(updated.get('total_seconds') or 0),
+            }, 200
+    except Exception as e:
+        print(f"❌ Error ending client session: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
@@ -5345,6 +5971,18 @@ def docusign_webhook():
                     SET status = 'completed', signed_at = NOW()
                     WHERE envelope_id = %s
                 """, (envelope_id,))
+
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO proposal_client_activity
+                        (proposal_id, client_id, event_type, metadata, created_at)
+                        VALUES (%s, NULL, 'sign', %s::jsonb, NOW())
+                        """,
+                        (signature['proposal_id'], json.dumps({'envelope_id': envelope_id})),
+                    )
+                except Exception:
+                    pass
                 
                 cursor.execute("""
                     UPDATE proposals 

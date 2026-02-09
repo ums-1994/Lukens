@@ -98,6 +98,48 @@ def _map_score_to_status(score: int, issues: list) -> str:
     return "PASS"
 
 
+def _readiness_score(risk_score) -> Optional[int]:
+    try:
+        score = int(risk_score or 0)
+    except Exception:
+        return None
+    return max(0, min(100, 100 - score))
+
+
+def _normalize_issues(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    return []
+
+
+def _issues_stats(issues: list) -> dict:
+    by_severity = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
+    by_category: dict[str, int] = {}
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            continue
+        sev = str(issue.get("severity") or "").strip().lower() or "unknown"
+        if sev not in by_severity:
+            sev = "unknown"
+        by_severity[sev] += 1
+
+        cat = str(issue.get("category") or "").strip().lower() or "unknown"
+        by_category[cat] = by_category.get(cat, 0) + 1
+    total = sum(by_severity.values())
+    return {"total": int(total), "by_severity": by_severity, "by_category": by_category}
+
+
 def _build_kb_citations(conn, issues: list) -> list:
     """Return list of KB citations with doc_id + clause_id."""
     if not issues:
@@ -169,11 +211,24 @@ def analyze(username=None):
             # Sanitize + block check
             safety_result = sanitize_for_external_ai(proposal_dict)
             if safety_result.blocked:
+                safety_issues = []
+                for reason in safety_result.block_reasons or []:
+                    safety_issues.append(
+                        {
+                            "category": "safety_block",
+                            "section": "AI Safety",
+                            "severity": "critical",
+                            "description": str(reason),
+                            "recommendation": "Remove sensitive data and retry",
+                        }
+                    )
+
+                kb_citations = _build_kb_citations(conn, safety_issues)
                 response_body = {
                     "status": "BLOCK",
                     "risk_score": 100,
-                    "issues": [],
-                    "kb_citations": [],
+                    "issues": safety_issues,
+                    "kb_citations": kb_citations,
                     "redaction_summary": {
                         "blocked": True,
                         "reasons": safety_result.block_reasons,
@@ -375,10 +430,11 @@ def summary(username=None, user_id=None, email=None):
             end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         owner_filter = (request.args.get("owner") or request.args.get("owner_id") or "").strip()
-        proposal_type = (request.args.get("proposal_type") or "").strip()
-        client_filter = (request.args.get("client") or "").strip()
-        scope = (request.args.get("scope") or "team").strip().lower()
-        department_filter = (request.args.get("department") or "").strip()
+        proposal_type = (request.args.get("proposal_type") or "").strip() or None
+        client_filter = (request.args.get("client") or "").strip() or None
+        industry_filter = (request.args.get("industry") or "").strip() or None
+        scope = (request.args.get("scope") or "self").strip().lower()
+        department_filter = (request.args.get("department") or "").strip() or None
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -559,25 +615,49 @@ def summary(username=None, user_id=None, email=None):
                     params.append(f"%{client_filter}%")
                 where.append("(" + " OR ".join(or_parts) + ")")
 
+            clients_join = ""
+            industry_where = ""
+            if industry_filter:
+                has_clients = False
+                try:
+                    cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                    has_clients = cursor.fetchone()[0] is not None
+                except Exception:
+                    has_clients = False
+                if has_clients:
+                    join_cond = None
+                    if "client_id" in existing_columns:
+                        join_cond = "c.id = p.client_id"
+                    elif "client_email" in existing_columns:
+                        join_cond = "c.email = p.client_email"
+                    if join_cond:
+                        clients_join = f"LEFT JOIN clients c ON {join_cond}"
+                        industry_where = " AND c.industry ILIKE %s"
+
+            if industry_filter and clients_join:
+                params.append(f"%{industry_filter}%")
             where_sql = " AND ".join(where)
 
             cursor.execute(
                 f"""
                 SELECT
                     p.id AS proposal_id,
+                    rr.id AS run_id,
                     rr.status AS risk_status,
                     rr.risk_score AS risk_score,
+                    rr.issues AS issues,
                     rr.overridden AS overridden,
                     rr.created_at AS run_created_at
                 FROM proposals p
+                {clients_join}
                 LEFT JOIN LATERAL (
-                    SELECT status, risk_score, overridden, created_at
+                    SELECT id, status, risk_score, issues, overridden, created_at
                     FROM risk_gate_runs
                     WHERE proposal_id = p.id
                     ORDER BY created_at DESC
                     LIMIT 1
                 ) rr ON TRUE
-                WHERE {where_sql}
+                WHERE {where_sql}{industry_where}
                 """,
                 params,
             )
@@ -585,6 +665,11 @@ def summary(username=None, user_id=None, email=None):
             rows = cursor.fetchall() or []
 
             counts = {"PASS": 0, "REVIEW": 0, "BLOCK": 0, "NONE": 0}
+            readiness_samples: list[int] = []
+            issues_agg_by_sev = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
+            issues_agg_by_cat: dict[str, int] = {}
+            issues_total = 0
+            proposals_with_issues = 0
             for r in rows:
                 status_val = r.get("risk_status")
                 if not status_val:
@@ -596,6 +681,25 @@ def summary(username=None, user_id=None, email=None):
                 else:
                     counts[key] += 1
 
+                readiness = _readiness_score(r.get("risk_score"))
+                if readiness is not None:
+                    readiness_samples.append(int(readiness))
+
+                issues = _normalize_issues(r.get("issues"))
+                stats = _issues_stats(issues)
+                if stats.get("total"):
+                    proposals_with_issues += 1
+                issues_total += int(stats.get("total") or 0)
+                by_sev = stats.get("by_severity") or {}
+                for sev_k, sev_v in by_sev.items():
+                    if sev_k in issues_agg_by_sev:
+                        issues_agg_by_sev[sev_k] += int(sev_v or 0)
+                    else:
+                        issues_agg_by_sev["unknown"] += int(sev_v or 0)
+                by_cat = stats.get("by_category") or {}
+                for cat_k, cat_v in by_cat.items():
+                    issues_agg_by_cat[cat_k] = issues_agg_by_cat.get(cat_k, 0) + int(cat_v or 0)
+
             total_proposals = len(rows)
             analyzed_proposals = total_proposals - counts["NONE"]
 
@@ -606,6 +710,10 @@ def summary(username=None, user_id=None, email=None):
                 overall_level = "REVIEW"
             elif analyzed_proposals > 0:
                 overall_level = "PASS"
+
+            avg_readiness_score = None
+            if readiness_samples:
+                avg_readiness_score = int(round(float(sum(readiness_samples)) / len(readiness_samples)))
 
             return jsonify(
                 {
@@ -622,6 +730,13 @@ def summary(username=None, user_id=None, email=None):
                     "counts": counts,
                     "total_proposals": total_proposals,
                     "analyzed_proposals": analyzed_proposals,
+                    "avg_readiness_score": avg_readiness_score,
+                    "issues_summary": {
+                        "total": int(issues_total),
+                        "proposals_with_issues": int(proposals_with_issues),
+                        "by_severity": issues_agg_by_sev,
+                        "by_category": issues_agg_by_cat,
+                    },
                 }
             ), 200
     except Exception as e:
@@ -648,6 +763,7 @@ def proposals(username=None, user_id=None, email=None):
         owner_filter = (request.args.get("owner") or request.args.get("owner_id") or "").strip()
         proposal_type = (request.args.get("proposal_type") or "").strip()
         client_filter = (request.args.get("client") or "").strip()
+        industry_filter = (request.args.get("industry") or "").strip()
         scope = (request.args.get("scope") or "team").strip().lower()
         department_filter = (request.args.get("department") or "").strip()
 
@@ -684,6 +800,25 @@ def proposals(username=None, user_id=None, email=None):
 
             client_cols = [c for c in ("client", "client_name", "client_email") if c in existing_columns]
             client_expr = client_cols[0] if client_cols else "NULL::text"
+
+            clients_join = ""
+            industry_where = ""
+            if industry_filter:
+                has_clients = False
+                try:
+                    cursor.execute("SELECT to_regclass(%s)", ("public.clients",))
+                    has_clients = cursor.fetchone()[0] is not None
+                except Exception:
+                    has_clients = False
+                if has_clients:
+                    join_cond = None
+                    if "client_id" in existing_columns:
+                        join_cond = "c.id = p.client_id"
+                    elif "client_email" in existing_columns:
+                        join_cond = "c.email = p.client_email"
+                    if join_cond:
+                        clients_join = f"LEFT JOIN clients c ON {join_cond}"
+                        industry_where = " AND c.industry ILIKE %s"
 
             owner_id_val = user_id
             if not owner_id_val:
@@ -799,34 +934,68 @@ def proposals(username=None, user_id=None, email=None):
                     p.title AS proposal_title,
                     p.status AS proposal_status,
                     {client_expr} AS client,
+                    rr.id AS run_id,
                     rr.status AS risk_status,
                     rr.risk_score AS risk_score,
+                    rr.issues AS issues,
                     rr.overridden AS overridden,
                     rr.created_at AS run_created_at
                 FROM proposals p
+                {clients_join}
                 LEFT JOIN LATERAL (
-                    SELECT status, risk_score, overridden, created_at
+                    SELECT id, status, risk_score, issues, overridden, created_at
                     FROM risk_gate_runs
                     WHERE proposal_id = p.id
                     ORDER BY created_at DESC
                     LIMIT 1
                 ) rr ON TRUE
-                WHERE {where_sql}
-                ORDER BY
-                    CASE
-                        WHEN rr.status ILIKE 'BLOCK' THEN 1
-                        WHEN rr.status ILIKE 'REVIEW' THEN 2
-                        WHEN rr.status ILIKE 'PASS' THEN 3
-                        ELSE 4
-                    END,
-                    COALESCE(rr.created_at, p.created_at) DESC
+                WHERE {where_sql}{industry_where}
+                ORDER BY rr.created_at DESC NULLS LAST, p.id DESC
                 LIMIT %s
                 """,
                 params + [limit],
             )
 
-            rows = cursor.fetchall() or []
-            return jsonify({"proposals": rows, "total": len(rows)}), 200
+            raw_rows = cursor.fetchall() or []
+
+            enriched = []
+            for r in raw_rows:
+                issues = _normalize_issues(r.get("issues"))
+                stats = _issues_stats(issues)
+                preview = []
+                for issue in issues[:3]:
+                    if not isinstance(issue, dict):
+                        continue
+                    desc = str(issue.get("description") or "").strip()
+                    if len(desc) > 140:
+                        desc = desc[:137] + "..."
+                    preview.append(
+                        {
+                            "category": issue.get("category"),
+                            "severity": issue.get("severity"),
+                            "section": issue.get("section"),
+                            "description": desc,
+                        }
+                    )
+
+                risk_status_val = r.get("risk_status")
+                overridden = bool(r.get("overridden") is True)
+                can_release = True
+                if risk_status_val and str(risk_status_val).strip().upper() == "BLOCK" and not overridden:
+                    can_release = False
+
+                enriched.append(
+                    {
+                        **dict(r),
+                        "readiness_score": _readiness_score(r.get("risk_score")),
+                        "issues_count": int(stats.get("total") or 0),
+                        "issues_by_severity": stats.get("by_severity") or {},
+                        "issues_preview": preview,
+                        "can_release": can_release,
+                    }
+                )
+
+            return jsonify({"proposals": enriched, "total": len(enriched)}), 200
     except Exception as e:
         print(f"❌ Risk Gate proposals error: {e}")
         traceback.print_exc()
