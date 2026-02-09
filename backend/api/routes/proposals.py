@@ -604,38 +604,135 @@ def delete_proposal(username, proposal_id):
 
 @bp.get("/proposals/<int:proposal_id>")
 @token_required
-def get_proposal(username, proposal_id):
+def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
     """Get a single proposal by ID"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Verify ownership
-            user_id = resolve_user_id(cursor, username)
-            if not user_id:
-                return jsonify({'detail': f"User '{username}' not found"}), 400
-            
+
+            # Resolve requester user_id (prefer token_required-provided user_id)
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                resolved_user_id = resolve_user_id(cursor, username or email)
+            if not resolved_user_id:
+                return jsonify({'detail': f"User '{username or email}' not found"}), 400
+
+            # Determine if requester is admin/ceo
+            requester_role = None
+            try:
+                cursor.execute('SELECT role FROM users WHERE id = %s', (resolved_user_id,))
+                role_row = cursor.fetchone()
+                if role_row:
+                    requester_role = role_row[0]
+            except Exception:
+                requester_role = None
+
+            requester_role = (requester_role or '').strip().lower()
+            is_admin = requester_role in ['admin', 'ceo']
+
+            # Detect proposals table schema
             cursor.execute(
-                '''SELECT id, title, client, owner_id, status, created_at, updated_at, template_key, content, sections, pdf_url
-                   FROM proposals WHERE id = %s AND owner_id = %s''',
-                (proposal_id, user_id)
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row[0] for row in cursor.fetchall()]
+
+            owner_col = 'owner_id' if 'owner_id' in existing_columns else (
+                'user_id' if 'user_id' in existing_columns else None
+            )
+            client_col = 'client' if 'client' in existing_columns else (
+                'client_name' if 'client_name' in existing_columns else None
+            )
+
+            # Build SELECT clause using only existing columns
+            select_cols = ['id', 'title', 'status']
+            if client_col:
+                select_cols.append(client_col)
+            if owner_col:
+                select_cols.append(owner_col)
+            if 'created_at' in existing_columns:
+                select_cols.append('created_at')
+            if 'updated_at' in existing_columns:
+                select_cols.append('updated_at')
+            if 'template_key' in existing_columns:
+                select_cols.append('template_key')
+            if 'content' in existing_columns:
+                select_cols.append('content')
+            if 'sections' in existing_columns:
+                select_cols.append('sections')
+            if 'pdf_url' in existing_columns:
+                select_cols.append('pdf_url')
+            if 'client_email' in existing_columns:
+                select_cols.append('client_email')
+
+            where_clause = 'id = %s'
+            params = [proposal_id]
+
+            # Non-admins can only read their own proposals
+            if not is_admin and owner_col:
+                where_clause += f' AND {owner_col}::text = %s::text'
+                params.append(str(resolved_user_id))
+
+            cursor.execute(
+                f"SELECT {', '.join(select_cols)} FROM proposals WHERE {where_clause}",
+                tuple(params),
             )
             result = cursor.fetchone()
             
             if result:
-                return jsonify({
-                    'id': result[0],
-                    'title': result[1],
-                    'client': result[2],
-                    'owner_id': result[3],
-                    'status': result[4],
-                    'created_at': result[5].isoformat() if result[5] else None,
-                    'updated_at': result[6].isoformat() if result[6] else None,
-                    'template_key': result[7],
-                    'content': result[8],
-                    'sections': json.loads(result[9]) if result[9] else {},
-                    'pdf_url': result[10]
-                }), 200
-            return jsonify({'detail': 'Proposal not found'}), 404
+                column_names = [desc[0] for desc in cursor.description] if cursor.description else []
+                row_dict = dict(zip(column_names, result))
+
+                sections_val = row_dict.get('sections')
+                parsed_sections = {}
+                if sections_val:
+                    try:
+                        parsed_sections = (
+                            json.loads(sections_val)
+                            if isinstance(sections_val, str)
+                            else sections_val
+                        )
+                    except Exception:
+                        parsed_sections = {}
+
+                response = {
+                    'id': row_dict.get('id'),
+                    'title': row_dict.get('title'),
+                    'status': row_dict.get('status'),
+                    'content': row_dict.get('content'),
+                    'sections': parsed_sections,
+                    'template_key': row_dict.get('template_key'),
+                    'pdf_url': row_dict.get('pdf_url'),
+                    'client_email': row_dict.get('client_email') or '',
+                }
+
+                if client_col:
+                    response['client'] = row_dict.get(client_col) or ''
+                    response['client_name'] = row_dict.get(client_col) or ''
+                else:
+                    response['client'] = ''
+                    response['client_name'] = ''
+
+                if owner_col:
+                    response['owner_id'] = row_dict.get(owner_col)
+                    response['user_id'] = row_dict.get(owner_col)
+
+                created_at = row_dict.get('created_at')
+                updated_at = row_dict.get('updated_at')
+                response['created_at'] = (
+                    created_at.isoformat() if hasattr(created_at, 'isoformat') and created_at else None
+                )
+                response['updated_at'] = (
+                    updated_at.isoformat() if hasattr(updated_at, 'isoformat') and updated_at else None
+                )
+                response['updatedAt'] = response['updated_at']
+
+                return jsonify(response), 200
+
+            # Preserve old message but clarify access
+            return jsonify({'detail': 'Proposal not found or access denied'}), 404
     except Exception as e:
         return jsonify({'detail': str(e)}), 500

@@ -20,13 +20,11 @@ bp = Blueprint('approver', __name__)
 # APPROVER ROUTES
 # ============================================================================
 
-@bp.route("/api/proposals/pending_approval", methods=['OPTIONS'])
 @bp.route("/proposals/pending_approval", methods=['OPTIONS'])
 def options_pending_approvals():
     """Handle CORS preflight for pending approvals endpoint"""
     return {}, 200
 
-@bp.get("/api/proposals/pending_approval")
 @bp.get("/proposals/pending_approval")
 @token_required
 def get_pending_approvals(username=None):
@@ -115,7 +113,6 @@ def get_pending_approvals(username=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/proposals/<int:proposal_id>/approve")
 @bp.post("/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username=None, proposal_id=None):
@@ -546,13 +543,12 @@ def approve_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/proposals/<int:proposal_id>/reject")
 @bp.post("/proposals/<int:proposal_id>/reject")
 @token_required
 def reject_proposal(username=None, proposal_id=None):
-    """Reject proposal and send back to draft"""
+    """Reject proposal and send back to creator"""
     try:
-        data = request.get_json(force=True, silent=True) or {}
+        data = request.get_json()
         comments = data.get('comments', '')
         
         with get_db_connection() as conn:

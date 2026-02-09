@@ -307,19 +307,45 @@ class MyApp extends StatelessWidget {
           '/creator_dashboard': (context) => const DashboardPage(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments
-                as Map<String, dynamic>?;
+            final dynamic rawArgs = ModalRoute.of(context)?.settings.arguments;
+            Map<String, dynamic>? args;
 
-            // If proposal data is passed, open it in the editor
-            if (args != null) {
-              return BlankDocumentEditorPage(
-                proposalId: args['id']?.toString(),
-                proposalTitle: args['title']?.toString(),
-                readOnly: args['readOnly'] ?? false,
-                requireVersionDescription:
-                    args['requireVersionDescription'] ?? false,
-                isCollaborator: args['isCollaborator'] ?? false,
+            if (rawArgs is Map<String, dynamic>) {
+              args = rawArgs;
+            } else if (rawArgs is Map) {
+              args = rawArgs.map(
+                (key, value) => MapEntry(key.toString(), value),
               );
+            }
+
+            if (args != null) {
+              final dynamic idRaw = args['id'] ??
+                  args['proposalId'] ??
+                  args['proposal_id'] ??
+                  args['proposalID'];
+
+              final dynamic titleRaw = args['title'] ??
+                  args['proposalTitle'] ??
+                  args['proposal_title'] ??
+                  args['name'];
+
+              final String? proposalId =
+                  idRaw?.toString().trim().isNotEmpty == true
+                      ? idRaw.toString().trim()
+                      : null;
+
+              final String? proposalTitle = titleRaw?.toString();
+
+              if (proposalId != null) {
+                return BlankDocumentEditorPage(
+                  proposalId: proposalId,
+                  proposalTitle: proposalTitle,
+                  readOnly: args['readOnly'] ?? false,
+                  requireVersionDescription:
+                      args['requireVersionDescription'] ?? false,
+                  isCollaborator: args['isCollaborator'] ?? false,
+                );
+              }
             }
 
             // Otherwise, show the old compose page

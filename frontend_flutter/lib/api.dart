@@ -856,7 +856,9 @@ class AppState extends ChangeNotifier {
     );
     if (r.statusCode == 200) {
       final data = jsonDecode(r.body);
-      authToken = data["access_token"];
+      // Backend returns {"token": "..."} for legacy login.
+      // Keep compatibility with any older clients expecting access_token.
+      authToken = data["token"] ?? data["access_token"];
 
       // IMPORTANT: Sync token with AuthService for content library
       if (currentUser != null) {
