@@ -41,10 +41,10 @@ try:
     from docusign_esign.client.api_exception import ApiException
     import jwt
     DOCUSIGN_AVAILABLE = True
-    print("✅ DocuSign SDK imported successfully")
+    print("[OK] DocuSign SDK imported successfully")
 except ImportError as e:
     DOCUSIGN_AVAILABLE = False
-    print(f"⚠️ DocuSign SDK not available: {e}")
+    print(f"[WARNING] DocuSign SDK not available: {e}")
     print("   Install with: pip install docusign-esign")
 
 def resolve_user_id(cursor, identifier):
@@ -387,6 +387,29 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
     if not PDF_AVAILABLE:
         raise Exception("ReportLab not installed. PDF generation unavailable.")
     
+    opportunity_id = None
+    engagement_stage = None
+    engagement_opened_at = None
+    owner_name = None
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT p.opportunity_id, p.engagement_stage, p.engagement_opened_at, u.full_name
+                FROM proposals p
+                LEFT JOIN users u ON p.user_id = u.id
+                WHERE p.id = %s
+                """,
+                (proposal_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                opportunity_id, engagement_stage, engagement_opened_at, owner_name = row
+    except Exception as e:
+        print(f"⚠️ Failed to load engagement metadata for proposal {proposal_id}: {e}")
+
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
@@ -406,11 +429,54 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
         parent=styles['Heading1'],
         fontSize=24,
         textColor='#2C3E50',
-        spaceAfter=30,
+        spaceAfter=16,
         alignment=TA_CENTER
     )
     elements.append(Paragraph(html.escape(title or 'Untitled Proposal'), title_style))
-    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Spacer(1, 0.2*inch))
+
+    meta_style = ParagraphStyle(
+        'Metadata',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor='#7F8C8D',
+        spaceAfter=4,
+        alignment=TA_LEFT,
+    )
+
+    meta_lines = []
+    if client_name or client_email:
+        if client_name and client_email:
+            meta_lines.append(f"Prepared for: {client_name} <{client_email}>")
+        elif client_name:
+            meta_lines.append(f"Prepared for: {client_name}")
+        else:
+            meta_lines.append(f"Prepared for: {client_email}")
+
+    meta_parts = []
+    if opportunity_id:
+        meta_parts.append(f"Opp {opportunity_id}")
+    if engagement_stage:
+        meta_parts.append(f"Stage: {engagement_stage}")
+    if owner_name:
+        meta_parts.append(f"Owner: {owner_name}")
+    if engagement_opened_at:
+        try:
+            if isinstance(engagement_opened_at, datetime):
+                opened_str = engagement_opened_at.strftime('%Y-%m-%d')
+            else:
+                opened_str = str(engagement_opened_at)
+            meta_parts.append(f"Opened: {opened_str}")
+        except Exception:
+            pass
+
+    if meta_parts:
+        meta_lines.append("\u2022 ".join(meta_parts))
+
+    for line in meta_lines:
+        elements.append(Paragraph(html.escape(line), meta_style))
+    if meta_lines:
+        elements.append(Spacer(1, 0.2*inch))
     
     # Content
     content_style = ParagraphStyle(
@@ -449,7 +515,12 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
         textColor='#666666',
         alignment=TA_CENTER
     )
-    elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
+    footer_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    if opportunity_id:
+        footer_text += f" | Opp {opportunity_id}"
+    if engagement_stage:
+        footer_text += f" | Stage: {engagement_stage}"
+    elements.append(Paragraph(footer_text, footer_style))
     
     doc.build(elements)
     pdf_bytes = buffer.getvalue()

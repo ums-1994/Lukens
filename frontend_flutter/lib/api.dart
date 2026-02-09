@@ -4,8 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 
-// Get API URL from JavaScript config or use default
+// Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
+  // Prefer explicit config injected into the web page when available
   if (kIsWeb) {
     try {
       // Try to get from window.APP_CONFIG.API_URL
@@ -26,12 +27,10 @@ String get baseUrl {
       print('⚠️ Could not read API URL from config: $e');
     }
   }
-  // Default URLs based on environment
-  if (kDebugMode) {
-    return 'http://localhost:8000';
-  }
-  // Production default (Render backend URL)
-  return 'https://lukens-wp8w.onrender.com';
+
+  // Align with AuthService: always use Render backend by default so
+  // authentication and uploads share the same token/host
+  return AuthService.baseUrl;
 }
 
 class AppState extends ChangeNotifier {
@@ -419,13 +418,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> createProposal(String title, String client,
-      {String? templateKey}) async {
+      {String? templateKey, dynamic clientId}) async {
     try {
       final r = await http.post(
         Uri.parse("$baseUrl/api/proposals"),
         headers: _headers,
-        body: jsonEncode(
-            {"title": title, "client": client, "template_key": templateKey}),
+        body: jsonEncode({
+          "title": title,
+          "client": client,
+          "template_key": templateKey,
+          if (clientId != null) "client_id": clientId,
+        }),
       );
       final p = jsonDecode(r.body);
       currentProposal = p;
