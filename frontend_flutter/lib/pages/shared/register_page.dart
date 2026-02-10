@@ -286,39 +286,20 @@ class _RegisterPageState extends State<RegisterPage>
 
           await appState.init();
 
-          // Redirect based on user role using RoleService
-          final rawRole = userProfile['role']?.toString() ?? '';
-          final userRole = rawRole.toLowerCase().trim();
-          final currentRole = roleService.currentRole;
-
-          print('🔍 User role from backend: "$userRole"');
           print('🔍 Requested role: "$role"');
-          print('🔍 Frontend mapped role: $currentRole');
-
-          String dashboardRoute;
-
-          if (currentRole == UserRole.approver ||
-              currentRole == UserRole.admin) {
-            dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
-          } else if (currentRole == UserRole.finance) {
-            dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard (from RoleService)');
-          } else {
-            dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard (from RoleService)');
-          }
 
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Registration successful!'),
+              content: Text(
+                  'Registration successful! Please login with your new account.'),
               backgroundColor: Colors.green,
             ),
           );
 
+          // Redirect to login page after successful registration
           Navigator.pushNamedAndRemoveUntil(
             context,
-            dashboardRoute,
+            '/login',
             (route) => false,
           );
         } else {
@@ -522,6 +503,10 @@ class _RegisterPageState extends State<RegisterPage>
                     label: 'First Name',
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Required' : null,
+                    onSubmitted: () {
+                      // Focus on last name field when first name is submitted
+                      FocusScope.of(context).nextFocus();
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -531,6 +516,10 @@ class _RegisterPageState extends State<RegisterPage>
                     label: 'Last Name',
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Required' : null,
+                    onSubmitted: () {
+                      // Focus on email field when last name is submitted
+                      FocusScope.of(context).nextFocus();
+                    },
                   ),
                 ),
               ],
@@ -546,6 +535,10 @@ class _RegisterPageState extends State<RegisterPage>
                 if (v == null || v.isEmpty) return 'Email required';
                 if (!v.contains('@')) return 'Invalid email';
                 return null;
+              },
+              onSubmitted: () {
+                // Focus on password field when email is submitted
+                FocusScope.of(context).nextFocus();
               },
             ),
             const SizedBox(height: 12),
@@ -580,6 +573,10 @@ class _RegisterPageState extends State<RegisterPage>
                 }
                 return null;
               },
+              onSubmitted: () {
+                // Focus on confirm password field when password is submitted
+                FocusScope.of(context).nextFocus();
+              },
             ),
             const SizedBox(height: 12),
 
@@ -604,6 +601,12 @@ class _RegisterPageState extends State<RegisterPage>
                 if (v != _passwordController.text)
                   return 'Passwords don\'t match';
                 return null;
+              },
+              onSubmitted: () {
+                // Trigger registration when Enter is pressed in confirm password field
+                if (!_isLoading) {
+                  _register();
+                }
               },
             ),
             const SizedBox(height: 20),
@@ -778,6 +781,7 @@ class _RegisterPageState extends State<RegisterPage>
     void Function(String)? onChanged,
     String? Function(String?)? validator,
     Widget? suffixIcon,
+    VoidCallback? onSubmitted,
   }) {
     return TextFormField(
       controller: controller,
@@ -785,6 +789,7 @@ class _RegisterPageState extends State<RegisterPage>
       keyboardType: keyboardType,
       onChanged: onChanged,
       validator: validator,
+      onFieldSubmitted: (_) => onSubmitted?.call(),
       style: const TextStyle(
         fontFamily: 'Poppins',
         color: Colors.white,

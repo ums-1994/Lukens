@@ -422,10 +422,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               controller: _emailController,
               label: 'Email',
               keyboardType: TextInputType.emailAddress,
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Email required';
-                if (!v.contains('@')) return 'Invalid email';
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email';
+                }
+                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                    .hasMatch(value)) {
+                  return 'Please enter a valid email';
+                }
                 return null;
+              },
+              onSubmitted: () {
+                // Focus on password field when email is submitted
+                FocusScope.of(context).nextFocus();
               },
             ),
             const SizedBox(height: 12),
@@ -447,6 +456,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Password required';
                 return null;
+              },
+              onSubmitted: () {
+                // Trigger login when Enter is pressed in password field
+                if (!_isLoading) {
+                  _login();
+                }
               },
             ),
             const SizedBox(height: 24),
@@ -590,12 +605,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     TextInputType? keyboardType,
     String? Function(String?)? validator,
     Widget? suffixIcon,
+    VoidCallback? onSubmitted,
   }) {
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
       keyboardType: keyboardType,
       validator: validator,
+      onFieldSubmitted: (_) => onSubmitted?.call(),
       style: const TextStyle(
         fontFamily: 'Poppins',
         color: Colors.white,

@@ -188,7 +188,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               ),
               IconButton(
                 tooltip: "Version history",
-                icon: const Icon(Icons.history, size: 18, color: Colors.white70),
+                icon:
+                    const Icon(Icons.history, size: 18, color: Colors.white70),
                 onPressed: () => _showVersionHistory(context),
               ),
               IconButton(
@@ -282,24 +283,28 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     final content = (item["content"] ?? "").toString();
     final key = (item["key"] ?? "").toString().toLowerCase();
     final label = (item["label"] ?? "").toString().toLowerCase();
-    
+
     // Check for template markers in key/label
-    if (key.contains("_template") || key.contains("sow_") || key.contains("proposal_")) {
+    if (key.contains("_template") ||
+        key.contains("sow_") ||
+        key.contains("proposal_")) {
       return true;
     }
-    if (label.contains("template") || label.contains("sow") || label.contains("statement of work")) {
+    if (label.contains("template") ||
+        label.contains("sow") ||
+        label.contains("statement of work")) {
       return true;
     }
-    
+
     // Check if content contains template structure markers
-    if (content.contains('"templateType"') || 
-        content.contains('"sections"') || 
+    if (content.contains('"templateType"') ||
+        content.contains('"sections"') ||
         content.contains('template_type') ||
         content.contains('Statement of Work') ||
         content.contains('SOW Template')) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -311,10 +316,10 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     final label = item["label"] ?? item["key"] ?? "Untitled Template";
     final content = (item["content"] ?? "").toString();
     final updatedAt = item["updated_at"];
-    final isSOW = label.toLowerCase().contains("sow") || 
-                  label.toLowerCase().contains("statement of work");
+    final isSOW = label.toLowerCase().contains("sow") ||
+        label.toLowerCase().contains("statement of work");
     final isProposal = label.toLowerCase().contains("proposal");
-    
+
     // Parse template sections if available in content
     List<String> sections = [];
     try {
@@ -333,13 +338,16 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             }
           }
         }
-      } else if (content.contains('"sections"') || content.contains('sections:')) {
+      } else if (content.contains('"sections"') ||
+          content.contains('sections:')) {
         // Try regex parsing
-        final sectionsMatch = RegExp(r'"sections":\s*\[(.*?)\]', dotAll: true).firstMatch(content);
+        final sectionsMatch = RegExp(r'"sections":\s*\[(.*?)\]', dotAll: true)
+            .firstMatch(content);
         if (sectionsMatch != null) {
           final sectionsStr = sectionsMatch.group(1)!;
           // Try to extract section titles from objects
-          final titleMatches = RegExp(r'"title":\s*"([^"]+)"').allMatches(sectionsStr);
+          final titleMatches =
+              RegExp(r'"title":\s*"([^"]+)"').allMatches(sectionsStr);
           if (titleMatches.isNotEmpty) {
             sections = titleMatches.map((m) => m.group(1)!).toList();
           } else {
@@ -352,7 +360,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     } catch (e) {
       // Fallback: parse from content structure
     }
-    
+
     // If no sections found, use defaults based on template type
     if (sections.isEmpty) {
       if (isSOW) {
@@ -449,28 +457,35 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     ),
                     IconButton(
                       tooltip: "Edit template",
-                      icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.white70),
+                      icon: const Icon(Icons.edit_outlined,
+                          size: 18, color: Colors.white70),
                       onPressed: () => _showEditDialog(context, app, item),
                     ),
                     IconButton(
                       tooltip: "Delete template",
-                      icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                      icon: const Icon(Icons.delete_outline,
+                          size: 18, color: Colors.redAccent),
                       onPressed: () => _deleteItem(context, app, item["id"]),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Template Type Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: templateColor.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: templateColor.withOpacity(0.3)),
                   ),
                   child: Text(
-                    isSOW ? "STATEMENT OF WORK" : isProposal ? "PROPOSAL" : "TEMPLATE",
+                    isSOW
+                        ? "STATEMENT OF WORK"
+                        : isProposal
+                            ? "PROPOSAL"
+                            : "TEMPLATE",
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
@@ -479,7 +494,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     ),
                   ),
                 ),
-                
+
                 if (sections.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const Text(
@@ -496,7 +511,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     runSpacing: 6,
                     children: sections.take(6).map((section) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(8),
@@ -507,7 +523,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle_outline, size: 12, color: PremiumTheme.teal),
+                            Icon(Icons.check_circle_outline,
+                                size: 12, color: PremiumTheme.teal),
                             const SizedBox(width: 4),
                             Text(
                               section,
@@ -548,9 +565,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                
+
                 const SizedBox(height: 16),
-                
+
                 // Actions
                 Row(
                   children: [
@@ -581,7 +598,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white70,
                         side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 10, horizontal: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -600,7 +618,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   void _showTemplatePreview(BuildContext context, Map<String, dynamic> item) {
     final content = (item["content"] ?? "").toString();
     final cleanedContent = _removeTagComment(content);
-    
+
     // Check if content is JSON (full template structure)
     Widget contentWidget;
     try {
@@ -608,7 +626,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         final decoded = jsonDecode(content);
         if (decoded is Map && decoded.containsKey('sections')) {
           // Render as structured template
-          contentWidget = _buildStructuredTemplatePreview(Map<String, dynamic>.from(decoded));
+          contentWidget = _buildStructuredTemplatePreview(
+              Map<String, dynamic>.from(decoded));
         } else {
           // Render as formatted text
           contentWidget = _buildHtmlPreview(cleanedContent);
@@ -645,7 +664,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       color: PremiumTheme.teal.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.preview, color: PremiumTheme.teal, size: 24),
+                    child: const Icon(Icons.preview,
+                        color: PremiumTheme.teal, size: 24),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -678,7 +698,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     onPressed: () => Navigator.pop(ctx),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.white70,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                     ),
                     child: const Text("Close"),
                   ),
@@ -694,7 +715,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   Widget _buildStructuredTemplatePreview(Map<String, dynamic> decoded) {
     final sections = decoded['sections'] as List?;
     if (sections == null) {
-      return const Text("No content available", style: TextStyle(color: Colors.white70));
+      return const Text("No content available",
+          style: TextStyle(color: Colors.white70));
     }
 
     return Column(
@@ -864,7 +886,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             text,
             style: TextStyle(
               color: Colors.white,
-              fontSize: level == 1 ? 24 : level == 2 ? 20 : 18,
+              fontSize: level == 1
+                  ? 24
+                  : level == 2
+                      ? 20
+                      : 18,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -942,7 +968,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
 
   void _useTemplate(BuildContext context, Map<String, dynamic> item) {
     // Navigate to proposal wizard or document editor with template
-    Navigator.pushNamed(context, '/new-proposal', arguments: {'template': item});
+    Navigator.pushNamed(context, '/new-proposal',
+        arguments: {'template': item});
   }
 
   @override
@@ -1037,9 +1064,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         final selectedCategoryLower = selectedCategory.toLowerCase();
         final bool categoryMatch = selectedCategory == "Sections"
             ? _textCategories.contains(normalizedCategory)
-            : normalizedCategory == selectedCategoryLower || 
-              (selectedCategoryLower == "template" && normalizedCategory == "templates") ||
-              (selectedCategoryLower == "templates" && normalizedCategory == "template");
+            : normalizedCategory == selectedCategoryLower ||
+                (selectedCategoryLower == "template" &&
+                    normalizedCategory == "templates") ||
+                (selectedCategoryLower == "templates" &&
+                    normalizedCategory == "template");
 
         // If in a folder, only show items in that folder
         if (currentFolderId != null) {
@@ -1159,14 +1188,16 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                       : MainAxisAlignment.spaceBetween,
                                   children: [
                                     if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
+                                      Expanded(
+                                        child: const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 12),
+                                          child: Text(
+                                            'Navigation',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12),
+                                          ),
                                         ),
                                       ),
                                     Padding(
@@ -1374,7 +1405,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                 ),
                                 _buildTabButton(
                                   label: "Templates",
-                                  isActive: selectedCategory == "Templates" || selectedCategory == "Template",
+                                  isActive: selectedCategory == "Templates" ||
+                                      selectedCategory == "Template",
                                   onTap: () {
                                     setState(() {
                                       selectedCategory = "Templates";
@@ -1940,42 +1972,72 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                           );
                                         },
                                       )
-                                    : (selectedCategory == "Template" || selectedCategory == "Templates")
+                                    : (selectedCategory == "Template" ||
+                                            selectedCategory == "Templates")
                                         ? ListView.builder(
                                             itemCount: pagedItems.length,
                                             itemBuilder: (ctx, i) {
                                               final item = pagedItems[i];
                                               // Check if item is a full template (has JSON structure with templateType and sections)
-                                              final content = (item["content"] ?? "").toString();
-                                              final key = (item["key"] ?? "").toString().toLowerCase();
-                                              final label = (item["label"] ?? "").toString().toLowerCase();
-                                              
+                                              final content =
+                                                  (item["content"] ?? "")
+                                                      .toString();
+                                              final key = (item["key"] ?? "")
+                                                  .toString()
+                                                  .toLowerCase();
+                                              final label =
+                                                  (item["label"] ?? "")
+                                                      .toString()
+                                                      .toLowerCase();
+
                                               // Full template detection: must have JSON structure OR key/label indicating full template
                                               bool isFullTemplate = false;
-                                              
+
                                               // Check for JSON structure in content
                                               try {
-                                                if (content.trim().startsWith('{')) {
-                                                  final decoded = jsonDecode(content);
-                                                  if (decoded is Map && decoded.containsKey('templateType') && decoded.containsKey('sections')) {
+                                                if (content
+                                                    .trim()
+                                                    .startsWith('{')) {
+                                                  final decoded =
+                                                      jsonDecode(content);
+                                                  if (decoded is Map &&
+                                                      decoded.containsKey(
+                                                          'templateType') &&
+                                                      decoded.containsKey(
+                                                          'sections')) {
                                                     isFullTemplate = true;
                                                   }
                                                 }
                                               } catch (e) {
                                                 // Not JSON, continue checking
                                               }
-                                              
+
                                               // Also check key/label patterns
                                               if (!isFullTemplate) {
-                                                if (key.contains("_template") && (key.contains("proposal") || key.contains("sow") || key.contains("consulting"))) {
+                                                if (key.contains("_template") &&
+                                                    (key.contains("proposal") ||
+                                                        key.contains("sow") ||
+                                                        key.contains(
+                                                            "consulting"))) {
                                                   isFullTemplate = true;
-                                                } else if (label.contains("template") && (label.contains("proposal") || label.contains("sow") || label.contains("consulting") || label.contains("delivery"))) {
+                                                } else if (label
+                                                        .contains("template") &&
+                                                    (label.contains(
+                                                            "proposal") ||
+                                                        label.contains("sow") ||
+                                                        label.contains(
+                                                            "consulting") ||
+                                                        label.contains(
+                                                            "delivery"))) {
                                                   isFullTemplate = true;
-                                                } else if (content.contains('"templateType"') && content.contains('"sections"')) {
+                                                } else if (content.contains(
+                                                        '"templateType"') &&
+                                                    content.contains(
+                                                        '"sections"')) {
                                                   isFullTemplate = true;
                                                 }
                                               }
-                                              
+
                                               if (isFullTemplate) {
                                                 return _buildTemplateCard(
                                                   context: context,
@@ -1994,11 +2056,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                           )
                                         : ListView.builder(
                                             itemCount: pagedItems.length,
-                                            itemBuilder: (ctx, i) => _buildTextBlockCard(
-                                                  context: context,
-                                                  app: app,
-                                                  item: pagedItems[i],
-                                                ),
+                                            itemBuilder: (ctx, i) =>
+                                                _buildTextBlockCard(
+                                              context: context,
+                                              app: app,
+                                              item: pagedItems[i],
+                                            ),
                                           ),
                           ),
                         ],
@@ -2722,7 +2785,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     final galleryTemplates = [
       {
         "name": "Consulting & Technology Delivery Proposal Template",
-        "description": "Complete proposal template with all 11 sections - Cover Page, Executive Summary, Problem Statement, Scope of Work, Timeline, Team, Delivery Approach, Pricing, Risks, Governance, and Company Profile",
+        "description":
+            "Complete proposal template with all 11 sections - Cover Page, Executive Summary, Problem Statement, Scope of Work, Timeline, Team, Delivery Approach, Pricing, Risks, Governance, and Company Profile",
         "templateType": "proposal",
         "sections": [
           "Cover Page",
@@ -2745,64 +2809,76 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             {
               "title": "Cover Page",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"cover\", \"page\", \"module\"] -->\n<h1>Consulting & Technology Delivery Proposal</h1>\n\n<p><strong>Client:</strong> {{Client Name}}</p>\n<p><strong>Prepared For:</strong> {{Client Stakeholder}}</p>\n<p><strong>Prepared By:</strong> Khonology Team</p>\n<p><strong>Date:</strong> {{Date}}</p>\n\n<h2>Cover Summary</h2>\n<p>Khonology proposes a customised consulting and technology delivery engagement to support {{Client Name}} in achieving operational excellence, digital transformation, and data-driven decision-making.</p>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"cover\", \"page\", \"module\"] -->\n<h1>Consulting & Technology Delivery Proposal</h1>\n\n<p><strong>Client:</strong> {{Client Name}}</p>\n<p><strong>Prepared For:</strong> {{Client Stakeholder}}</p>\n<p><strong>Prepared By:</strong> Khonology Team</p>\n<p><strong>Date:</strong> {{Date}}</p>\n\n<h2>Cover Summary</h2>\n<p>Khonology proposes a customised consulting and technology delivery engagement to support {{Client Name}} in achieving operational excellence, digital transformation, and data-driven decision-making.</p>"
             },
             {
               "title": "Executive Summary",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"executive\", \"summary\", \"module\"] -->\n<h1>Executive Summary</h1>\n\n<h2>Purpose of This Proposal</h2>\n<p>This proposal outlines Khonology's recommended approach, delivery methodology, timelines, governance, and expected outcomes for the {{Project Name}} initiative.</p>\n\n<h2>What We Bring</h2>\n<ul>\n<li>Strong expertise in digital transformation and enterprise delivery</li>\n<li>Deep experience in banking, insurance, ESG reporting, and financial services</li>\n<li>Proven capability across data engineering, cloud, automation, and governance</li>\n<li>A people-first consulting culture focused on delivery excellence</li>\n</ul>\n\n<h2>Expected Outcomes</h2>\n<ul>\n<li>Streamlined processes</li>\n<li>Robust governance</li>\n<li>Improved operational visibility</li>\n<li>Higher efficiency and reduced risk</li>\n<li>A scalable delivery architecture to support strategic goals</li>\n</ul>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"executive\", \"summary\", \"module\"] -->\n<h1>Executive Summary</h1>\n\n<h2>Purpose of This Proposal</h2>\n<p>This proposal outlines Khonology's recommended approach, delivery methodology, timelines, governance, and expected outcomes for the {{Project Name}} initiative.</p>\n\n<h2>What We Bring</h2>\n<ul>\n<li>Strong expertise in digital transformation and enterprise delivery</li>\n<li>Deep experience in banking, insurance, ESG reporting, and financial services</li>\n<li>Proven capability across data engineering, cloud, automation, and governance</li>\n<li>A people-first consulting culture focused on delivery excellence</li>\n</ul>\n\n<h2>Expected Outcomes</h2>\n<ul>\n<li>Streamlined processes</li>\n<li>Robust governance</li>\n<li>Improved operational visibility</li>\n<li>Higher efficiency and reduced risk</li>\n<li>A scalable delivery architecture to support strategic goals</li>\n</ul>"
             },
             {
               "title": "Problem Statement",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"problem\", \"statement\", \"module\"] -->\n<h1>Problem Statement</h1>\n\n<h2>Current State Challenges</h2>\n<p>{{Client Name}} is experiencing the following challenges:</p>\n<ul>\n<li>Limited visibility into operational performance</li>\n<li>Manual processes creating inefficiencies</li>\n<li>High reporting complexity</li>\n<li>Lack of integrated workflows or automated governance</li>\n<li>Upcoming deadlines causing pressure on compliance and reporting</li>\n</ul>\n\n<h2>Opportunity</h2>\n<p>With a modern delivery framework, workflows, and reporting structures, {{Client Name}} can unlock operational excellence and achieve strategic growth objectives.</p>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"problem\", \"statement\", \"module\"] -->\n<h1>Problem Statement</h1>\n\n<h2>Current State Challenges</h2>\n<p>{{Client Name}} is experiencing the following challenges:</p>\n<ul>\n<li>Limited visibility into operational performance</li>\n<li>Manual processes creating inefficiencies</li>\n<li>High reporting complexity</li>\n<li>Lack of integrated workflows or automated governance</li>\n<li>Upcoming deadlines causing pressure on compliance and reporting</li>\n</ul>\n\n<h2>Opportunity</h2>\n<p>With a modern delivery framework, workflows, and reporting structures, {{Client Name}} can unlock operational excellence and achieve strategic growth objectives.</p>"
             },
             {
               "title": "Scope of Work",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"scope\", \"work\", \"module\"] -->\n<h1>Scope of Work</h1>\n\n<p>Khonology proposes the following Scope of Work:</p>\n\n<h2>1. Discovery & Assessment</h2>\n<ul>\n<li>Requirements gathering</li>\n<li>Stakeholder workshops</li>\n<li>Current-state assessment</li>\n</ul>\n\n<h2>2. Solution Design</h2>\n<ul>\n<li>Technical architecture</li>\n<li>Workflow design</li>\n<li>Data models and integration approach</li>\n</ul>\n\n<h2>3. Build & Configuration</h2>\n<ul>\n<li>Product configuration</li>\n<li>UI/UX setup</li>\n<li>Data pipeline setup</li>\n<li>Reporting components</li>\n</ul>\n\n<h2>4. Implementation & Testing</h2>\n<ul>\n<li>UAT support</li>\n<li>QA testing</li>\n<li>Release preparation</li>\n</ul>\n\n<h2>5. Training & Knowledge Transfer</h2>\n<ul>\n<li>System training</li>\n<li>Documentation handover</li>\n</ul>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"scope\", \"work\", \"module\"] -->\n<h1>Scope of Work</h1>\n\n<p>Khonology proposes the following Scope of Work:</p>\n\n<h2>1. Discovery & Assessment</h2>\n<ul>\n<li>Requirements gathering</li>\n<li>Stakeholder workshops</li>\n<li>Current-state assessment</li>\n</ul>\n\n<h2>2. Solution Design</h2>\n<ul>\n<li>Technical architecture</li>\n<li>Workflow design</li>\n<li>Data models and integration approach</li>\n</ul>\n\n<h2>3. Build & Configuration</h2>\n<ul>\n<li>Product configuration</li>\n<li>UI/UX setup</li>\n<li>Data pipeline setup</li>\n<li>Reporting components</li>\n</ul>\n\n<h2>4. Implementation & Testing</h2>\n<ul>\n<li>UAT support</li>\n<li>QA testing</li>\n<li>Release preparation</li>\n</ul>\n\n<h2>5. Training & Knowledge Transfer</h2>\n<ul>\n<li>System training</li>\n<li>Documentation handover</li>\n</ul>"
             },
             {
               "title": "Project Timeline",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"timeline\", \"project\", \"module\"] -->\n<h1>Project Timeline</h1>\n\n<table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Duration</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Discovery</td>\n<td>1–2 Weeks</td>\n<td>Requirements & assessment</td>\n</tr>\n<tr>\n<td>Design</td>\n<td>1 Week</td>\n<td>Architecture & workflow design</td>\n</tr>\n<tr>\n<td>Build</td>\n<td>2–4 Weeks</td>\n<td>Development & configuration</td>\n</tr>\n<tr>\n<td>UAT</td>\n<td>1–2 Weeks</td>\n<td>Testing & validation</td>\n</tr>\n<tr>\n<td>Go-Live</td>\n<td>1 Week</td>\n<td>Deployment & full handover</td>\n</tr>\n</tbody>\n</table>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"timeline\", \"project\", \"module\"] -->\n<h1>Project Timeline</h1>\n\n<table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Duration</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Discovery</td>\n<td>1–2 Weeks</td>\n<td>Requirements & assessment</td>\n</tr>\n<tr>\n<td>Design</td>\n<td>1 Week</td>\n<td>Architecture & workflow design</td>\n</tr>\n<tr>\n<td>Build</td>\n<td>2–4 Weeks</td>\n<td>Development & configuration</td>\n</tr>\n<tr>\n<td>UAT</td>\n<td>1–2 Weeks</td>\n<td>Testing & validation</td>\n</tr>\n<tr>\n<td>Go-Live</td>\n<td>1 Week</td>\n<td>Deployment & full handover</td>\n</tr>\n</tbody>\n</table>"
             },
             {
               "title": "Team & Bios",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"team\", \"bios\", \"module\"] -->\n<h1>Team & Bios</h1>\n\n<h2>Engagement Lead – {{Name}}</h2>\n<p>Responsible for oversight, governance, and stakeholder engagement.</p>\n\n<h2>Technical Lead – {{Name}}</h2>\n<p>Owns architecture, technical design, integration, and delivery.</p>\n\n<h2>Business Analyst – {{Name}}</h2>\n<p>Facilitates workshops, documents requirements, and translations.</p>\n\n<h2>QA/Test Analyst – {{Name}}</h2>\n<p>Ensures solution quality and manages UAT cycles.</p>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"team\", \"bios\", \"module\"] -->\n<h1>Team & Bios</h1>\n\n<h2>Engagement Lead – {{Name}}</h2>\n<p>Responsible for oversight, governance, and stakeholder engagement.</p>\n\n<h2>Technical Lead – {{Name}}</h2>\n<p>Owns architecture, technical design, integration, and delivery.</p>\n\n<h2>Business Analyst – {{Name}}</h2>\n<p>Facilitates workshops, documents requirements, and translations.</p>\n\n<h2>QA/Test Analyst – {{Name}}</h2>\n<p>Ensures solution quality and manages UAT cycles.</p>"
             },
             {
               "title": "Delivery Approach",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"delivery\", \"approach\", \"module\"] -->\n<h1>Delivery Approach</h1>\n\n<p>Khonology follows a structured delivery methodology combining Agile, Lean, and governance best practices.</p>\n\n<h2>Key Features</h2>\n<ul>\n<li>Iterative sprint cycles</li>\n<li>Frequent stakeholder engagement</li>\n<li>Automated governance checkpoints</li>\n<li>Traceability from requirements → delivery → reporting</li>\n</ul>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"delivery\", \"approach\", \"module\"] -->\n<h1>Delivery Approach</h1>\n\n<p>Khonology follows a structured delivery methodology combining Agile, Lean, and governance best practices.</p>\n\n<h2>Key Features</h2>\n<ul>\n<li>Iterative sprint cycles</li>\n<li>Frequent stakeholder engagement</li>\n<li>Automated governance checkpoints</li>\n<li>Traceability from requirements → delivery → reporting</li>\n</ul>"
             },
             {
               "title": "Pricing Table",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"pricing\", \"table\", \"module\"] -->\n<h1>Pricing Table</h1>\n\n<table>\n<thead>\n<tr>\n<th>Service Component</th>\n<th>Quantity</th>\n<th>Rate</th>\n<th>Total</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Assessment & Discovery</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Build & Configuration</td>\n<td>4 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>UAT & Release</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Training & Handover</td>\n<td>1 Week</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n</tbody>\n</table>\n\n<p><strong>Total Estimated Cost:</strong> R {{Total}}</p>\n\n<p>Final costs will be confirmed after detailed scoping.</p>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"pricing\", \"table\", \"module\"] -->\n<h1>Pricing Table</h1>\n\n<table>\n<thead>\n<tr>\n<th>Service Component</th>\n<th>Quantity</th>\n<th>Rate</th>\n<th>Total</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Assessment & Discovery</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Build & Configuration</td>\n<td>4 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>UAT & Release</td>\n<td>2 Weeks</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n<tr>\n<td>Training & Handover</td>\n<td>1 Week</td>\n<td>R X</td>\n<td>R X</td>\n</tr>\n</tbody>\n</table>\n\n<p><strong>Total Estimated Cost:</strong> R {{Total}}</p>\n\n<p>Final costs will be confirmed after detailed scoping.</p>"
             },
             {
               "title": "Risks & Mitigation",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"risks\", \"mitigation\", \"module\"] -->\n<h1>Risks & Mitigation</h1>\n\n<table>\n<thead>\n<tr>\n<th>Risk</th>\n<th>Impact</th>\n<th>Likelihood</th>\n<th>Mitigation</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Limited stakeholder availability</td>\n<td>High</td>\n<td>Medium</td>\n<td>Align early calendars</td>\n</tr>\n<tr>\n<td>Data quality issues</td>\n<td>High</td>\n<td>High</td>\n<td>Early validation</td>\n</tr>\n<tr>\n<td>Changing scope</td>\n<td>Medium</td>\n<td>Medium</td>\n<td>Governance checkpoints</td>\n</tr>\n<tr>\n<td>Lack of documentation</td>\n<td>Medium</td>\n<td>High</td>\n<td>Early analysis and mapping</td>\n</tr>\n</tbody>\n</table>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"risks\", \"mitigation\", \"module\"] -->\n<h1>Risks & Mitigation</h1>\n\n<table>\n<thead>\n<tr>\n<th>Risk</th>\n<th>Impact</th>\n<th>Likelihood</th>\n<th>Mitigation</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Limited stakeholder availability</td>\n<td>High</td>\n<td>Medium</td>\n<td>Align early calendars</td>\n</tr>\n<tr>\n<td>Data quality issues</td>\n<td>High</td>\n<td>High</td>\n<td>Early validation</td>\n</tr>\n<tr>\n<td>Changing scope</td>\n<td>Medium</td>\n<td>Medium</td>\n<td>Governance checkpoints</td>\n</tr>\n<tr>\n<td>Lack of documentation</td>\n<td>Medium</td>\n<td>High</td>\n<td>Early analysis and mapping</td>\n</tr>\n</tbody>\n</table>"
             },
             {
               "title": "Governance Model",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"governance\", \"model\", \"module\"] -->\n<h1>Governance Model</h1>\n\n<h2>Governance Structure</h2>\n<ul>\n<li>Engagement Lead</li>\n<li>Product Owner (Client)</li>\n<li>Delivery Team</li>\n<li>QA & Compliance Group</li>\n</ul>\n\n<h2>Tools</h2>\n<ul>\n<li>Jira</li>\n<li>Teams/Email</li>\n<li>Automated reporting dashboard</li>\n</ul>\n\n<h2>Cadence</h2>\n<ul>\n<li>Daily standups</li>\n<li>Weekly status updates</li>\n<li>Monthly executive review</li>\n</ul>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"governance\", \"model\", \"module\"] -->\n<h1>Governance Model</h1>\n\n<h2>Governance Structure</h2>\n<ul>\n<li>Engagement Lead</li>\n<li>Product Owner (Client)</li>\n<li>Delivery Team</li>\n<li>QA & Compliance Group</li>\n</ul>\n\n<h2>Tools</h2>\n<ul>\n<li>Jira</li>\n<li>Teams/Email</li>\n<li>Automated reporting dashboard</li>\n</ul>\n\n<h2>Cadence</h2>\n<ul>\n<li>Daily standups</li>\n<li>Weekly status updates</li>\n<li>Monthly executive review</li>\n</ul>"
             },
             {
               "title": "Appendix – Company Profile",
               "required": true,
-              "content": "<!-- tags: [\"template\", \"proposal\", \"company\", \"profile\", \"module\"] -->\n<h1>Appendix – Company Profile</h1>\n\n<h2>About Khonology</h2>\n<p>Khonology is a South African-based digital consulting and technology delivery company specialising in:</p>\n<ul>\n<li>Enterprise automation</li>\n<li>Digital transformation</li>\n<li>ESG reporting</li>\n<li>Data engineering & cloud</li>\n<li>Business analysis and enterprise delivery</li>\n</ul>\n\n<p>We partner with organisations to deliver impactful solutions that transform operations and unlock measurable value.</p>"
+              "content":
+                  "<!-- tags: [\"template\", \"proposal\", \"company\", \"profile\", \"module\"] -->\n<h1>Appendix – Company Profile</h1>\n\n<h2>About Khonology</h2>\n<p>Khonology is a South African-based digital consulting and technology delivery company specialising in:</p>\n<ul>\n<li>Enterprise automation</li>\n<li>Digital transformation</li>\n<li>ESG reporting</li>\n<li>Data engineering & cloud</li>\n<li>Business analysis and enterprise delivery</li>\n</ul>\n\n<p>We partner with organisations to deliver impactful solutions that transform operations and unlock measurable value.</p>"
             }
           ]
         })
       },
       {
         "name": "Statement of Work (SOW) Template",
-        "description": "Complete SOW template with all sections - Project Overview, Scope, Deliverables, Timeline, Resources, and Terms",
+        "description":
+            "Complete SOW template with all sections - Project Overview, Scope, Deliverables, Timeline, Resources, and Terms",
         "templateType": "sow",
         "sections": [
           "Project Overview",
@@ -2820,32 +2896,38 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             {
               "title": "Project Overview",
               "required": true,
-              "content": "# Project Overview\n\n## Background\n[Project background and context]\n\n## Objectives\n[Key project objectives]\n\n## Success Criteria\n[How success will be measured]"
+              "content":
+                  "# Project Overview\n\n## Background\n[Project background and context]\n\n## Objectives\n[Key project objectives]\n\n## Success Criteria\n[How success will be measured]"
             },
             {
               "title": "Scope of Work",
               "required": true,
-              "content": "# Scope of Work\n\n## In Scope\n[Detailed description of work included]\n\n## Out of Scope\n[Items explicitly excluded]"
+              "content":
+                  "# Scope of Work\n\n## In Scope\n[Detailed description of work included]\n\n## Out of Scope\n[Items explicitly excluded]"
             },
             {
               "title": "Deliverables",
               "required": true,
-              "content": "# Deliverables\n\n| Deliverable | Description | Due Date | Acceptance Criteria |\n|------------|-------------|----------|---------------------|\n| [Deliverable 1] | [Description] | [Date] | [Criteria] |"
+              "content":
+                  "# Deliverables\n\n| Deliverable | Description | Due Date | Acceptance Criteria |\n|------------|-------------|----------|---------------------|\n| [Deliverable 1] | [Description] | [Date] | [Criteria] |"
             },
             {
               "title": "Timeline & Milestones",
               "required": true,
-              "content": "# Timeline & Milestones\n\n## Project Timeline\n[High-level project timeline]\n\n## Key Milestones\n1. [Milestone 1] - [Date]\n2. [Milestone 2] - [Date]\n3. [Milestone 3] - [Date]"
+              "content":
+                  "# Timeline & Milestones\n\n## Project Timeline\n[High-level project timeline]\n\n## Key Milestones\n1. [Milestone 1] - [Date]\n2. [Milestone 2] - [Date]\n3. [Milestone 3] - [Date]"
             },
             {
               "title": "Resources & Team",
               "required": true,
-              "content": "# Resources & Team\n\n## Team Structure\n[Team members and roles]\n\n## Responsibilities\n[Responsibilities of each party]"
+              "content":
+                  "# Resources & Team\n\n## Team Structure\n[Team members and roles]\n\n## Responsibilities\n[Responsibilities of each party]"
             },
             {
               "title": "Terms & Conditions",
               "required": true,
-              "content": "# Terms & Conditions\n\n## Payment Terms\n[Payment schedule and terms]\n\n## Intellectual Property\n[IP ownership terms]\n\n## Confidentiality\n[Confidentiality requirements]"
+              "content":
+                  "# Terms & Conditions\n\n## Payment Terms\n[Payment schedule and terms]\n\n## Intellectual Property\n[IP ownership terms]\n\n## Confidentiality\n[Confidentiality requirements]"
             }
           ]
         })
@@ -2906,10 +2988,13 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                   child: InkWell(
                     onTap: () async {
                       final templateName = (template["name"] ?? "").toString();
-                      final templateContent = (template["content"] ?? "").toString();
-                      final templateType = (template["templateType"] ?? "").toString();
+                      final templateContent =
+                          (template["content"] ?? "").toString();
+                      final templateType =
+                          (template["templateType"] ?? "").toString();
                       // Generate key that ensures template detection (_template suffix)
-                      String templateKey = templateName.toLowerCase()
+                      String templateKey = templateName
+                          .toLowerCase()
                           .replaceAll(" ", "_")
                           .replaceAll("(", "")
                           .replaceAll(")", "")
@@ -2919,7 +3004,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       if (!templateKey.endsWith("_template")) {
                         templateKey = "${templateKey}_template";
                       }
-                      
+
                       // If it's a full template (SOW or Proposal), create it directly
                       if (templateType == "sow" || templateType == "proposal") {
                         Navigator.pop(ctx);
@@ -2929,14 +3014,16 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             key: templateKey,
                             label: templateName,
                             content: templateContent,
-                            category: "Template", // Use consistent category name
+                            category:
+                                "Template", // Use consistent category name
                             parentId: currentFolderId,
                           );
                           // Refresh content to see the new template
                           await app.fetchContent();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text("$templateName created successfully"),
+                              content:
+                                  Text("$templateName created successfully"),
                               backgroundColor: Colors.green,
                             ),
                           );
@@ -3716,7 +3803,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
 
   void _navigateToPage(BuildContext context, String label) {
     final isAdmin = _isAdminUser();
-    
+
     switch (label) {
       case 'Dashboard':
         if (isAdmin) {
