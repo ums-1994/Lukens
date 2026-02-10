@@ -276,8 +276,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -403,7 +403,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(
@@ -475,8 +475,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
+            Colors.black.withValues(alpha: 0.3),
+            Colors.black.withValues(alpha: 0.2),
           ],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
@@ -591,7 +591,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color: Colors.black.withValues(alpha: 0.08),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -725,13 +725,13 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                 size: 18,
               ),
               filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
+              fillColor: Colors.white.withValues(alpha: 0.04),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: Colors.white.withOpacity(0.12), width: 1),
+                borderSide: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.12), width: 1),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -746,9 +746,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.06),
+            color: Colors.white.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.12)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
           child: const Icon(
             Icons.filter_alt_outlined,
@@ -790,12 +790,14 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white.withOpacity(0.06) : Colors.transparent,
+          color: isActive
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: isActive
                 ? const Color(0xFF3498DB)
-                : Colors.white.withOpacity(0.18),
+                : Colors.white.withValues(alpha: 0.18),
             width: 1,
           ),
         ),
@@ -815,8 +817,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
               decoration: BoxDecoration(
                 color: isActive
-                    ? const Color(0xFF3498DB).withOpacity(0.25)
-                    : Colors.white.withOpacity(0.08),
+                    ? const Color(0xFF3498DB).withValues(alpha: 0.25)
+                    : Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -916,7 +918,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           Container(
             margin: const EdgeInsets.symmetric(vertical: 6),
             height: 1,
-            color: Colors.white.withOpacity(0.06),
+            color: Colors.white.withValues(alpha: 0.06),
           ),
         );
       }
@@ -932,7 +934,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           const SizedBox(height: 8),
           Container(
             height: 1,
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
           ),
           const SizedBox(height: 4),
           ...rows,
@@ -1220,8 +1222,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   Widget _buildStatusChip(String label, Color color) {
     final bgColor = color == Colors.white70
-        ? Colors.white.withOpacity(0.08)
-        : color.withOpacity(0.2);
+        ? Colors.white.withValues(alpha: 0.08)
+        : color.withValues(alpha: 0.2);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1272,8 +1274,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   Widget _buildRiskChip(String label, Color color) {
     final bgColor = color == Colors.white70
-        ? Colors.white.withOpacity(0.08)
-        : color.withOpacity(0.18);
+        ? Colors.white.withValues(alpha: 0.08)
+        : color.withValues(alpha: 0.18);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1456,7 +1458,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
@@ -625,7 +626,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              value: _statusFilter,
+              initialValue: _statusFilter,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
@@ -874,7 +875,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           fontWeight: FontWeight.w600,
         ),
       );
-    );
   }
 
   @override
@@ -1437,7 +1437,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           );
 
           final status = DropdownButtonFormField<String>(
-            value: _statusFilter,
+            initialValue: _statusFilter,
             dropdownColor: PremiumTheme.darkBg1,
             items: const [
               DropdownMenuItem(value: 'All', child: Text('All statuses')),
