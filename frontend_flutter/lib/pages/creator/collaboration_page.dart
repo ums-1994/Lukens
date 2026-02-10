@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/collaboration_service.dart';
 import '../../services/auth_service.dart';
@@ -91,6 +90,20 @@ class _CollaborationPageState extends State<CollaborationPage> {
       if (!mounted) return;
       setState(() => _notifications = data);
     });
+  }
+
+  String _formatCreatedAt(dynamic createdAt) {
+    if (createdAt == null) return '';
+    if (createdAt is DateTime) return createdAt.toString();
+    if (createdAt is String) return createdAt;
+
+    // Avoid hard dependency on Firestore `Timestamp` type in casts.
+    try {
+      final dt = (createdAt as dynamic).toDate();
+      if (dt is DateTime) return dt.toString();
+    } catch (_) {}
+
+    return createdAt.toString();
   }
 
   @override
@@ -637,7 +650,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
               ..._comments.map((c) => _buildCommentItem(
                     c['author']?.toString() ?? 'User',
                     c['text']?.toString() ?? '',
-                    ((c['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
+                    _formatCreatedAt(c['createdAt']),
                   )),
             if (!_loading && _comments.isEmpty) const Text('No comments yet.'),
           ],
@@ -748,7 +761,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
             if (!_loading)
               ..._notifications.map((n) => _buildNotificationItem(
                     n['message']?.toString() ?? '',
-                    ((n['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
+                    _formatCreatedAt(n['createdAt']),
                     n['read'] == true
                         ? Icons.notifications_none
                         : Icons.notifications_active,
@@ -1034,7 +1047,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
               ..._comments.map((c) => _buildCommentItem(
                     c['author']?.toString() ?? 'User',
                     c['text']?.toString() ?? '',
-                    ((c['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
+                    _formatCreatedAt(c['createdAt']),
                   )),
             if (!_loading && _comments.isEmpty)
               const Text('No comments yet.'),
@@ -1186,7 +1199,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
             if (!_loading)
               ..._notifications.map((n) => _buildNotificationItem(
                     n['message']?.toString() ?? '',
-                    ((n['createdAt'] as Timestamp?)?.toDate().toString() ?? ''),
+                    _formatCreatedAt(n['createdAt']),
                     n['read'] == true ? Icons.notifications_none : Icons.notifications_active,
                     id: n['id']?.toString(),
                     read: n['read'] == true,
