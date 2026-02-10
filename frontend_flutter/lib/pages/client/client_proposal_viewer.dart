@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
