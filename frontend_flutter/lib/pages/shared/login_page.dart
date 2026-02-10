@@ -517,22 +517,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 24),
 
-            // Back to Landing
+            // Back button navigation
             Center(
-              child: TextButton.icon(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(
-                  Icons.arrow_back,
-                  color: Colors.white70,
-                  size: 16,
-                ),
-                label: const Text(
-                  'BACK TO LANDING',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Image.asset(
+                  'assets/images/BackButton-Red.png',
+                  height: 40,
+                  fit: BoxFit.contain,
                 ),
               ),
             ),
