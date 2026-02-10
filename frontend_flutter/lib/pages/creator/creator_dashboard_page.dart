@@ -733,14 +733,16 @@ class _DashboardPageState extends State<DashboardPage>
                                       : MainAxisAlignment.spaceBetween,
                                   children: [
                                     if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
+                                      Expanded(
+                                        child: const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 12),
+                                          child: Text(
+                                            'Navigation',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12),
+                                          ),
                                         ),
                                       ),
                                     Padding(
