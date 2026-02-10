@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -242,7 +243,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.3),
+            Colors.black.withValues(alpha:0.3),
             Colors.transparent,
           ],
           begin: Alignment.topCenter,
@@ -341,8 +342,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
+            Colors.black.withValues(alpha:0.3),
+            Colors.black.withValues(alpha:0.2),
           ],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
@@ -442,8 +443,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        color: PremiumTheme.darkBg2.withOpacity(0.85),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: PremiumTheme.darkBg2.withValues(alpha:0.85),
+        border: Border.all(color: Colors.white.withValues(alpha:0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,14 +456,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                 child: Text(
                   label,
                   style: PremiumTheme.bodyMedium.copyWith(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha:0.9),
                   ),
                 ),
               ),
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
+                  color: color.withValues(alpha:0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: color, size: 20),
@@ -481,7 +482,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           Text(
             subtitle,
             style: PremiumTheme.labelMedium.copyWith(
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withValues(alpha:0.7),
             ),
           ),
         ],
@@ -496,8 +497,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: PremiumTheme.darkBg2.withOpacity(0.85),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: PremiumTheme.darkBg2.withValues(alpha:0.85),
+        border: Border.all(color: Colors.white.withValues(alpha:0.06)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -511,13 +512,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 hintText: 'Search proposals or clients…',
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.55)),
+                hintStyle: TextStyle(color: Colors.white.withValues(alpha:0.55)),
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.04),
+                fillColor: Colors.white.withValues(alpha:0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha:0.08)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -534,12 +535,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 labelText: 'Status',
-                labelStyle: TextStyle(color: Colors.white.withOpacity(0.8)),
+                labelStyle: TextStyle(color: Colors.white.withValues(alpha:0.8)),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.04),
+                fillColor: Colors.white.withValues(alpha:0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha:0.08)),
                 ),
               ),
               items: const [
@@ -571,14 +572,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                 Text(
                   'Date range',
                   style: PremiumTheme.labelMedium.copyWith(
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withValues(alpha:0.8),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   dateFilterDisabledText,
                   style: PremiumTheme.labelMedium.copyWith(
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha:0.6),
                   ),
                 ),
               ],
@@ -637,7 +638,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             Text(
               'No proposals match your filters.',
               style: PremiumTheme.bodyMedium.copyWith(
-                color: Colors.white.withOpacity(0.8),
+                color: Colors.white.withValues(alpha:0.8),
               ),
             ),
             const SizedBox(height: 8),
@@ -655,8 +656,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: PremiumTheme.darkBg2.withOpacity(0.9),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: PremiumTheme.darkBg2.withValues(alpha:0.9),
+        border: Border.all(color: Colors.white.withValues(alpha:0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -752,15 +753,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     Color fg;
 
     if (lower.contains('pending') || lower.contains('review')) {
-      bg = Colors.orange.withOpacity(0.15);
+      bg = Colors.orange.withValues(alpha:0.15);
       fg = Colors.orange;
     } else if (lower.contains('approved') ||
         lower.contains('signed') ||
         lower.contains('released')) {
-      bg = Colors.green.withOpacity(0.15);
+      bg = Colors.green.withValues(alpha:0.15);
       fg = Colors.green;
     } else {
-      bg = Colors.white.withOpacity(0.08);
+      bg = Colors.white.withValues(alpha:0.08);
       fg = Colors.white70;
     }
 
@@ -813,7 +814,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.black.withOpacity(0.3),
+                    Colors.black.withValues(alpha:0.3),
                     Colors.transparent,
                   ],
                   begin: Alignment.topCenter,
@@ -923,7 +924,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                                   _loadError!,
                                   textAlign: TextAlign.center,
                                   style: PremiumTheme.bodyMedium.copyWith(
-                                    color: Colors.white.withOpacity(0.85),
+                                    color: Colors.white.withValues(alpha:0.85),
                                   ),
                                 ),
                                 const SizedBox(height: 12),
@@ -1213,7 +1214,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         ? null
         : LinearGradient(
             colors: linearGradient.colors
-                .map((c) => c.withOpacity(0.40))
+                .map((c) => c.withValues(alpha:0.40))
                 .toList(growable: false),
             begin: linearGradient.begin,
             end: linearGradient.end,
@@ -1232,13 +1233,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             decoration: BoxDecoration(
               gradient: glassGradient,
               color:
-                  glassGradient == null ? Colors.white.withOpacity(0.06) : null,
+                  glassGradient == null ? Colors.white.withValues(alpha:0.06) : null,
               borderRadius: BorderRadius.circular(20),
               border:
-                  Border.all(color: Colors.white.withOpacity(0.10), width: 1.2),
+                  Border.all(color: Colors.white.withValues(alpha:0.10), width: 1.2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
+                  color: Colors.black.withValues(alpha:0.25),
                   blurRadius: 16,
                   offset: const Offset(0, 10),
                 ),
@@ -1255,7 +1256,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                       child: Text(
                         title,
                         style: PremiumTheme.bodyMedium.copyWith(
-                          color: Colors.white.withOpacity(0.92),
+                          color: Colors.white.withValues(alpha:0.92),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1263,10 +1264,10 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.18),
+                        color: Colors.white.withValues(alpha:0.18),
                         borderRadius: BorderRadius.circular(10),
                         border:
-                            Border.all(color: Colors.white.withOpacity(0.12)),
+                            Border.all(color: Colors.white.withValues(alpha:0.12)),
                       ),
                       child: Icon(data.icon, color: Colors.white, size: 20),
                     ),
@@ -1285,7 +1286,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   Text(
                     subtitleText,
                     style: PremiumTheme.labelMedium.copyWith(
-                      color: Colors.white.withOpacity(0.72),
+                      color: Colors.white.withValues(alpha:0.72),
                     ),
                   ),
                 ],
@@ -1318,22 +1319,22 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             decoration: InputDecoration(
               hintText: 'Search proposals or clients…',
               prefixIcon: const Icon(Icons.search),
-              prefixIconColor: Colors.white.withOpacity(0.8),
+              prefixIconColor: Colors.white.withValues(alpha:0.8),
               filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
-              hintStyle: TextStyle(color: Colors.white.withOpacity(0.55)),
+              fillColor: Colors.white.withValues(alpha:0.04),
+              hintStyle: TextStyle(color: Colors.white.withValues(alpha:0.55)),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha:0.08)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha:0.08)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide:
-                    BorderSide(color: PremiumTheme.teal.withOpacity(0.7)),
+                    BorderSide(color: PremiumTheme.teal.withValues(alpha:0.7)),
               ),
             ),
           );
@@ -1350,21 +1351,21 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             onChanged: (v) => setState(() => _statusFilter = v ?? 'All'),
             decoration: InputDecoration(
               filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
+              fillColor: Colors.white.withValues(alpha:0.04),
               labelText: 'Status',
-              labelStyle: TextStyle(color: Colors.white.withOpacity(0.85)),
+              labelStyle: TextStyle(color: Colors.white.withValues(alpha:0.85)),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha:0.08)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha:0.08)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide:
-                    BorderSide(color: PremiumTheme.teal.withOpacity(0.7)),
+                    BorderSide(color: PremiumTheme.teal.withValues(alpha:0.7)),
               ),
             ),
             style: const TextStyle(color: Colors.white),
@@ -1384,7 +1385,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             },
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.white,
-              side: BorderSide(color: Colors.white.withOpacity(0.12)),
+              side: BorderSide(color: Colors.white.withValues(alpha:0.12)),
               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
@@ -1613,7 +1614,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                       value: approvalRate,
                       strokeWidth: 10,
                       color: Colors.green,
-                      backgroundColor: Colors.white.withOpacity(0.08),
+                      backgroundColor: Colors.white.withValues(alpha:0.08),
                     ),
                     Text(
                       '$pct%',
@@ -1641,7 +1642,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                         value: (approvedSum / totalSum).clamp(0.0, 1.0),
                         minHeight: 8,
                         color: Colors.green,
-                        backgroundColor: Colors.white.withOpacity(0.08),
+                        backgroundColor: Colors.white.withValues(alpha:0.08),
                       ),
                     ],
                   ],
@@ -1676,7 +1677,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         Text(
           value,
           style: PremiumTheme.bodyMedium.copyWith(
-            color: Colors.white.withOpacity(0.9),
+            color: Colors.white.withValues(alpha:0.9),
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1705,8 +1706,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                 height: 40,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  color: color.withOpacity(0.15),
-                  border: Border.all(color: color.withOpacity(0.25)),
+                  color: color.withValues(alpha:0.15),
+                  border: Border.all(color: color.withValues(alpha:0.25)),
                 ),
                 child: Icon(icon, color: color),
               ),
@@ -1731,12 +1732,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
-                  color: Colors.white.withOpacity(0.06),
+                  color: Colors.white.withValues(alpha:0.06),
                 ),
                 child: Text(
                   proposals.length.toString(),
                   style: PremiumTheme.bodyMedium.copyWith(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha:0.9),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1753,7 +1754,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               itemCount: proposals.length,
               separatorBuilder: (_, __) => Divider(
                 height: 16,
-                color: Colors.white.withOpacity(0.08),
+                color: Colors.white.withValues(alpha:0.08),
               ),
               itemBuilder: (context, index) {
                 final proposal = proposals[index];
@@ -1771,8 +1772,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: Colors.white.withOpacity(0.04),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: Colors.white.withValues(alpha:0.04),
+        border: Border.all(color: Colors.white.withValues(alpha:0.06)),
       ),
       child: Row(
         children: [
@@ -1781,8 +1782,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             height: 34,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
-              color: color.withOpacity(0.15),
-              border: Border.all(color: color.withOpacity(0.25)),
+              color: color.withValues(alpha:0.15),
+              border: Border.all(color: color.withValues(alpha:0.25)),
             ),
             child: Icon(Icons.inbox_outlined, color: color, size: 18),
           ),
@@ -1830,7 +1831,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                     overflow: TextOverflow.ellipsis,
                     style: PremiumTheme.bodyMedium.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: Colors.white.withOpacity(0.92),
+                      color: Colors.white.withValues(alpha:0.92),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -1852,7 +1853,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               onPressed: () => onOpen(proposal),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
-                side: BorderSide(color: Colors.white.withOpacity(0.12)),
+                side: BorderSide(color: Colors.white.withValues(alpha:0.12)),
               ),
               child: const Text('Open'),
             ),
@@ -1888,7 +1889,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Icon(
                       Icons.rule_folder_outlined,
-                      color: Colors.white.withOpacity(0.25),
+                      color: Colors.white.withValues(alpha:0.25),
                       size: 64,
                     ),
                   ),
@@ -1930,37 +1931,37 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   style: TextStyle(
                     color: canEditPricing
                         ? Colors.white
-                        : Colors.white.withOpacity(0.6),
+                        : Colors.white.withValues(alpha:0.6),
                   ),
                   cursorColor: PremiumTheme.teal,
                   decoration: InputDecoration(
                     labelText: 'Proposed price',
                     labelStyle:
-                        TextStyle(color: Colors.white.withOpacity(0.85)),
+                        TextStyle(color: Colors.white.withValues(alpha:0.85)),
                     filled: true,
-                    fillColor: Colors.white.withOpacity(0.04),
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.55)),
+                    fillColor: Colors.white.withValues(alpha:0.04),
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha:0.55)),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          BorderSide(color: Colors.white.withOpacity(0.08)),
+                          BorderSide(color: Colors.white.withValues(alpha:0.08)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          BorderSide(color: Colors.white.withOpacity(0.08)),
+                          BorderSide(color: Colors.white.withValues(alpha:0.08)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          BorderSide(color: PremiumTheme.teal.withOpacity(0.7)),
+                          BorderSide(color: PremiumTheme.teal.withValues(alpha:0.7)),
                     ),
                     hintText: 'Enter price (e.g. 12500.00)',
                     helperText: canEditPricing
                         ? 'Finance can update pricing before approving/rejecting.'
                         : 'You do not have permission to edit pricing.',
                     helperStyle:
-                        TextStyle(color: Colors.white.withOpacity(0.6)),
+                        TextStyle(color: Colors.white.withValues(alpha:0.6)),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1972,24 +1973,24 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   decoration: InputDecoration(
                     labelText: 'Finance comment',
                     labelStyle:
-                        TextStyle(color: Colors.white.withOpacity(0.85)),
+                        TextStyle(color: Colors.white.withValues(alpha:0.85)),
                     filled: true,
-                    fillColor: Colors.white.withOpacity(0.04),
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.55)),
+                    fillColor: Colors.white.withValues(alpha:0.04),
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha:0.55)),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          BorderSide(color: Colors.white.withOpacity(0.08)),
+                          BorderSide(color: Colors.white.withValues(alpha:0.08)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          BorderSide(color: Colors.white.withOpacity(0.08)),
+                          BorderSide(color: Colors.white.withValues(alpha:0.08)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          BorderSide(color: PremiumTheme.teal.withOpacity(0.7)),
+                          BorderSide(color: PremiumTheme.teal.withValues(alpha:0.7)),
                     ),
                   ),
                 ),
@@ -2050,7 +2051,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white70,
-                    side: BorderSide(color: Colors.white.withOpacity(0.12)),
+                    side: BorderSide(color: Colors.white.withValues(alpha:0.12)),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -2097,9 +2098,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha:0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha:0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2258,15 +2259,15 @@ class _BarChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final bgPaint = Paint()
-      ..color = Colors.white.withOpacity(0.06)
+      ..color = Colors.white.withValues(alpha:0.06)
       ..style = PaintingStyle.fill;
 
     final barPaint = Paint()
-      ..color = color.withOpacity(0.85)
+      ..color = color.withValues(alpha:0.85)
       ..style = PaintingStyle.fill;
 
     final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.06)
+      ..color = Colors.white.withValues(alpha:0.06)
       ..strokeWidth = 1;
 
     final radius = Radius.circular(10);
@@ -2312,7 +2313,7 @@ class _BarChartPainter extends CustomPainter {
         text: TextSpan(
           text: p.label,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.75),
+            color: Colors.white.withValues(alpha:0.75),
             fontSize: 10,
           ),
         ),
