@@ -273,7 +273,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
         'Smart Proposal & SOW Builder for Digital Teams',
         style: TextStyle(
           fontFamily: 'Poppins',
-          color: Colors.white.withOpacity(0.95),
+          color: Colors.white.withValues(alpha: 0.95),
           fontSize: isMobile ? 16 : 24,
           fontWeight: FontWeight.w300,
           height: 1.4,
@@ -313,8 +313,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            const Color(0xFFE9293A).withOpacity(glowIntensity),
+                        color: const Color(0xFFE9293A)
+                            .withValues(alpha: glowIntensity),
                         blurRadius: 24,
                         spreadRadius: 4,
                       ),
