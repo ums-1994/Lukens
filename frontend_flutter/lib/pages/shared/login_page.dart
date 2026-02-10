@@ -264,7 +264,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Use main app background from main.dart
+          // Use same background as landing page
+          _buildBackgroundLayers(),
 
           // Floating shapes - desktop only
           if (!isMobile) _buildFloatingShapes(),
@@ -281,6 +282,45 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBackgroundLayers() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Base background image (same as landing page)
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 1200),
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          child: Image.asset(
+            _backgroundImages[_currentFrameIndex],
+            key: ValueKey<int>(_currentFrameIndex),
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                color: const Color(0xFF000000),
+                child: const Center(
+                  child: Icon(Icons.error, color: Colors.white54, size: 48),
+                ),
+              );
+            },
+          ),
+        ),
+        // Pulsing light overlay (dark to light breathing)
+        AnimatedBuilder(
+          animation: _parallaxController,
+          builder: (context, child) {
+            // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
+            final darkness =
+                0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
+            return Container(
+              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+            );
+          },
+        ),
+      ],
     );
   }
 
