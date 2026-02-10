@@ -430,7 +430,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     ),
                     child: ElevatedButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/register');
+                        Navigator.pushNamed(context, '/login');
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFD72638),
@@ -445,7 +445,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                         elevation: 0,
                       ),
                       child: const Text(
-                        'Get Started',
+                        'GET STARTED',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w600,
@@ -474,7 +474,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     ),
                   ),
                   child: const Text(
-                    'Learn More',
+                    'LEARN MORE',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w400,
