@@ -700,11 +700,12 @@ class _RegisterPageState extends State<RegisterPage>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildSocialButton(Icons.g_mobiledata),
+                _buildSocialButton('assets/images/Google_Icon.png'),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.window),
+                _buildSocialButton('assets/images/mslogo.png'),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.business),
+                _buildSocialButton(
+                    'assets/images/LinkedIn_Social_Blue_Badge_White.png'),
               ],
             ),
             const SizedBox(height: 24),
@@ -867,7 +868,7 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildSocialButton(IconData icon) {
+  Widget _buildSocialButton(String imagePath) {
     return Container(
       width: 48,
       height: 48,
@@ -876,7 +877,8 @@ class _RegisterPageState extends State<RegisterPage>
         borderRadius: BorderRadius.circular(24),
       ),
       child: IconButton(
-        icon: Icon(icon, size: 28, color: Colors.black87),
+        icon:
+            Image.asset(imagePath, width: 28, height: 28, fit: BoxFit.contain),
         onPressed: () {
           // TODO: Social login
         },
