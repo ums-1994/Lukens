@@ -24,6 +24,17 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   String _statusFilter = 'all'; // all, pending, approved, other
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  
+  // Missing variables
+  List<Map<String, dynamic>> _pendingProposals = [];
+  List<Map<String, dynamic>> _approvedProposals = [];
+  List<Map<String, dynamic>> _rejectedProposals = [];
+  List<Map<String, dynamic>> _allProposals = [];
+  String? _loadError;
+  Map<String, dynamic>? _selectedProposal;
+  String? _selectedProposalId;
+  final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController();
 
   @override
   void initState() {
@@ -145,6 +156,38 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       }
     }
     return 'R${buf.toString()}';
+  }
+
+  // Missing methods
+  List<dynamic> _filtered(List<dynamic> proposals) {
+    return _filteredProposals(proposals);
+  }
+
+  double _sumAmount(List<dynamic> proposals) {
+    return proposals.fold(0.0, (sum, proposal) {
+      if (proposal is Map) {
+        return sum + _extractAmount(proposal);
+      }
+      return sum;
+    });
+  }
+
+  double _avgAmount(List<dynamic> proposals) {
+    if (proposals.isEmpty) return 0.0;
+    return _sumAmount(proposals) / proposals.length;
+  }
+
+  String _formatMoney(double amount) {
+    return _formatCurrency(amount);
+  }
+
+  Future<void> _loadFinanceData() async {
+    await _loadData();
+  }
+
+  void _handleFinanceAction({required String action, required String proposalId}) {
+    // Handle finance actions (approve, reject, etc.)
+    debugPrint('Finance action: $action for proposal: $proposalId');
   }
 
   @override
@@ -778,6 +821,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
+      );
   }
 
   @override
