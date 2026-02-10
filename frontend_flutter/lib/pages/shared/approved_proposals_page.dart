@@ -190,16 +190,20 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildHeader(app),
-                  const SizedBox(height: 24),
+                  // Fixed Sidebar - Full Height
+                  _buildSidebar(context),
+                  const SizedBox(width: 24),
+
+                  // Main Content Area
                   Expanded(
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildSidebar(context),
-                        const SizedBox(width: 24),
+                        _buildHeader(app),
+                        const SizedBox(height: 24),
                         Expanded(
                           child: GlassContainer(
                             borderRadius: 32,
