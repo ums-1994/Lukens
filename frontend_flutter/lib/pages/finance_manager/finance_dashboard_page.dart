@@ -124,7 +124,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   double _extractAmount(dynamic raw) {
     if (raw is! Map) return 0;
-    final p = raw as Map;
+    final p = raw;
     const keys = [
       'budget',
       'amount',
@@ -803,7 +803,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   Widget _buildTableRow(dynamic raw) {
     if (raw is! Map) return const SizedBox.shrink();
-    final p = raw as Map;
+    final p = raw;
 
     final title = (p['title'] ?? 'Untitled Proposal').toString();
     final client = (p['client_name'] ?? p['client'] ?? 'Unknown').toString();
@@ -1644,7 +1644,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
       for (final p in _allProposals) {
         final dt = _extractDate(p);
-        if (dt == null) continue;
         if (dt.isBefore(weekStart) || !dt.isBefore(weekEnd)) continue;
         if (!_matchesFilters(p)) continue;
         final amt = _extractAmount(p);
