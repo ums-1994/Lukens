@@ -18,7 +18,7 @@ _db_initialized = False
 
 # Load environment variables from .env so DATABASE_URL works when this module
 # is imported directly (e.g., python -c ... from the backend folder).
-load_dotenv()
+load_dotenv(override=True)
 
 
 def _build_db_config_from_env():

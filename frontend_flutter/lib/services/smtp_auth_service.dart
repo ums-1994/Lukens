@@ -4,6 +4,7 @@ import 'api_service.dart';
 
 class SmtpAuthService {
   static String get baseUrl => ApiService.baseUrl;
+  static String get _apiBaseUrl => '$baseUrl/api';
 
   // Register user with SMTP email verification
   static Future<Map<String, dynamic>?> registerUser({
@@ -15,7 +16,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/register'),
+        Uri.parse('$_apiBaseUrl/register'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -47,6 +48,12 @@ class SmtpAuthService {
     }
   }
 
+  static Future<Map<String, dynamic>?> resendVerificationEmail({
+    required String email,
+  }) {
+    return resendVerification(email: email);
+  }
+
   // Login user
   static Future<Map<String, dynamic>?> loginUser({
     required String email,
@@ -54,7 +61,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/login-email'),
+        Uri.parse('$_apiBaseUrl/login-email'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -89,7 +96,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+        Uri.parse('$_apiBaseUrl/verify-email'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -118,12 +125,12 @@ class SmtpAuthService {
   }
 
   // Resend verification email
-  static Future<Map<String, dynamic>?> resendVerificationEmail({
+  static Future<Map<String, dynamic>?> resendVerification({
     required String email,
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/resend-verification'),
+        Uri.parse('$_apiBaseUrl/resend-verification'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -159,7 +166,7 @@ class SmtpAuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/forgot-password'),
+        Uri.parse('$_apiBaseUrl/forgot-password'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -190,12 +197,12 @@ class SmtpAuthService {
   }
 
   // Get user profile
-  static Future<Map<String, dynamic>?> getUserProfile({
+  static Future<Map<String, dynamic>?> getCurrentUser({
     required String token,
   }) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/me'),
+        Uri.parse('$_apiBaseUrl/me'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

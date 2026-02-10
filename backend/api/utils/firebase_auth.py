@@ -10,10 +10,14 @@ from flask import request, jsonify
 
 # Initialize Firebase Admin SDK
 _firebase_app = None
+FIREBASE_ENABLED = os.getenv('FIREBASE_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'y')
 
 def initialize_firebase():
     """Initialize Firebase Admin SDK"""
     global _firebase_app
+
+    if not FIREBASE_ENABLED:
+        return None
     
     if _firebase_app is not None:
         return _firebase_app
@@ -71,6 +75,8 @@ def verify_firebase_token(id_token):
         dict: Decoded token with user info (uid, email, etc.) or None if invalid
     """
     try:
+        if not FIREBASE_ENABLED:
+            return None
         if _firebase_app is None:
             initialize_firebase()
         

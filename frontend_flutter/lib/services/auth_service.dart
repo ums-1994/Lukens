@@ -6,22 +6,26 @@ import 'package:web/web.dart' as web;
 class AuthService {
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
-    // Check if we're in production (not localhost)
     if (kIsWeb) {
       final hostname = web.window.location.hostname;
-      final isProduction = hostname.contains('netlify.app') ||
-          hostname.contains('onrender.com') ||
-          !hostname.contains('localhost');
+      final isLocalHost = hostname == 'localhost' || hostname == '127.0.0.1';
 
-      if (isProduction) {
-        print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
+      if (isLocalHost) {
+        print('🌐 Using local API URL: http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
+
+      // Production default (Render backend URL)
+      print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
+      return 'https://lukens-wp8w.onrender.com';
     }
-    // Default to Render backend (production)
-    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+
+    // Non-web fallback
+    print('🌐 Using local API URL: http://127.0.0.1:5000');
+    return 'http://127.0.0.1:5000';
   }
+
+  static String get _apiBaseUrl => '$baseUrl/api';
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 
@@ -120,7 +124,7 @@ class AuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/register'),
+        Uri.parse('$_apiBaseUrl/register'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'username': email, // Using email as username
@@ -152,7 +156,7 @@ class AuthService {
     try {
       // Use the new email-based login endpoint with JSON data
       final response = await http.post(
-        Uri.parse('$baseUrl/login-email'),
+        Uri.parse('$_apiBaseUrl/login-email'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'email': email,
@@ -161,19 +165,26 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        _token = data['access_token'];
-        // Create a basic user object since backend doesn't return user data in login
-        _currentUser = {
-          'email': email,
-          'username': email,
-          'role': 'Business Developer'
-        };
+        final data = json.decode(response.body) as Map<String, dynamic>;
+
+        final token = (data['token'] ?? data['access_token']) as String?;
+        if (token == null || token.isEmpty) {
+          throw Exception('Login succeeded but no token was returned');
+        }
+
+        final user = data['user'] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(data['user'] as Map)
+            : <String, dynamic>{
+                'email': email,
+                'username': email,
+              };
+
+        _token = token;
+        _currentUser = user;
         _persistSession();
         return {
-          'access_token': data['access_token'],
-          'token_type': data['token_type'],
-          'user': _currentUser
+          'token': token,
+          'user': _currentUser,
         };
       } else {
         final error = json.decode(response.body);
@@ -189,7 +200,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> verifyEmail(String token) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+        Uri.parse('$_apiBaseUrl/verify-email'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': token}),
       );
@@ -211,7 +222,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> loginWithJwt(String jwtToken) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/khonobuzz/jwt-login'),
+        Uri.parse('$_apiBaseUrl/khonobuzz/jwt-login'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': jwtToken}),
       );
@@ -242,7 +253,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> resendVerification(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/resend-verification'),
+        Uri.parse('$_apiBaseUrl/resend-verification'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email}),
       );
@@ -264,7 +275,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> forgotPassword(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/forgot-password'),
+        Uri.parse('$_apiBaseUrl/forgot-password'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email}),
       );
@@ -288,7 +299,7 @@ class AuthService {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/user/profile'),
+        Uri.parse('$_apiBaseUrl/user/profile'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $_token',

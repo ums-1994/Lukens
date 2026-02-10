@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../services/firebase_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
 import 'package:provider/provider.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'dart:math' as math;
 import 'login_page.dart';
 
@@ -47,7 +43,7 @@ class _RegisterPageState extends State<RegisterPage>
 
   int _currentFrameIndex = 0;
 
-  final List<String> _roles = ['Manager', 'Admin'];
+  final List<String> _roles = ['Manager', 'Financial Manager', 'Admin'];
 
   @override
   void initState() {
@@ -148,179 +144,72 @@ class _RegisterPageState extends State<RegisterPage>
       final role =
           _selectedRole.toLowerCase(); // Convert to lowercase for backend
 
-      // Step 1: Create user in Firebase
-      print('🔥 Creating user in Firebase...');
-      UserCredential? firebaseCredential;
-      String? firebaseError;
-
-      try {
-        firebaseCredential = await FirebaseService.signUpWithEmailAndPassword(
-          email: email,
-          password: password,
-          firstName: firstName,
-          lastName: lastName,
-          role: role,
-        );
-      } catch (e) {
-        print('❌ Firebase registration error: $e');
-        firebaseError = e.toString();
-      }
-
-      if (firebaseCredential == null || firebaseCredential.user == null) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          String errorMessage =
-              'Firebase registration failed. Please try again.';
-
-          // Provide more specific error messages
-          if (firebaseError != null) {
-            if (firebaseError.contains('email-already-in-use')) {
-              errorMessage =
-                  'An account with this email already exists. Please login instead.';
-            } else if (firebaseError.contains('weak-password')) {
-              errorMessage =
-                  'Password is too weak. Please choose a stronger password.';
-            } else if (firebaseError.contains('invalid-email')) {
-              errorMessage = 'Invalid email address. Please check your email.';
-            } else if (firebaseError.contains('network')) {
-              errorMessage =
-                  'Network error. Please check your internet connection.';
-            } else {
-              errorMessage =
-                  'Registration failed: ${firebaseError.length > 100 ? firebaseError.substring(0, 100) + "..." : firebaseError}';
-            }
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMessage),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 5),
-            ),
-          );
-        }
-        return;
-      }
-
-      // Step 2: Get Firebase ID token
-      print('🔥 Getting Firebase ID token...');
-      final firebaseIdToken = await firebaseCredential.user!.getIdToken();
-
-      if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to get Firebase ID token.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      print(
-          '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
-
-      // Step 3: Send Firebase ID token to backend to create/update user in database
-      print('📡 Syncing user to backend database...');
-      final response = await http.post(
-        Uri.parse('${AuthService.baseUrl}/api/firebase'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'id_token': firebaseIdToken,
-          'role': role, // Send role to backend
-        }),
+      await AuthService.register(
+        email: email,
+        password: password,
+        firstName: firstName,
+        lastName: lastName,
+        role: role,
       );
 
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        final error = json.decode(response.body);
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(error['detail'] ?? 'Backend registration failed'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      final loginResult = await AuthService.login(email: email, password: password);
+      final userProfile = loginResult?['user'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(loginResult?['user'] as Map)
+          : <String, dynamic>{};
+      final authToken = AuthService.token;
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (authToken == null || authToken.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registration succeeded but login failed. Please login.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
         return;
       }
 
-      final result = json.decode(response.body);
-      final userProfile = result['user'] as Map<String, dynamic>?;
-      final String authToken = firebaseIdToken;
+      final appState = context.read<AppState>();
+      appState.authToken = authToken;
+      appState.currentUser = userProfile.isNotEmpty ? userProfile : AuthService.currentUser;
 
-      if (mounted) {
-        setState(() => _isLoading = false);
-
-        if (userProfile != null) {
-          // Update role in backend if needed
-          if (userProfile['role'] != role) {
-            // Role might need to be updated in backend
-            print(
-                '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
-          }
-
-          // Auto-login after successful registration
-          final appState = context.read<AppState>();
-          appState.authToken = authToken;
-          appState.currentUser = userProfile;
-
-          // Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, authToken);
-
-          // Initialize role service
-          final roleService = context.read<RoleService>();
-          await roleService.initializeRoleFromUser(userProfile);
-
-          await appState.init();
-
-          // Redirect based on user role
-          final userRole =
-              (userProfile['role']?.toString() ?? '').toLowerCase().trim();
-          String dashboardRoute;
-
-          print('🔍 User role from backend: "$userRole"');
-          print('🔍 Requested role: "$role"');
-
-          // Check both the backend role and the requested role
-          if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
-            dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Approval Dashboard');
-          } else {
-            dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard');
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registration successful!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            dashboardRoute,
-            (route) => false,
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Registration successful, but failed to get user profile. Please login.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const LoginPage(),
-            ),
-          );
-        }
+      final roleService = context.read<RoleService>();
+      if (appState.currentUser != null) {
+        await roleService.initializeRoleFromUser(appState.currentUser!);
       }
+
+      await appState.init();
+
+      final rawRole = (appState.currentUser?['role'] ?? role).toString();
+      final normalized = rawRole.toLowerCase().trim();
+      final isApprover =
+          normalized == 'admin' || normalized == 'ceo' || normalized == 'approver';
+      final isFinancialManager = normalized == 'financial manager';
+
+      final dashboardRoute = isApprover
+          ? '/approver_dashboard'
+          : isFinancialManager
+              ? '/financial_manager_dashboard'
+              : '/creator_dashboard';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Registration successful!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        dashboardRoute,
+        (route) => false,
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);

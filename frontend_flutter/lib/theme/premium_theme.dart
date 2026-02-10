@@ -244,6 +244,7 @@ class PremiumStatCard extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         decoration: PremiumTheme.statCard(gradient),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -269,7 +270,6 @@ class PremiumStatCard extends StatelessWidget {
                   ),
               ],
             ),
-            const Spacer(),
             Text(
               value,
               style: PremiumTheme.displayMedium.copyWith(

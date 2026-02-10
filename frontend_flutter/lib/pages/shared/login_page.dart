@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
-import '../../services/firebase_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
 import 'dart:math' as math;
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -94,139 +91,53 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       final email = _emailController.text.trim();
       final password = _passwordController.text;
 
-      // Step 1: Sign in with Firebase
-      print('🔥 Signing in with Firebase...');
-      final firebaseCredential =
-          await FirebaseService.signInWithEmailAndPassword(
-        email: email,
-        password: password,
+      final loginResult = await AuthService.login(email: email, password: password);
+      final userProfile = loginResult?['user'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(loginResult?['user'] as Map)
+          : <String, dynamic>{};
+      final authToken = AuthService.token;
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (authToken == null || authToken.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Login failed: no auth token returned.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final appState = context.read<AppState>();
+      appState.authToken = authToken;
+      appState.currentUser = userProfile.isNotEmpty ? userProfile : AuthService.currentUser;
+
+      final roleService = context.read<RoleService>();
+      if (appState.currentUser != null) {
+        await roleService.initializeRoleFromUser(appState.currentUser!);
+      }
+
+      await appState.init();
+
+      final rawRole = (appState.currentUser?['role'] ?? '').toString();
+      final userRole = rawRole.toLowerCase().trim();
+      final isApprover =
+          userRole == 'admin' || userRole == 'ceo' || userRole == 'approver';
+      final isFinancialManager = userRole == 'financial manager';
+
+      final dashboardRoute = isApprover
+          ? '/approver_dashboard'
+          : isFinancialManager
+              ? '/financial_manager_dashboard'
+              : '/creator_dashboard';
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        dashboardRoute,
+        (route) => false,
       );
-
-      if (firebaseCredential == null || firebaseCredential.user == null) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Firebase authentication failed. Please check your credentials.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Step 2: Get Firebase ID token
-      print('🔥 Getting Firebase ID token...');
-      final firebaseIdToken = await firebaseCredential.user!.getIdToken();
-
-      if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to get Firebase ID token.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      print(
-          '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
-
-      // Step 3: Send Firebase ID token to backend to create/update user in database
-      print('📡 Sending Firebase token to backend...');
-      final response = await http.post(
-        Uri.parse('${AuthService.baseUrl}/api/firebase'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken}),
-      );
-
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        final error = json.decode(response.body);
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(error['detail'] ?? 'Backend authentication failed'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      final result = json.decode(response.body);
-      final userProfile = result['user'] as Map<String, dynamic>?;
-      final String authToken = firebaseIdToken;
-
-      if (mounted) {
-        setState(() => _isLoading = false);
-
-        if (userProfile != null) {
-          final appState = context.read<AppState>();
-
-          // Use Firebase ID token (not legacy token)
-          appState.authToken = authToken;
-          appState.currentUser = userProfile;
-
-          // IMPORTANT: Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, authToken);
-
-          // Initialize role service with user's role
-          final roleService = context.read<RoleService>();
-          await roleService.initializeRoleFromUser(userProfile);
-
-          await appState.init();
-
-          // Redirect based on user role
-          // Only two roles: admin and manager
-          final rawRole = userProfile['role']?.toString() ?? '';
-          final userRole = rawRole.toLowerCase().trim();
-          String dashboardRoute;
-
-          print('🔍 Login: Raw role from backend: "$rawRole"');
-          print('🔍 Login: Normalized role: "$userRole"');
-          print('🔍 Login: Full userProfile: $userProfile');
-
-          // Map all role variations to admin or manager
-          final isAdmin = userRole == 'admin' || userRole == 'ceo';
-          final isManager = userRole == 'manager' ||
-              userRole == 'financial manager' ||
-              userRole == 'creator' ||
-              userRole == 'user';
-
-          if (isAdmin) {
-            dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Admin Dashboard');
-          } else if (isManager) {
-            dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard (Manager)');
-          } else {
-            // Default to manager dashboard for unknown roles
-            dashboardRoute = '/creator_dashboard';
-            print(
-                '⚠️ Unknown role "$userRole", defaulting to Creator Dashboard (Manager)');
-          }
-
-          print('🔀 Redirecting user with role "$userRole" to $dashboardRoute');
-
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            dashboardRoute,
-            (route) => false,
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to get user profile from backend.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);

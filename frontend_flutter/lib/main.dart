@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'pages/creator/creator_dashboard_page.dart';
@@ -34,6 +33,7 @@ import 'pages/admin/analytics_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
+import 'pages/financial/financial_manager_dashboard_page.dart';
 import 'services/auth_service.dart';
 import 'services/role_service.dart';
 import 'api.dart';
@@ -41,27 +41,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    if (kIsWeb) {
-      // Initialize Firebase for web using options matching web/firebase-config.js
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: 'AIzaSyC0WT1ArMcm6Ah8jM_hNaE9uffM1aTriBc',
-          authDomain: 'lukens-e17d6.firebaseapp.com',
-          databaseURL: 'https://lukens-e17d6-default-rtdb.firebaseio.com',
-          projectId: 'lukens-e17d6',
-          storageBucket: 'lukens-e17d6.firebasestorage.app',
-          messagingSenderId: '940107272310',
-          appId: '1:940107272310:web:bc6601706e2fe1d94d8f57',
-          measurementId: 'G-QBLQ7YBNGQ',
-        ),
-      );
-    } else {
-      await Firebase.initializeApp();
-    }
-  } catch (e) {
-    // Ignore if already initialized or not required
-  }
   // Restore persisted auth session on startup (web)
   AuthService.restoreSessionFromStorage();
   runApp(const MyApp());
@@ -92,6 +71,9 @@ class MyApp extends StatelessWidget {
                 child: Image.asset(
                   'assets/images/Global BG.jpg',
                   fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(color: Colors.black);
+                  },
                 ),
               ),
               if (child != null) child,
@@ -302,6 +284,8 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const DashboardPage(),
           '/dashboard': (context) => const DashboardPage(),
           '/creator_dashboard': (context) => const DashboardPage(),
+          '/financial_manager_dashboard': (context) =>
+              const FinancialManagerDashboardPage(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
@@ -451,22 +435,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
             final userRole = rawRole.toLowerCase().trim();
             String dashboardRoute;
 
-            final isAdmin = userRole == 'admin' || userRole == 'ceo';
-            final isManager = userRole == 'manager' ||
-                userRole == 'financial manager' ||
-                userRole == 'creator' ||
-                userRole == 'user';
+            final isApprover =
+                userRole == 'admin' || userRole == 'ceo' || userRole == 'approver';
+            final isFinancialManager = userRole == 'financial manager';
 
-            if (isAdmin) {
+            if (isApprover) {
               dashboardRoute = '/approver_dashboard';
-              print('✅ Khonobuzz: Routing to Admin Dashboard');
-            } else if (isManager) {
-              dashboardRoute = '/creator_dashboard';
-              print('✅ Khonobuzz: Routing to Creator Dashboard (Manager)');
+              print('✅ Khonobuzz: Routing to Approver Dashboard');
+            } else if (isFinancialManager) {
+              dashboardRoute = '/financial_manager_dashboard';
+              print('✅ Khonobuzz: Routing to Financial Manager Dashboard');
             } else {
               dashboardRoute = '/creator_dashboard';
-              print(
-                  '⚠️ Khonobuzz: Unknown role "$userRole", defaulting to Creator Dashboard');
+              print('✅ Khonobuzz: Routing to Creator Dashboard');
             }
 
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -650,338 +631,33 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     }
 
-    // Always show landing page first when app starts
-    // The landing page will handle navigation to login/dashboard based on auth status
+    // If the user is authenticated (token + user restored), render the persona root.
+    // Otherwise, show the landing screen which routes to login/register.
+    if (AuthService.isLoggedIn) {
+      return const RoleRoot();
+    }
     return const StartupPage();
   }
 }
 
-class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, this.initialIdx});
-  final int? initialIdx;
-  @override
-  State<HomeShell> createState() => _HomeShellState();
-}
+class RoleRoot extends StatelessWidget {
+  const RoleRoot({super.key});
 
-class _HomeShellState extends State<HomeShell> {
-  int idx = 0;
-  final pages = [
-    DashboardPage(), // 0
-    ProposalsPage(), // 1
-    ContentLibraryPage(), // 2
-    ClientManagementPage(), // 3
-    ApproverDashboardPage(), // 4
-    AnalyticsPage(), // 5
-    PreviewPage(), // 6 (optional)
-    ComposePage(), // 7 (optional)
-    GovernPage(), // 8 (optional)
-    ApproverDashboardPage(), // 9 (optional)
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    // Redirect to appropriate dashboard based on user role
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _redirectBasedOnRole(context);
-    });
-  }
-
-  void _redirectBasedOnRole(BuildContext context) {
-    final user = AuthService.currentUser;
-    if (user == null) return;
-
-    final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
-    final roleService = context.read<RoleService>();
-
-    // Initialize role service
-    roleService.initializeRoleFromUser(user).then((_) {
-      // Navigate based on role
-      if (backendRole == 'admin' || backendRole == 'ceo') {
-        // Admin → Approver Dashboard
-        Navigator.pushReplacementNamed(context, '/approver_dashboard');
-      } else {
-        // Manager → Creator Dashboard
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
-      }
-    });
+  String _normalizedRole(dynamic rawRole) {
+    return (rawRole ?? '').toString().toLowerCase().trim();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.initialIdx != null && idx != widget.initialIdx) {
-      // initialize once with desired index
-      idx = widget.initialIdx!;
-    }
     final user = AuthService.currentUser;
-    final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
-    final bool isAdminUser = backendRole == 'admin' || backendRole == 'ceo';
+    final role = _normalizedRole(user?['role']);
 
-    return Scaffold(
-      body: Row(
-        children: [
-          // Modern Navigation Sidebar
-          _buildModernSidebar(),
-          Expanded(child: pages[idx]),
-        ],
-      ),
-      floatingActionButton: isAdminUser
-          ? FloatingActionButton(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Switch Role'),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.dashboard_outlined),
-                          title: const Text('Business Developer - Dashboard'),
-                          onTap: () {
-                            setState(() => idx = 0);
-                            Navigator.pop(context);
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.description_outlined),
-                          title: const Text('Business Developer - Proposals'),
-                          onTap: () {
-                            setState(() => idx = 1);
-                            Navigator.pop(context);
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.approval_outlined),
-                          title: const Text('Reviewer / Approver'),
-                          onTap: () {
-                            setState(() => idx = 9);
-                            Navigator.pop(context);
-                          },
-                        ),
-                        ListTile(
-                          leading:
-                              const Icon(Icons.admin_panel_settings_outlined),
-                          title: const Text('Admin'),
-                          onTap: () {
-                            setState(() => idx = 10);
-                            Navigator.pop(context);
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.business_outlined),
-                          title: const Text('Client Portal'),
-                          onTap: () {
-                            setState(() => idx = 1);
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-              child: const Icon(Icons.swap_horiz),
-              tooltip: 'Switch Role',
-            )
-          : null,
-    );
-  }
-
-  Widget _buildModernSidebar() {
-    return Container(
-      width: 80,
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1419),
-        border: Border(right: BorderSide(color: Colors.grey[900]!)),
-      ),
-      child: Column(
-        children: [
-          // Logo Section
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF00CED1),
-                    const Color(0xFF20B2AA),
-                  ],
-                ),
-              ),
-              child: const Icon(Icons.dashboard, color: Colors.white, size: 26),
-            ),
-          ),
-          // Navigation Items
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildModernNavItem(
-                    icon: Icons.dashboard_outlined,
-                    label: 'Dashboard',
-                    index: 0,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.description_outlined,
-                    label: 'My Proposals',
-                    index: 1,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.library_books,
-                    label: 'Templates',
-                    index: 2,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.collections,
-                    label: 'Content Library',
-                    index: 2,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.people_outline,
-                    label: 'Client Management',
-                    index: 3,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.done_all_outlined,
-                    label: 'Approvals',
-                    index: 5,
-                  ),
-                  _buildModernNavItem(
-                    icon: Icons.bar_chart_outlined,
-                    label: 'Analytics',
-                    index: 6,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Bottom Section
-          Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: Column(
-              children: [
-                _buildModernNavItem(
-                  icon: Icons.help_outline,
-                  label: 'Help',
-                  index: -1,
-                ),
-                const SizedBox(height: 8),
-                Tooltip(
-                  message: 'Logout',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _handleLogout,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.logout,
-                          color: Colors.grey[600],
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModernNavItem({
-    required IconData icon,
-    required String label,
-    required int index,
-  }) {
-    final isActive = idx == index && index != -1;
-    return Tooltip(
-      message: label,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: index != -1 ? () => setState(() => idx = index) : null,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              border: isActive
-                  ? Border.all(color: const Color(0xFF00CED1), width: 2)
-                  : null,
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  icon,
-                  color: isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                  size: 26,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label.split(' ')[0],
-                  style: TextStyle(
-                    fontSize: 9,
-                    color:
-                        isActive ? const Color(0xFF00CED1) : Colors.grey[600],
-                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _handleLogout() {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                // Perform logout
-                final app = context.read<AppState>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
+    if (role == 'admin' || role == 'ceo' || role == 'approver') {
+      return const ApproverDashboardPage();
+    }
+    if (role == 'financial manager') {
+      return const FinancialManagerDashboardPage();
+    }
+    return const DashboardPage();
   }
 }

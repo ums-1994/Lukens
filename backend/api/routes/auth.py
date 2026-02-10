@@ -17,15 +17,18 @@ from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, 
 from api.utils.email import send_email, send_verification_email
 from api.utils.jwt_validator import JWTValidationError, validate_jwt_token, extract_user_info
 from werkzeug.security import check_password_hash
+from werkzeug.exceptions import BadRequest
 
 bp = Blueprint('auth', __name__)
 
 # Initialize Firebase on module load (with error handling to prevent import failures)
-try:
-    initialize_firebase()
-except Exception as e:
-    print(f"[AUTH] WARNING: Firebase initialization failed, but auth blueprint will still work: {e}")
-    print("   Firebase authentication features may not be available until Firebase is properly configured.")
+_firebase_enabled = os.getenv('FIREBASE_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'y')
+if _firebase_enabled:
+    try:
+        initialize_firebase()
+    except Exception as e:
+        print(f"[AUTH] WARNING: Firebase initialization failed, but auth blueprint will still work: {e}")
+        print("   Firebase authentication features may not be available until Firebase is properly configured.")
 
 def generate_verification_token(user_id, email):
     """Generate a verification token for email verification and store in database"""
@@ -169,8 +172,9 @@ def login():
         )
         user = cursor.fetchone()
         release_pg_conn(conn)
-        
-        if not user or not check_password_hash(user[3], password):
+
+        password_hash = user[3] if user else None
+        if not user or not password_hash or not check_password_hash(password_hash, password):
             return {'detail': 'Invalid credentials'}, 401
         
         if not user[7]:  # is_active
@@ -191,6 +195,8 @@ def login():
                 'department': user[6]
             }
         }, 200
+    except BadRequest:
+        return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
     except Exception as e:
         print(f'Login error: {e}')
         traceback.print_exc()
@@ -200,7 +206,7 @@ def login():
 def login_email():
     """Login with email and password"""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if data is None:
             return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
         
@@ -219,8 +225,9 @@ def login_email():
         )
         user = cursor.fetchone()
         release_pg_conn(conn)
-        
-        if not user or not check_password_hash(user[3], password):
+
+        password_hash = user[3] if user else None
+        if not user or not password_hash or not check_password_hash(password_hash, password):
             return {'detail': 'Invalid credentials'}, 401
         
         if not user[7]:  # is_active
@@ -418,19 +425,38 @@ def firebase_auth():
                 username = user[1]
                 user_role = user[4]  # Get role from database
                 
-                # Normalize role: map variations to standard roles (admin or manager)
-                # Only two roles: admin and manager
-                role_lower = user_role.lower().strip() if user_role else 'user'
-                if role_lower in ['admin', 'ceo']:
-                    normalized_role = 'admin'
-                elif role_lower in ['manager', 'financial manager', 'creator', 'user']:
+                # Normalize role formatting but preserve distinct roles.
+                # We intentionally do NOT collapse roles down to only admin/manager,
+                # because the frontend has separate screens for financial manager and approver.
+                role_lower = (user_role or 'user').lower().strip()
+
+                role_aliases = {
+                    'financial_manager': 'financial manager',
+                    'finance manager': 'financial manager',
+                    'finance_manager': 'financial manager',
+                    'chief executive officer': 'ceo',
+                }
+                normalized_role = role_aliases.get(role_lower, role_lower)
+
+                allowed_roles = {
+                    'admin',
+                    'ceo',
+                    'approver',
+                    'manager',
+                    'financial manager',
+                    'creator',
+                    'user',
+                    'client',
+                }
+                if normalized_role not in allowed_roles:
+                    print(
+                        f'⚠️ Unknown role "{user_role}", defaulting to "manager"'
+                    )
                     normalized_role = 'manager'
-                else:
-                    # Default to manager for unknown roles
-                    normalized_role = 'manager'
-                    print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
-                
-                print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
+
+                print(
+                    f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"'
+                )
                 
                 # Check if firebase_uid column exists, if not we'll skip updating it
                 try:
@@ -455,7 +481,7 @@ def firebase_auth():
                         'username': user[1],
                         'email': user[2],
                         'full_name': user[3],
-                        'role': normalized_role,  # Return normalized role
+                        'role': normalized_role,
                         'department': user[5],
                         'firebase_uid': uid
                     }
@@ -474,19 +500,35 @@ def firebase_auth():
                     username = f"{base_username}{counter}"
                     counter += 1
                 
-                # Use requested role if provided, otherwise default to 'manager'
-                # Only two roles: admin and manager
-                normalized_role = requested_role.lower().strip() if requested_role else 'manager'
-                if normalized_role in ['admin', 'ceo']:
-                    role_to_use = 'admin'
-                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
-                    role_to_use = 'manager'
-                else:
-                    # Default to manager for unknown roles
-                    role_to_use = 'manager'
-                    print(f'⚠️ Unknown role "{requested_role}", defaulting to "manager"')
-                
-                print(f'🔍 Registration: requested_role="{requested_role}", normalized="{normalized_role}", using="{role_to_use}"')
+                # Preserve requested role (normalized) for new users.
+                normalized_role = (requested_role or 'manager').lower().strip()
+                role_aliases = {
+                    'financial_manager': 'financial manager',
+                    'finance manager': 'financial manager',
+                    'finance_manager': 'financial manager',
+                    'chief executive officer': 'ceo',
+                }
+                normalized_role = role_aliases.get(normalized_role, normalized_role)
+
+                allowed_roles = {
+                    'admin',
+                    'ceo',
+                    'approver',
+                    'manager',
+                    'financial manager',
+                    'creator',
+                    'user',
+                    'client',
+                }
+                role_to_use = normalized_role if normalized_role in allowed_roles else 'manager'
+                if role_to_use != normalized_role:
+                    print(
+                        f'⚠️ Unknown role "{requested_role}", defaulting to "manager"'
+                    )
+
+                print(
+                    f'🔍 Registration: requested_role="{requested_role}", normalized="{normalized_role}", using="{role_to_use}"'
+                )
 
                 # For Firebase-only accounts, we don't use a local password.
                 # Just store a deterministic non-null string to satisfy NOT NULL constraint.
