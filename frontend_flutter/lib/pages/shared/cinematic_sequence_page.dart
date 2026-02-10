@@ -168,10 +168,10 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                         SizedBox(height: isMobile ? 40 : 56),
                         _buildCTAButtons(isMobile),
                         SizedBox(height: isMobile ? 40 : 60),
-                        // Red Discs image
+                        // Small logo version
                         Center(
                           child: Image.asset(
-                            'assets/images/Red_Discs.png',
+                            'assets/images/2026.png',
                             width: 30,
                             height: 30,
                             fit: BoxFit.contain,
