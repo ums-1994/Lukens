@@ -260,6 +260,7 @@ class MyApp extends StatelessWidget {
           return null; // Let other routes be handled normally
         },
         routes: {
+          '/': (context) => const StartupPage(),
           '/login': (context) => const LoginPage(),
           '/register': (context) => const RegisterPage(),
           '/onboard': (context) {

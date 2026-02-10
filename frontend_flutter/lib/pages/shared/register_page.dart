@@ -698,6 +698,31 @@ class _RegisterPageState extends State<RegisterPage>
             ),
             const SizedBox(height: 24),
 
+            // Back to Landing
+            Center(
+              child: TextButton.icon(
+                onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/',
+                  (route) => false,
+                ),
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: Colors.white70,
+                  size: 16,
+                ),
+                label: const Text(
+                  'BACK TO LANDING',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // Login / Forgot Password
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,

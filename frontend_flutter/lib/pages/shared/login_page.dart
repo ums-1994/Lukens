@@ -480,6 +480,31 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             ),
             const SizedBox(height: 24),
 
+            // Back to Landing
+            Center(
+              child: TextButton.icon(
+                onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/',
+                  (route) => false,
+                ),
+                icon: const Icon(
+                  Icons.arrow_back,
+                  color: Colors.white70,
+                  size: 16,
+                ),
+                label: const Text(
+                  'BACK TO LANDING',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // Register / Forgot Password
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
