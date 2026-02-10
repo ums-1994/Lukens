@@ -492,7 +492,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(25),
                   ),
                   elevation: 0,
                 ),
@@ -506,7 +506,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                         ),
                       )
                     : const Text(
-                        'Login',
+                        'LOGIN',
                         style: TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 16,
@@ -537,7 +537,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 TextButton(
                   onPressed: () => Navigator.pushNamed(context, '/register'),
                   child: const Text(
-                    'Register',
+                    'REGISTER',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white70,
@@ -555,7 +555,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                     );
                   },
                   child: const Text(
-                    'Forgot Password',
+                    'FORGOT PASSWORD',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Color(0xFFE9293A),
@@ -599,23 +599,23 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         filled: true,
         fillColor: const Color(0xFF2A2A2A),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Color(0xFFE9293A), width: 1),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         contentPadding:

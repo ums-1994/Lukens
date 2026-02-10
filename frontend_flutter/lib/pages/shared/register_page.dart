@@ -270,9 +270,13 @@ class _RegisterPageState extends State<RegisterPage>
 
         if (userProfile != null) {
           // Normalize roles for comparison (handle space vs underscore differences)
-          final backendRole = (userProfile['role']?.toString() ?? '').toLowerCase().trim().replaceAll(' ', '_');
-          final requestedRoleNormalized = role.toLowerCase().trim().replaceAll(' ', '_');
-          
+          final backendRole = (userProfile['role']?.toString() ?? '')
+              .toLowerCase()
+              .trim()
+              .replaceAll(' ', '_');
+          final requestedRoleNormalized =
+              role.toLowerCase().trim().replaceAll(' ', '_');
+
           // Update role in backend if needed
           if (backendRole != requestedRoleNormalized) {
             // Role might need to be updated in backend
@@ -648,7 +652,7 @@ class _RegisterPageState extends State<RegisterPage>
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: const Color(0xFF2A2A2A),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(25),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -663,7 +667,7 @@ class _RegisterPageState extends State<RegisterPage>
                   ),
                   const SizedBox(height: 10),
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(25),
                     child: LinearProgressIndicator(
                       value: _passwordStrength,
                       minHeight: 8,
@@ -681,7 +685,7 @@ class _RegisterPageState extends State<RegisterPage>
             // Register Button
             Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(25),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -706,7 +710,7 @@ class _RegisterPageState extends State<RegisterPage>
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(25),
                   ),
                   elevation: 0,
                 ),
@@ -720,7 +724,7 @@ class _RegisterPageState extends State<RegisterPage>
                         ),
                       )
                     : const Text(
-                        'Register',
+                        'REGISTER',
                         style: TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 16,
@@ -751,7 +755,7 @@ class _RegisterPageState extends State<RegisterPage>
                 TextButton(
                   onPressed: () => Navigator.pushNamed(context, '/login'),
                   child: const Text(
-                    'Login',
+                    'LOGIN',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white70,
@@ -764,7 +768,7 @@ class _RegisterPageState extends State<RegisterPage>
                     // TODO: Forgot password
                   },
                   child: const Text(
-                    'Forgot Password',
+                    'FORGOT PASSWORD',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Color(0xFFE9293A),
@@ -810,23 +814,23 @@ class _RegisterPageState extends State<RegisterPage>
         filled: true,
         fillColor: const Color(0xFF2A2A2A),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Color(0xFFE9293A), width: 1),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         contentPadding:
@@ -841,7 +845,7 @@ class _RegisterPageState extends State<RegisterPage>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(25),
       ),
       child: DropdownButtonFormField<String>(
         initialValue: _selectedRole,
