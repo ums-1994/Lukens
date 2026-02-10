@@ -879,8 +879,7 @@ def send_to_client(username=None, proposal_id=None):
 # ============================================================================
 
 @bp.post("/upload/image")
-@token_required
-def upload_image(username=None):
+def upload_image():
     """Upload an image to Cloudinary"""
     try:
         if 'file' not in request.files:
@@ -893,8 +892,7 @@ def upload_image(username=None):
         return {'detail': str(e)}, 500
 
 @bp.post("/upload/template")
-@token_required
-def upload_template(username=None):
+def upload_template():
     """Upload a template to Cloudinary"""
     try:
         if 'file' not in request.files:
