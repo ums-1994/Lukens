@@ -27,7 +27,10 @@ class AppSideNav extends StatelessWidget {
     {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
     {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
     {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
-    {'label': 'Approved Proposals', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
+    {
+      'label': 'Approved Proposals',
+      'icon': 'assets/images/Time Allocation_Approval_Blue.png'
+    },
     {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
   ];
 
@@ -44,8 +47,8 @@ class AppSideNav extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
+              Colors.black.withValues(alpha: 0.3),
+              Colors.black.withValues(alpha: 0.2),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
@@ -83,13 +86,17 @@ class AppSideNav extends StatelessWidget {
                             padding: EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
                               'Navigation',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 12),
                             ),
                           ),
                         Padding(
-                          padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 0 : 8),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: isCollapsed ? 0 : 8),
                           child: Icon(
-                            isCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
+                            isCollapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_left,
                             color: Colors.white,
                           ),
                         ),
@@ -121,7 +128,8 @@ class AppSideNav extends StatelessWidget {
                   children: [
                     if (!isCollapsed)
                       Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
                         height: 1,
                         color: const Color(0xFF2C3E50),
                       ),
@@ -189,7 +197,9 @@ class AppSideNav extends StatelessWidget {
                   ),
                 ),
               ),
-              if (active) const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+              if (active)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
             ],
           ),
         ),
@@ -234,6 +244,4 @@ class AppSideNav extends StatelessWidget {
       ),
     );
   }
-
 }
-
