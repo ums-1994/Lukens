@@ -705,7 +705,7 @@ class _RegisterPageState extends State<RegisterPage>
                 _buildSocialButton('assets/images/mslogo.png'),
                 const SizedBox(width: 16),
                 _buildSocialButton(
-                    'assets/images/LinkedIn_Social_Blue_Badge_White.png'),
+                    'assets/images/YouTube Social_White Badge_Blue.png'),
               ],
             ),
             const SizedBox(height: 24),
