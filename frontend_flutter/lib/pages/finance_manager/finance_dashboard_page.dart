@@ -874,6 +874,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           fontWeight: FontWeight.w600,
         ),
       );
+    );
   }
 
   @override
