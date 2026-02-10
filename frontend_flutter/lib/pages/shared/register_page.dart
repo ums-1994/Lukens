@@ -701,11 +701,7 @@ class _RegisterPageState extends State<RegisterPage>
             // Back to Landing
             Center(
               child: TextButton.icon(
-                onPressed: () => Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/',
-                  (route) => false,
-                ),
+                onPressed: () => Navigator.of(context).pop(),
                 icon: const Icon(
                   Icons.arrow_back,
                   color: Colors.white70,
