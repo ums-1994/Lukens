@@ -1062,12 +1062,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -2121,76 +2115,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
       ],
     );
-  }
-
-  void _navigateToPage(BuildContext context, String label) {
-    final isAdminUser = _isAdminUser();
-
-    if (isAdminUser) {
-      switch (label) {
-        case 'Dashboard':
-          Navigator.pushReplacementNamed(context, '/approver_dashboard');
-          break;
-        case 'Approvals':
-          Navigator.pushReplacementNamed(context, '/admin_approvals');
-          break;
-        case 'My Proposals':
-          Navigator.pushReplacementNamed(context, '/proposals');
-          break;
-        case 'Templates':
-          Navigator.pushReplacementNamed(context, '/templates');
-          break;
-        case 'Content Library':
-          Navigator.pushReplacementNamed(context, '/content_library');
-          break;
-        case 'Client Management':
-          Navigator.pushReplacementNamed(context, '/client_management');
-          break;
-        case 'Analytics':
-          // Already on analytics for admin
-          break;
-        case 'Approved Proposals':
-          Navigator.pushReplacementNamed(context, '/admin_approvals');
-          break;
-        case 'Analytics (My Pipeline)':
-          // Already here (legacy label)
-          break;
-        case 'Logout':
-          AuthService.logout();
-          Navigator.pushNamedAndRemoveUntil(
-              context, '/login', (Route<dynamic> route) => false);
-          break;
-      }
-    } else {
-      switch (label) {
-        case 'Dashboard':
-          Navigator.pushReplacementNamed(context, '/creator_dashboard');
-          break;
-        case 'My Proposals':
-          Navigator.pushReplacementNamed(context, '/proposals');
-          break;
-        case 'Templates':
-          Navigator.pushReplacementNamed(context, '/templates');
-          break;
-        case 'Content Library':
-          Navigator.pushReplacementNamed(context, '/content_library');
-          break;
-        case 'Client Management':
-          Navigator.pushReplacementNamed(context, '/client_management');
-          break;
-        case 'Approved Proposals':
-          Navigator.pushReplacementNamed(context, '/approved_proposals');
-          break;
-        case 'Analytics (My Pipeline)':
-          // Already here
-          break;
-        case 'Logout':
-          AuthService.logout();
-          Navigator.pushNamedAndRemoveUntil(
-              context, '/login', (Route<dynamic> route) => false);
-          break;
-      }
-    }
   }
 }
 
