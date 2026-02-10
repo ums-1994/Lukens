@@ -267,7 +267,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     colors: [
-                      const Color(0xFF2C3E50).withOpacity(0.1),
+                      const Color(0xFF2C3E50).withValues(alpha: 0.1),
                       Colors.transparent,
                     ],
                   ),
@@ -418,8 +418,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                       borderRadius: BorderRadius.circular(50),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFFD72638).withOpacity(
-                            _glowController.isAnimating
+                          color: const Color(0xFFD72638).withValues(
+                            alpha: _glowController.isAnimating
                                 ? _glowIntensity.value
                                 : 0.4,
                           ),
