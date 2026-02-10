@@ -598,233 +598,112 @@ class _DashboardPageState extends State<DashboardPage>
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Column(
+        child: Row(
           children: [
-            // Header
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _getHeaderTitle(userRole),
-                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                    ),
-                    Row(
-                      children: [
-                        _buildNotificationButton(app),
-                        const SizedBox(width: 20),
-                        ClipOval(
-                          child: Image.asset(
-                            'assets/images/User_Profile.png',
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _getUserName(app.currentUser),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              userRole,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              app.logout();
-                              AuthService.logout();
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => const [
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // Fixed Sidebar - Full Height
+            _buildFixedSidebar(context),
 
-            // Main Content with Sidebar
+            // Main Content Area
             Expanded(
-              child: Row(
+              child: Column(
                 children: [
-                  // Collapsible Sidebar with Glass Effect
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
+                  // Header
+                  Container(
+                    height: 70,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
                           Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.2),
+                          Colors.transparent,
                         ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      border: Border(
-                        right: BorderSide(
-                          color: PremiumTheme.glassWhiteBorder,
-                          width: 1,
-                        ),
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                       ),
                     ),
-                    child: SingleChildScrollView(
-                      child: Column(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 44,
+                          Text(
+                            _getHeaderTitle(userRole),
+                            style:
+                                PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                          ),
+                          Row(
+                            children: [
+                              _buildNotificationButton(app),
+                              const SizedBox(width: 20),
+                              Container(
+                                width: 48,
+                                height: 48,
                                 decoration: BoxDecoration(
-                                  color: PremiumTheme.glassWhite,
-                                  borderRadius: BorderRadius.circular(12),
+                                  shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: PremiumTheme.glassWhiteBorder,
-                                    width: 1,
+                                    color: const Color(0xFFE9293A)
+                                        .withOpacity(0.3),
+                                    width: 2,
                                   ),
                                 ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      Expanded(
-                                        child: const Padding(
-                                          padding: EdgeInsets.symmetric(
-                                              horizontal: 12),
-                                          child: Text(
-                                            'Navigation',
-                                            style: TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12),
-                                          ),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
+                                child: ClipOval(
+                                  child: Image.asset(
+                                    'assets/images/User_Profile.png',
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 10),
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _getUserName(app.currentUser),
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    userRole,
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 10),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert,
+                                    color: Colors.white),
+                                onSelected: (value) {
+                                  if (value == 'logout') {
+                                    app.logout();
+                                    AuthService.logout();
+                                    Navigator.pushNamed(context, '/login');
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => const [
+                                  PopupMenuItem<String>(
+                                    value: 'logout',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.logout),
+                                        SizedBox(width: 8),
+                                        Text('Logout'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              _currentPage == 'My Proposals',
-                              context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Client Management',
-                              context),
-                          _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approved Proposals',
-                              context),
-                          _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              _currentPage == 'Analytics (My Pipeline)',
-                              context),
-
-                          const SizedBox(height: 20),
-
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-
-                          const SizedBox(height: 12),
-
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
                         ],
                       ),
                     ),
                   ),
 
-                  // Content Area
+                  // Scrollable Content
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -844,11 +723,132 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                     ),
                   ),
+
+                  // Footer
+                  const Footer(),
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
 
-            const Footer(),
+  Widget _buildFixedSidebar(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isSidebarCollapsed ? 90.0 : 250.0,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.black.withOpacity(0.3),
+            Colors.black.withOpacity(0.2),
+          ],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        border: Border(
+          right: BorderSide(
+            color: PremiumTheme.glassWhiteBorder,
+            width: 1,
+          ),
+        ),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            // Toggle button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: InkWell(
+                onTap: _toggleSidebar,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.glassWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: PremiumTheme.glassWhiteBorder,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: _isSidebarCollapsed
+                        ? MainAxisAlignment.center
+                        : MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (!_isSidebarCollapsed)
+                        Expanded(
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'Navigation',
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                        ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: _isSidebarCollapsed ? 0 : 8),
+                        child: Icon(
+                          _isSidebarCollapsed
+                              ? Icons.keyboard_arrow_right
+                              : Icons.keyboard_arrow_left,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Navigation items
+            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+                _currentPage == 'Dashboard', context),
+            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
+                _currentPage == 'My Proposals', context),
+            _buildNavItem('Templates', 'assets/images/content_library.png',
+                _currentPage == 'Templates', context),
+            _buildNavItem(
+                'Content Library',
+                'assets/images/content_library.png',
+                _currentPage == 'Content Library',
+                context),
+            _buildNavItem(
+                'Client Management',
+                'assets/images/collaborations.png',
+                _currentPage == 'Client Management',
+                context),
+            _buildNavItem(
+                'Approved Proposals',
+                'assets/images/Time Allocation_Approval_Blue.png',
+                _currentPage == 'Approved Proposals',
+                context),
+            _buildNavItem(
+                'Analytics (My Pipeline)',
+                'assets/images/analytics.png',
+                _currentPage == 'Analytics (My Pipeline)',
+                context),
+            const SizedBox(height: 20),
+
+            // Divider
+            if (!_isSidebarCollapsed)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                height: 1,
+                color: const Color(0xFF2C3E50),
+              ),
+            const SizedBox(height: 12),
+
+            // Logout button
+            _buildNavItem(
+                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
+            const SizedBox(height: 20),
           ],
         ),
       ),

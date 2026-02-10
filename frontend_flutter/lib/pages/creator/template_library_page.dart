@@ -473,7 +473,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     );
   }
 
-  Widget _buildSidebar(BuildContext context) {
+  Widget _buildFixedSidebar(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       width: _isSidebarCollapsed ? 90.0 : 250.0,
@@ -544,27 +544,10 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
               ),
             ),
             const SizedBox(height: 12),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-                _currentPage == 'My Proposals', context),
             _buildNavItem('Templates', 'assets/images/content_library.png',
                 _currentPage == 'Templates', context),
-            _buildNavItem(
-                'Content Library',
-                'assets/images/content_library.png',
-                _currentPage == 'Content Library',
-                context),
-            _buildNavItem(
-                'Client Management',
-                'assets/images/collaborations.png',
-                _currentPage == 'Client Management',
-                context),
-            _buildNavItem(
-                'Approved Proposals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approved Proposals',
-                context),
+            _buildNavItem('My Templates', 'assets/images/My_Proposals.png',
+                _currentPage == 'My Templates', context),
             _buildNavItem(
                 'Analytics (My Pipeline)',
                 'assets/images/analytics.png',
@@ -707,9 +690,10 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 child: CircularProgressIndicator(color: PremiumTheme.teal))
             : Row(
                 children: [
-                  // Sidebar
-                  _buildSidebar(context),
-                  // Content Area
+                  // Fixed Sidebar - Full Height
+                  _buildFixedSidebar(context),
+
+                  // Main Content Area
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
