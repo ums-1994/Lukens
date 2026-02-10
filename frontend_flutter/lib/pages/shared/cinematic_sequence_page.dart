@@ -167,6 +167,19 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                         _buildSubheading(isMobile),
                         SizedBox(height: isMobile ? 40 : 56),
                         _buildCTAButtons(isMobile),
+                        SizedBox(height: isMobile ? 40 : 60),
+                        // Red Discs image
+                        Center(
+                          child: Image.asset(
+                            'assets/images/Red_Discs.png',
+                            width: 30,
+                            height: 30,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ),
