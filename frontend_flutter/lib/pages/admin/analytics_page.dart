@@ -14,6 +14,7 @@ import '../../services/asset_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/fixed_sidebar.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -642,6 +643,440 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return backendRole == 'admin' || backendRole == 'ceo';
   }
 
+  Widget _buildMetricCard(_MetricCardData metric) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withValues(alpha: 0.1),
+                Colors.white.withValues(alpha: 0.05),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: PremiumTheme.glassWhiteBorder,
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                metric.title,
+                style: PremiumTheme.bodyMedium.copyWith(
+                  color: PremiumTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                metric.value,
+                style: PremiumTheme.displayMedium.copyWith(fontSize: 28),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    metric.isPositive ? Icons.trending_up : Icons.trending_down,
+                    size: 16,
+                    color: metric.isPositive
+                        ? PremiumTheme.success
+                        : PremiumTheme.error,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    metric.change,
+                    style: TextStyle(
+                      color: metric.isPositive
+                          ? PremiumTheme.success
+                          : PremiumTheme.error,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    metric.subtitle,
+                    style: TextStyle(
+                      color: PremiumTheme.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLineChartData(_AnalyticsSnapshot analytics) {
+    return LineChartData(
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: false,
+        horizontalInterval: 10000,
+        getDrawingHorizontalLine: (value) {
+          return FlLine(
+            color: Colors.white.withValues(alpha: 0.1),
+            strokeWidth: 1,
+          );
+        },
+      ),
+      titlesData: FlTitlesData(
+        show: true,
+        rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 22,
+            interval: 1,
+            getTitlesWidget: (value, meta) {
+              const style = TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w500,
+                fontSize: 10,
+              );
+              return SideTitleWidget(
+                axisSide: meta.axisSide,
+                child: Text('Day ${value.toInt()}', style: style),
+              );
+            },
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 42,
+            interval: 10000,
+            getTitlesWidget: (value, meta) {
+              const style = TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w500,
+                fontSize: 10,
+              );
+              return SideTitleWidget(
+                axisSide: meta.axisSide,
+                child: Text(_formatCurrency(value), style: style),
+              );
+            },
+          ),
+        ),
+      ),
+      borderData: FlBorderData(
+        show: true,
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      minX: 0,
+      maxX: 30,
+      minY: 0,
+      maxY: 50000,
+      lineBarsData: [
+        LineChartBarData(
+          spots: List.generate(30, (index) {
+            final value = 10000 + (math.Random().nextDouble() * 30000);
+            return FlSpot(index.toDouble(), value);
+          }),
+          isCurved: true,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF3498DB), Color(0xFF2980B9)],
+          ),
+          barWidth: 3,
+          isStrokeCapRound: true,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(
+            show: true,
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF3498DB).withValues(alpha: 0.3),
+                const Color(0xFF3498DB).withValues(alpha: 0.1),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPieChartData(_AnalyticsSnapshot analytics) {
+    return PieChartData(
+      pieTouchData: PieTouchData(
+        touchCallback: (FlTouchEvent event, pieTouchResponse) {},
+      ),
+      borderData: FlBorderData(show: false),
+      sectionsSpace: 2,
+      centerSpaceRadius: 60,
+      sections: [
+        PieChartSectionData(
+          color: const Color(0xFF3498DB),
+          value: analytics.statusCounts['Draft'] ?? 0,
+          title: '${analytics.statusCounts['Draft'] ?? 0}',
+          radius: 50,
+          titleStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        PieChartSectionData(
+          color: const Color(0xFF2ECC71),
+          value: analytics.statusCounts['Sent'] ?? 0,
+          title: '${analytics.statusCounts['Sent'] ?? 0}',
+          radius: 50,
+          titleStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        PieChartSectionData(
+          color: const Color(0xFFE74C3C),
+          value: analytics.statusCounts['Won'] ?? 0,
+          title: '${analytics.statusCounts['Won'] ?? 0}',
+          radius: 50,
+          titleStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        PieChartSectionData(
+          color: const Color(0xFFF39C12),
+          value: analytics.statusCounts['Lost'] ?? 0,
+          title: '${analytics.statusCounts['Lost'] ?? 0}',
+          radius: 50,
+          titleStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegend(_AnalyticsSnapshot analytics) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLegendItem('Draft', const Color(0xFF3498DB),
+            analytics.statusCounts['Draft'] ?? 0),
+        const SizedBox(height: 8),
+        _buildLegendItem('Sent', const Color(0xFF2ECC71),
+            analytics.statusCounts['Sent'] ?? 0),
+        const SizedBox(height: 8),
+        _buildLegendItem(
+            'Won', const Color(0xFFE74C3C), analytics.statusCounts['Won'] ?? 0),
+        const SizedBox(height: 8),
+        _buildLegendItem('Lost', const Color(0xFFF39C12),
+            analytics.statusCounts['Lost'] ?? 0),
+      ],
+    );
+  }
+
+  Widget _buildLegendItem(String label, Color color, int count) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$label ($count)',
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimeFilterButton(String label, bool isSelected) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          // Update selected time filter
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF3498DB) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF3498DB)
+                : Colors.white.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white70,
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarChartData(_AnalyticsSnapshot analytics) {
+    return BarChartData(
+      alignment: BarChartAlignment.spaceAround,
+      maxY: 40000,
+      barTouchData: BarTouchData(
+        enabled: true,
+        touchTooltipData: BarTouchTooltipData(
+          getTooltipColor: (_) => Colors.black87,
+          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+            return BarTooltipItem(
+              _formatCurrency(rod.toY),
+              const TextStyle(color: Colors.white),
+            );
+          },
+        ),
+      ),
+      titlesData: FlTitlesData(
+        show: true,
+        rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            getTitlesWidget: (value, meta) {
+              const style = TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w500,
+                fontSize: 10,
+              );
+              const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+              if (value.toInt() >= 0 && value.toInt() < months.length) {
+                return SideTitleWidget(
+                  axisSide: meta.axisSide,
+                  child: Text(months[value.toInt()], style: style),
+                );
+              }
+              return const SideTitleWidget(child: Text('', style: style));
+            },
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            getTitlesWidget: (value, meta) {
+              const style = TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w500,
+                fontSize: 10,
+              );
+              return SideTitleWidget(
+                axisSide: meta.axisSide,
+                child: Text(_formatCurrency(value), style: style),
+              );
+            },
+          ),
+        ),
+      ),
+      borderData: FlBorderData(show: false),
+      barGroups: List.generate(6, (index) {
+        return BarChartGroupData(
+          x: index,
+          barRods: [
+            BarChartRodData(
+              toY: 10000 + math.Random().nextDouble() * 30000,
+              color: const Color(0xFF3498DB),
+              width: 22,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(4)),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client_management');
+        break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Analytics (My Pipeline)':
+        // Already on analytics page
+        break;
+      case 'Logout':
+        _handleLogout(context);
+        break;
+    }
+  }
+
+  void _handleLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                final app = Provider.of<AppState>(context, listen: false);
+                app.logout();
+                AuthService.logout();
+                Navigator.pushReplacementNamed(context, '/login');
+              },
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -653,318 +1088,256 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Column(
+        child: Row(
           children: [
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withValues(alpha: 0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Analytics Dashboard',
-                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+            // Fixed Sidebar - Full Height
+            FixedSidebar(
+              currentPage: 'Analytics (My Pipeline)',
+              isCollapsed: _isSidebarCollapsed,
+              onToggle: _toggleSidebar,
+              onNavigate: (label) => _navigateToPage(context, label),
+              onLogout: () => _handleLogout(context),
+            ),
+
+            // Main Content Area
+            Expanded(
+              child: Column(
+                children: [
+                  // Header
+                  Container(
+                    height: 70,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.transparent,
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
                     ),
-                    Row(
-                      children: [
-                        Container(
-                          width: 35,
-                          height: 35,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF3498DB),
-                            shape: BoxShape.circle,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Analytics Dashboard',
+                            style:
+                                PremiumTheme.titleLarge.copyWith(fontSize: 22),
                           ),
-                          child: Center(
-                            child: Text(
-                              userInitial,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                          Row(
+                            children: [
+                              Container(
+                                width: 35,
+                                height: 35,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF3498DB),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    userInitial,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          userName,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => [
-                            const PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
+                              const SizedBox(width: 10),
+                              Text(
+                                userName,
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              const SizedBox(width: 10),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert,
+                                    color: Colors.white),
+                                onSelected: (value) {
+                                  if (value == 'logout') {
+                                    Navigator.pushNamed(context, '/login');
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => [
+                                  const PopupMenuItem<String>(
+                                    value: 'logout',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.logout),
+                                        SizedBox(width: 8),
+                                        Text('Logout'),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: Row(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: _isSidebarCollapsed ? 0 : 8,
-                                      ),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          if (isAdminUser) ...[
-                            _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Approvals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Analytics',
-                              'assets/images/analytics.png',
-                              true,
-                              context,
-                            ),
-                          ] else ...[
-                            _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              true,
-                              context,
-                            ),
-                          ],
-                          const SizedBox(height: 20),
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-                          const SizedBox(height: 12),
-                          _buildNavItem(
-                            'Logout',
-                            'assets/images/Logout_KhonoBuzz.png',
-                            false,
-                            context,
-                          ),
-                          const SizedBox(height: 20),
                         ],
                       ),
                     ),
                   ),
+
+                  // Content Area
                   Expanded(
-                    child: CustomScrollbar(
-                      controller: _scrollController,
-                      child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: CustomScrollbar(
                         controller: _scrollController,
-                        padding: const EdgeInsets.only(right: 24),
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
+                        child: SingleChildScrollView(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(right: 24),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Analytics Dashboard',
-                                        style: PremiumTheme.displayMedium
-                                            .copyWith(fontSize: 28),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Comprehensive business intelligence and performance metrics',
-                                        style: PremiumTheme.bodyLarge.copyWith(
-                                          color: PremiumTheme.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Row(
-                                    children: [
-                                      _buildGlassDropdown(),
-                                      const SizedBox(width: 12),
-                                      _buildGlassButton(
-                                        'Export',
-                                        Icons.download,
-                                        _showExportDialog,
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                              // Metrics Cards
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 24),
+                                child: Row(
+                                  children: metrics
+                                      .map((metric) => _buildMetricCard(metric))
+                                      .toList(),
+                                ),
                               ),
-                              const SizedBox(height: 32),
-                              Row(
-                                children: [
-                                  for (int i = 0; i < metrics.length; i++) ...[
-                                    Expanded(
-                                      child: _buildGlassMetricCard(
-                                        metrics[i].title,
-                                        metrics[i].value,
-                                        metrics[i].change,
-                                        metrics[i].isPositive,
-                                        metrics[i].subtitle,
-                                      ),
-                                    ),
-                                    if (i != metrics.length - 1)
-                                      const SizedBox(width: 20),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 32),
-                              _buildGlassChartCard(
-                                'Revenue Analytics',
-                                _buildRevenueChart(analytics.monthlyPoints),
-                                height: 350,
-                              ),
-                              const SizedBox(height: 32),
+
+                              // Charts Section
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  // Left Column - Line Chart
                                   Expanded(
                                     flex: 2,
-                                    child: _buildGlassChartCard(
-                                      'Proposal Status',
-                                      _buildProposalStatusChart(
-                                          analytics.statusCounts),
-                                      height: 320,
+                                    child: GlassContainer(
+                                      borderRadius: 20,
+                                      padding: const EdgeInsets.all(20),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text(
+                                                'Proposal Pipeline',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 6),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF3498DB)
+                                                      .withValues(alpha: 0.2),
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                ),
+                                                child: const Text(
+                                                  'Last 30 Days',
+                                                  style: TextStyle(
+                                                    color: Color(0xFF3498DB),
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 20),
+                                          SizedBox(
+                                            height: 300,
+                                            child: LineChart(
+                                              _buildLineChartData(analytics),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 20),
+                                  // Right Column - Pie Chart
                                   Expanded(
-                                    child: _buildGlassChartCard(
-                                      'Win Rate',
-                                      _buildWinRatePieChart(analytics.winRate,
-                                          analytics.lossRate),
-                                      height: 320,
+                                    child: GlassContainer(
+                                      borderRadius: 20,
+                                      padding: const EdgeInsets.all(20),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Status Distribution',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 20),
+                                          SizedBox(
+                                            height: 200,
+                                            child: PieChart(
+                                              _buildPieChartData(analytics),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 20),
+                                          _buildLegend(analytics),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 32),
-                              _buildGlassPerformanceTable(
-                                  analytics.recentProposals),
-                              const SizedBox(height: 32),
+                              const SizedBox(height: 20),
+
+                              // Bottom Section - Bar Chart
+                              GlassContainer(
+                                borderRadius: 20,
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'Monthly Performance',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Row(
+                                          children: [
+                                            _buildTimeFilterButton(
+                                                'Month', true),
+                                            const SizedBox(width: 8),
+                                            _buildTimeFilterButton(
+                                                'Quarter', false),
+                                            const SizedBox(width: 8),
+                                            _buildTimeFilterButton(
+                                                'Year', false),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 20),
+                                    SizedBox(
+                                      height: 300,
+                                      child: BarChart(
+                                        _buildBarChartData(analytics),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
