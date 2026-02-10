@@ -1,11 +1,17 @@
 import 'dart:convert';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'template_builder.dart';
 import '../../theme/premium_theme.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/footer.dart';
+import '../../widgets/custom_scrollbar.dart';
 
 class TemplateLibraryPage extends StatefulWidget {
   const TemplateLibraryPage({Key? key}) : super(key: key);
@@ -474,100 +480,299 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   }
 
   Widget _buildFixedSidebar(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmall = screenWidth < 768;
+    final effectiveCollapsed = isSmall ? true : _isSidebarCollapsed;
+
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: _isSidebarCollapsed ? 90.0 : 250.0,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
+      duration: AppColors.animationDuration,
+      width: effectiveCollapsed
+          ? AppColors.collapsedWidth
+          : AppColors.expandedWidth,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.backgroundColor
+                .withValues(alpha: AppColors.backgroundOpacity),
+            border: Border(
+              right: BorderSide(
+                color: AppColors.borderColor,
+                width: 1,
+              ),
+            ),
           ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
+          child: Column(
+            children: [
+              // Header Section
+              SizedBox(
+                height: AppColors.headerHeight,
+                child: Padding(
+                  padding: AppSpacing.sidebarHeaderPadding,
+                  child: InkWell(
+                    onTap: () {
+                      if (!isSmall) {
+                        setState(
+                            () => _isSidebarCollapsed = !_isSidebarCollapsed);
+                      }
+                    },
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
+                    child: Container(
+                      height: AppColors.itemHeight,
+                      decoration: BoxDecoration(
+                        color: AppColors.hoverColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: effectiveCollapsed
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (!effectiveCollapsed)
+                            Expanded(
+                              child: Text(
+                                'Navigation',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          Icon(
+                            effectiveCollapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_left,
+                            color: AppColors.textPrimary,
+                            size: 20,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
+                ),
+              ),
+
+              // Navigation Items
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
                     children: [
-                      if (!_isSidebarCollapsed)
-                        Expanded(
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 12),
-                            ),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
+                      const SizedBox(height: 8),
+                      _buildSidebarNavItem(
+                        label: 'Templates',
+                        assetPath: 'assets/images/content_library.png',
+                        isSelected: _currentPage == 'Templates',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'Templates'),
                       ),
+                      _buildSidebarNavItem(
+                        label: 'My Templates',
+                        assetPath: 'assets/images/My_Proposals.png',
+                        isSelected: _currentPage == 'My Templates',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'My Templates'),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Divider
+                      if (!effectiveCollapsed)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          height: 1,
+                          color: AppColors.borderColor,
+                        ),
+                      const SizedBox(height: 12),
+
+                      // Logout
+                      _buildSidebarNavItem(
+                        label: 'Logout',
+                        assetPath: 'assets/images/Logout_KhonoBuzz.png',
+                        isSelected: false,
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _handleLogout(context),
+                      ),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _buildNavItem('Templates', 'assets/images/content_library.png',
-                _currentPage == 'Templates', context),
-            _buildNavItem('My Templates', 'assets/images/My_Proposals.png',
-                _currentPage == 'My Templates', context),
-            _buildNavItem(
-                'Analytics (My Pipeline)',
-                'assets/images/analytics.png',
-                _currentPage == 'Analytics (My Pipeline)',
-                context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: const Color(0xFF2C3E50),
-              ),
-            const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
-            const SizedBox(height: 20),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildSidebarNavItem({
+    required String label,
+    required String assetPath,
+    required bool isSelected,
+    required bool isCollapsed,
+    required VoidCallback onTap,
+    bool showProfileIndicator = false,
+  }) {
+    bool hovering = false;
+
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => hovering = true),
+            onExit: (_) => setState(() => hovering = false),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: AnimatedContainer(
+                duration: AppColors.animationDuration,
+                height: AppColors.itemHeight,
+                decoration: BoxDecoration(
+                  color: _getItemColor(isSelected, hovering, isCollapsed),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: _getItemShadow(isSelected, hovering, isCollapsed),
+                ),
+                child: isCollapsed
+                    ? _buildCollapsedItem(
+                        assetPath, isSelected, showProfileIndicator)
+                    : _buildExpandedItem(label, assetPath, isSelected),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCollapsedItem(
+      String assetPath, bool isSelected, bool showProfileIndicator) {
+    return Center(
+      child: Stack(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: ClipOval(
+              child: AssetService.buildImageWidget(
+                isSelected
+                    ? assetPath
+                    : assetPath, // Use red asset when selected and collapsed
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          if (showProfileIndicator)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: AppColors.activeColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.backgroundColor,
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpandedItem(String label, String assetPath, bool isSelected) {
+    return Padding(
+      padding: AppSpacing.sidebarItemPadding,
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: ClipOval(
+              child: AssetService.buildImageWidget(
+                assetPath, // Always use white asset when expanded
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isSelected
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (isSelected)
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 12,
+              color: AppColors.textPrimary,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _getItemColor(bool isSelected, bool hovering, bool isCollapsed) {
+    if (isCollapsed) {
+      return Colors.transparent; // All items transparent when collapsed
+    }
+
+    if (isSelected) {
+      return AppColors.activeColor;
+    }
+
+    if (hovering) {
+      return AppColors.hoverColor;
+    }
+
+    return Colors.transparent;
+  }
+
+  List<BoxShadow> _getItemShadow(
+      bool isSelected, bool hovering, bool isCollapsed) {
+    if (isCollapsed) {
+      return []; // No shadow when collapsed
+    }
+
+    if (isSelected) {
+      return [
+        BoxShadow(
+          color: AppColors.activeShadowColor,
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+
+    if (hovering) {
+      return [
+        BoxShadow(
+          color: AppColors.hoverShadowColor,
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+
+    return [];
   }
 
   Widget _buildNavItem(
