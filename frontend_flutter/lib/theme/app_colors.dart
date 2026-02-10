@@ -21,7 +21,7 @@ class AppColors {
   static const double itemHeight = 44.0;
 
   // 🎭 Visual Effects
-  static const double backgroundOpacity = 0.85;
+  static const double backgroundOpacity = 0.95;
   static const double borderOpacity = 0.1;
   static const double shadowOpacity = 0x35; // 21% in hex
 

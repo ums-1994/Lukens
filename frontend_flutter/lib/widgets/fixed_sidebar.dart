@@ -38,14 +38,14 @@ class _FixedSidebarState extends State<FixedSidebar> {
           ? AppColors.collapsedWidth
           : AppColors.expandedWidth,
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
             color: AppColors.backgroundColor
                 .withValues(alpha: AppColors.backgroundOpacity),
             border: Border(
               right: BorderSide(
-                color: AppColors.borderColor,
+                color: Colors.white.withValues(alpha: 0.1),
                 width: 1,
               ),
             ),
