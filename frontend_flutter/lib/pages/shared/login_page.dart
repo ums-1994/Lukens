@@ -521,10 +521,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             Center(
               child: GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
-                child: Image.asset(
-                  'assets/images/BackButton-Red.png',
+                child: Container(
+                  width: 40,
                   height: 40,
-                  fit: BoxFit.contain,
+                  alignment: Alignment.center,
+                  child: Image.asset(
+                    'assets/images/BackButton-Red.png',
+                    height: 24,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ),
