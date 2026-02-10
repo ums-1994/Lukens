@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:js' as js;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
@@ -29,9 +30,12 @@ String get baseUrl {
     }
   }
 
-  // Align with AuthService: always use Render backend by default so
-  // authentication and uploads share the same token/host
-  return AuthService.baseUrl;
+  // Default URLs based on environment
+  if (kDebugMode) {
+    return 'http://127.0.0.1:5000';
+  }
+  // Production default (Render backend URL)
+  return 'https://lukens-wp8w.onrender.com';
 }
 
 class AppState extends ChangeNotifier {
@@ -42,6 +46,8 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> dashboardCounts = {};
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
+
+  String get _apiBaseUrl => '$baseUrl/api';
 
   Future<void> init() async {
     // IMPORTANT: Sync token from AuthService on startup
@@ -226,16 +232,22 @@ class AppState extends ChangeNotifier {
 
   Future<bool> updateContent(
     int contentId, {
+    String? key,
     String? label,
     String? content,
     String? category,
+    bool? isFolder,
+    int? parentId,
     String? publicId,
   }) async {
     try {
       final body = {
+        if (key != null) "key": key,
         if (label != null) "label": label,
         if (content != null) "content": content,
         if (category != null) "category": category,
+        if (isFolder != null) "is_folder": isFolder,
+        if (parentId != null) "parent_id": parentId,
         if (publicId != null) "public_id": publicId,
       };
 
@@ -256,6 +268,26 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       print('Error updating content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> resendVerification(String email) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$_apiBaseUrl/resend-verification"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": email}),
+      );
+
+      if (r.statusCode == 200) {
+        return true;
+      }
+
+      debugPrint('Error resending verification: ${r.statusCode} - ${r.body}');
+      return false;
+    } catch (e) {
+      debugPrint('Error resending verification: $e');
       return false;
     }
   }
@@ -669,7 +701,7 @@ class AppState extends ChangeNotifier {
   Future<void> trackClientView(String proposalId) async {
     try {
       await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/client_view"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/client_view"),
         headers: _headers,
       );
     } catch (e) {
@@ -680,7 +712,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getPendingApprovals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals/pending_approval"),
+        Uri.parse("$baseUrl/api/proposals/pending_approval"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -696,7 +728,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getMyProposals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals/my_proposals"),
+        Uri.parse("$baseUrl/api/proposals/my_proposals"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -713,7 +745,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
     final r = await http.post(
-      Uri.parse("$baseUrl/proposals/$id/create_esign_request"),
+      Uri.parse("$baseUrl/api/proposals/$id/create_esign_request"),
       headers: _headers,
       body: jsonEncode({}),
     );
@@ -754,6 +786,25 @@ class AppState extends ChangeNotifier {
       return null;
     } catch (e) {
       debugPrint('DocuSign send error: $e');
+      return null;
+    }
+  }
+
+  Future<Uint8List?> fetchProposalPdfPreviewBytes({
+    required int proposalId,
+  }) async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/proposals/$proposalId/pdf/preview"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return Uint8List.fromList(r.bodyBytes);
+      }
+      debugPrint('PDF preview failed: ${r.statusCode} - ${r.body}');
+      return null;
+    } catch (e) {
+      debugPrint('PDF preview error: $e');
       return null;
     }
   }
@@ -851,7 +902,7 @@ class AppState extends ChangeNotifier {
 
   Future<String?> login(String username, String password) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/login"),
+      Uri.parse("$_apiBaseUrl/login"),
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: "username=$username&password=$password",
     );
@@ -895,7 +946,7 @@ class AppState extends ChangeNotifier {
   Future<String?> register(String username, String email, String password,
       String fullName, String role) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/register"),
+      Uri.parse("$_apiBaseUrl/register"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "username": username,
@@ -920,7 +971,7 @@ class AppState extends ChangeNotifier {
   Future<void> fetchCurrentUser() async {
     if (authToken == null) return;
     final r = await http.get(
-      Uri.parse("$baseUrl/me"),
+      Uri.parse("$_apiBaseUrl/me"),
       headers: {"Authorization": "Bearer $authToken"},
     );
     if (r.statusCode == 200) {
@@ -930,7 +981,7 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> verifyEmail(String token) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/verify-email"),
+      Uri.parse("$_apiBaseUrl/verify-email"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"token": token}),
     );
@@ -959,7 +1010,7 @@ class AppState extends ChangeNotifier {
 
   Future<String?> resendVerificationEmail(String email) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/resend-verification"),
+      Uri.parse("$_apiBaseUrl/resend-verification"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"email": email}),
     );

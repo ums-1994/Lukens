@@ -652,8 +652,8 @@ def client_approve_proposal(proposal_id):
                     # Use a return URL that points back to the client proposals page
                     from api.utils.helpers import get_frontend_url
                     frontend_url = get_frontend_url()
-                    # Return to client portal after signing
-                    return_url = f"{frontend_url}/#/client/proposals?token={token}&signed=true"
+                    # Use collaboration router to land in correct client viewer
+                    return_url = f"{frontend_url}/#/collaborate?token={token}&signed=true"
                     
                     envelope_result = create_docusign_envelope(
                         proposal_id=proposal_id,
@@ -909,8 +909,8 @@ def get_client_signing_url(proposal_id):
                 # Since we're on HTTP, DocuSign will open in a new tab (not embedded)
                 # Use a return URL that points back to the client proposals page
                 frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
-                # Return to client portal after signing
-                return_url = f"{frontend_url}/#/client/proposals?token={token}&signed=true"
+                # Use collaboration router to land in correct client viewer
+                return_url = f"{frontend_url}/#/collaborate?token={token}&signed=true"
                 
                 envelope_result = create_docusign_envelope(
                     proposal_id=proposal_id,

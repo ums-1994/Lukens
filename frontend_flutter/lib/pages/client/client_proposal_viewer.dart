@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:signature/signature.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web/web.dart' as web;
 import '../../api.dart';
@@ -35,7 +35,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   String? _signingUrl;
   String? _signatureStatus;
   List<Map<String, dynamic>> _comments = [];
-  List<Map<String, dynamic>> _activityLog = [];
   final TextEditingController _commentController = TextEditingController();
   bool _isSubmittingComment = false;
   String? _currentSessionId;
@@ -46,18 +45,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   int _selectedTab = 0; // 0: Content, 1: Comments
 
-  bool _isEditMode = false;
-  bool _isSavingEdits = false;
-  final TextEditingController _sectionTitleController = TextEditingController();
-  final TextEditingController _sectionBodyController = TextEditingController();
-
-  bool _lockLoading = false;
-  String? _lockedByEmail;
-  DateTime? _lockExpiresAt;
-  Timer? _lockHeartbeatTimer;
-  static const Duration _lockHeartbeatInterval = Duration(seconds: 12);
-  static const int _lockTtlSeconds = 35;
-
   String? _pdfObjectUrl;
   bool _isPdfLoading = false;
   String? _pdfError;
@@ -67,40 +54,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   bool _pdfIframeListenersAttached = false;
 
   static const Duration _networkTimeout = Duration(seconds: 20);
-  static const Duration _pdfLoadTimeout = Duration(seconds: 60);
-
-  late SignatureController _signatureController;
-  double _signatureStrokeWidth = 3;
-
-  final TextEditingController _signerNameController = TextEditingController();
-  final TextEditingController _signerTitleController = TextEditingController();
-  final TextEditingController _signedDateController = TextEditingController();
-
-  void _recreateSignatureController({bool keepPoints = true}) {
-    final existingPoints = keepPoints ? _signatureController.points : null;
-    _signatureController.dispose();
-    _signatureController = SignatureController(
-      penStrokeWidth: _signatureStrokeWidth,
-      penColor: Colors.black,
-      exportBackgroundColor: Colors.white,
-    );
-    if (existingPoints != null && existingPoints.isNotEmpty) {
-      try {
-        _signatureController.points = List.of(existingPoints);
-      } catch (_) {
-        // If points is not settable in this package version, ignore.
-      }
-    }
-  }
 
   @override
   void initState() {
     super.initState();
-    _signatureController = SignatureController(
-      penStrokeWidth: _signatureStrokeWidth,
-      penColor: Colors.black,
-      exportBackgroundColor: Colors.white,
-    );
     _pdfViewType = 'pdf-preview-${DateTime.now().microsecondsSinceEpoch}';
     _initPdfView();
     _checkIfReturnedFromSigning();
@@ -182,7 +139,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       }
 
       if (decoded is Map) {
-        final map = Map<String, dynamic>.from(decoded as Map);
+        final map = Map<String, dynamic>.from(decoded);
         return _parseSectionsFromContent(map);
       }
 
@@ -225,76 +182,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     });
   }
 
-  void _onSectionChanged(int newIndex) {
-    if (_sections.isEmpty) return;
-    if (newIndex < 0 || newIndex >= _sections.length) return;
-
-    final now = DateTime.now();
-
-    // Log time spent on previous section before switching
-    if (_sectionViewStart != null && newIndex != _currentSectionIndex) {
-      final prevIndex = _currentSectionIndex.clamp(0, _sections.length - 1);
-      final previousSection = _sections[prevIndex];
-      final prevTitle =
-          (previousSection['title']?.toString().trim().isNotEmpty ?? false)
-              ? previousSection['title'].toString().trim()
-              : 'Section ${prevIndex + 1}';
-
-      final durationSeconds = now.difference(_sectionViewStart!).inSeconds;
-      final safeDuration = durationSeconds <= 0 ? 1 : durationSeconds;
-
-      _logEvent('view_section', metadata: {
-        'section': prevTitle,
-        'duration': safeDuration,
-      });
-    }
-
-    setState(() {
-      _currentSectionIndex = newIndex;
-      _sectionViewStart = now;
-    });
-
-    if (_isEditMode) {
-      _syncEditorsFromCurrentSection();
-      // Move lock to the new section.
-      _stopLockHeartbeat(release: true);
-      _claimOrRenewLock().then((ok) {
-        if (ok) _startLockHeartbeat();
-      });
-    } else {
-      // Refresh banner state.
-      _refreshSectionLock();
-    }
-  }
-
-  Widget _buildSectionLockBanner() {
-    if (_sections.isEmpty) return const SizedBox.shrink();
-    if (_lockLoading) return const SizedBox.shrink();
-    if (!_isLockedByOther) return const SizedBox.shrink();
-
-    final who = _lockedByEmail ?? 'another user';
-    final until = _lockExpiresAt;
-    final untilLabel = until != null
-        ? until
-            .toLocal()
-            .toIso8601String()
-            .replaceAll('T', ' ')
-            .substring(0, 19)
-        : null;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.orange.shade50,
-      child: Text(
-        untilLabel != null
-            ? 'Currently being edited by $who (lock expires $untilLabel)'
-            : 'Currently being edited by $who',
-        style: TextStyle(color: Colors.orange.shade900, fontSize: 13),
-      ),
-    );
-  }
-
   void _checkIfReturnedFromSigning() {
     // Check if we're returning from DocuSign signing
     if (kIsWeb) {
@@ -320,289 +207,15 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   @override
   void dispose() {
-    _signatureController.dispose();
     _logCurrentSectionView();
     _endSession();
     _logEvent('close');
-    _commentController.dispose();
-    _sectionTitleController.dispose();
-    _sectionBodyController.dispose();
-    _signerNameController.dispose();
-    _signerTitleController.dispose();
-    _signedDateController.dispose();
-    _stopLockHeartbeat(release: true);
     super.dispose();
-  }
-
-  Uri _sectionLockUri(int sectionIndex) {
-    return Uri.parse(
-      '$baseUrl/api/client/proposals/${widget.proposalId}/sections/$sectionIndex/lock',
-    ).replace(queryParameters: {
-      'token': widget.accessToken,
-    });
-  }
-
-  bool get _isLockedByOther {
-    if (_lockedByEmail == null) return false;
-    final now = DateTime.now();
-    if (_lockExpiresAt != null && now.isAfter(_lockExpiresAt!)) return false;
-    return true;
-  }
-
-  Future<void> _refreshSectionLock() async {
-    if (!mounted) return;
-    setState(() {
-      _lockLoading = true;
-    });
-    try {
-      final resp = await http
-          .get(_sectionLockUri(_currentSectionIndex))
-          .timeout(_networkTimeout);
-      if (resp.statusCode != 200) {
-        throw Exception('HTTP ${resp.statusCode}');
-      }
-      final decoded = jsonDecode(resp.body);
-      if (!mounted) return;
-
-      final locked = (decoded is Map && decoded['locked'] == true);
-      final lockedBy = locked ? (decoded['locked_by_email']?.toString()) : null;
-      DateTime? expiresAt;
-      try {
-        final raw = locked ? decoded['expires_at']?.toString() : null;
-        if (raw != null && raw.trim().isNotEmpty) {
-          expiresAt = DateTime.tryParse(raw);
-        }
-      } catch (_) {}
-
-      setState(() {
-        _lockedByEmail = lockedBy;
-        _lockExpiresAt = expiresAt;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _lockedByEmail = null;
-        _lockExpiresAt = null;
-      });
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _lockLoading = false;
-      });
-    }
-  }
-
-  Future<bool> _claimOrRenewLock() async {
-    try {
-      final resp = await http
-          .post(
-            _sectionLockUri(_currentSectionIndex),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode({'ttl_seconds': _lockTtlSeconds}),
-          )
-          .timeout(_networkTimeout);
-
-      if (resp.statusCode == 409) {
-        try {
-          final decoded = jsonDecode(resp.body);
-          final lockedBy =
-              (decoded is Map ? decoded['locked_by_email']?.toString() : null);
-          final raw =
-              (decoded is Map ? decoded['expires_at']?.toString() : null);
-          final expiresAt = raw != null ? DateTime.tryParse(raw) : null;
-          if (!mounted) return false;
-          setState(() {
-            _lockedByEmail = lockedBy;
-            _lockExpiresAt = expiresAt;
-          });
-        } catch (_) {}
-        return false;
-      }
-
-      if (resp.statusCode != 200) {
-        throw Exception('HTTP ${resp.statusCode}');
-      }
-
-      final decoded = jsonDecode(resp.body);
-      final lockedBy =
-          (decoded is Map ? decoded['locked_by_email']?.toString() : null);
-      final raw = (decoded is Map ? decoded['expires_at']?.toString() : null);
-      final expiresAt = raw != null ? DateTime.tryParse(raw) : null;
-
-      if (!mounted) return false;
-      setState(() {
-        _lockedByEmail = lockedBy;
-        _lockExpiresAt = expiresAt;
-      });
-      return true;
-    } catch (_) {
-      return true;
-    }
-  }
-
-  void _startLockHeartbeat() {
-    _lockHeartbeatTimer?.cancel();
-    _lockHeartbeatTimer = Timer.periodic(_lockHeartbeatInterval, (_) async {
-      if (!_isEditMode) return;
-      await _claimOrRenewLock();
-    });
-  }
-
-  void _stopLockHeartbeat({required bool release}) {
-    _lockHeartbeatTimer?.cancel();
-    _lockHeartbeatTimer = null;
-    if (!release) return;
-    // Fire-and-forget best-effort release.
-    try {
-      http.delete(
-        _sectionLockUri(_currentSectionIndex),
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode({'token': widget.accessToken}),
-      );
-    } catch (_) {}
-  }
-
-  void _syncEditorsFromCurrentSection() {
-    if (_sections.isEmpty) return;
-    final index = _currentSectionIndex.clamp(0, _sections.length - 1);
-    final section = _sections[index];
-    final title = (section['title'] ?? '').toString();
-    final body = (section['content'] ?? section['text'] ?? '').toString();
-    _sectionTitleController.text = title;
-    _sectionBodyController.text = body;
-  }
-
-  Future<void> _enterEditMode() async {
-    if (_sections.isEmpty) return;
-    await _refreshSectionLock();
-    final ok = await _claimOrRenewLock();
-    if (!ok) {
-      if (!mounted) return;
-      final who = _lockedByEmail ?? 'another user';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('This section is currently being edited by $who.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _isEditMode = true;
-    });
-    _syncEditorsFromCurrentSection();
-    _startLockHeartbeat();
-  }
-
-  void _cancelEditMode() {
-    setState(() {
-      _isEditMode = false;
-      _isSavingEdits = false;
-    });
-    _syncEditorsFromCurrentSection();
-    _stopLockHeartbeat(release: true);
-  }
-
-  Future<void> _saveCurrentSectionEdits() async {
-    if (_sections.isEmpty) return;
-    if (_isSavingEdits) return;
-
-    final idx = _currentSectionIndex.clamp(0, _sections.length - 1);
-    final newTitle = _sectionTitleController.text.trim();
-    final newBody = _sectionBodyController.text;
-
-    if (newTitle.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Section title is required.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSavingEdits = true;
-    });
-
-    // Update local model first for snappy UX.
-    final updatedSections = List<Map<String, dynamic>>.from(
-      _sections.map((s) => Map<String, dynamic>.from(s)),
-    );
-    updatedSections[idx]['title'] = newTitle;
-    updatedSections[idx]['content'] = newBody;
-    updatedSections[idx].remove('text');
-
-    try {
-      final uri = Uri.parse(
-        '$baseUrl/api/client/proposals/${widget.proposalId}/content',
-      ).replace(queryParameters: {
-        'token': widget.accessToken,
-      });
-
-      final resp = await http
-          .patch(
-            uri,
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode({'sections': updatedSections}),
-          )
-          .timeout(_networkTimeout);
-
-      if (resp.statusCode != 200) {
-        String msg = 'Save failed (HTTP ${resp.statusCode})';
-        try {
-          final decoded = jsonDecode(resp.body);
-          if (decoded is Map && decoded['detail'] != null) {
-            msg = decoded['detail'].toString();
-          }
-        } catch (_) {}
-        throw Exception(msg);
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _sections = updatedSections;
-        _isEditMode = false;
-      });
-
-      _stopLockHeartbeat(release: true);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Saved'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      _logEvent('client_edit_saved', metadata: {'section_index': idx});
-
-      // Refresh proposal (signature/status/comments) and PDF preview.
-      await _loadProposal();
-      if (kIsWeb) {
-        await _loadPdfPreview();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Save failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _isSavingEdits = false;
-      });
-    }
   }
 
   Future<void> _loadPdfPreview() async {
     if (!kIsWeb) return;
-
+    _initPdfView();
     setState(() {
       _isPdfLoading = true;
       _pdfError = null;
@@ -613,7 +226,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       final url =
           '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}';
 
-      // Probe the endpoint first. Iframe load events are unreliable for PDFs
+// Probe the endpoint first. Iframe load events are unreliable for PDFs
       // and can lead to an endless spinner. A small Range request gives us a
       // fast, deterministic signal.
       http.Response probe;
@@ -655,31 +268,21 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           _isPdfLoading = false;
           _pdfError = details.isNotEmpty
               ? details
-              : 'Failed to load PDF preview (HTTP $status). Use Export PDF to open it in a new tab.';
+              : 'PDF not available. Use Export PDF to open it in a new tab.';
         });
         return;
       }
 
+      // Probe succeeded - load the full PDF in the iframe.
       _pdfObjectUrl = url;
-      if (_pdfIframe != null) {
-        _pdfIframe!.src = url;
-      } else {
-        // The iframe is created lazily by the HtmlElementView factory.
-        // Schedule a post-frame update so we set src as soon as it exists.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final iframe = _pdfIframe;
-          if (!mounted) return;
-          if (iframe != null && iframe.src != url) {
-            iframe.src = url;
-          }
-        });
-      }
-      // Stop spinner immediately after a successful probe. The browser will
-      // continue rendering the PDF inside the iframe.
-      if (!mounted) return;
-      setState(() {
-        _isPdfLoading = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final iframe = _pdfIframe;
+        if (iframe != null && mounted) {
+          iframe.src = url;
+        }
       });
+
+      // _isPdfLoading will flip to false in the iframe onLoad listener.
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -707,6 +310,59 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       return;
     }
     await launchUrlString(url);
+  }
+
+  Future<void> _uploadSignedBytes({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Uploading signed document...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    final uri = Uri.parse(
+      '$baseUrl/api/client/proposals/${widget.proposalId}/upload-signed',
+    );
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['token'] = widget.accessToken
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename,
+        ),
+      );
+
+    try {
+      final streamedResponse = await req.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Signed document uploaded successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh proposal to show the updated signature
+        await _loadProposal();
+      } else {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _uploadSignedDocument() async {
@@ -781,65 +437,17 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     }
   }
 
-  Future<void> _uploadSignedBytes({
-    required Uint8List bytes,
-    required String filename,
-    String? signerName,
-    String? signerTitle,
-    String? signedDate,
-  }) async {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Uploading signed document...')),
-    );
-
-    final uri = Uri.parse(
-      '$baseUrl/api/client/proposals/${widget.proposalId}/upload-signed',
-    );
-    final req = http.MultipartRequest('POST', uri)
-      ..fields['token'] = widget.accessToken
-      ..fields['signer_name'] = (signerName ?? '').trim()
-      ..fields['signer_title'] = (signerTitle ?? '').trim()
-      ..fields['signed_date'] = (signedDate ?? '').trim()
-      ..files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: filename,
-        ),
-      );
-
-    final streamed = await req.send();
-    final body = await streamed.stream.bytesToString();
-    if (streamed.statusCode != 200) {
-      throw Exception(body.isNotEmpty ? body : 'Upload failed');
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Signed document uploaded'),
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    _logEvent('upload_signed');
-    await _loadProposal();
-  }
-
   Future<void> _startSession() async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/api/client/session/start'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'token': widget.accessToken,
-              'proposal_id': widget.proposalId,
-            }),
-          )
-          .timeout(_networkTimeout);
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/client/session/start'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'token': widget.accessToken,
+          'proposal_id': widget.proposalId,
+        }),
+      );
+      if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
           _currentSessionId = data['session_id'];
@@ -935,20 +543,11 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
                   ?.map((c) => Map<String, dynamic>.from(c))
                   .toList() ??
               [];
-          _activityLog = (data['activity'] as List?)
-                  ?.map((a) => Map<String, dynamic>.from(a))
-                  .toList() ??
-              [];
           _sections = parsedSections;
           _currentSectionIndex = 0;
           _sectionViewStart = _sections.isNotEmpty ? DateTime.now() : null;
           _isLoading = false;
         });
-
-        // Best-effort: load lock state for the initial section.
-        if (_sections.isNotEmpty) {
-          await _refreshSectionLock();
-        }
 
         await _loadPdfPreview();
       } else {
@@ -1136,8 +735,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           // Header
           _buildHeader(proposal, status),
 
+          _buildSignaturePanel(),
+
           // Action Buttons - Always show if proposal is not signed
-          if (canTakeAction) _buildActionBar(),
+          if (canTakeAction && !kIsWeb) _buildActionBar(),
 
           // Content
           Expanded(
@@ -1205,38 +806,11 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           _buildStatusBadge(status),
           const SizedBox(width: 12),
           if (_selectedTab == 0)
-            TextButton.icon(
-              onPressed: _sections.isEmpty || _isLockedByOther
-                  ? null
-                  : (_isEditMode
-                      ? (_isSavingEdits ? null : _saveCurrentSectionEdits)
-                      : _enterEditMode),
-              icon: Icon(
-                _isEditMode ? Icons.save : Icons.edit,
-                color: Colors.white,
-                size: 18,
-              ),
-              label: Text(
-                _isEditMode ? (_isSavingEdits ? 'Saving...' : 'Save') : 'Edit',
-                style: const TextStyle(color: Colors.white),
-              ),
+            IconButton(
+              tooltip: 'Refresh Preview',
+              onPressed: _loadPdfPreview,
+              icon: const Icon(Icons.refresh, color: Colors.white),
             ),
-          if (_selectedTab == 0 && _isEditMode) ...[
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: _isSavingEdits ? null : _cancelEditMode,
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          IconButton(
-            tooltip: 'Refresh Preview',
-            onPressed: _loadPdfPreview,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
         ],
       ),
     );
@@ -1288,7 +862,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           if (signedUrl.trim().isNotEmpty)
             TextButton.icon(
               onPressed: () async {
-                _logEvent('view_signed');
                 if (kIsWeb) {
                   web.window.open(signedUrl, '_blank');
                   return;
@@ -1363,251 +936,30 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           tooltip: 'Upload Signed',
           onPressed: _uploadSignedDocument,
         ),
-        const SizedBox(height: 10),
-        _toolButton(
-          icon: Icons.gesture,
-          tooltip: 'Sign in App',
-          onPressed: _openInAppSignatureModal,
-          primary: !canSign,
-        ),
         if (signedUrl.trim().isNotEmpty) ...[
           const SizedBox(height: 10),
           _toolButton(
             icon: Icons.open_in_new,
             tooltip: 'View Signed',
-            onPressed: () async {
-              _logEvent('view_signed');
+            onPressed: () {
               if (kIsWeb) {
                 web.window.open(signedUrl, '_blank');
                 return;
               }
-              await launchUrlString(signedUrl);
+              launchUrlString(signedUrl);
             },
           ),
         ],
+        if (canSign) ...[
+          const SizedBox(height: 10),
+          _toolButton(
+            icon: Icons.draw,
+            tooltip: 'Sign with DocuSign',
+            onPressed: _openSigningModal,
+            primary: true,
+          ),
+        ],
       ],
-    );
-  }
-
-  Future<void> _openInAppSignatureModal() async {
-    if (!mounted) return;
-
-    _signatureController.clear();
-
-    // Default signer fields from any existing signature data
-    _signerNameController.text =
-        (_signatureData?['signer_name'] ?? '').toString();
-    _signerTitleController.text =
-        (_signatureData?['signer_title'] ?? '').toString();
-    _signedDateController.text = '';
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        bool isSaving = false;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> saveDrawnSignature() async {
-              if (isSaving) return;
-              setDialogState(() => isSaving = true);
-              try {
-                final bytes = await _signatureController.toPngBytes();
-                if (bytes == null || bytes.isEmpty) {
-                  throw Exception('Please draw your signature first');
-                }
-                await _uploadSignedBytes(
-                  bytes: bytes,
-                  filename: 'signature.png',
-                  signerName: _signerNameController.text,
-                  signerTitle: _signerTitleController.text,
-                  signedDate: _signedDateController.text,
-                );
-                if (context.mounted) Navigator.of(context).pop();
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(e.toString()),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              } finally {
-                if (context.mounted) setDialogState(() => isSaving = false);
-              }
-            }
-
-            Future<void> uploadExistingSignature() async {
-              if (isSaving) return;
-              setDialogState(() => isSaving = true);
-              try {
-                Uint8List? bytes;
-                String filename = 'signature.png';
-
-                if (kIsWeb) {
-                  final res = await FilePicker.platform.pickFiles(
-                    type: FileType.custom,
-                    allowedExtensions: ['png', 'jpg', 'jpeg'],
-                    withData: true,
-                  );
-                  if (res == null || res.files.isEmpty) return;
-                  final file = res.files.first;
-                  bytes = file.bytes;
-                  filename = file.name;
-                } else {
-                  final image = await ImagePicker()
-                      .pickImage(source: ImageSource.gallery);
-                  if (image == null) return;
-                  bytes = await image.readAsBytes();
-                  filename = image.name;
-                }
-
-                if (bytes == null || bytes.isEmpty) {
-                  throw Exception('Could not read selected signature file');
-                }
-
-                await _uploadSignedBytes(
-                  bytes: bytes,
-                  filename: filename,
-                  signerName: _signerNameController.text,
-                  signerTitle: _signerTitleController.text,
-                  signedDate: _signedDateController.text,
-                );
-                if (context.mounted) Navigator.of(context).pop();
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(e.toString()),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              } finally {
-                if (context.mounted) setDialogState(() => isSaving = false);
-              }
-            }
-
-            return AlertDialog(
-              title: const Text('Sign Proposal'),
-              content: SizedBox(
-                width: 720,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      height: 240,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Signature(
-                          controller: _signatureController,
-                          backgroundColor: Colors.white,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _signerNameController,
-                      enabled: !isSaving,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _signerTitleController,
-                      enabled: !isSaving,
-                      decoration: const InputDecoration(
-                        labelText: 'Title',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _signedDateController,
-                      enabled: !isSaving,
-                      decoration: const InputDecoration(
-                        labelText: 'Date (YYYY-MM-DD)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Text('Stroke'),
-                        Expanded(
-                          child: Slider(
-                            value: _signatureStrokeWidth,
-                            min: 1,
-                            max: 8,
-                            divisions: 7,
-                            label: _signatureStrokeWidth.toStringAsFixed(0),
-                            onChanged: (v) {
-                              setState(() {
-                                _signatureStrokeWidth = v;
-                                _recreateSignatureController();
-                              });
-                              setDialogState(() {});
-                            },
-                          ),
-                        ),
-                        Text(_signatureStrokeWidth.toStringAsFixed(0)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: isSaving
-                              ? null
-                              : () {
-                                  _signatureController.clear();
-                                  setDialogState(() {});
-                                },
-                          icon: const Icon(Icons.clear),
-                          label: const Text('Clear'),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton.icon(
-                          onPressed: isSaving ? null : uploadExistingSignature,
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text('Use Existing'),
-                        ),
-                        const Spacer(),
-                        TextButton(
-                          onPressed: isSaving
-                              ? null
-                              : () => Navigator.of(context).pop(),
-                          child: const Text('Cancel'),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed: isSaving ? null : saveDrawnSignature,
-                          icon: isSaving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.check),
-                          label: const Text('Save Signature'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -1870,252 +1222,55 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     }
   }
 
-  Widget _buildTabBar() {
-    return Container(
-      color: Colors.white,
-      child: Row(
-        children: [
-          _buildTab(0, 'Proposal Content', Icons.description),
-          _buildTab(1, 'Comments (${_comments.length})', Icons.comment),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTab(int index, String label, IconData icon) {
-    final isSelected = _selectedTab == index;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _selectedTab = index),
+  Widget _buildProposalContent(Map<String, dynamic> proposal) {
+    if (!kIsWeb) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color:
-                    isSelected ? const Color(0xFF3498DB) : Colors.transparent,
-                width: 3,
-              ),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isSelected ? const Color(0xFF3498DB) : Colors.grey,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  color: isSelected ? const Color(0xFF3498DB) : Colors.grey,
-                ),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProposalContent(Map<String, dynamic> proposal) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title
-            Text(
-              proposal['title'] ?? 'Untitled',
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Shared by ${proposal['owner_name'] ?? 'Unknown'}',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-
-            const Divider(height: 40),
-
-            // Content
-            _buildContentSections(proposal['content']),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContentSections(dynamic content) {
-    if (_sections.isNotEmpty) {
-      // Render banner above section content.
-      final total = _sections.length;
-      final index = _currentSectionIndex.clamp(0, total - 1);
-      final currentSection = _sections[index];
-      final sectionTitle =
-          (currentSection['title']?.toString().trim().isNotEmpty ?? false)
-              ? currentSection['title'].toString().trim()
-              : 'Section ${index + 1}';
-      final sectionContent = currentSection['content']?.toString() ??
-          currentSection['text']?.toString() ??
-          '';
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionLockBanner(),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Sections',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+              Text(
+                proposal['title'] ?? 'Untitled',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
                   color: Color(0xFF2C3E50),
                 ),
               ),
+              const SizedBox(height: 8),
               Text(
-                'Section ${index + 1} of $total',
+                'Shared by ${proposal['owner_name'] ?? 'Unknown'}',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
                   color: Colors.grey[600],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: List.generate(total, (i) {
-                final section = _sections[i];
-                final title =
-                    (section['title']?.toString().trim().isNotEmpty ?? false)
-                        ? section['title'].toString().trim()
-                        : 'Section ${i + 1}';
-                final isSelected = i == index;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(
-                      title,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) {
-                        _onSectionChanged(i);
-                      }
-                    },
-                  ),
-                );
-              }),
-            ),
-          ),
-          const SizedBox(height: 24),
-          if (_isEditMode) ...[
-            TextField(
-              controller: _sectionTitleController,
-              decoration: const InputDecoration(
-                labelText: 'Section title',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _sectionBodyController,
-              maxLines: 14,
-              decoration: const InputDecoration(
-                labelText: 'Section content',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ] else ...[
-            Text(
-              sectionTitle,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SelectableText(
-              sectionContent,
-              style: const TextStyle(
-                fontSize: 15,
-                height: 1.8,
-                color: Color(0xFF34495E),
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton.icon(
-                onPressed:
-                    index > 0 ? () => _onSectionChanged(index - 1) : null,
-                icon: const Icon(Icons.chevron_left),
-                label: const Text('Previous section'),
-              ),
-              TextButton.icon(
-                onPressed: index < total - 1
-                    ? () => _onSectionChanged(index + 1)
-                    : null,
-                label: const Text('Next section'),
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-        ],
-      );
-    }
-
-    if (content == null || content.toString().isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.description_outlined,
-                  size: 64, color: Colors.grey[400]),
+              const Divider(height: 40),
+              const Text('PDF preview is available on web.'),
               const SizedBox(height: 16),
-              Text(
-                'No content available',
-                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              OutlinedButton.icon(
+                onPressed: _exportPdf,
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('Export PDF'),
               ),
               const SizedBox(height: 8),
-              Text(
-                'The proposal content has not been added yet.',
-                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                textAlign: TextAlign.center,
+              OutlinedButton.icon(
+                onPressed: _exportWord,
+                icon: const Icon(Icons.description),
+                label: const Text('Export Word'),
               ),
             ],
           ),
@@ -2123,152 +1278,64 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       );
     }
 
-    // Try to parse as JSON
-    try {
-      if (content is String) {
-        if (content.trim().isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: Text(
-                'No content available',
-                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-              ),
-            ),
-          );
-        }
-        final decoded = jsonDecode(content);
-        return _buildContentSections(decoded);
-      } else if (content is Map || content is List) {
-        return _buildContentSections(_parseSectionsFromContent(content));
-      } else {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: SelectableText(
-            content.toString(),
-            style: const TextStyle(fontSize: 15, height: 1.8),
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error parsing content: $e');
-      return Padding(
-        padding: const EdgeInsets.all(24),
+    if (_isPdfLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_pdfError != null) {
+      return Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'Error parsing content',
-              style: TextStyle(fontSize: 16, color: Colors.red[600]),
-            ),
-            const SizedBox(height: 8),
-            SelectableText(
-              content.toString(),
-              style: const TextStyle(fontSize: 15, height: 1.8),
+            Text('Failed to load preview: $_pdfError'),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _loadPdfPreview,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
             ),
           ],
         ),
       );
     }
-  }
 
-  Widget _buildActivityTimeline() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
+    if (_pdfObjectUrl == null) {
+      return Center(
+        child: ElevatedButton.icon(
+          onPressed: _loadPdfPreview,
+          icon: const Icon(Icons.picture_as_pdf),
+          label: const Text('Load PDF Preview'),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Activity Timeline',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (_activityLog.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(40),
-                  child: Column(
-                    children: [
-                      Icon(Icons.timeline, size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No activity yet',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              ..._activityLog
-                  .map((activity) => _buildActivityItem(activity))
-                  .toList(),
-          ],
-        ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildActivityItem(Map<String, dynamic> activity) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(16),
+      child: Stack(
         children: [
           Container(
-            width: 40,
-            height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF3498DB).withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.circle,
-              size: 12,
-              color: Color(0xFF3498DB),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity['action'] ?? '',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  activity['description'] ?? '',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(activity['timestamp']),
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox.expand(
+                child: HtmlElementView(viewType: _pdfViewType),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 14,
+            top: 20,
+            child: _buildFloatingActionToolbar(),
           ),
         ],
       ),
