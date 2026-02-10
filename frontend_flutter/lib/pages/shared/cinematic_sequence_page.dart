@@ -119,7 +119,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           Positioned.fill(
             child: ColorFiltered(
               colorFilter: ColorFilter.mode(
-                Colors.black.withOpacity(0.4),
+                Colors.black.withValues(alpha: 0.4),
                 BlendMode.darken,
               ),
               child: _buildBackgroundLayers(),
@@ -210,7 +210,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),

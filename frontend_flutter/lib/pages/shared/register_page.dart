@@ -389,7 +389,7 @@ class _RegisterPageState extends State<RegisterPage>
           Positioned.fill(
             child: ColorFiltered(
               colorFilter: ColorFilter.mode(
-                Colors.black.withOpacity(0.4),
+                Colors.black.withValues(alpha: 0.4),
                 BlendMode.darken,
               ),
               child: _buildBackgroundLayers(),
@@ -478,7 +478,7 @@ class _RegisterPageState extends State<RegisterPage>
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),
@@ -490,15 +490,15 @@ class _RegisterPageState extends State<RegisterPage>
     return Container(
       constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 500),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withOpacity(0.95),
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE9293A).withOpacity(0.3),
+          color: const Color(0xFFE9293A).withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFE9293A).withOpacity(0.2),
+            color: const Color(0xFFE9293A).withValues(alpha: 0.2),
             blurRadius: 40,
             spreadRadius: 0,
           ),
@@ -669,7 +669,7 @@ class _RegisterPageState extends State<RegisterPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE9293A).withOpacity(0.4),
+                    color: const Color(0xFFE9293A).withValues(alpha: 0.4),
                     blurRadius: 20,
                     spreadRadius: 2,
                   ),
