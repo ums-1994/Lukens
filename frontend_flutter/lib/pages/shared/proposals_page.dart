@@ -889,64 +889,6 @@ class _ProposalsPageState extends State<ProposalsPage>
     );
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/home');
-        break;
-      case 'My Proposals':
-        // Already on proposals page
-        break;
-      case 'Templates':
-        // Templates functionality - redirect to content library for now
-        Navigator.pushReplacementNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Approved Proposals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
-        break;
-      case 'Analytics (My Pipeline)':
-        Navigator.pushReplacementNamed(context, '/analytics');
-        break;
-      case 'Logout':
-        _handleLogout(context, context.read<AppState>());
-        break;
-    }
-  }
-
-  void _handleLogout(BuildContext context, AppState app) {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   String _getUserName(Map<String, dynamic>? user) {
     if (user == null) return 'User';
 
