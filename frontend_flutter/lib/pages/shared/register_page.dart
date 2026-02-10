@@ -30,12 +30,6 @@ class _RegisterPageState extends State<RegisterPage>
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
   double _passwordStrength = 0.0;
-  Map<String, bool> _criteria = {
-    'minLength': false,
-    'uppercase': false,
-    'number': false,
-    'special': false,
-  };
 
   late final AnimationController _frameController;
   late final AnimationController _parallaxController;
@@ -116,12 +110,6 @@ class _RegisterPageState extends State<RegisterPage>
         .where((e) => e)
         .length;
     setState(() {
-      _criteria = {
-        'minLength': hasMinLength,
-        'uppercase': hasUppercase,
-        'number': hasNumber,
-        'special': hasSpecial,
-      };
       _passwordStrength = passed / 4.0;
     });
   }

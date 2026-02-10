@@ -37,7 +37,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     });
 
     try {
-      final result = await SmtpAuthService.verifyEmail(token: widget.token!);
+      await SmtpAuthService.verifyEmail(token: widget.token!);
 
       if (mounted) {
         setState(() {
@@ -228,4 +228,3 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     );
   }
 }
-

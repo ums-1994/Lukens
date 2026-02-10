@@ -241,63 +241,6 @@ class AIAnalysisService {
     return _getMockAnalysis(proposalData);
   }
 
-  // Convert backend AI response to UI format
-  static Map<String, dynamic> _convertToUIFormat(
-      Map<String, dynamic> analysis) {
-    final issues = <Map<String, dynamic>>[];
-
-    // Convert backend issues to UI format
-    if (analysis['issues'] != null) {
-      for (final issue in analysis['issues']) {
-        issues.add({
-          'type': issue['category'] ?? 'ai_analysis',
-          'title': issue['section'] ?? 'Issue',
-          'description': issue['description'] ?? '',
-          'points': _severityToPoints(issue['severity']),
-          'priority': issue['severity'] ?? 'info',
-          'action': issue['recommendation'] ?? 'Review and fix',
-        });
-      }
-    }
-
-    // Calculate risk score
-    int riskScore = analysis['risk_score'] ?? 0;
-
-    // Determine status
-    String status;
-    if (analysis['can_release'] == true) {
-      status = 'Ready';
-    } else if (riskScore <= 30) {
-      status = 'At Risk';
-    } else {
-      status = 'Blocked';
-    }
-
-    return {
-      'riskScore': riskScore,
-      'status': status,
-      'issues': issues,
-      'summary': analysis['summary'] ?? '',
-      'required_actions': analysis['required_actions'] ?? [],
-      'kb_recommendations': analysis['kb_recommendations'] ?? {},
-    };
-  }
-
-  static int _severityToPoints(String? severity) {
-    switch (severity) {
-      case 'critical':
-        return 10;
-      case 'high':
-        return 7;
-      case 'medium':
-        return 5;
-      case 'low':
-        return 3;
-      default:
-        return 5;
-    }
-  }
-
   // Mock analysis (fallback when AI is not configured)
   static Map<String, dynamic> _getMockAnalysis(
       Map<String, dynamic> proposalData) {
