@@ -114,96 +114,64 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
       body: Stack(
-        fit: StackFit.expand,
         children: [
-          // Animated background layers with crossfade
-          _buildBackgroundLayers(),
-
-          // Fixed header with centered logo
-          Positioned(
-            top: 40,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Image.asset(
-                  'assets/images/2026.png',
-                  height: 100,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Text(
-                      '✕ Khonology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 50,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
+          // Background image with dark overlay
+          Positioned.fill(
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withOpacity(0.4),
+                BlendMode.darken,
               ),
+              child: _buildBackgroundLayers(),
             ),
           ),
-
-          // Dark gradient overlay for text contrast
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.black.withOpacity(0.4),
-                  Colors.black.withOpacity(0.6),
-                  Colors.black.withOpacity(0.5),
-                ],
-              ),
-            ),
-          ),
-
-          // Floating geometric shapes (parallax) - desktop only
-          if (!isMobile) _buildFloatingShapes(),
-
-          // Main content
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isMobile ? 24 : 80,
-                  vertical: isMobile
-                      ? 120
-                      : 160, // Increased top padding for fixed header
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: size.height - (isMobile ? 80 : 120),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Animated headline
-                      _buildAnimatedHeadline(isMobile),
-
-                      SizedBox(height: isMobile ? 24 : 40),
-
-                      // Subheading
-                      _buildSubheading(isMobile),
-
-                      SizedBox(height: isMobile ? 40 : 56),
-
-                      // CTA buttons
-                      _buildCTAButtons(isMobile),
-                    ],
+          // Main content with fixed header
+          Positioned.fill(
+            child: Column(
+              children: [
+                // FIXED HEADER SECTION (never scrolls)
+                const SizedBox(height: 48), // Top safe area/padding
+                Center(
+                  child: Image.asset(
+                    // LOGO - Fixed position
+                    'assets/images/2026.png',
+                    height: 160, // Fixed height
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Text(
+                        '✕ Khonology',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 80,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      );
+                    },
                   ),
                 ),
-              ),
+                const SizedBox(height: 24), // Space after logo
+                // SCROLLABLE CONTENT SECTION
+                Expanded(
+                  // Takes remaining space
+                  child: SingleChildScrollView(
+                    // Scrollable area
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Landing page content that scrolls
+                        _buildAnimatedHeadline(isMobile),
+                        SizedBox(height: isMobile ? 24 : 40),
+                        _buildSubheading(isMobile),
+                        SizedBox(height: isMobile ? 40 : 56),
+                        _buildCTAButtons(isMobile),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -247,83 +215,6 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           },
         ),
       ],
-    );
-  }
-
-  Widget _buildFloatingShapes() {
-    return AnimatedBuilder(
-      animation: _parallaxController,
-      builder: (context, child) {
-        return Stack(
-          children: [
-            // Triangle 1 - Top Left
-            Positioned(
-              left: 120 +
-                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 +
-                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
-              child: Transform.rotate(
-                angle: _parallaxController.value * 2 * math.pi,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
-                  size: const Size(70, 70),
-                ),
-              ),
-            ),
-
-            // Triangle 2 - Top Right
-            Positioned(
-              right: 140 +
-                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
-                      50),
-              top: 220 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
-                      35),
-              child: Transform.rotate(
-                angle: -_parallaxController.value * 2 * math.pi * 0.8,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
-                  size: const Size(90, 90),
-                ),
-              ),
-            ),
-
-            // Triangle 3 - Bottom Left
-            Positioned(
-              left: 200 +
-                  (math.sin(_parallaxController.value * 2 * math.pi + 3) * 35),
-              bottom: 150 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 3) * 25),
-              child: Transform.rotate(
-                angle: _parallaxController.value * 2 * math.pi * 0.6,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.03)),
-                  size: const Size(60, 60),
-                ),
-              ),
-            ),
-
-            // Triangle 4 - Center Right
-            Positioned(
-              right: 180 +
-                  (math.sin(_parallaxController.value * 2 * math.pi + 4) * 45),
-              top: 400 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 4) * 40),
-              child: Transform.rotate(
-                angle: -_parallaxController.value * 2 * math.pi * 0.7,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
-                  size: const Size(80, 80),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 

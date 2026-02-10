@@ -262,56 +262,62 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
-        fit: StackFit.expand,
         children: [
-          // Use same background as landing page
-          _buildBackgroundLayers(),
-
-          // Floating shapes - desktop only
-          if (!isMobile) _buildFloatingShapes(),
-
-          // Fixed header with logo
-          Positioned(
-            top: 40,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Image.asset(
-                  'assets/images/2026.png',
-                  height: 100,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Text(
-                      '✕ Khonology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 50,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
+          // Background image with dark overlay
+          Positioned.fill(
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withOpacity(0.4),
+                BlendMode.darken,
               ),
+              child: _buildBackgroundLayers(),
             ),
           ),
 
-          // Floating login card
-          Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 16 : 40,
-                vertical: isMobile
-                    ? 120
-                    : 160, // Increased top padding for fixed header
-              ),
-              child: _buildLoginCard(isMobile),
+          // Main content with fixed header
+          Positioned.fill(
+            child: Column(
+              children: [
+                // FIXED HEADER SECTION (never scrolls)
+                const SizedBox(height: 48), // Top safe area/padding
+                Center(
+                  child: Image.asset(
+                    // LOGO - Fixed position
+                    'assets/images/2026.png',
+                    height: 160, // Fixed height
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Text(
+                        '✕ Khonology',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 80,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24), // Space after logo
+
+                // SCROLLABLE CONTENT SECTION
+                Expanded(
+                  // Takes remaining space
+                  child: SingleChildScrollView(
+                    // Scrollable area
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Login form content that scrolls
+                        _buildLoginCard(isMobile),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -355,48 +361,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           },
         ),
       ],
-    );
-  }
-
-  Widget _buildFloatingShapes() {
-    return AnimatedBuilder(
-      animation: _parallaxController,
-      builder: (context, child) {
-        return Stack(
-          children: [
-            Positioned(
-              left: 120 +
-                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 +
-                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
-              child: Transform.rotate(
-                angle: _parallaxController.value * 2 * math.pi,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
-                  size: const Size(70, 70),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 140 +
-                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
-                      50),
-              top: 220 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
-                      35),
-              child: Transform.rotate(
-                angle: -_parallaxController.value * 2 * math.pi * 0.8,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
-                  size: const Size(90, 90),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 
