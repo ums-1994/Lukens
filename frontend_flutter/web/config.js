@@ -16,7 +16,10 @@ window.APP_CONFIG = {
     // Default based on runtime hostname
     const hostname = (window.location && window.location.hostname) ? window.location.hostname : '';
     const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const defaultUrl = isLocalHost ? 'http://127.0.0.1:5000' : 'https://lukens-wp8w.onrender.com';
+    // Your backend is hosted on Render; when running the UI locally, default to Render too.
+    // If you *do* want a local backend, set `window.APP_API_URL` (or `window.REACT_APP_API_URL`)
+    // to something like `http://127.0.0.1:5000` before this script runs.
+    const defaultUrl = isLocalHost ? 'https://lukens-wp8w.onrender.com' : 'https://lukens-wp8w.onrender.com';
     console.log('🌐 Using default API URL:', defaultUrl);
     return defaultUrl;
   })(),
