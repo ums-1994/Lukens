@@ -40,6 +40,10 @@ class _DashboardPageState extends State<DashboardPage>
     // Start collapsed
     _animationController.value = 1.0;
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _enforceAccess();
+    });
+
     // Refresh data when dashboard loads (after AppState is ready)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Ensure AppState has the token before refreshing
@@ -52,6 +56,23 @@ class _DashboardPageState extends State<DashboardPage>
       await _refreshData();
       await _loadRiskData(app);
     });
+  }
+
+  void _enforceAccess() {
+    AuthService.restoreSessionFromStorage();
+    final role = (AuthService.currentUser?['role'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
+
+    if (role == 'financial manager') {
+      Navigator.of(context).pushReplacementNamed('/financial_manager_dashboard');
+      return;
+    }
+    if (role == 'admin' || role == 'ceo' || role == 'approver') {
+      Navigator.of(context).pushReplacementNamed('/approver_dashboard');
+      return;
+    }
   }
 
   Future<void> _refreshData() async {
@@ -171,7 +192,7 @@ class _DashboardPageState extends State<DashboardPage>
       String token, String proposalId) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/analyze-risks'),
+        Uri.parse('$baseUrl/api/risk-gate/analyze'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -219,10 +240,12 @@ class _DashboardPageState extends State<DashboardPage>
     }
 
     Navigator.of(context).pushNamed(
-      '/blank-document',
+      '/compose',
       arguments: {
-        'proposalId': proposalId,
-        'proposalTitle': proposalTitle,
+        'id': proposalId,
+        'title': proposalTitle,
+        'readOnly': false,
+        'requireVersionDescription': false,
       },
     );
   }
@@ -582,13 +605,7 @@ class _DashboardPageState extends State<DashboardPage>
     // Map backend role to display name
     final backendRole =
         app.currentUser?['role']?.toString().toLowerCase() ?? 'manager';
-    final userRole = backendRole == 'manager' ||
-            backendRole == 'financial manager' ||
-            backendRole == 'creator'
-        ? 'Manager'
-        : backendRole == 'admin' || backendRole == 'ceo'
-            ? 'Admin'
-            : 'Manager'; // Default to Manager
+    final userRole = backendRole.trim().isEmpty ? 'manager' : backendRole.trim();
 
     print('Dashboard - Current User: ${app.currentUser}');
     print('Dashboard - User Role: $userRole');

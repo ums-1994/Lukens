@@ -11,6 +11,7 @@ import json
 import requests
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
+
 from dotenv import load_dotenv
 
 from api.utils.ai_safety import AISafetyError, enforce_safe_for_external_ai, sanitize_for_external_ai
@@ -101,6 +102,18 @@ class AIService:
                 json=payload,
                 timeout=60
             )
+            if response.status_code >= 400:
+                body = response.text
+                try:
+                    parsed = response.json()
+                    if isinstance(parsed, dict):
+                        body = json.dumps(parsed)
+                except Exception:
+                    pass
+                raise Exception(
+                    f"OpenRouter API error ({response.status_code}): {body}"
+                )
+
             response.raise_for_status()
 
             result = response.json()

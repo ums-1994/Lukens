@@ -32,25 +32,23 @@ class ApiService {
         print('⚠️ ApiService: Could not read API URL from config: $e');
       }
     }
-    // Check if we're in production (not localhost)
+
     if (kIsWeb) {
       final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
-
-        if (isProduction) {
-          print(
-              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
+      final isLocalHost = hostname == 'localhost' || hostname == '127.0.0.1';
+      if (isLocalHost) {
+        print('🌐 ApiService: Using local API URL: http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
+
+      print(
+          '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+      return 'https://lukens-wp8w.onrender.com';
     }
-    // Default to Render backend (production)
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+
+    // Non-web fallback
+    print('🌐 ApiService: Using local API URL: http://127.0.0.1:5000');
+    return 'http://127.0.0.1:5000';
   }
 
   // Get headers with Firebase token
@@ -688,7 +686,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/generate'),
+        Uri.parse('$baseUrl/api/ai/generate'),
         headers: _getHeaders(token),
         body: json.encode({
           'prompt': prompt,
@@ -716,7 +714,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/improve'),
+        Uri.parse('$baseUrl/api/ai/improve'),
         headers: _getHeaders(token),
         body: json.encode({
           'content': content,
@@ -742,7 +740,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/analyze-risks'),
+        Uri.parse('$baseUrl/api/risk-gate/analyze'),
         headers: _getHeaders(token),
         body: json.encode({
           'proposal_id': proposalId,
@@ -767,7 +765,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/generate-full-proposal'),
+        Uri.parse('$baseUrl/api/ai/generate-full-proposal'),
         headers: _getHeaders(token),
         body: json.encode({
           'prompt': prompt,

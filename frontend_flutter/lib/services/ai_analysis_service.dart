@@ -1,10 +1,19 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import 'auth_service.dart';
 
 class AIAnalysisService {
   static String get _baseUrl => ApiService.baseUrl;
   static String? _authToken;
+
+  static String? get _effectiveToken {
+    final token = _authToken;
+    if (token != null && token.trim().isNotEmpty) return token.trim();
+    final fallback = AuthService.token;
+    if (fallback != null && fallback.trim().isNotEmpty) return fallback.trim();
+    return null;
+  }
 
   // Set authentication token
   static void setAuthToken(String token) {
@@ -57,7 +66,7 @@ class AIAnalysisService {
   // Check if AI is configured (check backend status)
   static Future<bool> get isConfigured async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/ai/status'));
+      final response = await http.get(Uri.parse('$_baseUrl/api/ai/status'));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['ai_enabled'] == true;
@@ -74,7 +83,7 @@ class AIAnalysisService {
     try {
       final headers = {
         'Content-Type': 'application/json',
-        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+        if (_effectiveToken != null) 'Authorization': 'Bearer $_effectiveToken',
       };
 
       final response = await http.post(
@@ -97,9 +106,10 @@ class AIAnalysisService {
         if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
           return data;
         }
-        throw Exception('Risk analysis failed: ${response.body}');
+        throw Exception('Risk analysis failed (400): ${response.body}');
       } else {
-        throw Exception('Risk analysis failed: ${response.body}');
+        throw Exception(
+            'Risk analysis failed (${response.statusCode}): ${response.body}');
       }
     } catch (e) {
       print('Risk analysis error: $e');
@@ -113,12 +123,12 @@ class AIAnalysisService {
     try {
       final headers = {
         'Content-Type': 'application/json',
-        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+        if (_effectiveToken != null) 'Authorization': 'Bearer $_effectiveToken',
       };
 
       final response = await http.post(
         // Use the unified /ai/generate endpoint implemented in the backend
-        Uri.parse('$_baseUrl/ai/generate'),
+        Uri.parse('$_baseUrl/api/ai/generate'),
         headers: headers,
         body: jsonEncode({
           // Generic prompt; backend mainly relies on section_type + context
@@ -137,11 +147,19 @@ class AIAnalysisService {
         }
         throw Exception('Empty AI response');
       } else {
-        throw Exception('Content generation failed: ${response.statusCode}');
+        String detail = response.body;
+        try {
+          final parsed = jsonDecode(response.body);
+          if (parsed is Map<String, dynamic> && parsed['detail'] != null) {
+            detail = parsed['detail'].toString();
+          }
+        } catch (_) {}
+        throw Exception(
+            'Content generation failed (${response.statusCode}): $detail');
       }
     } catch (e) {
       print('AI Content Generation Error: $e');
-      return 'AI content generation is currently unavailable. Please write content manually.';
+      rethrow;
     }
   }
 
@@ -151,12 +169,12 @@ class AIAnalysisService {
     try {
       final headers = {
         'Content-Type': 'application/json',
-        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+        if (_effectiveToken != null) 'Authorization': 'Bearer $_effectiveToken',
       };
 
       final response = await http.post(
         // Use the /ai/improve endpoint implemented in the backend
-        Uri.parse('$_baseUrl/ai/improve'),
+        Uri.parse('$_baseUrl/api/ai/improve'),
         headers: headers,
         body: jsonEncode({
           'content': content,
@@ -175,17 +193,12 @@ class AIAnalysisService {
         }
         throw Exception('Unexpected AI improve response shape');
       } else {
-        throw Exception('Content improvement failed: ${response.statusCode}');
+        throw Exception(
+            'Content improvement failed (${response.statusCode}): ${response.body}');
       }
     } catch (e) {
       print('AI Content Improvement Error: $e');
-      return {
-        'quality_score': 70,
-        'strengths': ['Content is present'],
-        'improvements': [],
-        'improved_version': content,
-        'summary': 'AI improvement unavailable'
-      };
+      rethrow;
     }
   }
 
@@ -194,11 +207,11 @@ class AIAnalysisService {
     try {
       final headers = {
         'Content-Type': 'application/json',
-        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+        if (_effectiveToken != null) 'Authorization': 'Bearer $_effectiveToken',
       };
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/ai/check-compliance'),
+        Uri.parse('$_baseUrl/api/ai/check-compliance'),
         headers: headers,
         body: jsonEncode({'proposal_id': proposalId}),
       );
