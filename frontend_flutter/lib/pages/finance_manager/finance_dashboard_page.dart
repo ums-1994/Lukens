@@ -87,7 +87,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
     return proposals.where((raw) {
       if (raw is! Map) return false;
-      final p = raw as Map;
+      final p = raw;
 
       final title = (p['title'] ?? '').toString().toLowerCase();
       final client =
@@ -2237,104 +2237,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showProposalDetails(Map<String, dynamic> proposal) {
-    _selectProposal(proposal);
-
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.8,
-          height: MediaQuery.of(context).size.height * 0.8,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    proposal['title'] ?? 'Proposal Details',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Client: ${proposal['client_name'] ?? proposal['client'] ?? 'Unknown'}',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      const SizedBox(height: 20),
-                      TextField(
-                        controller: _commentController,
-                        decoration: const InputDecoration(
-                          labelText: 'Finance Comment',
-                          hintText: 'Add comments about approval/rejection...',
-                          border: OutlineInputBorder(),
-                        ),
-                        maxLines: 3,
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _selectedProposalId == null
-                                  ? null
-                                  : () => _handleFinanceAction(
-                                        proposalId: _selectedProposalId!,
-                                        action: 'approve',
-                                      ),
-                              icon: const Icon(Icons.check),
-                              label: const Text('Approve'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _selectedProposalId == null
-                                  ? null
-                                  : () => _handleFinanceAction(
-                                        proposalId: _selectedProposalId!,
-                                        action: 'reject',
-                                      ),
-                              icon: const Icon(Icons.cancel),
-                              label: const Text('Reject'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
