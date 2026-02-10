@@ -338,95 +338,96 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Column(
+        child: Row(
           children: [
-            // Header
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Client Management',
-                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+            // Fixed Sidebar - Full Height
+            _buildFixedSidebar(context),
+
+            // Main Content Area
+            Expanded(
+              child: Column(
+                children: [
+                  // Header
+                  Container(
+                    height: 70,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withOpacity(0.3),
+                          Colors.transparent,
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
                     ),
-                    Row(
-                      children: [
-                        ClipOval(
-                          child: Image.asset(
-                            'assets/images/User_Profile.png',
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Client Management',
+                            style:
+                                PremiumTheme.titleLarge.copyWith(fontSize: 22),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _getUserName(user),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              userRole.toString(),
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              app.logout();
-                              AuthService.logout();
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => const [
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
+                          Row(
+                            children: [
+                              ClipOval(
+                                child: Image.asset(
+                                  'assets/images/User_Profile.png',
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
+                                  Text(
+                                    _getUserName(user),
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    userRole.toString(),
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 12),
+                                  ),
                                 ],
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              const SizedBox(width: 10),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert,
+                                    color: Colors.white),
+                                onSelected: (value) {
+                                  if (value == 'logout') {
+                                    app.logout();
+                                    AuthService.logout();
+                                    Navigator.pushNamed(context, '/login');
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => const [
+                                  PopupMenuItem<String>(
+                                    value: 'logout',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.logout),
+                                        SizedBox(width: 8),
+                                        Text('Logout'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Main Content with Sidebar
-            Expanded(
-              child: Row(
-                children: [
-                  // Fixed Sidebar - Full Height (Exact Dashboard Styling)
-                  _buildFixedSidebar(context),
+                  ),
 
                   // Content Area
                   Expanded(
@@ -463,11 +464,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       ),
                     ),
                   ),
+
+                  const Footer(),
                 ],
               ),
             ),
-
-            const Footer(),
           ],
         ),
       ),
@@ -1004,66 +1005,63 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   Widget _buildHeader() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(32),
-          decoration: PremiumTheme.glassCard(
-            gradientStart: PremiumTheme.cyan,
-            gradientEnd: PremiumTheme.teal,
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.people, color: Colors.white, size: 32),
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        decoration: PremiumTheme.glassCard(
+          gradientStart: PremiumTheme.cyan,
+          gradientEnd: PremiumTheme.teal,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(width: 20),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Client Management',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+              child: const Icon(Icons.people, color: Colors.white, size: 32),
+            ),
+            const SizedBox(width: 20),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Client Management',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Manage your clients and track onboarding progress',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFFE0F7FA),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: _showInviteDialog,
-                icon: const Icon(Icons.person_add, size: 20),
-                label: const Text('Invite Client',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: PremiumTheme.teal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
                   ),
-                  elevation: 0,
-                ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Manage your clients and track onboarding progress',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFFE0F7FA),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            ElevatedButton.icon(
+              onPressed: _showInviteDialog,
+              icon: const Icon(Icons.person_add, size: 20),
+              label: const Text('Invite Client',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: PremiumTheme.teal,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ],
         ),
       ),
     );
