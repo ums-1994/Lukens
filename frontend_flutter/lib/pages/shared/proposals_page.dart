@@ -399,17 +399,22 @@ class _ProposalsPageState extends State<ProposalsPage>
         bottom: false,
         child: Container(
           color: Colors.transparent,
-          child: Column(
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-                child: _buildHeader(context, app, userRole),
-              ),
+              // Fixed Sidebar - Full Height
+              _buildSidebar(context),
+
+              // Main Content Area
               Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Column(
                   children: [
-                    _buildSidebar(context),
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+                      child: _buildHeader(context, app, userRole),
+                    ),
+
+                    // Content Area
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
@@ -434,10 +439,6 @@ class _ProposalsPageState extends State<ProposalsPage>
                     ),
                   ],
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: const Footer(),
               ),
             ],
           ),
