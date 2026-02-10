@@ -270,12 +270,39 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           // Floating shapes - desktop only
           if (!isMobile) _buildFloatingShapes(),
 
+          // Fixed header with logo
+          Positioned(
+            top: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Image.asset(
+                'assets/images/2026.png',
+                height: 80,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Text(
+                    '✕ Khonology',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 40,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
           // Floating login card
           Center(
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(
                 horizontal: isMobile ? 16 : 40,
-                vertical: 40,
+                vertical: isMobile
+                    ? 120
+                    : 160, // Increased top padding for fixed header
               ),
               child: _buildLoginCard(isMobile),
             ),
@@ -391,34 +418,29 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Logo with subtle breathing fade animation
-            Center(
-              child: FadeTransition(
-                opacity: Tween<double>(begin: 0.3, end: 1.0).animate(
-                  CurvedAnimation(
-                    parent: _fadeInController,
-                    curve: Curves.easeInOut,
-                  ),
-                ),
-                child: Image.asset(
-                  'assets/images/2026.png',
-                  height: 120,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Text(
-                      '✕ Khonology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 56,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
+            // Welcome message
+            const Text(
+              'WELCOME BACK',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
+            // Catchy quote
+            const Text(
+              'Sign in to manage your proposals and collaborate with your team',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 14,
+                color: Colors.white70,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
 
             // Email
             _buildTextField(

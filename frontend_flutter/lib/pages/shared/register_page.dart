@@ -392,12 +392,39 @@ class _RegisterPageState extends State<RegisterPage>
           // Floating shapes - desktop only
           if (!isMobile) _buildFloatingShapes(),
 
+          // Fixed header with logo
+          Positioned(
+            top: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Image.asset(
+                'assets/images/2026.png',
+                height: 80,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Text(
+                    '✕ Khonology',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 40,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
           // Floating registration card
           Center(
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(
                 horizontal: isMobile ? 16 : 40,
-                vertical: 40,
+                vertical: isMobile
+                    ? 120
+                    : 160, // Increased top padding for fixed header
               ),
               child: _buildRegistrationCard(isMobile),
             ),
@@ -513,34 +540,17 @@ class _RegisterPageState extends State<RegisterPage>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Logo with subtle breathing fade animation
-            Center(
-              child: FadeTransition(
-                opacity: Tween<double>(begin: 0.3, end: 1.0).animate(
-                  CurvedAnimation(
-                    parent: _fadeInController,
-                    curve: Curves.easeInOut,
-                  ),
-                ),
-                child: Image.asset(
-                  'assets/images/2026.png',
-                  height: 120,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Text(
-                      '✕ Khonology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 56,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
+            // Create Your Account title
+            const Text(
+              'CREATE YOUR ACCOUNT',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
 
             // First & Last Name Row
             Row(

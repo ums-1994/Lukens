@@ -119,6 +119,31 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           // Animated background layers with crossfade
           _buildBackgroundLayers(),
 
+          // Fixed header with centered logo
+          Positioned(
+            top: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Image.asset(
+                'assets/images/2026.png',
+                height: 80,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Text(
+                    '✕ Khonology',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 40,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
           // Dark gradient overlay for text contrast
           Container(
             decoration: BoxDecoration(
@@ -143,7 +168,9 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(
                   horizontal: isMobile ? 24 : 80,
-                  vertical: isMobile ? 40 : 60,
+                  vertical: isMobile
+                      ? 120
+                      : 160, // Increased top padding for fixed header
                 ),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
