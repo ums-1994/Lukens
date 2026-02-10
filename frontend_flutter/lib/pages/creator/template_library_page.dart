@@ -560,6 +560,20 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                     children: [
                       const SizedBox(height: 8),
                       _buildSidebarNavItem(
+                        label: 'Dashboard',
+                        assetPath: 'assets/images/Dahboard.png',
+                        isSelected: _currentPage == 'Dashboard',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'Dashboard'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'My Proposals',
+                        assetPath: 'assets/images/My_Proposals.png',
+                        isSelected: _currentPage == 'My Proposals',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'My Proposals'),
+                      ),
+                      _buildSidebarNavItem(
                         label: 'Templates',
                         assetPath: 'assets/images/content_library.png',
                         isSelected: _currentPage == 'Templates',
@@ -567,11 +581,37 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                         onTap: () => _navigateToPage(context, 'Templates'),
                       ),
                       _buildSidebarNavItem(
-                        label: 'My Templates',
-                        assetPath: 'assets/images/My_Proposals.png',
-                        isSelected: _currentPage == 'My Templates',
+                        label: 'Content Library',
+                        assetPath: 'assets/images/content_library.png',
+                        isSelected: _currentPage == 'Content Library',
                         isCollapsed: effectiveCollapsed,
-                        onTap: () => _navigateToPage(context, 'My Templates'),
+                        onTap: () =>
+                            _navigateToPage(context, 'Content Library'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Client Management',
+                        assetPath: 'assets/images/collaborations.png',
+                        isSelected: _currentPage == 'Client Management',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Client Management'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Approved Proposals',
+                        assetPath:
+                            'assets/images/Time Allocation_Approval_Blue.png',
+                        isSelected: _currentPage == 'Approved Proposals',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Approved Proposals'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Analytics (My Pipeline)',
+                        assetPath: 'assets/images/analytics.png',
+                        isSelected: _currentPage == 'Analytics (My Pipeline)',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Analytics (My Pipeline)'),
                       ),
                       const SizedBox(height: 20),
 
