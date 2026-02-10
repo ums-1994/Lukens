@@ -35,6 +35,27 @@ def get_pending_approvals(username=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return [
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                ]
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
             # Detect actual proposals table schema so we can support
             # environments with either client/client_name and owner_id/user_id.
             cursor.execute(
@@ -87,7 +108,12 @@ def get_pending_approvals(username=None):
                     updated_at,
                     {budget_expr} AS budget
                 FROM proposals
-                WHERE status IN ('Pending CEO Approval', 'In Review', 'Submitted')
+                WHERE LOWER(COALESCE(status, '')) IN (
+                    'pending ceo approval',
+                    'pending approval',
+                    'in review',
+                    'submitted'
+                )
                 ORDER BY updated_at DESC, created_at DESC
             '''
 
@@ -121,6 +147,7 @@ def get_pending_approvals(username=None):
 def approve_proposal(username=None, proposal_id=None):
     """Approve proposal and send to client"""
     try:
+        print(f"🟦 [APPROVE] approve_proposal called for proposal_id={proposal_id} by username={username}")
         data = request.get_json(force=True, silent=True) or {}
         comments = data.get('comments', '')
         # Allow client_email override to be passed explicitly from the frontend
@@ -136,18 +163,29 @@ def approve_proposal(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return [
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                ]
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
             # Detect proposals table schema for client / owner / email columns
-            cursor.execute(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_name = 'proposals'
-                """
-            )
-            cols = cursor.fetchall()
-            existing_columns = [
-                (c['column_name'] if isinstance(c, dict) else c[0]) for c in cols
-            ]
+            existing_columns = _get_table_columns('proposals')
 
             if 'client' in existing_columns:
                 client_expr = 'p.client'
@@ -211,17 +249,38 @@ def approve_proposal(username=None, proposal_id=None):
 
             # Fallback: Get client_email from collaboration_invitations
             if not client_email or '@' not in client_email:
-                cursor.execute(
-                    '''SELECT invited_email FROM collaboration_invitations 
-                       WHERE proposal_id = %s 
-                       ORDER BY invited_at DESC LIMIT 1''',
-                    (proposal_id,)
-                )
-                inv_row = cursor.fetchone()
-                if inv_row:
-                    invited_email = inv_row.get('invited_email') if isinstance(inv_row, dict) else (inv_row[0] if isinstance(inv_row, (tuple, list)) and len(inv_row) > 0 else '')
-                    if invited_email and '@' in invited_email:
-                        client_email = invited_email.strip()
+                try:
+                    inv_cols = _get_table_columns('collaboration_invitations')
+                    inv_email_col = _pick_first(
+                        inv_cols,
+                        ['invited_email', 'email', 'client_email', 'invitee_email', 'collaborator_email'],
+                    )
+                    invited_at_col = _pick_first(
+                        inv_cols,
+                        ['invited_at', 'created_at', 'updated_at', 'id'],
+                    )
+
+                    if inv_email_col:
+                        order_col = invited_at_col or 'id'
+                        cursor.execute(
+                            f"""SELECT {inv_email_col} AS invited_email
+                               FROM collaboration_invitations
+                               WHERE proposal_id = %s
+                               ORDER BY {order_col} DESC
+                               LIMIT 1""",
+                            (proposal_id,),
+                        )
+                        inv_row = cursor.fetchone()
+                        if inv_row:
+                            invited_email = (
+                                inv_row.get('invited_email')
+                                if isinstance(inv_row, dict)
+                                else (inv_row[0] if isinstance(inv_row, (tuple, list)) and len(inv_row) > 0 else '')
+                            )
+                            if invited_email and '@' in str(invited_email):
+                                client_email = str(invited_email).strip()
+                except Exception as inv_lookup_err:
+                    print(f"⚠️ Failed to infer client email from collaboration_invitations: {inv_lookup_err}")
 
             # Fallback: Also try to get from proposal_signatures if available
             if not client_email or '@' not in client_email:
@@ -258,17 +317,32 @@ def approve_proposal(username=None, proposal_id=None):
             
             # Get approver info
             cursor.execute(
-                "SELECT id, full_name, username, email FROM users WHERE username = %s",
+                """
+                SELECT id, username, email, full_name
+                FROM users
+                WHERE username = %s
+                """,
                 (username,)
             )
             approver_user = cursor.fetchone()
             approver_user_id = approver_user['id'] if approver_user else None
+            if approver_user_id is None and username and '@' in str(username):
+                # DEV_BYPASS_AUTH can set username to an email in some environments.
+                cursor.execute(
+                    """
+                    SELECT id, username, email, full_name
+                    FROM users
+                    WHERE email = %s
+                    """,
+                    (username,),
+                )
+                approver_user = cursor.fetchone() or approver_user
+                approver_user_id = approver_user['id'] if approver_user else None
             approver_name = (
                 approver_user.get('full_name')
                 or approver_user.get('username')
-                or approver_user.get('email')
                 or username
-            ) if approver_user else username
+            ) if approver_user else (username or 'Approver')
             
             # Update status to Sent to Client
             cursor.execute(
@@ -344,13 +418,71 @@ def approve_proposal(username=None, proposal_id=None):
                         print(f"✅ Using client email: {effective_client_email}")
                         
                         # Store token in collaboration_invitations for client access
-                        cursor.execute("""
-                            INSERT INTO collaboration_invitations 
-                            (proposal_id, invited_email, invited_by, permission_level, access_token, status)
-                            VALUES (%s, %s, %s, %s, %s, 'pending')
-                            ON CONFLICT DO NOTHING
-                        """, (proposal_id, effective_client_email, approver_user_id, 'view', access_token))
-                        conn.commit()
+                        try:
+                            inv_cols = _get_table_columns('collaboration_invitations')
+                            inv_email_col = _pick_first(
+                                inv_cols,
+                                ['invited_email', 'invitee_email', 'email', 'client_email', 'collaborator_email'],
+                            )
+                            invited_by_col = _pick_first(
+                                inv_cols,
+                                ['invited_by', 'inviter_id', 'created_by', 'user_id'],
+                            )
+                            permission_col = _pick_first(inv_cols, ['permission_level', 'permission', 'role'])
+                            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+                            status_col = _pick_first(inv_cols, ['status'])
+                            expires_col = _pick_first(inv_cols, ['expires_at', 'expires', 'token_expires_at'])
+                            proposal_id_col = 'proposal_id' if 'proposal_id' in inv_cols else None
+
+                            insert_cols = []
+                            insert_vals = []
+                            if proposal_id_col:
+                                insert_cols.append(proposal_id_col)
+                                insert_vals.append(proposal_id)
+                            if inv_email_col:
+                                insert_cols.append(inv_email_col)
+                                insert_vals.append(effective_client_email)
+                            if invited_by_col:
+                                if approver_user_id is None:
+                                    print(
+                                        "⚠️ collaboration_invitations requires inviter id but approver_user_id is unknown; "
+                                        "skipping invitation insert"
+                                    )
+                                    raise RuntimeError("missing_approver_user_id_for_invitation")
+                                insert_cols.append(invited_by_col)
+                                insert_vals.append(approver_user_id)
+                            if permission_col:
+                                insert_cols.append(permission_col)
+                                insert_vals.append('view')
+                            if token_col:
+                                insert_cols.append(token_col)
+                                insert_vals.append(access_token)
+                            if status_col:
+                                insert_cols.append(status_col)
+                                insert_vals.append('pending')
+                            if expires_col:
+                                insert_cols.append(expires_col)
+                                insert_vals.append(datetime.utcnow() + timedelta(days=90))
+
+                            if proposal_id_col and inv_email_col and insert_cols:
+                                placeholders = ', '.join(['%s'] * len(insert_cols))
+                                cols_sql = ', '.join(insert_cols)
+                                cursor.execute(
+                                    f"""INSERT INTO collaboration_invitations ({cols_sql})
+                                       VALUES ({placeholders})
+                                       ON CONFLICT DO NOTHING""",
+                                    tuple(insert_vals),
+                                )
+                                conn.commit()
+                            else:
+                                print(
+                                    "⚠️ collaboration_invitations schema missing required columns; "
+                                    "skipping invitation insert"
+                                )
+                        except Exception as inv_insert_err:
+                            # Do not fail the overall approval due to invitation schema mismatches.
+                            print(f"⚠️ Failed to insert collaboration invitation: {inv_insert_err}")
+                            traceback.print_exc()
 
                         # Create DocuSign envelope so client link already has a signing URL
                         print(f"🔐 Attempting to create DocuSign envelope for proposal {proposal_id}...")
@@ -366,8 +498,8 @@ def approve_proposal(username=None, proposal_id=None):
                                 client_email=client_email,
                             )
 
-                            # Return URL back to client proposals view with same token
-                            return_url = f"{frontend_url}/#/client/proposals?token={access_token}&signed=true"
+                            # Return URL back to client view using the collaboration router
+                            return_url = f"{frontend_url}/#/collaborate?token={access_token}&signed=true"
 
                             envelope_result = create_docusign_envelope(
                                 proposal_id=proposal_id,
@@ -505,7 +637,23 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"\n⚠️  Continuing with approval despite DocuSign error")
                             print(f"   Client will receive email with proposal link, but DocuSign signing may not be available")
 
-                        client_link = f"{frontend_url}/client/proposals?token={access_token}"
+                        client_link = f"{frontend_url}/#/collaborate?token={access_token}"
+
+                        sendgrid_configured = bool(
+                            (os.getenv('SENDGRID_API_KEY') or '').strip()
+                            and (os.getenv('SENDGRID_FROM_EMAIL') or '').strip()
+                        )
+                        smtp_configured = bool(
+                            (os.getenv('SMTP_HOST') or '').strip()
+                            and (os.getenv('SMTP_USER') or '').strip()
+                            and (os.getenv('SMTP_PASS') or '')
+                        )
+                        print(
+                            "📧 [EMAIL] Attempting proposal email send "
+                            f"(SendGrid={'yes' if sendgrid_configured else 'no'}, "
+                            f"SMTP={'yes' if smtp_configured else 'no'}) "
+                            f"to={effective_client_email}"
+                        )
 
                         email_subject = f"Proposal Ready: {display_title}"
                         email_body = f"""
@@ -528,10 +676,22 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"[EMAIL] ✅ Proposal email sent successfully to {effective_client_email}")
                         else:
                             print(f"[EMAIL] ❌ Failed to send proposal email to {effective_client_email}")
-                            print(f"   Please check SendGrid configuration and logs above for details")
+                            print(f"   Check SENDGRID_* or SMTP_* env vars and logs above for details")
+                            return {
+                                'detail': 'Proposal approved but email failed to send (secure link not delivered). Fix email configuration and retry.',
+                                'error': 'email_send_failed',
+                                'proposal_id': proposal_id,
+                                'client_email': effective_client_email,
+                            }, 502
                     except Exception as email_error:
                         print(f"[EMAIL] Error sending proposal email: {email_error}")
                         traceback.print_exc()
+                        return {
+                            'detail': 'Proposal approved but email failed to send due to server error. Check email configuration and retry.',
+                            'error': 'email_send_exception',
+                            'proposal_id': proposal_id,
+                            'client_email': effective_client_email,
+                        }, 502
                 
                 return {
                     'detail': 'Proposal approved and sent to client',

@@ -1,7 +1,14 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'dart:ui_web' as ui_web;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web/web.dart' as web;
 import '../../api.dart';
@@ -39,13 +46,50 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   int _selectedTab = 0; // 0: Content, 1: Comments
 
+  String? _pdfObjectUrl;
+  bool _isPdfLoading = false;
+  String? _pdfError;
+  late final String _pdfViewType;
+  bool _pdfViewRegistered = false;
+  html.IFrameElement? _pdfIframe;
+  bool _pdfIframeListenersAttached = false;
+
   @override
   void initState() {
     super.initState();
+    _pdfViewType = 'pdf-preview-${DateTime.now().microsecondsSinceEpoch}';
+    _initPdfView();
     _checkIfReturnedFromSigning();
     _loadProposal();
     _startSession();
     _logEvent('open');
+  }
+
+  void _initPdfView() {
+    if (!kIsWeb || _pdfViewRegistered) return;
+    _pdfViewRegistered = true;
+
+    // ignore: undefined_prefixed_name
+    ui_web.platformViewRegistry.registerViewFactory(_pdfViewType, (int viewId) {
+      _pdfIframe ??= html.IFrameElement()
+        ..style.border = 'none'
+        ..style.width = '100%'
+        ..style.height = '100%'
+        ..allow = 'fullscreen';
+
+      if (!_pdfIframeListenersAttached) {
+        _pdfIframeListenersAttached = true;
+        _pdfIframe!.onLoad.listen((_) {
+          if (!mounted) return;
+          if (_isPdfLoading) {
+            setState(() {
+              _isPdfLoading = false;
+            });
+          }
+        });
+      }
+      return _pdfIframe!;
+    });
   }
 
   List<Map<String, dynamic>> _parseSectionsFromContent(dynamic content) {
@@ -177,8 +221,167 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     _logCurrentSectionView();
     _endSession();
     _logEvent('close');
+    // PDF is loaded via direct URL (no Blob URL to revoke).
     _commentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPdfPreview() async {
+    if (!kIsWeb) return;
+    _initPdfView();
+    setState(() {
+      _isPdfLoading = true;
+      _pdfError = null;
+    });
+
+    try {
+      // Load directly via URL so the browser can stream + cache.
+      final url =
+          '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}';
+
+      _pdfObjectUrl = url;
+      _pdfIframe?.src = url;
+
+      // _isPdfLoading will flip to false in the iframe onLoad listener.
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isPdfLoading = false;
+        _pdfError = e.toString();
+      });
+    }
+  }
+
+  Future<void> _exportPdf() async {
+    final url =
+        '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}&download=1';
+    if (kIsWeb) {
+      web.window.open(url, '_blank');
+      return;
+    }
+    await launchUrlString(url);
+  }
+
+  Future<void> _exportWord() async {
+    final url =
+        '$baseUrl/api/client/proposals/${widget.proposalId}/export/word?token=${Uri.encodeComponent(widget.accessToken)}';
+    if (kIsWeb) {
+      web.window.open(url, '_blank');
+      return;
+    }
+    await launchUrlString(url);
+  }
+
+  Future<void> _uploadSignedDocument() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(withData: true);
+      if (res == null || res.files.isEmpty) return;
+
+      final file = res.files.first;
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw Exception('Unable to read file bytes');
+      }
+
+      await _uploadSignedBytes(bytes: bytes, filename: file.name);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _scanSignedDocument() async {
+    try {
+      if (kIsWeb) {
+        final input = html.FileUploadInputElement();
+        input.accept = 'image/*,application/pdf';
+        input.setAttribute('capture', 'environment');
+        input.click();
+
+        await input.onChange.first;
+        final files = input.files;
+        if (files == null || files.isEmpty) return;
+
+        final f = files.first;
+        final reader = html.FileReader();
+        reader.readAsArrayBuffer(f);
+        await reader.onLoadEnd.first;
+
+        final result = reader.result;
+        if (result is! ByteBuffer) {
+          throw Exception('Unable to read captured file');
+        }
+
+        await _uploadSignedBytes(
+          bytes: Uint8List.view(result),
+          filename: f.name,
+        );
+        return;
+      }
+
+      final picker = ImagePicker();
+      final image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      final bytes = await image.readAsBytes();
+      await _uploadSignedBytes(bytes: bytes, filename: image.name);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Scan failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _uploadSignedBytes({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Uploading signed document...')),
+    );
+
+    final uri = Uri.parse(
+      '$baseUrl/api/client/proposals/${widget.proposalId}/upload-signed',
+    );
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['token'] = widget.accessToken
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename,
+        ),
+      );
+
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode != 200) {
+      throw Exception(body.isNotEmpty ? body : 'Upload failed');
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Signed document uploaded'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    _logEvent('upload_signed');
+    await _loadProposal();
   }
 
   Future<void> _startSession() async {
@@ -191,7 +394,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           'proposal_id': widget.proposalId,
         }),
       );
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
           _currentSessionId = data['session_id'];
@@ -290,6 +493,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           _sectionViewStart = _sections.isNotEmpty ? DateTime.now() : null;
           _isLoading = false;
         });
+
+        await _loadPdfPreview();
       } else {
         final errorBody = response.body;
         print('❌ Error loading proposal: ${response.statusCode}');
@@ -469,8 +674,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           // Header
           _buildHeader(proposal, status),
 
+          _buildSignaturePanel(),
+
           // Action Buttons - Always show if proposal is not signed
-          if (canTakeAction) _buildActionBar(),
+          if (canTakeAction && !kIsWeb) _buildActionBar(),
 
           // Content
           Expanded(
@@ -529,18 +736,155 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           _buildStatusBadge(status),
           const SizedBox(width: 12),
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
-            onPressed: () {
-              _logEvent('download');
-              // TODO: Download as PDF
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('PDF download coming soon')),
-              );
-            },
-            tooltip: 'Download PDF',
+            tooltip: 'Refresh Preview',
+            onPressed: _loadPdfPreview,
+            icon: const Icon(Icons.refresh, color: Colors.white),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSignaturePanel() {
+    final sig = _signatureData;
+    final status = (sig?['status'] ?? _signatureStatus ?? 'unknown').toString();
+    final signedAt = (sig?['signed_at'] ?? '').toString();
+    final signedUrl = (sig?['signed_document_url'] ?? '').toString();
+    final signingUrl = (sig?['signing_url'] ?? _signingUrl ?? '').toString();
+
+    if (signingUrl.trim().isNotEmpty && (_signingUrl == null || _signingUrl!.isEmpty)) {
+      _signingUrl = signingUrl;
+    }
+
+    String subtitle = status;
+    if (signedAt.trim().isNotEmpty) {
+      subtitle = '$status • $signedAt';
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.verified_outlined, size: 18, color: Color(0xFF2C3E50)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              subtitle,
+              style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (signedUrl.trim().isNotEmpty)
+            TextButton.icon(
+              onPressed: () async {
+                if (kIsWeb) {
+                  web.window.open(signedUrl, '_blank');
+                  return;
+                }
+                await launchUrlString(signedUrl);
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('View'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingActionToolbar() {
+    final sig = _signatureData;
+    final signedUrl = (sig?['signed_document_url'] ?? '').toString();
+    final signingUrl = (sig?['signing_url'] ?? _signingUrl ?? '').toString();
+    final canSign = signingUrl.trim().isNotEmpty;
+
+    Widget _toolButton({
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback onPressed,
+      bool primary = false,
+    }) {
+      final bg = primary ? const Color(0xFF2D9CDB) : Colors.white;
+      final fg = primary ? Colors.white : const Color(0xFF2C3E50);
+      return Tooltip(
+        message: tooltip,
+        child: Material(
+          color: bg,
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onPressed,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(icon, color: fg, size: 22),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _toolButton(
+          icon: Icons.picture_as_pdf,
+          tooltip: 'Export PDF',
+          onPressed: _exportPdf,
+        ),
+        const SizedBox(height: 10),
+        _toolButton(
+          icon: Icons.description,
+          tooltip: 'Export Word',
+          onPressed: _exportWord,
+        ),
+        const SizedBox(height: 10),
+        _toolButton(
+          icon: Icons.document_scanner,
+          tooltip: 'Scan (Phone Camera)',
+          onPressed: _scanSignedDocument,
+        ),
+        const SizedBox(height: 10),
+        _toolButton(
+          icon: Icons.upload_file,
+          tooltip: 'Upload Signed',
+          onPressed: _uploadSignedDocument,
+        ),
+        if (signedUrl.trim().isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _toolButton(
+            icon: Icons.open_in_new,
+            tooltip: 'View Signed',
+            onPressed: () {
+              if (kIsWeb) {
+                web.window.open(signedUrl, '_blank');
+                return;
+              }
+              launchUrlString(signedUrl);
+            },
+          ),
+        ],
+        if (canSign) ...[
+          const SizedBox(height: 10),
+          _toolButton(
+            icon: Icons.draw,
+            tooltip: 'Sign with DocuSign',
+            onPressed: _openSigningModal,
+            primary: true,
+          ),
+        ],
+      ],
     );
   }
 
@@ -856,48 +1200,121 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Widget _buildProposalContent(Map<String, dynamic> proposal) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
+    if (!kIsWeb) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                proposal['title'] ?? 'Untitled',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Shared by ${proposal['owner_name'] ?? 'Unknown'}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const Divider(height: 40),
+              const Text('PDF preview is available on web.'),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: _exportPdf,
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('Export PDF'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _exportWord,
+                icon: const Icon(Icons.description),
+                label: const Text('Export Word'),
+              ),
+            ],
+          ),
         ),
+      );
+    }
+
+    if (_isPdfLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_pdfError != null) {
+      return Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Title
-            Text(
-              proposal['title'] ?? 'Untitled',
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
-              ),
+            Text('Failed to load preview: $_pdfError'),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _loadPdfPreview,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Shared by ${proposal['owner_name'] ?? 'Unknown'}',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            ),
-
-            const Divider(height: 40),
-
-            // Content
-            _buildContentSections(proposal['content']),
           ],
         ),
+      );
+    }
+
+    if (_pdfObjectUrl == null) {
+      return Center(
+        child: ElevatedButton.icon(
+          onPressed: _loadPdfPreview,
+          icon: const Icon(Icons.picture_as_pdf),
+          label: const Text('Load PDF Preview'),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox.expand(
+                child: HtmlElementView(viewType: _pdfViewType),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 14,
+            top: 20,
+            child: _buildFloatingActionToolbar(),
+          ),
+        ],
       ),
     );
   }

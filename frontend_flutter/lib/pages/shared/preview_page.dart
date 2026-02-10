@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import '../../api.dart';
 
 class PreviewPage extends StatelessWidget {
@@ -106,6 +109,57 @@ class PreviewPage extends StatelessWidget {
                         fontSize: 22, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 16),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('Preview PDF'),
+                onPressed: () async {
+                  final id = pm['id'] is int
+                      ? pm['id'] as int
+                      : int.tryParse(pm['id']?.toString() ?? '') ?? 0;
+                  if (id == 0) return;
+
+                  final appWrite = context.read<AppState>();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Generating PDF preview...'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+
+                  final bytes =
+                      await appWrite.fetchProposalPdfPreviewBytes(proposalId: id);
+                  if (bytes == null) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Failed to load PDF preview'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (!kIsWeb) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('PDF preview is currently web-only'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    return;
+                  }
+
+                  final blob = html.Blob([bytes], 'application/pdf');
+                  final url = html.Url.createObjectUrlFromBlob(blob);
+                  try {
+                    await launchUrlString(url);
+                  } finally {
+                    html.Url.revokeObjectUrl(url);
+                  }
+                },
+              ),
+              const SizedBox(width: 12),
               ElevatedButton.icon(
                 icon: const Icon(Icons.draw),
                 label: const Text('Send with DocuSign'),

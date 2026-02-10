@@ -5,6 +5,9 @@ import os
 import traceback
 from pathlib import Path
 import base64
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 # SendGrid SDK
 try:
@@ -116,11 +119,101 @@ def send_email(to_email, subject, html_content):
     - SENDGRID_FROM_EMAIL: Verified sender email address
     - SENDGRID_FROM_NAME: Sender name (optional, defaults to 'Khonology')
     """
+    provider = (os.getenv('EMAIL_PROVIDER') or 'auto').strip().lower()
+
+    # Prefer SendGrid when fully configured
+    sendgrid_api_key = (os.getenv('SENDGRID_API_KEY') or '').strip()
+    sendgrid_from_email = (os.getenv('SENDGRID_FROM_EMAIL') or '').strip()
+    smtp_host = (os.getenv('SMTP_HOST') or '').strip()
+    smtp_user = (os.getenv('SMTP_USER') or '').strip()
+    smtp_pass = os.getenv('SMTP_PASS')
+
+    if provider == 'smtp':
+        if smtp_host and smtp_user and smtp_pass:
+            return send_email_via_smtp(to_email, subject, html_content)
+        print('[ERROR] EMAIL_PROVIDER=smtp but SMTP is not fully configured')
+        if not smtp_host:
+            print('[ERROR] SMTP_HOST not set')
+        if not smtp_user:
+            print('[ERROR] SMTP_USER not set')
+        if not smtp_pass:
+            print('[ERROR] SMTP_PASS not set')
+        return False
+
+    if provider == 'sendgrid':
+        if SENDGRID_AVAILABLE and sendgrid_api_key and sendgrid_from_email:
+            return send_email_via_sendgrid(to_email, subject, html_content)
+        if not SENDGRID_AVAILABLE:
+            print("[ERROR] SendGrid SDK not installed. Install with: pip install sendgrid")
+        if not sendgrid_api_key:
+            print('[ERROR] SENDGRID_API_KEY not set')
+        if not sendgrid_from_email:
+            print('[ERROR] SENDGRID_FROM_EMAIL not set')
+        return False
+
+    if SENDGRID_AVAILABLE and sendgrid_api_key and sendgrid_from_email:
+        ok = send_email_via_sendgrid(to_email, subject, html_content)
+        if ok:
+            return True
+        # If SendGrid is configured but failing (e.g. 401/403), optionally fall back
+        # to SMTP when available.
+        if smtp_host and smtp_user and smtp_pass:
+            print('[EMAIL] SendGrid failed; attempting SMTP fallback...')
+            return send_email_via_smtp(to_email, subject, html_content)
+        return False
+
+    # Fallback to SMTP if configured
+    if smtp_host and smtp_user and smtp_pass:
+        return send_email_via_smtp(to_email, subject, html_content)
+
     if not SENDGRID_AVAILABLE:
         print("[ERROR] SendGrid SDK not installed. Install with: pip install sendgrid")
+    if not sendgrid_api_key:
+        print('[ERROR] SENDGRID_API_KEY not set')
+    if not sendgrid_from_email:
+        print('[ERROR] SENDGRID_FROM_EMAIL not set')
+    if not smtp_host:
+        print('[ERROR] SMTP_HOST not set')
+    if not smtp_user:
+        print('[ERROR] SMTP_USER not set')
+    if not smtp_pass:
+        print('[ERROR] SMTP_PASS not set')
+    return False
+
+
+def send_email_via_smtp(to_email, subject, html_content):
+    try:
+        smtp_host = os.getenv('SMTP_HOST')
+        smtp_port = int((os.getenv('SMTP_PORT') or '587').strip())
+        smtp_user = os.getenv('SMTP_USER')
+        smtp_pass = os.getenv('SMTP_PASS')
+        smtp_from_email = os.getenv('SMTP_FROM_EMAIL') or smtp_user
+        smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
+
+        if not all([smtp_host, smtp_user, smtp_pass, smtp_from_email]):
+            print('[ERROR] SMTP configuration incomplete')
+            return False
+
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
+        msg['To'] = to_email
+        msg.attach(MIMEText(html_content, 'html'))
+
+        print(f"[EMAIL] Using SMTP to send email to {to_email}")
+        print(f"[EMAIL] SMTP Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
+        print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        print(f"[SUCCESS] Email sent via SMTP to {to_email}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] SMTP email error: {e}")
+        traceback.print_exc()
         return False
-    
-    return send_email_via_sendgrid(to_email, subject, html_content)
 
 
 # ----------------------------------------------------------

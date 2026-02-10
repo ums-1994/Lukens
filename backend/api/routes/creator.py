@@ -771,10 +771,47 @@ def send_to_client(username=None, proposal_id=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return {
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                }
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
+            proposal_cols = _get_table_columns('proposals')
+
+            client_expr = 'client'
+            if 'client' not in proposal_cols and 'client_name' in proposal_cols:
+                client_expr = 'client_name'
+
+            client_email_expr = 'client_email' if 'client_email' in proposal_cols else "NULL::text"
+
+            owner_expr = 'owner_id'
+            if 'owner_id' not in proposal_cols and 'user_id' in proposal_cols:
+                owner_expr = 'user_id'
             
             cursor.execute(
-                """
-                SELECT id, title, client as client_name, '' as client_email, owner_id as user_id
+                f"""
+                SELECT id,
+                       title,
+                       {client_expr} as client_name,
+                       {client_email_expr} as client_email,
+                       {owner_expr} as user_id
                 FROM proposals
                 WHERE id = %s
                 """,
@@ -824,18 +861,66 @@ def send_to_client(username=None, proposal_id=None):
                     from api.utils.helpers import get_frontend_url
                     frontend_url = get_frontend_url()
                     access_token = secrets.token_urlsafe(32)
-                    
+
                     # Store token in collaboration_invitations for client access
-                    sender_id = sender.get('id')
-                    cursor.execute("""
-                        INSERT INTO collaboration_invitations 
-                        (proposal_id, invited_email, invited_by, permission_level, access_token, status)
-                        VALUES (%s, %s, %s, %s, %s, 'pending')
-                        ON CONFLICT DO NOTHING
-                    """, (proposal_id, client_email, sender_id, 'view', access_token))
-                    conn.commit()
-                    
-                    client_link = f"{frontend_url}/client/proposals?token={access_token}"
+                    try:
+                        inv_cols = _get_table_columns('collaboration_invitations')
+                        inv_email_col = _pick_first(
+                            inv_cols,
+                            ['invited_email', 'invitee_email', 'email', 'client_email', 'collaborator_email'],
+                        )
+                        invited_by_col = _pick_first(
+                            inv_cols,
+                            ['invited_by', 'inviter_id', 'created_by', 'user_id'],
+                        )
+                        permission_col = _pick_first(inv_cols, ['permission_level', 'permission', 'role'])
+                        token_col = _pick_first(inv_cols, ['access_token', 'token'])
+                        status_col = _pick_first(inv_cols, ['status'])
+                        proposal_id_col = 'proposal_id' if 'proposal_id' in inv_cols else None
+
+                        insert_cols = []
+                        insert_vals = []
+                        if proposal_id_col:
+                            insert_cols.append(proposal_id_col)
+                            insert_vals.append(proposal_id)
+                        if inv_email_col:
+                            insert_cols.append(inv_email_col)
+                            insert_vals.append(client_email.strip())
+                        if invited_by_col:
+                            sender_id = sender.get('id')
+                            if not sender_id:
+                                raise RuntimeError('missing_sender_id_for_invitation')
+                            insert_cols.append(invited_by_col)
+                            insert_vals.append(sender_id)
+                        if permission_col:
+                            insert_cols.append(permission_col)
+                            insert_vals.append('view')
+                        if token_col:
+                            insert_cols.append(token_col)
+                            insert_vals.append(access_token)
+                        if status_col:
+                            insert_cols.append(status_col)
+                            insert_vals.append('pending')
+
+                        if proposal_id_col and inv_email_col and insert_cols:
+                            placeholders = ', '.join(['%s'] * len(insert_cols))
+                            cols_sql = ', '.join(insert_cols)
+                            cursor.execute(
+                                f"""INSERT INTO collaboration_invitations ({cols_sql})
+                                   VALUES ({placeholders})
+                                   ON CONFLICT DO NOTHING""",
+                                tuple(insert_vals),
+                            )
+                            conn.commit()
+                        else:
+                            print(
+                                "⚠️ collaboration_invitations schema missing required columns; skipping invitation insert"
+                            )
+                    except Exception as inv_err:
+                        print(f"⚠️ Failed to insert collaboration invitation: {inv_err}")
+                        traceback.print_exc()
+
+                    client_link = f"{frontend_url}/#/collaborate?token={access_token}"
                     
                     sender_name = sender.get('full_name') or sender.get('username') or 'Your Team'
                     
@@ -863,6 +948,11 @@ def send_to_client(username=None, proposal_id=None):
                 except Exception as email_error:
                     print(f"[EMAIL] Error sending proposal email: {email_error}")
                     traceback.print_exc()
+            else:
+                if client_email is None:
+                    print(f"[EMAIL] No client_email column available on proposals table for proposal {proposal_id}")
+                else:
+                    print(f"[EMAIL] No valid client email found for proposal {proposal_id}: '{client_email}'")
             
             return {
                 'detail': 'Proposal sent to client',
@@ -888,7 +978,18 @@ def upload_image(username=None):
         
         file = request.files['file']
         result = cloudinary.uploader.upload(file)
-        return result, 200
+        url = result.get('secure_url') or result.get('url')
+        public_id = result.get('public_id')
+        return {
+            'success': True,
+            'url': url,
+            'public_id': public_id,
+            'resource_type': result.get('resource_type'),
+            'width': result.get('width'),
+            'height': result.get('height'),
+            'bytes': result.get('bytes'),
+            'result': result,
+        }, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -901,8 +1002,17 @@ def upload_template(username=None):
             return {'detail': 'No file provided'}, 400
         
         file = request.files['file']
-        result = cloudinary.uploader.upload(file)
-        return result, 200
+        result = cloudinary.uploader.upload(file, resource_type='raw')
+        url = result.get('secure_url') or result.get('url')
+        public_id = result.get('public_id')
+        return {
+            'success': True,
+            'url': url,
+            'public_id': public_id,
+            'resource_type': result.get('resource_type'),
+            'bytes': result.get('bytes'),
+            'result': result,
+        }, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -1104,6 +1214,59 @@ def get_version(username=None, proposal_id=None, version_number=None):
 # ============================================================================
 # AI ROUTES
 # ============================================================================
+
+
+@bp.get("/ai/status")
+@token_required
+def ai_status(username=None):
+    try:
+        from ai_service import ai_service
+
+        provider = getattr(ai_service, "provider", None)
+        model = getattr(ai_service, "model", None)
+        ai_enabled = True
+
+        if provider != "gemini":
+            api_key = getattr(ai_service, "api_key", None)
+            ai_enabled = bool(api_key)
+
+        return {
+            "ai_enabled": ai_enabled,
+            "provider": provider,
+            "model": model,
+        }, 200
+    except Exception as e:
+        print(f"❌ Error checking AI status: {e}")
+        traceback.print_exc()
+        return {"ai_enabled": False, "detail": str(e)}, 200
+
+
+@bp.post("/ai/check-compliance")
+@token_required
+def ai_check_compliance(username=None):
+    try:
+        data = request.get_json() or {}
+        proposal_id = data.get("proposal_id")
+        if not proposal_id:
+            return {"detail": "proposal_id is required"}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute("SELECT * FROM proposals WHERE id = %s", (proposal_id,))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {"detail": "Proposal not found"}, 404
+
+        from ai_service import ai_service
+
+        result = ai_service.check_compliance(dict(proposal))
+        return {"compliance": result}, 200
+    except AISafetyError as e:
+        return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
+    except Exception as e:
+        print(f"❌ Error checking compliance: {e}")
+        traceback.print_exc()
+        return {"detail": str(e)}, 500
 
 @bp.post("/ai/generate")
 @token_required
