@@ -247,7 +247,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.3),
+            Colors.black.withValues(alpha: 0.3),
             Colors.transparent,
           ],
           begin: Alignment.topCenter,
@@ -345,8 +345,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
+            Colors.black.withValues(alpha: 0.3),
+            Colors.black.withValues(alpha: 0.2),
           ],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
@@ -376,8 +376,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: PremiumTheme.darkBg2.withOpacity(0.85),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: PremiumTheme.darkBg2.withValues(alpha: 0.85),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Row(
         children: [
@@ -413,7 +413,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           color: isActive
-              ? PremiumTheme.teal.withOpacity(0.2)
+              ? PremiumTheme.teal.withValues(alpha: 0.2)
               : Colors.transparent,
           border:
               isActive ? Border.all(color: PremiumTheme.teal, width: 1) : null,
@@ -515,8 +515,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        color: PremiumTheme.darkBg2.withOpacity(0.85),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: PremiumTheme.darkBg2.withValues(alpha: 0.85),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -528,14 +528,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                 child: Text(
                   label,
                   style: PremiumTheme.bodyMedium.copyWith(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                   ),
                 ),
               ),
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
+                  color: color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: color, size: 20),
@@ -554,7 +554,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           Text(
             subtitle,
             style: PremiumTheme.labelMedium.copyWith(
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -567,8 +567,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: PremiumTheme.darkBg2.withOpacity(0.85),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: PremiumTheme.darkBg2.withValues(alpha: 0.85),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -582,13 +582,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 hintText: 'Search proposals or clients…',
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.55)),
+                hintStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.55)),
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.04),
+                fillColor: Colors.white.withValues(alpha: 0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                  borderSide:
+                      BorderSide(color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -605,12 +607,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 labelText: 'Status',
-                labelStyle: TextStyle(color: Colors.white.withOpacity(0.8)),
+                labelStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.8)),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.04),
+                fillColor: Colors.white.withValues(alpha: 0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                  borderSide:
+                      BorderSide(color: Colors.white.withValues(alpha: 0.08)),
                 ),
               ),
               items: const [
@@ -683,7 +687,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             Text(
               'No proposals match your filters.',
               style: PremiumTheme.bodyMedium.copyWith(
-                color: Colors.white.withOpacity(0.8),
+                color: Colors.white.withValues(alpha: 0.8),
               ),
             ),
             const SizedBox(height: 8),
@@ -701,8 +705,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: PremiumTheme.darkBg2.withOpacity(0.9),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        color: PremiumTheme.darkBg2.withValues(alpha: 0.9),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -795,15 +799,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     Color fg;
 
     if (lower.contains('pending') || lower.contains('review')) {
-      bg = Colors.orange.withOpacity(0.15);
+      bg = Colors.orange.withValues(alpha: 0.15);
       fg = Colors.orange;
     } else if (lower.contains('approved') ||
         lower.contains('signed') ||
         lower.contains('released')) {
-      bg = Colors.green.withOpacity(0.15);
+      bg = Colors.green.withValues(alpha: 0.15);
       fg = Colors.green;
     } else {
-      bg = Colors.white.withOpacity(0.08);
+      bg = Colors.white.withValues(alpha: 0.08);
       fg = Colors.white70;
     }
 

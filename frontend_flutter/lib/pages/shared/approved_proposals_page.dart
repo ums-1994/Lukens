@@ -179,8 +179,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -329,7 +329,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(
@@ -401,8 +401,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
+            Colors.black.withValues(alpha: 0.3),
+            Colors.black.withValues(alpha: 0.2),
           ],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
@@ -532,7 +532,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
+                    color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -767,7 +767,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
