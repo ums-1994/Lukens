@@ -382,27 +382,11 @@ class _RegisterPageState extends State<RegisterPage>
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Animated background
-          _buildBackgroundLayers(),
-
-          // Dark gradient overlay
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.black.withOpacity(0.5),
-                  Colors.black.withOpacity(0.7),
-                  Colors.black.withOpacity(0.6),
-                ],
-              ),
-            ),
-          ),
+          // Use main app background from main.dart
 
           // Floating shapes - desktop only
           if (!isMobile) _buildFloatingShapes(),
@@ -419,40 +403,6 @@ class _RegisterPageState extends State<RegisterPage>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildBackgroundLayers() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Base background image
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 1200),
-          switchInCurve: Curves.easeInOut,
-          switchOutCurve: Curves.easeInOut,
-          child: Image.asset(
-            _backgroundImages[_currentFrameIndex],
-            key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(color: Colors.black);
-            },
-          ),
-        ),
-        // Pulsing light overlay (dark to light breathing)
-        AnimatedBuilder(
-          animation: _parallaxController,
-          builder: (context, child) {
-            // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
-            final darkness =
-                0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
-            return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
-            );
-          },
-        ),
-      ],
     );
   }
 
