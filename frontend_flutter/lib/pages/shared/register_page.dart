@@ -704,8 +704,7 @@ class _RegisterPageState extends State<RegisterPage>
                 const SizedBox(width: 16),
                 _buildSocialButton('assets/images/mslogo.png'),
                 const SizedBox(width: 16),
-                _buildSocialButton(
-                    'assets/images/YouTube Social_White Badge_Blue.png'),
+                _buildSocialButton('assets/images/github_icon_2.png'),
               ],
             ),
             const SizedBox(height: 24),
@@ -877,8 +876,19 @@ class _RegisterPageState extends State<RegisterPage>
         borderRadius: BorderRadius.circular(24),
       ),
       child: IconButton(
-        icon:
-            Image.asset(imagePath, width: 28, height: 28, fit: BoxFit.contain),
+        icon: Image.asset(
+          imagePath,
+          width: 24,
+          height: 24,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(
+              Icons.error,
+              color: Colors.black54,
+              size: 24,
+            );
+          },
+        ),
         onPressed: () {
           // TODO: Social login
         },
