@@ -733,6 +733,13 @@ class _RegisterPageState extends State<RegisterPage>
                     'assets/images/BackButton-Red.png',
                     height: 24,
                     fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.arrow_back,
+                        color: Color(0xFFE9293A),
+                        size: 24,
+                      );
+                    },
                   ),
                 ),
               ),

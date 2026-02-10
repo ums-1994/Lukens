@@ -529,6 +529,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                     'assets/images/BackButton-Red.png',
                     height: 24,
                     fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.arrow_back,
+                        color: Color(0xFFE9293A),
+                        size: 24,
+                      );
+                    },
                   ),
                 ),
               ),
