@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
+
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
@@ -7,6 +9,8 @@ import '../../api.dart';
 import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/fixed_sidebar.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -29,6 +33,76 @@ class _ProposalsPageState extends State<ProposalsPage>
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
   String _currentPage = 'My Proposals';
+
+  // Sidebar methods
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+    });
+  }
+
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/dashboard');
+        break;
+      case 'My Proposals':
+        // Already on proposals page
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client_management');
+        break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        _handleLogout(context);
+        break;
+    }
+  }
+
+  void _handleLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                final app = context.read<dynamic>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   final ScrollController _scrollController = ScrollController();
   bool _hasLoadedOnce = false;
 
@@ -59,17 +133,6 @@ class _ProposalsPageState extends State<ProposalsPage>
       _hasLoadedOnce = true;
       _loadProposals();
     }
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
   }
 
   Future<void> _loadProposals() async {
@@ -466,121 +529,12 @@ class _ProposalsPageState extends State<ProposalsPage>
   }
 
   Widget _buildSidebar(BuildContext context) {
-    final sidebar = AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: _isSidebarCollapsed ? 90.0 : 250.0,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.35),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
-          ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-                _currentPage == 'My Proposals', context),
-            _buildNavItem('Templates', 'assets/images/content_library.png',
-                _currentPage == 'Templates', context),
-            _buildNavItem(
-                'Content Library',
-                'assets/images/content_library.png',
-                _currentPage == 'Content Library',
-                context),
-            _buildNavItem(
-                'Client Management',
-                'assets/images/collaborations.png',
-                _currentPage == 'Client Management',
-                context),
-            _buildNavItem(
-                'Approved Proposals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approved Proposals',
-                context),
-            _buildNavItem(
-                'Analytics (My Pipeline)',
-                'assets/images/analytics.png',
-                _currentPage == 'Analytics (My Pipeline)',
-                context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: PremiumTheme.glassWhiteBorder.withValues(alpha: 0.6),
-              ),
-            const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-
-    return GestureDetector(
-      onTap: () {
-        if (_isSidebarCollapsed) _toggleSidebar();
-      },
-      behavior: HitTestBehavior.opaque,
-      child: sidebar,
+    return FixedSidebar(
+      currentPage: 'My Proposals',
+      isCollapsed: _isSidebarCollapsed,
+      onToggle: _toggleSidebar,
+      onNavigate: (label) => _navigateToPage(context, label),
+      onLogout: () => _handleLogout(context),
     );
   }
 
