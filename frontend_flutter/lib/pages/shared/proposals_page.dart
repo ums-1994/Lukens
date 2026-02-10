@@ -505,7 +505,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                 icon: const Icon(Icons.more_vert, color: Colors.white),
                 onSelected: (value) {
                   if (value == 'logout') {
-                    _handleLogout(context, app);
+                    _handleLogout(context);
                   }
                 },
                 itemBuilder: (BuildContext context) => [
