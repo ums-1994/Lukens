@@ -467,7 +467,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             // Login Button
             Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(25),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
