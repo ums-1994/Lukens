@@ -14,6 +14,35 @@ from api.utils.jwt_validator import validate_jwt_token, JWTValidationError
 bp = Blueprint('client', __name__)
 
 
+def _get_invitation_column_info(cursor):
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'collaboration_invitations'
+        """
+    )
+    cols = {r['column_name'] if isinstance(r, dict) else r[0] for r in cursor.fetchall()}
+
+    token_col = 'access_token' if 'access_token' in cols else ('token' if 'token' in cols else None)
+    email_col = (
+        'invited_email'
+        if 'invited_email' in cols
+        else (
+            'invitee_email'
+            if 'invitee_email' in cols
+            else ('email' if 'email' in cols else None)
+        )
+    )
+    expires_col = 'expires_at' if 'expires_at' in cols else None
+    return {
+        'cols': cols,
+        'token_col': token_col,
+        'email_col': email_col,
+        'expires_col': expires_col,
+    }
+
+
 def _get_proposal_column_info(cursor):
     cursor.execute(
         """
@@ -219,7 +248,7 @@ def client_dashboard_mini(token):
 # ============================================================================
 
 
-@bp.get("/api/client/proposals")
+@bp.get("/client/proposals")
 def get_client_proposals():
     """Get all proposals for a client using their access token"""
     try:
@@ -229,20 +258,35 @@ def get_client_proposals():
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            inv_info = _get_invitation_column_info(cursor)
+            token_col = inv_info['token_col']
+            email_col = inv_info['email_col']
+            expires_col = inv_info['expires_col']
+
+            if not token_col:
+                return {'detail': 'Client invitations not configured (missing token column)'}, 500
+
+            if not email_col:
+                return {'detail': 'Client invitations not configured (missing invited email column)'}, 500
             
             # Get invitation details to find client email
-            cursor.execute("""
-                SELECT invited_email, expires_at
+            select_expires = f", {expires_col}" if expires_col else ", NULL as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {email_col} as invited_email{select_expires}
                 FROM collaboration_invitations
-                WHERE access_token = %s
-            """, (token,))
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
             
             invitation = cursor.fetchone()
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
             # Check if expired
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            if invitation.get('expires_at') and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
             client_email = invitation['invited_email']
@@ -272,7 +316,7 @@ def get_client_proposals():
                     LIMIT 1
                 ) ps ON TRUE
                 LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id
-                WHERE (ci.invited_email = %s OR ci.access_token = %s)
+                WHERE (ci.{email_col} = %s OR ci.{token_col} = %s)
                 ORDER BY p.updated_at DESC
             """
 
@@ -290,7 +334,7 @@ def get_client_proposals():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/api/client/proposals/<int:proposal_id>")
+@bp.get("/client/proposals/<int:proposal_id>")
 def get_client_proposal_details(proposal_id):
     """Get detailed proposal information for client"""
     try:
@@ -300,19 +344,34 @@ def get_client_proposal_details(proposal_id):
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            inv_info = _get_invitation_column_info(cursor)
+            token_col = inv_info['token_col']
+            email_col = inv_info['email_col']
+            expires_col = inv_info['expires_col']
+
+            if not token_col:
+                return {'detail': 'Client invitations not configured (missing token column)'}, 500
+
+            if not email_col:
+                return {'detail': 'Client invitations not configured (missing invited email column)'}, 500
             
             # Verify token and get client email
-            cursor.execute("""
-                SELECT invited_email, expires_at
+            select_expires = f", {expires_col}" if expires_col else ", NULL as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {email_col} as invited_email{select_expires}
                 FROM collaboration_invitations
-                WHERE access_token = %s
-            """, (token,))
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
             
             invitation = cursor.fetchone()
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            if invitation.get('expires_at') and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
             column_info = _get_proposal_column_info(cursor)
@@ -339,8 +398,8 @@ def get_client_proposal_details(proposal_id):
                     u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
                 {user_join_clause}
-                LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id AND ci.access_token = %s
-                WHERE p.id = %s AND (ci.invited_email = %s OR ci.access_token = %s)
+                LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id AND ci.{token_col} = %s
+                WHERE p.id = %s AND (ci.{email_col} = %s OR ci.{token_col} = %s)
             """
 
             cursor.execute(query, (token, proposal_id, invitation['invited_email'], token))
@@ -381,7 +440,7 @@ def get_client_proposal_details(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/client/proposals/<int:proposal_id>/comment")
+@bp.post("/client/proposals/<int:proposal_id>/comment")
 def add_client_comment(proposal_id):
     """Add a comment from client"""
     try:
@@ -444,7 +503,7 @@ def add_client_comment(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/client/proposals/<int:proposal_id>/approve")
+@bp.post("/client/proposals/<int:proposal_id>/approve")
 def client_approve_proposal(proposal_id):
     """Client approves proposal - creates DocuSign envelope for signing"""
     try:
@@ -537,8 +596,8 @@ def client_approve_proposal(proposal_id):
                     # Use a return URL that points back to the client proposals page
                     from api.utils.helpers import get_frontend_url
                     frontend_url = get_frontend_url()
-                    # Use collaboration router to land in correct client viewer
-                    return_url = f"{frontend_url}/#/collaborate?token={token}&signed=true"
+                    # Return to client portal after signing
+                    return_url = f"{frontend_url}/#/client/proposals?token={token}&signed=true"
                     
                     envelope_result = create_docusign_envelope(
                         proposal_id=proposal_id,
@@ -548,6 +607,12 @@ def client_approve_proposal(proposal_id):
                         signer_title=signer_title,
                         return_url=return_url
                     )
+
+                    if envelope_result.get('disabled'):
+                        return {
+                            'detail': envelope_result.get('detail') or 'DocuSign disabled',
+                            'error': envelope_result.get('reason') or 'docusign_disabled',
+                        }, 501
                     
                     signing_url = envelope_result['signing_url']
                     envelope_id = envelope_result['envelope_id']
@@ -627,7 +692,7 @@ def client_approve_proposal(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/client/proposals/<int:proposal_id>/reject")
+@bp.post("/client/proposals/<int:proposal_id>/reject")
 def client_reject_proposal(proposal_id):
     """Client rejects proposal"""
     try:
@@ -701,7 +766,7 @@ def client_reject_proposal(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/client/proposals/<int:proposal_id>/get_signing_url")
+@bp.post("/client/proposals/<int:proposal_id>/get_signing_url")
 def get_client_signing_url(proposal_id):
     """Get or create DocuSign signing URL for client"""
     try:
@@ -788,8 +853,8 @@ def get_client_signing_url(proposal_id):
                 # Since we're on HTTP, DocuSign will open in a new tab (not embedded)
                 # Use a return URL that points back to the client proposals page
                 frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8081')
-                # Use collaboration router to land in correct client viewer
-                return_url = f"{frontend_url}/#/collaborate?token={token}&signed=true"
+                # Return to client portal after signing
+                return_url = f"{frontend_url}/#/client/proposals?token={token}&signed=true"
                 
                 envelope_result = create_docusign_envelope(
                     proposal_id=proposal_id,
@@ -971,7 +1036,7 @@ def get_client_dashboard_stats(username=None):
 # CLIENT ACTIVITY TRACKING ROUTES
 # ============================================================================
 
-@bp.post("/api/client/activity")
+@bp.post("/client/activity")
 def log_client_activity():
     """Log client activity event (open, close, view_section, download, sign, comment)"""
     try:
@@ -989,13 +1054,26 @@ def log_client_activity():
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'collaboration_invitations'
+                """
+            )
+            inv_cols = {r['column_name'] for r in cursor.fetchall()}
+
+            token_col = 'access_token' if 'access_token' in inv_cols else ('token' if 'token' in inv_cols else None)
+            if not token_col:
+                return {'detail': 'Client invitations not configured (missing token column)'}, 500
             
             # Get client info from token
             cursor.execute("""
                 SELECT ci.invited_email, c.id as client_id
                 FROM collaboration_invitations ci
                 LEFT JOIN clients c ON c.email = ci.invited_email
-                WHERE ci.access_token = %s
+                WHERE ci.""" + token_col + """ = %s
             """, (token,))
             
             result = cursor.fetchone()
@@ -1049,7 +1127,7 @@ def log_client_activity():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/client/session/start")
+@bp.post("/client/session/start")
 def start_client_session():
     """Start a new client session for time tracking"""
     try:
@@ -1065,13 +1143,26 @@ def start_client_session():
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'collaboration_invitations'
+                """
+            )
+            inv_cols = {r['column_name'] for r in cursor.fetchall()}
+
+            token_col = 'access_token' if 'access_token' in inv_cols else ('token' if 'token' in inv_cols else None)
+            if not token_col:
+                return {'detail': 'Client invitations not configured (missing token column)'}, 500
             
             # Get client info from token
             cursor.execute("""
                 SELECT ci.invited_email, c.id as client_id
                 FROM collaboration_invitations ci
                 LEFT JOIN clients c ON c.email = ci.invited_email
-                WHERE ci.access_token = %s
+                WHERE ci.""" + token_col + """ = %s
             """, (token,))
             
             result = cursor.fetchone()
@@ -1116,7 +1207,7 @@ def start_client_session():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/client/session/end")
+@bp.post("/client/session/end")
 def end_client_session():
     """End a client session and calculate time spent"""
     try:

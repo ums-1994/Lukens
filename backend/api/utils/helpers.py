@@ -383,7 +383,16 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
         print(f"⚠️ Failed to process mentions: {e}")
 
 
-def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
+def generate_proposal_pdf(
+    proposal_id,
+    title,
+    content,
+    client_name=None,
+    client_email=None,
+    signer_name=None,
+    signer_title=None,
+    signed_date=None,
+):
     """Generate PDF from proposal content"""
     if not PDF_AVAILABLE:
         raise Exception("ReportLab not installed. PDF generation unavailable.")
@@ -741,12 +750,26 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
             ),
         )
     )
+    def _sig_line(label: str, value: str | None, underscore_len: int = 30):
+        safe_value = (value or '').strip()
+        if safe_value:
+            return f"{label}: {html.escape(safe_value)}"
+        return f"{label}: {'_' * underscore_len}"
+
+    def _format_signed_date(v):
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.strftime('%Y-%m-%d')
+        s = str(v).strip()
+        return s or None
+
     elements.append(Spacer(1, 0.6 * inch))
-    elements.append(Paragraph("Name: ________________________________", content_style))
+    elements.append(Paragraph(_sig_line("Name", signer_name, 30), content_style))
     elements.append(Spacer(1, 0.15 * inch))
-    elements.append(Paragraph("Title: _________________________________", content_style))
+    elements.append(Paragraph(_sig_line("Title", signer_title, 30), content_style))
     elements.append(Spacer(1, 0.15 * inch))
-    elements.append(Paragraph("Date: _________________________________", content_style))
+    elements.append(Paragraph(_sig_line("Date", _format_signed_date(signed_date), 30), content_style))
 
     header_title = (title or "Untitled Proposal").strip() or "Untitled Proposal"
     generated_label = created_at.strftime("Generated %Y-%m-%d %H:%M")
@@ -824,6 +847,13 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
     Create DocuSign envelope with redirect signing (works on HTTP)
     Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
     """
+    if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+        return {
+            'disabled': True,
+            'reason': 'docusign_disabled',
+            'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+        }
+
     # Re-check DocuSign availability in case import failed at module load
     try:
         from docusign_esign import (
