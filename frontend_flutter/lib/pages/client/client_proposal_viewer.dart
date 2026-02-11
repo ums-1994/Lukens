@@ -1175,11 +1175,20 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Proposal #${proposal['id']} • ${_formatDate(proposal['updated_at'])}',
+                  'Proposal #${proposal['id']} • v${proposal['version_number'] ?? 1} • ${_formatDate(proposal['version_created_at'] ?? proposal['updated_at'])}',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
                   ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Opp ${proposal['opportunity_id'] ?? '—'} • Stage: ${proposal['engagement_stage'] ?? 'N/A'} • Owner: ${proposal['owner_name'] ?? 'Unknown'}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

@@ -5,6 +5,7 @@ enum UserRole {
   creator,
   approver,
   admin,
+  finance,
 }
 
 class RoleService extends ChangeNotifier {
@@ -21,6 +22,7 @@ class RoleService extends ChangeNotifier {
   List<UserRole> get availableRoles => [
         UserRole.creator,
         UserRole.approver,
+        UserRole.finance,
         // UserRole.admin, // Uncomment when admin features are ready
       ];
 
@@ -32,6 +34,8 @@ class RoleService extends ChangeNotifier {
         return 'Admin';
       case UserRole.admin:
         return 'Admin';
+      case UserRole.finance:
+        return 'Finance';
     }
   }
 
@@ -46,6 +50,8 @@ class RoleService extends ChangeNotifier {
         return '✅';
       case UserRole.admin:
         return '👑';
+      case UserRole.finance:
+        return '💰';
     }
   }
 
@@ -57,28 +63,36 @@ class RoleService extends ChangeNotifier {
         return 'Review and approve proposals';
       case UserRole.admin:
         return 'System administration and approvals';
+      case UserRole.finance:
+        return 'Review pricing and financials for proposals';
     }
   }
 
   // Map backend role to frontend UserRole
   UserRole mapBackendRoleToFrontendRole(String? backendRole) {
     if (backendRole == null) return UserRole.creator;
-    
+
     final role = backendRole.toLowerCase().trim();
-    
+
     // Admin roles → Approver (Admin Dashboard)
     if (role == 'admin' || role == 'ceo') {
       return UserRole.approver;
     }
-    
+
+    // Finance roles → Finance Dashboard
+    if (role == 'finance' ||
+        role == 'finance manager' ||
+        role == 'financial manager' ||
+        role == 'finance_manager' ||
+        role == 'financial_manager') {
+      return UserRole.finance;
+    }
+
     // Manager roles → Creator (Manager Dashboard)
-    if (role == 'manager' || 
-        role == 'financial manager' || 
-        role == 'creator' ||
-        role == 'user') {
+    if (role == 'manager' || role == 'creator' || role == 'user') {
       return UserRole.creator;
     }
-    
+
     // Default to creator
     return UserRole.creator;
   }
@@ -86,17 +100,18 @@ class RoleService extends ChangeNotifier {
   // Initialize role from backend user data
   Future<void> initializeRoleFromUser(Map<String, dynamic>? userData) async {
     if (userData == null) return;
-    
+
     final backendRole = userData['role']?.toString();
     final frontendRole = mapBackendRoleToFrontendRole(backendRole);
-    
+
     _currentRole = frontendRole;
-    
+
     // Persist role selection
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_role', frontendRole.toString());
-    
-    print('✅ Initialized role from backend: "$backendRole" → ${_getRoleName(frontendRole)}');
+
+    print(
+        '✅ Initialized role from backend: "$backendRole" → ${_getRoleName(frontendRole)}');
     notifyListeners();
   }
 
@@ -123,6 +138,8 @@ class RoleService extends ChangeNotifier {
           _currentRole = UserRole.approver;
         } else if (savedRole.contains('admin')) {
           _currentRole = UserRole.admin;
+        } else if (savedRole.contains('finance')) {
+          _currentRole = UserRole.finance;
         }
         print('✅ Loaded saved role: ${_getRoleName(_currentRole)}');
       }
@@ -139,9 +156,11 @@ class RoleService extends ChangeNotifier {
   bool isCreator() => _currentRole == UserRole.creator;
   bool isApprover() => _currentRole == UserRole.approver;
   bool isAdmin() => _currentRole == UserRole.admin;
+  bool isFinance() => _currentRole == UserRole.finance;
 
   // Check if user has access to a feature based on role
   bool canCreateProposals() => isCreator() || isAdmin();
   bool canApproveProposals() => isApprover() || isAdmin();
   bool canAccessAdmin() => isAdmin();
+  bool canEditPricing() => isFinance() || isAdmin();
 }

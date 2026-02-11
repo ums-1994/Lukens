@@ -8,15 +8,18 @@ class CustomScrollbar extends StatelessWidget {
   final Color? thumbColor;
   final Color? trackColor;
   final Color? trackBorderColor;
+  final ScrollbarOrientation? scrollbarOrientation;
 
   const CustomScrollbar({
     super.key,
     required this.child,
     this.controller,
     this.thickness = 16,
-    this.thumbColor = const Color(0xFF06B6D4),
+    // Use a vivid blue to make the scrollbar clearly visible
+    this.thumbColor = const Color(0xFF3498DB),
     this.trackColor = const Color(0xFF1A1F26),
     this.trackBorderColor = const Color(0xFF2D3748),
+    this.scrollbarOrientation,
   });
 
   @override
@@ -30,8 +33,8 @@ class CustomScrollbar extends StatelessWidget {
       trackColor: trackColor,
       trackVisibility: true,
       trackBorderColor: trackBorderColor,
+      scrollbarOrientation: scrollbarOrientation,
       child: child,
     );
   }
 }
-

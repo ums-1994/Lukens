@@ -22,10 +22,17 @@ bp = Blueprint('auth', __name__)
 
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:
-    initialize_firebase()
+    print("[AUTH] Initializing Firebase Admin SDK...")
+    result = initialize_firebase()
+    if result:
+        print("[AUTH] [OK] Firebase initialization succeeded")
+    else:
+        print("[AUTH] [WARNING] Firebase initialization returned None - check logs above")
 except Exception as e:
-    print(f"[AUTH] WARNING: Firebase initialization failed, but auth blueprint will still work: {e}")
-    print("   Firebase authentication features may not be available until Firebase is properly configured.")
+    import traceback
+    print(f"[AUTH] [ERROR] Firebase initialization failed: {e}")
+    print(f"[AUTH] Stack trace: {traceback.format_exc()}")
+    print("[AUTH]    Firebase authentication features may not be available until Firebase is properly configured.")
 
 def generate_verification_token(user_id, email):
     """Generate a verification token for email verification and store in database"""
@@ -418,15 +425,18 @@ def firebase_auth():
                 username = user[1]
                 user_role = user[4]  # Get role from database
                 
-                # Normalize role: map variations to standard roles (admin or manager)
-                # Only two roles: admin and manager
+                # Normalize role: map variations to standardized roles
+                # Supported normalized roles: 'admin', 'manager', 'finance_manager'
                 role_lower = user_role.lower().strip() if user_role else 'user'
                 if role_lower in ['admin', 'ceo']:
                     normalized_role = 'admin'
-                elif role_lower in ['manager', 'financial manager', 'creator', 'user']:
+                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager']:
+                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
+                    normalized_role = 'finance_manager'
+                elif role_lower in ['manager', 'creator', 'user']:
                     normalized_role = 'manager'
                 else:
-                    # Default to manager for unknown roles
+                    # Default to manager for unknown roles but log it for visibility
                     normalized_role = 'manager'
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
                 
@@ -475,11 +485,14 @@ def firebase_auth():
                     counter += 1
                 
                 # Use requested role if provided, otherwise default to 'manager'
-                # Only two roles: admin and manager
+                # Supported roles: 'admin', 'manager', 'finance_manager'
                 normalized_role = requested_role.lower().strip() if requested_role else 'manager'
                 if normalized_role in ['admin', 'ceo']:
                     role_to_use = 'admin'
-                elif normalized_role in ['manager', 'financial manager', 'creator', 'user']:
+                elif normalized_role in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
+                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
+                    role_to_use = 'finance_manager'
+                elif normalized_role in ['manager', 'creator', 'user']:
                     role_to_use = 'manager'
                 else:
                     # Default to manager for unknown roles

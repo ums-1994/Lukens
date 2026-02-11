@@ -18,7 +18,10 @@ import 'pages/creator/templates_page.dart';
 import 'pages/creator/template_builder.dart';
 import 'pages/creator/client_management_page.dart';
 import 'pages/admin/approver_dashboard_page.dart';
+import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
+import 'pages/finance_manager/finance_dashboard_v2.dart';
+import 'pages/finance_manager/finance_onboarding_page.dart';
 import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
 import 'pages/shared/register_page.dart';
@@ -304,18 +307,45 @@ class MyApp extends StatelessWidget {
           '/creator_dashboard': (context) => const DashboardPage(),
           '/proposals': (context) => ProposalsPage(),
           '/compose': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments
-                as Map<String, dynamic>?;
+            final dynamic rawArgs = ModalRoute.of(context)?.settings.arguments;
+            Map<String, dynamic>? args;
 
-            // If proposal data is passed, open it in the editor
-            if (args != null) {
-              return BlankDocumentEditorPage(
-                proposalId: args['id']?.toString(),
-                proposalTitle: args['title']?.toString(),
-                readOnly: args['readOnly'] ?? false,
-                requireVersionDescription:
-                    args['requireVersionDescription'] ?? false,
+            if (rawArgs is Map<String, dynamic>) {
+              args = rawArgs;
+            } else if (rawArgs is Map) {
+              args = rawArgs.map(
+                (key, value) => MapEntry(key.toString(), value),
               );
+            }
+
+            if (args != null) {
+              final dynamic idRaw = args['id'] ??
+                  args['proposalId'] ??
+                  args['proposal_id'] ??
+                  args['proposalID'];
+
+              final dynamic titleRaw = args['title'] ??
+                  args['proposalTitle'] ??
+                  args['proposal_title'] ??
+                  args['name'];
+
+              final String? proposalId =
+                  idRaw?.toString().trim().isNotEmpty == true
+                      ? idRaw.toString().trim()
+                      : null;
+
+              final String? proposalTitle = titleRaw?.toString();
+
+              if (proposalId != null) {
+                return BlankDocumentEditorPage(
+                  proposalId: proposalId,
+                  proposalTitle: proposalTitle,
+                  readOnly: args['readOnly'] ?? false,
+                  requireVersionDescription:
+                      args['requireVersionDescription'] ?? false,
+                  isCollaborator: args['isCollaborator'] ?? false,
+                );
+              }
             }
 
             // Otherwise, show the old compose page
@@ -357,7 +387,10 @@ class MyApp extends StatelessWidget {
           },
           '/approvals': (context) => const ApproverDashboardPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
+          '/finance_dashboard': (context) => FinanceDashboardPage(),
+          '/finance/onboarding': (context) => const FinanceOnboardingPage(),
           '/approved_proposals': (context) => const ApprovedProposalsPage(),
+          '/admin_approvals': (context) => const AdminApprovalsPage(),
           '/proposal_review': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
                 as Map<String, dynamic>?;
@@ -452,14 +485,21 @@ class _AuthWrapperState extends State<AuthWrapper> {
             String dashboardRoute;
 
             final isAdmin = userRole == 'admin' || userRole == 'ceo';
-            final isManager = userRole == 'manager' ||
+            final isFinance = userRole == 'finance' ||
+                userRole == 'finance manager' ||
                 userRole == 'financial manager' ||
+                userRole == 'finance_manager' ||
+                userRole == 'financial_manager';
+            final isManager = userRole == 'manager' ||
                 userRole == 'creator' ||
                 userRole == 'user';
 
             if (isAdmin) {
               dashboardRoute = '/approver_dashboard';
               print('✅ Khonobuzz: Routing to Admin Dashboard');
+            } else if (isFinance) {
+              dashboardRoute = '/finance_dashboard';
+              print('✅ Khonobuzz: Routing to Finance Dashboard');
             } else if (isManager) {
               dashboardRoute = '/creator_dashboard';
               print('✅ Khonobuzz: Routing to Creator Dashboard (Manager)');
@@ -691,19 +731,22 @@ class _HomeShellState extends State<HomeShell> {
     final user = AuthService.currentUser;
     if (user == null) return;
 
-    final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
     final roleService = context.read<RoleService>();
 
     // Initialize role service
     roleService.initializeRoleFromUser(user).then((_) {
-      // Navigate based on role
-      if (backendRole == 'admin' || backendRole == 'ceo') {
-        // Admin → Approver Dashboard
-        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+      final currentRole = roleService.currentRole;
+      String dashboardRoute;
+
+      if (currentRole == UserRole.approver || currentRole == UserRole.admin) {
+        dashboardRoute = '/approver_dashboard';
+      } else if (currentRole == UserRole.finance) {
+        dashboardRoute = '/finance_dashboard';
       } else {
-        // Manager → Creator Dashboard
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        dashboardRoute = '/creator_dashboard';
       }
+
+      Navigator.pushReplacementNamed(context, dashboardRoute);
     });
   }
 

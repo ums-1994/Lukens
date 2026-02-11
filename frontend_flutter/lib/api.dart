@@ -5,8 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 
-// Get API URL from JavaScript config or use default
+// Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
+  // Prefer explicit config injected into the web page when available
   if (kIsWeb) {
     try {
       // Try to get from window.APP_CONFIG.API_URL
@@ -27,12 +28,9 @@ String get baseUrl {
       print('⚠️ Could not read API URL from config: $e');
     }
   }
-  // Default URLs based on environment
-  if (kDebugMode) {
-    return 'http://127.0.0.1:5000';
-  }
-  // Production default (Render backend URL)
-  return 'https://lukens-wp8w.onrender.com';
+
+  // Align with AuthService so authentication and uploads share the same host.
+  return AuthService.baseUrl;
 }
 
 class AppState extends ChangeNotifier {
@@ -447,13 +445,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> createProposal(String title, String client,
-      {String? templateKey}) async {
+      {String? templateKey, dynamic clientId}) async {
     try {
       final r = await http.post(
         Uri.parse("$baseUrl/api/proposals"),
         headers: _headers,
-        body: jsonEncode(
-            {"title": title, "client": client, "template_key": templateKey}),
+        body: jsonEncode({
+          "title": title,
+          "client": client,
+          "template_key": templateKey,
+          if (clientId != null) "client_id": clientId,
+        }),
       );
       final p = jsonDecode(r.body);
       currentProposal = p;
@@ -900,7 +902,9 @@ class AppState extends ChangeNotifier {
     );
     if (r.statusCode == 200) {
       final data = jsonDecode(r.body);
-      authToken = data["access_token"];
+      // Backend returns {"token": "..."} for legacy login.
+      // Keep compatibility with any older clients expecting access_token.
+      authToken = data["token"] ?? data["access_token"];
 
       // IMPORTANT: Sync token with AuthService for content library
       if (currentUser != null) {

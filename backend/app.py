@@ -126,6 +126,13 @@ app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
 
+# Expose upload and content library routes at root (no /api prefix) for frontend compatibility
+from api.routes.creator import upload_image, upload_template, get_content, create_content
+app.add_url_rule('/upload/image', view_func=upload_image, methods=['POST'])
+app.add_url_rule('/upload/template', view_func=upload_template, methods=['POST'])
+app.add_url_rule('/content', view_func=get_content, methods=['GET'])
+app.add_url_rule('/content', view_func=create_content, methods=['POST'])
+
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
 
@@ -1187,32 +1194,50 @@ def get_db():
     """Get PostgreSQL connection"""
     return _pg_conn()
 
+
 def hash_password(password):
+    """Hash a password using werkzeug"""
     return generate_password_hash(password)
 
+
 def verify_password(stored_hash, password):
+    """Verify a password against a stored hash"""
     return check_password_hash(stored_hash, password)
 
+
 def generate_token(username):
+    """Generate a new authentication token for a user"""
     token = secrets.token_urlsafe(32)
     valid_tokens[token] = {
         'username': username,
         'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(days=7)
+        'expires_at': datetime.now() + timedelta(days=7),
     }
     save_tokens()  # Persist to file
     print(f"[TOKEN] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
     print(f"[TOKEN] Total valid tokens: {len(valid_tokens)}")
     return token
 
+
 def verify_token(token):
+    """Verify a token and return the username if valid"""
+    global valid_tokens
     # Dev bypass for testing
     if token == 'dev-bypass-token':
         print("[DEV] Using dev-bypass-token for username: admin")
         return 'admin'
-    
+
+    # First check in-memory tokens
     if token not in valid_tokens:
-        return None
+        # Reload from file to sync tokens across multiple workers/processes
+        try:
+            valid_tokens = load_tokens()
+            print(f"[TOKEN] Reloaded tokens from file, now have {len(valid_tokens)} tokens")
+        except Exception as e:
+            print(f"[WARN] Could not reload tokens from file: {e}")
+        if token not in valid_tokens:
+            return None
+
     token_data = valid_tokens[token]
     if datetime.now() > token_data['expires_at']:
         del valid_tokens[token]
@@ -1756,10 +1781,10 @@ def get_user_profile(username):
 
 # Content library endpoints
 
-@app.get("/api/content")
-@app.get("/content")
+@app.get("/api/content", endpoint="legacy_get_content_api")
+@app.get("/content", endpoint="legacy_get_content")
 @token_required
-def get_content(username):
+def legacy_get_content(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -1783,10 +1808,10 @@ def get_content(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/content")
-@app.post("/content")
+@app.post("/api/content", endpoint="legacy_create_content_api")
+@app.post("/content", endpoint="legacy_create_content")
 @token_required
-def create_content(username):
+def legacy_create_content(username):
     try:
         data = request.get_json()
         
@@ -1806,10 +1831,10 @@ def create_content(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.put("/api/content/<int:content_id>")
-@app.put("/content/<int:content_id>")
+@app.put("/api/content/<int:content_id>", endpoint="legacy_update_content_api")
+@app.put("/content/<int:content_id>", endpoint="legacy_update_content")
 @token_required
-def update_content(username, content_id):
+def legacy_update_content(username, content_id):
     try:
         data = request.get_json()
         
@@ -1841,10 +1866,10 @@ def update_content(username, content_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.delete("/api/content/<int:content_id>")
-@app.delete("/content/<int:content_id>")
+@app.delete("/api/content/<int:content_id>", endpoint="legacy_delete_content_api")
+@app.delete("/content/<int:content_id>", endpoint="legacy_delete_content")
 @token_required
-def delete_content(username, content_id):
+def legacy_delete_content(username, content_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()

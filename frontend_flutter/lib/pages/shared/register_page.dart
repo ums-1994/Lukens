@@ -47,7 +47,7 @@ class _RegisterPageState extends State<RegisterPage>
 
   int _currentFrameIndex = 0;
 
-  final List<String> _roles = ['Manager', 'Admin'];
+  final List<String> _roles = ['Manager', 'Finance Manager', 'Admin'];
 
   @override
   void initState() {
@@ -145,8 +145,18 @@ class _RegisterPageState extends State<RegisterPage>
       final password = _passwordController.text;
       final firstName = _firstNameController.text.trim();
       final lastName = _lastNameController.text.trim();
-      final role =
-          _selectedRole.toLowerCase(); // Convert to lowercase for backend
+      // Map role selection to backend role format
+      String role;
+      if (_selectedRole == 'Finance Manager') {
+        // Use canonical backend role
+        role = 'finance_manager';
+      } else if (_selectedRole == 'Admin') {
+        role = 'admin';
+      } else {
+        role = 'manager'; // Default to manager
+      }
+      print('🔍 Selected role from UI: "$_selectedRole"');
+      print('🔍 Mapped role for backend: "$role"');
 
       // Step 1: Create user in Firebase
       print('🔥 Creating user in Firebase...');
@@ -224,13 +234,17 @@ class _RegisterPageState extends State<RegisterPage>
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Syncing user to backend database...');
+      print('🔍 Sending role to backend: "$role"');
+      print('🔍 Selected role from dropdown: "$_selectedRole"');
+      final requestBody = {
+        'id_token': firebaseIdToken,
+        'role': role, // Send role to backend
+      };
+      print('🔍 Request body role: "${requestBody['role']}"');
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'id_token': firebaseIdToken,
-          'role': role, // Send role to backend
-        }),
+        body: json.encode(requestBody),
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
@@ -255,8 +269,12 @@ class _RegisterPageState extends State<RegisterPage>
         setState(() => _isLoading = false);
 
         if (userProfile != null) {
+          // Normalize roles for comparison (handle space vs underscore differences)
+          final backendRole = (userProfile['role']?.toString() ?? '').toLowerCase().trim().replaceAll(' ', '_');
+          final requestedRoleNormalized = role.toLowerCase().trim().replaceAll(' ', '_');
+          
           // Update role in backend if needed
-          if (userProfile['role'] != role) {
+          if (backendRole != requestedRoleNormalized) {
             // Role might need to be updated in backend
             print(
                 '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
@@ -276,21 +294,27 @@ class _RegisterPageState extends State<RegisterPage>
 
           await appState.init();
 
-          // Redirect based on user role
-          final userRole =
-              (userProfile['role']?.toString() ?? '').toLowerCase().trim();
-          String dashboardRoute;
+          // Redirect based on user role using RoleService
+          final rawRole = userProfile['role']?.toString() ?? '';
+          final userRole = rawRole.toLowerCase().trim();
+          final currentRole = roleService.currentRole;
 
           print('🔍 User role from backend: "$userRole"');
           print('🔍 Requested role: "$role"');
+          print('🔍 Frontend mapped role: $currentRole');
 
-          // Check both the backend role and the requested role
-          if (userRole == 'admin' || userRole == 'ceo' || role == 'admin') {
+          String dashboardRoute;
+
+          if (currentRole == UserRole.approver ||
+              currentRole == UserRole.admin) {
             dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Approval Dashboard');
+            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
+          } else if (currentRole == UserRole.finance) {
+            dashboardRoute = '/finance_dashboard';
+            print('✅ Routing to Finance Dashboard (from RoleService)');
           } else {
             dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard');
+            print('✅ Routing to Creator Dashboard (from RoleService)');
           }
 
           ScaffoldMessenger.of(context).showSnackBar(

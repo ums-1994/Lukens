@@ -164,6 +164,10 @@ class RoleSwitcher extends StatelessWidget {
                     print('➡️ Navigating to approver dashboard...');
                     Navigator.of(context)
                         .pushReplacementNamed('/approver_dashboard');
+                  } else if (role == UserRole.finance) {
+                    print('➡️ Navigating to finance dashboard...');
+                    Navigator.of(context)
+                        .pushReplacementNamed('/finance_dashboard');
                   } else if (role == UserRole.creator) {
                     print('➡️ Navigating to creator dashboard...');
                     Navigator.of(context).pushReplacementNamed('/dashboard');
@@ -243,8 +247,12 @@ class CompactRoleSwitcher extends StatelessWidget {
                   if (role == UserRole.approver) {
                     Navigator.of(context)
                         .pushReplacementNamed('/approver_dashboard');
+                  } else if (role == UserRole.finance) {
+                    Navigator.of(context)
+                        .pushReplacementNamed('/finance_dashboard');
                   } else if (role == UserRole.creator) {
-                    Navigator.of(context).pushReplacementNamed('/creator_dashboard');
+                    Navigator.of(context)
+                        .pushReplacementNamed('/creator_dashboard');
                   }
                 }
               }

@@ -361,6 +361,7 @@ def token_required(f):
                 return {'detail': 'Invalid or expired token'}, 401
         else:
             # Token doesn't look like a Firebase JWT.
+
             # Fall back to legacy/local DB token validation.
             username = verify_token(token)
             if username:

@@ -42,10 +42,10 @@ try:
     from docusign_esign.client.api_exception import ApiException
     import jwt
     DOCUSIGN_AVAILABLE = True
-    print("✅ DocuSign SDK imported successfully")
+    print("[OK] DocuSign SDK imported successfully")
 except ImportError as e:
     DOCUSIGN_AVAILABLE = False
-    print(f"⚠️ DocuSign SDK not available: {e}")
+    print(f"[WARNING] DocuSign SDK not available: {e}")
     print("   Install with: pip install docusign-esign")
 
 def resolve_user_id(cursor, identifier):
@@ -588,7 +588,6 @@ def generate_proposal_pdf(
     structured = _coerce_to_structured(content)
     sections = _normalize_sections(structured)
     t_parse_ms = (time.perf_counter() - t_parse0) * 1000.0
-
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
