@@ -459,9 +459,8 @@ Rules:
 # ============================================================================
 
 @bp.get("/content")
-@token_required
-def get_content(username=None):
-    """Get all content items"""
+def get_content():
+    """Get all content items (no auth for content library)"""
     try:
         category = request.args.get('category', None)
         with get_db_connection() as conn:
@@ -502,9 +501,8 @@ def get_content(username=None):
         return {'detail': str(e)}, 500
 
 @bp.post("/content")
-@token_required
-def create_content(username=None):
-    """Create a new content item"""
+def create_content():
+    """Create a new content item (no auth for content library)"""
     try:
         data = request.get_json()
         
