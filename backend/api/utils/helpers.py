@@ -382,7 +382,16 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
         print(f"⚠️ Failed to process mentions: {e}")
 
 
-def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
+def generate_proposal_pdf(
+    proposal_id,
+    title,
+    content,
+    client_name=None,
+    client_email=None,
+    signer_name=None,
+    signer_title=None,
+    signed_date=None,
+):
     """Generate PDF from proposal content"""
     if not PDF_AVAILABLE:
         raise Exception("ReportLab not installed. PDF generation unavailable.")
@@ -488,20 +497,83 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
         spaceAfter=12
     )
     
-    # Simple content parsing - split by paragraphs
-    if content:
-        for para in content.split('\n\n'):
-            if para.strip():
-                elements.append(Paragraph(html.escape(para.strip()), content_style))
-                elements.append(Spacer(1, 0.2*inch))
-    
-    # Signature placeholder
-    sig_style = ParagraphStyle(
-        'Signature',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor='#666666',
-        spaceBefore=0.5*inch
+    def _sig_line(label: str, value: str | None, underscore_len: int = 30):
+        safe_value = (value or '').strip()
+        if safe_value:
+            return f"{label}: {html.escape(safe_value)}"
+        return f"{label}: {'_' * underscore_len}"
+
+    def _format_signed_date(v):
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            return v.strftime('%Y-%m-%d')
+        s = str(v).strip()
+        return s or None
+
+    elements.append(Spacer(1, 0.6 * inch))
+    elements.append(Paragraph(_sig_line("Name", signer_name, 30), content_style))
+    elements.append(Spacer(1, 0.15 * inch))
+    elements.append(Paragraph(_sig_line("Title", signer_title, 30), content_style))
+    elements.append(Spacer(1, 0.15 * inch))
+    elements.append(Paragraph(_sig_line("Date", _format_signed_date(signed_date), 30), content_style))
+
+    header_title = (title or "Untitled Proposal").strip() or "Untitled Proposal"
+    generated_label = created_at.strftime("Generated %Y-%m-%d %H:%M")
+
+    class _NumberedCanvas(canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_page_states = []
+
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total_pages = len(self._saved_page_states)
+            for state in self._saved_page_states:
+                self.__dict__.update(state)
+                self._draw_header_footer(total_pages)
+                super().showPage()
+            super().save()
+
+        def _draw_header_footer(self, total_pages: int):
+            page_width, page_height = doc.pagesize
+            page_num = self.getPageNumber()
+
+            self.saveState()
+            self.setFont("Helvetica", 8)
+            self.setFillColorRGB(0.25, 0.25, 0.25)
+
+            header_y = page_height - (0.6 * inch)
+            footer_y = 0.6 * inch
+
+            self.setStrokeColorRGB(0.8, 0.8, 0.8)
+            self.setLineWidth(0.5)
+            self.line(doc.leftMargin, header_y - 8, page_width - doc.rightMargin, header_y - 8)
+            self.line(doc.leftMargin, footer_y + 8, page_width - doc.rightMargin, footer_y + 8)
+
+            header_left = header_title
+            if client_name:
+                header_left = f"{header_left} - {str(client_name).strip()}"
+            self.drawString(doc.leftMargin, header_y, header_left)
+            self.drawRightString(page_width - doc.rightMargin, header_y, generated_label)
+
+            footer_left = f"Proposal #{proposal_id}"
+            footer_center = client_email.strip() if isinstance(client_email, str) and client_email.strip() else ""
+            footer_right = f"Page {page_num} of {total_pages}"
+
+            self.drawString(doc.leftMargin, footer_y, footer_left)
+            if footer_center:
+                self.drawCentredString(page_width / 2.0, footer_y, footer_center)
+            self.drawRightString(page_width - doc.rightMargin, footer_y, footer_right)
+            self.restoreState()
+
+    t_build0 = time.perf_counter()
+    doc.build(
+        elements,
+        canvasmaker=_NumberedCanvas,
     )
     
     elements.append(Paragraph("[SIGNATURE PLACEHOLDER: /sig1/]", sig_style))
@@ -534,6 +606,13 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
     Create DocuSign envelope with redirect signing (works on HTTP)
     Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
     """
+    if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+        return {
+            'disabled': True,
+            'reason': 'docusign_disabled',
+            'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+        }
+
     # Re-check DocuSign availability in case import failed at module load
     try:
         from docusign_esign import (
