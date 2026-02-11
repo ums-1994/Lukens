@@ -1127,7 +1127,7 @@ class AppState extends ChangeNotifier {
   }
 
   // Create content with Cloudinary URL
-  Future<void> createContentWithCloudinary(String key, String label,
+  Future<bool> createContentWithCloudinary(String key, String label,
       String cloudinaryUrl, String publicId, String category,
       {int? parentId}) async {
     try {
@@ -1145,15 +1145,22 @@ class AppState extends ChangeNotifier {
         body["parent_id"] = parentId;
       }
 
-      await http.post(
-        Uri.parse("$baseUrl/content"),
+      final r = await http.post(
+        Uri.parse("$_apiBaseUrl/content"),
         headers: _headers,
         body: jsonEncode(body),
       );
-      await fetchContent();
-      notifyListeners();
+      if (r.statusCode == 200 || r.statusCode == 201) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      }
+
+      print('Error creating content: ${r.statusCode} - ${r.body}');
+      return false;
     } catch (e) {
       print('Error creating content: $e');
+      return false;
     }
   }
 
