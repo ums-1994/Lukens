@@ -991,9 +991,10 @@ class AppState extends ChangeNotifier {
         file = await http.MultipartFile.fromPath('file', filePath);
       }
 
+      // TEMP: Use local uploads while Cloudinary is failing.
       // Creator upload routes are mounted under /api on the backend.
-      final request = http.MultipartRequest(
-          'POST', Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/image"))
+      final request = http.MultipartRequest('POST',
+          Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/image/local"))
         ..headers.addAll(_multipartHeaders)
         ..files.add(file);
 

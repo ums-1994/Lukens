@@ -31,6 +31,14 @@ from api.utils.ai_safety import AISafetyError
 bp = Blueprint('creator', __name__, url_prefix='')
 
 
+def _build_upload_base_url():
+    forwarded_proto = (request.headers.get('x-forwarded-proto') or '').split(',')[0].strip()
+    forwarded_host = (request.headers.get('x-forwarded-host') or '').split(',')[0].strip()
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}"
+    return request.host_url.rstrip('/')
+
+
 def _normalize_kb_filter(value):
     if value is None:
         return None
@@ -886,6 +894,44 @@ def upload_image():
         file = request.files['file']
         result = cloudinary.uploader.upload(file)
         return result, 200
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/upload/image/local")
+def upload_image_local():
+    """Temporary local upload: save image in UPLOAD_FOLDER and return a public URL."""
+    try:
+        if 'file' not in request.files:
+            return {'detail': 'No file provided'}, 400
+
+        file = request.files['file']
+        filename = file.filename or 'upload'
+
+        from werkzeug.utils import secure_filename
+        import secrets
+        ext = ''
+        if '.' in filename:
+            ext = '.' + filename.rsplit('.', 1)[1].lower()
+
+        safe_name = secure_filename(filename.rsplit('.', 1)[0]) or 'upload'
+        stored_name = f"{safe_name}_{secrets.token_hex(8)}{ext}"
+
+        upload_folder = os.getenv('UPLOAD_FOLDER', './uploads')
+        os.makedirs(upload_folder, exist_ok=True)
+        file_path = os.path.join(upload_folder, stored_name)
+        file.save(file_path)
+
+        base_url = _build_upload_base_url()
+        file_url = f"{base_url}/uploads/{stored_name}"
+
+        return {
+            'success': True,
+            'url': file_url,
+            'public_id': stored_name,
+            'filename': stored_name,
+            'storage': 'local',
+        }, 201
     except Exception as e:
         return {'detail': str(e)}, 500
 
