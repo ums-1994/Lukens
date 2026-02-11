@@ -2,11 +2,12 @@
 Creator role routes - Content management, proposal CRUD, AI features, uploads
 """
 from flask import Blueprint, request, jsonify
-import io
-import json
+from flask_cors import cross_origin
 import os
-import re
+import json
 import traceback
+from datetime import datetime, timedelta, timezone
+import psycopg2
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
@@ -899,6 +900,7 @@ def upload_image():
 
 
 @bp.post("/upload/image/local")
+@cross_origin(origins=["http://localhost:8081", "https://backend-sow.onrender.com"], supports_credentials=True)
 def upload_image_local():
     """Temporary local upload: save image in UPLOAD_FOLDER and return a public URL."""
     try:

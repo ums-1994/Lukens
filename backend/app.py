@@ -2371,9 +2371,9 @@ def client_sign_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/upload/image")
+@app.post("/upload/image", endpoint="app_upload_image")
 @token_required
-def upload_image(username):
+def app_upload_image(username):
     try:
         if 'file' not in request.files:
             return {'detail': 'No file provided'}, 400
@@ -2384,9 +2384,9 @@ def upload_image(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/upload/template")
+@app.post("/upload/template", endpoint="app_upload_template")
 @token_required
-def upload_template(username):
+def app_upload_template(username):
     try:
         if 'file' not in request.files:
             return {'detail': 'No file provided'}, 400
