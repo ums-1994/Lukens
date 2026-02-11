@@ -158,6 +158,13 @@ app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp, url_prefix='/api/risk-gate')
 
+# Expose upload and content library routes at root (no /api prefix) for frontend compatibility
+from api.routes.creator import upload_image, upload_template, get_content, create_content
+app.add_url_rule('/upload/image', view_func=upload_image, methods=['POST'])
+app.add_url_rule('/upload/template', view_func=upload_template, methods=['POST'])
+app.add_url_rule('/content', view_func=get_content, methods=['GET'])
+app.add_url_rule('/content', view_func=create_content, methods=['POST'])
+
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = Starlette()
 asgi_app.mount("/", WSGIMiddleware(app))

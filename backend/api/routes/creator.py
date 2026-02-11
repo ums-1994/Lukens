@@ -460,9 +460,8 @@ Rules:
 # ============================================================================
 
 @bp.get("/content")
-@token_required
-def get_content(username=None):
-    """Get all content items"""
+def get_content():
+    """Get all content items (no auth for content library)"""
     try:
         category = request.args.get('category', None)
         with get_db_connection() as conn:
@@ -503,9 +502,8 @@ def get_content(username=None):
         return {'detail': str(e)}, 500
 
 @bp.post("/content")
-@token_required
-def create_content(username=None):
-    """Create a new content item"""
+def create_content():
+    """Create a new content item (no auth for content library)"""
     try:
         data = request.get_json()
         
@@ -922,8 +920,7 @@ def send_to_client(username=None, proposal_id=None):
 # ============================================================================
 
 @bp.post("/upload/image")
-@token_required
-def upload_image(username=None):
+def upload_image():
     """Upload an image to Cloudinary"""
     try:
         if 'file' not in request.files:
@@ -936,8 +933,7 @@ def upload_image(username=None):
         return {'detail': str(e)}, 500
 
 @bp.post("/upload/template")
-@token_required
-def upload_template(username=None):
+def upload_template():
     """Upload a template to Cloudinary"""
     try:
         if 'file' not in request.files:

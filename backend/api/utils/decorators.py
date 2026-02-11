@@ -9,6 +9,7 @@ from functools import wraps
 from flask import request
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token
 from api.utils.database import get_db_connection
+from api.utils.auth import verify_token
 
 
 DEV_BYPASS_ENABLED = os.getenv('DEV_BYPASS_AUTH', 'false').lower() == 'true'
@@ -420,14 +421,20 @@ def token_required(f):
                 print('[ERROR] Firebase token validation failed - invalid or expired token')
                 return {'detail': 'Invalid or expired token'}, 401
         else:
-            # Token doesn't look like a Firebase JWT, reject it (no legacy fallback)
+            # Token doesn't look like a Firebase JWT.
+            # Allow legacy backend tokens issued by /login and stored in auth_tokens.json.
+            legacy_username = verify_token(token)
+            if legacy_username:
+                print(f"[TOKEN] Legacy token validated for user: {legacy_username}")
+                return f(username=legacy_username, *args, **kwargs)
+
             if DEV_BYPASS_ENABLED:
                 print(
                     "[DEV] Non-Firebase token provided. Using development bypass for user "
                     f"'{DEV_DEFAULT_USERNAME}'. Set DEV_BYPASS_AUTH=false to disable."
                 )
                 return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
-            print('[ERROR] Token is not a valid Firebase ID token (legacy tokens disabled)')
+            print('[ERROR] Token is not a valid Firebase ID token and legacy token verification failed')
             return {'detail': 'Invalid or unsupported token type'}, 401
 
     return decorated
