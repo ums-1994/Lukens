@@ -228,7 +228,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   Future<void> _loadPdfPreview() async {
     if (!kIsWeb) return;
-    _initPdfView();
+
     setState(() {
       _isPdfLoading = true;
       _pdfError = null;
@@ -239,10 +239,62 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       final url =
           '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}';
 
+      // Probe the endpoint first. Iframe load events are unreliable for PDFs
+      // and can lead to an endless spinner. A small Range request gives us a
+      // fast, deterministic signal.
+      http.Response probe;
+      try {
+        probe = await http.get(
+          Uri.parse(url),
+          headers: const {
+            'Range': 'bytes=0-0',
+          },
+        ).timeout(const Duration(seconds: 25));
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _isPdfLoading = false;
+          _pdfError =
+              'Unable to load PDF preview (network). Please retry, or use Export PDF.';
+        });
+        return;
+      }
+
+      final status = probe.statusCode;
+      final contentType = (probe.headers['content-type'] ?? '').toLowerCase();
+      final isPdf = contentType.contains('application/pdf');
+      final ok = status == 200 || status == 206;
+
+      if (!ok || !isPdf) {
+        String details = '';
+        try {
+          final decoded = jsonDecode(probe.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            details = decoded['detail'].toString();
+          }
+        } catch (_) {
+          // ignore
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _isPdfLoading = false;
+          _pdfError = details.isNotEmpty
+              ? details
+              : 'Failed to load PDF preview (HTTP $status). Use Export PDF to open it in a new tab.';
+        });
+        return;
+      }
+
       _pdfObjectUrl = url;
       _pdfIframe?.src = url;
 
-      // _isPdfLoading will flip to false in the iframe onLoad listener.
+      // Stop spinner immediately after a successful probe. The browser will
+      // continue rendering the PDF inside the iframe.
+      if (!mounted) return;
+      setState(() {
+        _isPdfLoading = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
