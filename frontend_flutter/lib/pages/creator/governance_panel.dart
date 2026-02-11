@@ -472,7 +472,6 @@ class _GovernancePanelState extends State<GovernancePanel>
   int get _maxPossibleRiskScore {
     // Only count points for issues that are actually possible for this proposal
     int maxScore = 0;
-    final issues = <Map<String, dynamic>>[];
     // Required sections
     final requiredSections = [
       'executive_summary',
@@ -506,12 +505,17 @@ class _GovernancePanelState extends State<GovernancePanel>
       }
     }
     // AI checks
-    final timeline = widget.proposalData['timeline']?.toString().toLowerCase() ?? '';
-    if (timeline.contains('half') || timeline.contains('quick') || timeline.contains('urgent')) {
+    final timeline =
+        widget.proposalData['timeline']?.toString().toLowerCase() ?? '';
+    if (timeline.contains('half') ||
+        timeline.contains('quick') ||
+        timeline.contains('urgent')) {
       maxScore += 8;
     }
     final scope = widget.proposalData['scope']?.toString().toLowerCase() ?? '';
-    if (scope.contains('and other') || scope.contains('etc') || scope.contains('various')) {
+    if (scope.contains('and other') ||
+        scope.contains('etc') ||
+        scope.contains('various')) {
       maxScore += 6;
     }
     if (!_hasContent('assumptions') && !_hasContent('assumptions_risks')) {
@@ -525,7 +529,8 @@ class _GovernancePanelState extends State<GovernancePanel>
 
   Widget _buildRiskMeter() {
     final maxScore = _maxPossibleRiskScore;
-    final percentage = maxScore == 0 ? 0.0 : (_riskScore / maxScore).clamp(0.0, 1.0);
+    final percentage =
+        maxScore == 0 ? 0.0 : (_riskScore / maxScore).clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
