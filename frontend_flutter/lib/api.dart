@@ -3,6 +3,7 @@ import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'config/api_config.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
@@ -990,10 +991,11 @@ class AppState extends ChangeNotifier {
         file = await http.MultipartFile.fromPath('file', filePath);
       }
 
-      final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/image"))
-            ..headers.addAll(_multipartHeaders)
-            ..files.add(file);
+      // Creator upload routes are mounted under /api on the backend.
+      final request = http.MultipartRequest(
+          'POST', Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/image"))
+        ..headers.addAll(_multipartHeaders)
+        ..files.add(file);
 
       final response = await request.send();
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -1022,10 +1024,11 @@ class AppState extends ChangeNotifier {
         file = await http.MultipartFile.fromPath('file', filePath);
       }
 
-      final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/template"))
-            ..headers.addAll(_multipartHeaders)
-            ..files.add(file);
+      // Creator upload routes are mounted under /api on the backend.
+      final request = http.MultipartRequest(
+          'POST', Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/template"))
+        ..headers.addAll(_multipartHeaders)
+        ..files.add(file);
 
       final response = await request.send();
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -1044,7 +1047,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteFromCloudinary(String publicId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/upload/$publicId"),
+        Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/$publicId"),
         headers: _headers,
       );
       return r.statusCode == 200;
@@ -1057,7 +1060,7 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>?> getUploadSignature(String publicId) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/upload/signature"),
+        Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/signature"),
         headers: _headers,
         body: jsonEncode({"public_id": publicId}),
       );
