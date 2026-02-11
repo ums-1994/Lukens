@@ -824,7 +824,6 @@ def generate_proposal_pdf(
         )
     except Exception:
         pass
->>>>>>> 6aeaa3e (Client portal PDF view/export: caching, performance, and secret-safe web config)
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
