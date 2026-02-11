@@ -976,6 +976,15 @@ def send_to_client(username=None, proposal_id=None):
 # ============================================================================
 
 @bp.post("/upload/image")
+@cross_origin(
+    origins=[
+        "http://localhost:8081",
+        "http://localhost:8082",
+        "http://127.0.0.1:8081",
+        "http://127.0.0.1:8082",
+    ],
+    supports_credentials=True,
+)
 def upload_image():
     """Upload an image to Cloudinary"""
     try:

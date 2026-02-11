@@ -4842,10 +4842,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.length,
       (index) {
         final section = _sections[index];
-        final rawTitle = _titleController.text.trim();
-        final displayTitle = rawTitle.isEmpty || rawTitle == 'Untitled Document'
-            ? null
-            : rawTitle;
         final headerLogoWidget = _buildHeaderLogoWidget();
         return Container(
           width: pageWidth,
@@ -4879,7 +4875,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           child: Column(
             children: [
               DocumentHeader(
-                title: displayTitle,
+                title: null,
                 subtitle: null,
                 leading:
                     _headerLogoPosition == 'left' ? headerLogoWidget : null,
@@ -8660,7 +8656,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 child: Column(
                                   children: [
                                     DocumentHeader(
-                                      title: displayTitle,
+                                      title: null,
                                       subtitle: null,
                                       leading: _headerLogoPosition == 'left'
                                           ? headerLogoWidget
