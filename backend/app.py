@@ -1519,10 +1519,10 @@ def get_user_profile(username):
 
 # Content library endpoints
 
-@app.get("/api/content")
-@app.get("/content")
+@app.get("/api/content", endpoint="legacy_get_content_api")
+@app.get("/content", endpoint="legacy_get_content")
 @token_required
-def get_content(username):
+def legacy_get_content(username):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -1546,10 +1546,10 @@ def get_content(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/content")
-@app.post("/content")
+@app.post("/api/content", endpoint="legacy_create_content_api")
+@app.post("/content", endpoint="legacy_create_content")
 @token_required
-def create_content(username):
+def legacy_create_content(username):
     try:
         data = request.get_json()
         
@@ -1569,10 +1569,10 @@ def create_content(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.put("/api/content/<int:content_id>")
-@app.put("/content/<int:content_id>")
+@app.put("/api/content/<int:content_id>", endpoint="legacy_update_content_api")
+@app.put("/content/<int:content_id>", endpoint="legacy_update_content")
 @token_required
-def update_content(username, content_id):
+def legacy_update_content(username, content_id):
     try:
         data = request.get_json()
         
@@ -1604,10 +1604,10 @@ def update_content(username, content_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.delete("/api/content/<int:content_id>")
-@app.delete("/content/<int:content_id>")
+@app.delete("/api/content/<int:content_id>", endpoint="legacy_delete_content_api")
+@app.delete("/content/<int:content_id>", endpoint="legacy_delete_content")
 @token_required
-def delete_content(username, content_id):
+def legacy_delete_content(username, content_id):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
