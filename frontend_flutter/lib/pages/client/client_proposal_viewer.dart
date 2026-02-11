@@ -613,9 +613,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       final url =
           '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}';
 
-      // Probe the endpoint first. Iframe load events are unreliable for PDFs in
-      // some browsers/Flutter-web renderers and can lead to an endless spinner.
-      // A small Range request gives us a fast, deterministic signal.
+      // Probe the endpoint first. Iframe load events are unreliable for PDFs
+      // and can lead to an endless spinner. A small Range request gives us a
+      // fast, deterministic signal.
       http.Response probe;
       try {
         probe = await http.get(
@@ -642,9 +642,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       if (!ok || !isPdf) {
         String details = '';
         try {
-          final error = jsonDecode(probe.body);
-          if (error is Map && error['detail'] != null) {
-            details = error['detail'].toString();
+          final decoded = jsonDecode(probe.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            details = decoded['detail'].toString();
           }
         } catch (_) {
           // ignore
