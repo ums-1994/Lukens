@@ -11,6 +11,7 @@ import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/app_side_nav.dart';
 
 class TemplateLibraryPage extends StatefulWidget {
   const TemplateLibraryPage({Key? key}) : super(key: key);
@@ -934,8 +935,26 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 child: CircularProgressIndicator(color: PremiumTheme.teal))
             : Row(
                 children: [
-                  // Fixed Sidebar - Full Height
-                  _buildFixedSidebar(context),
+                  // Consistent Sidebar using AppSideNav
+                  Consumer<AppState>(
+                    builder: (context, app, child) {
+                      final role = (app.currentUser?['role'] ?? '')
+                          .toString()
+                          .toLowerCase()
+                          .trim();
+                      final isAdmin = role == 'admin' || role == 'ceo';
+                      return AppSideNav(
+                        isCollapsed: app.isSidebarCollapsed,
+                        currentLabel: app.currentNavLabel,
+                        isAdmin: isAdmin,
+                        onToggle: app.toggleSidebar,
+                        onSelect: (label) {
+                          app.setCurrentNavLabel(label);
+                          _navigateToPage(context, label);
+                        },
+                      );
+                    },
+                  ),
 
                   // Main Content Area
                   Expanded(
