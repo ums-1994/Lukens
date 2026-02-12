@@ -193,6 +193,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     return Scaffold(
       body: Container(
         color: Colors.transparent,
+        height: MediaQuery.of(context).size.height,
         child: Row(
           children: [
             // Consistent Sidebar using AppSideNav
