@@ -1182,10 +1182,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               // Metrics Cards
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 24),
-                                child: Row(
-                                  children: metrics
-                                      .map((metric) => _buildMetricCard(metric))
-                                      .toList(),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: metrics
+                                        .map((metric) =>
+                                            _buildMetricCard(metric))
+                                        .toList(),
+                                  ),
                                 ),
                               ),
 
