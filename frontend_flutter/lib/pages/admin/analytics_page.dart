@@ -362,7 +362,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
     for (final proposal in normalized) {
       final statusRaw = (proposal['status'] ?? 'Draft').toString();
-      final statusLabel = _formatStatusLabel(statusRaw);
+      final statusLabel =
+          _normalizeStatus(statusRaw); // Use same normalization as dashboard
       final statusLower = statusRaw.toLowerCase();
       statusCounts[statusLabel] = (statusCounts[statusLabel] ?? 0) + 1;
 
@@ -610,6 +611,30 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       return PremiumTheme.warning;
     }
     return PremiumTheme.orange;
+  }
+
+  String _normalizeStatus(String? status) {
+    if (status == null || status.isEmpty) return 'Draft';
+
+    final lowerStatus = status.toLowerCase().trim();
+
+    // Map common status variations to standard format
+    if (lowerStatus == 'draft') return 'Draft';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
+      return 'Pending CEO Approval';
+    if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
+      return 'Sent to Client';
+    if (lowerStatus == 'signed' ||
+        lowerStatus == 'approved' ||
+        lowerStatus == 'client signed' ||
+        lowerStatus == 'client approved') return 'Signed';
+    if (lowerStatus.contains('review')) return 'In Review';
+
+    // Capitalize first letter of each word for other statuses
+    return status.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
   }
 
   String _formatStatusLabel(String status) {
