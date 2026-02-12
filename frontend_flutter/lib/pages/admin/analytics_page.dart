@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -101,8 +100,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   @override
   Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Container(
@@ -496,25 +493,412 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Widget _buildChartsSection() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
       children: [
-        Expanded(
-          child: _buildChartCard(
-            'Proposal Status Distribution',
-            _buildStatusChart(),
-            height: 300,
-          ),
+        // Advanced Analytics Cards Row
+        Row(
+          children: [
+            Expanded(
+              child: _buildAdvancedAnalyticsCard(
+                'Client Engagement',
+                Icons.people_outline,
+                _buildClientEngagementContent(),
+                height: 250,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildAdvancedAnalyticsCard(
+                'Pipeline Analytics',
+                Icons.account_tree,
+                _buildPipelineContent(),
+                height: 250,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 16),
+        const SizedBox(height: 16),
+
+        // Second Row of Advanced Analytics
+        Row(
+          children: [
+            Expanded(
+              child: _buildAdvancedAnalyticsCard(
+                'Collaboration Load',
+                Icons.groups,
+                _buildCollaborationContent(),
+                height: 250,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildAdvancedAnalyticsCard(
+                'Cycle Time Metrics',
+                Icons.schedule,
+                _buildCycleTimeContent(),
+                height: 250,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Original Charts
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _buildChartCard(
+                'Proposal Status Distribution',
+                _buildStatusChart(),
+                height: 300,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildChartCard(
+                'Monthly Trend',
+                _buildTrendChart(),
+                height: 300,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAdvancedAnalyticsCard(
+      String title, IconData icon, Widget content,
+      {double height = 200}) {
+    return Container(
+      height: height,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Colors.cyan, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.cyan.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: Colors.cyan, size: 16),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(child: content),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClientEngagementContent() {
+    final proposals = context.watch<AppState>().proposals;
+
+    // Calculate client engagement metrics
+    final totalViews = proposals.length * 15; // Simulated views
+    final uniqueClients = proposals.map((p) => p['client']).toSet().length;
+    final avgTimeSpent = 4.5; // Simulated minutes
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            _buildEngagementMetric('Views', totalViews.toString(), Colors.blue),
+            const SizedBox(width: 16),
+            _buildEngagementMetric(
+                'Clients', uniqueClients.toString(), Colors.green),
+            const SizedBox(width: 16),
+            _buildEngagementMetric(
+                'Avg Time', '${avgTimeSpent}m', Colors.orange),
+          ],
+        ),
+        const SizedBox(height: 16),
         Expanded(
-          child: _buildChartCard(
-            'Monthly Trend',
-            _buildTrendChart(),
-            height: 300,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: Text(
+                'Client engagement chart would render here',
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildEngagementMetric(String label, String value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPipelineContent() {
+    final proposals = context.watch<AppState>().proposals;
+
+    // Calculate pipeline metrics
+    final draftCount = proposals.where((p) => p['status'] == 'Draft').length;
+    final inReviewCount =
+        proposals.where((p) => p['status'] == 'In Review').length;
+    final sentCount =
+        proposals.where((p) => p['status'] == 'Sent to Client').length;
+    final signedCount = proposals.where((p) => p['status'] == 'Signed').length;
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            _buildPipelineStage('Draft', draftCount, Colors.grey),
+            const SizedBox(width: 8),
+            _buildPipelineStage('Review', inReviewCount, Colors.orange),
+            const SizedBox(width: 8),
+            _buildPipelineStage('Sent', sentCount, Colors.blue),
+            const SizedBox(width: 8),
+            _buildPipelineStage('Signed', signedCount, Colors.green),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: Text(
+                'Pipeline flow visualization would render here',
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPipelineStage(String stage, int count, Color color) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: color),
+            ),
+            child: Center(
+              child: Text(
+                count.toString(),
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            stage,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCollaborationContent() {
+    final proposals = context.watch<AppState>().proposals;
+
+    // Calculate collaboration metrics
+    final totalComments = proposals.length * 8; // Simulated
+    final totalVersions = proposals.length * 3; // Simulated
+    final activeCollaborators = proposals.length * 2; // Simulated
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            _buildCollaborationMetric(
+                'Comments', totalComments.toString(), Icons.comment),
+            const SizedBox(width: 16),
+            _buildCollaborationMetric(
+                'Versions', totalVersions.toString(), Icons.history),
+            const SizedBox(width: 16),
+            _buildCollaborationMetric(
+                'Team', activeCollaborators.toString(), Icons.people),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: Text(
+                'Collaboration heatmap would render here',
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCollaborationMetric(String label, String value, IconData icon) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.cyan, size: 20),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCycleTimeContent() {
+    // Calculate cycle time metrics
+    final avgCycleTime = 15.5; // Simulated days
+    final bottleneckStage = 'In Review';
+    final efficiency = 78; // Simulated percentage
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            _buildCycleMetric('Avg Time', '${avgCycleTime}d', Colors.orange),
+            const SizedBox(width: 16),
+            _buildCycleMetric('Bottleneck', bottleneckStage, Colors.red),
+            const SizedBox(width: 16),
+            _buildCycleMetric('Efficiency', '${efficiency}%', Colors.green),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: Text(
+                'Cycle time analysis chart would render here',
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCycleMetric(String label, String value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
