@@ -3,13 +3,10 @@ import 'dart:ui';
 
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/asset_service.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
-import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
-import '../../theme/app_colors.dart';
 import '../../widgets/fixed_sidebar.dart';
 
 class ProposalsPage extends StatefulWidget {
@@ -21,8 +18,6 @@ class ProposalsPage extends StatefulWidget {
 
 class _ProposalsPageState extends State<ProposalsPage>
     with TickerProviderStateMixin {
-  static const Color _navSurface = Color(0xFF1A1F2B);
-  static const Color _navBorder = Color(0xFF1F2A3D);
   String _filterStatus = 'All Statuses';
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> proposals = [];
@@ -32,7 +27,6 @@ class _ProposalsPageState extends State<ProposalsPage>
   // Sidebar state
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
-  String _currentPage = 'My Proposals';
 
   // Sidebar methods
   void _toggleSidebar() {
@@ -782,112 +776,6 @@ class _ProposalsPageState extends State<ProposalsPage>
               },
             ),
         ],
-      ),
-    );
-  }
-
-  // Helper methods from dashboard
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: isActive
-                    ? PremiumTheme.purple.withValues(alpha: 0.3)
-                    : _navSurface,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? PremiumTheme.purple
-                      : _navBorder.withValues(alpha: 0.6),
-                  width: isActive ? 2 : 1,
-                ),
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive
-                ? PremiumTheme.purple.withValues(alpha: 0.25)
-                : _navSurface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isActive
-                  ? PremiumTheme.purple
-                  : _navBorder.withValues(alpha: 0.7),
-              width: isActive ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? PremiumTheme.purple.withValues(alpha: 0.3)
-                      : _navSurface.withValues(alpha: 0.8),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? PremiumTheme.purple
-                        : _navBorder.withValues(alpha: 0.6),
-                    width: isActive ? 2 : 1,
-                  ),
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : Colors.white70,
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
-          ),
-        ),
       ),
     );
   }

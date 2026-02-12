@@ -109,7 +109,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         if (_accessToken != null) 'collab_token': _accessToken!,
       }..removeWhere((k, v) => v == null);
 
-      final uri = Uri.parse('$baseUrl/users/search?${Uri(queryParameters: params).query}');
+      final uri = Uri.parse(
+          '$baseUrl/users/search?${Uri(queryParameters: params).query}');
       final resp = await http.get(uri);
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as List<dynamic>;
@@ -732,7 +733,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
                                           boxShadow: [
                                             BoxShadow(
                                               color: Colors.black
-                                                  .withOpacity(0.05),
+                                                  .withValues(alpha: 0.05),
                                               blurRadius: 6,
                                               offset: const Offset(0, 2),
                                             ),
