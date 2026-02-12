@@ -9,6 +9,7 @@ class ContentLibrarySelectionDialog extends StatefulWidget {
   final String? category;
   final String? parentFolderLabel;
   final bool imagesOnly;
+  final bool textOnly;
   final String? dialogTitle;
 
   const ContentLibrarySelectionDialog({
@@ -16,6 +17,7 @@ class ContentLibrarySelectionDialog extends StatefulWidget {
     this.category,
     this.parentFolderLabel,
     this.imagesOnly = false,
+    this.textOnly = false,
     this.dialogTitle,
   });
 
@@ -151,6 +153,13 @@ class _ContentLibrarySelectionDialogState
       if (widget.imagesOnly) {
         final content = m['content'];
         if (!_isHttpUrl(content)) {
+          return false;
+        }
+      }
+
+      if (widget.textOnly) {
+        final content = m['content'];
+        if (_isHttpUrl(content)) {
           return false;
         }
       }

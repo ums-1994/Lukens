@@ -1153,7 +1153,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        textOnly: true,
+        dialogTitle: 'Insert Text Block',
+      ),
     ).then((selectedModule) {
       if (selectedModule != null && _selectedSectionIndex < _sections.length) {
         // Insert the selected library content into the current section
