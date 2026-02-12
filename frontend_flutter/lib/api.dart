@@ -1449,4 +1449,21 @@ class AppState extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  // Navigation and sidebar state management
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Dashboard';
+
+  bool get isSidebarCollapsed => _isSidebarCollapsed;
+  String get currentNavLabel => _currentNavLabel;
+
+  void toggleSidebar() {
+    _isSidebarCollapsed = !_isSidebarCollapsed;
+    notifyListeners();
+  }
+
+  void setCurrentNavLabel(String label) {
+    _currentNavLabel = label;
+    notifyListeners();
+  }
 }
