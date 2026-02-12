@@ -35,6 +35,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Set the current navigation label for consistent sidebar state
+      context.read<AppState>().setCurrentNavLabel('Approved Proposals');
       _loadData();
     });
   }
