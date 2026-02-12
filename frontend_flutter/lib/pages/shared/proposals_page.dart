@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
-import '../../widgets/fixed_sidebar.dart';
+import '../../widgets/app_side_nav.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -22,17 +22,6 @@ class _ProposalsPageState extends State<ProposalsPage>
   List<Map<String, dynamic>> proposals = [];
   bool _isLoading = true;
   String? _token;
-
-  // Sidebar state
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
-
-  // Sidebar methods
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-    });
-  }
 
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
@@ -102,18 +91,11 @@ class _ProposalsPageState extends State<ProposalsPage>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    // Start collapsed
-    _animationController.value = 1.0;
     _loadProposals();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -396,8 +378,26 @@ class _ProposalsPageState extends State<ProposalsPage>
           color: Colors.transparent,
           child: Row(
             children: [
-              // Fixed Sidebar - Full Height
-              _buildSidebar(context),
+              // Consistent Sidebar using AppSideNav
+              Consumer<AppState>(
+                builder: (context, app, child) {
+                  final role = (app.currentUser?['role'] ?? '')
+                      .toString()
+                      .toLowerCase()
+                      .trim();
+                  final isAdmin = role == 'admin' || role == 'ceo';
+                  return AppSideNav(
+                    isCollapsed: app.isSidebarCollapsed,
+                    currentLabel: app.currentNavLabel,
+                    isAdmin: isAdmin,
+                    onToggle: app.toggleSidebar,
+                    onSelect: (label) {
+                      app.setCurrentNavLabel(label);
+                      _navigateToPage(context, label);
+                    },
+                  );
+                },
+              ),
 
               // Main Content Area
               Expanded(
@@ -521,16 +521,6 @@ class _ProposalsPageState extends State<ProposalsPage>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildSidebar(BuildContext context) {
-    return FixedSidebar(
-      currentPage: 'My Proposals',
-      isCollapsed: _isSidebarCollapsed,
-      onToggle: _toggleSidebar,
-      onNavigate: (label) => _navigateToPage(context, label),
-      onLogout: () => _handleLogout(context),
     );
   }
 

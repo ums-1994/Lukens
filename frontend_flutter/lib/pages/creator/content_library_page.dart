@@ -15,6 +15,7 @@ import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
 import '../../mixins/sidebar_mixin.dart';
 import '../../widgets/ai_content_generator.dart';
+import '../../widgets/app_side_nav.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -1541,8 +1542,26 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             bottom: false,
             child: Row(
               children: [
-                // Fixed Sidebar - Full Height (Exact Dashboard Styling)
-                _buildFixedSidebar(context),
+                // Consistent Sidebar using AppSideNav
+                Consumer<AppState>(
+                  builder: (context, app, child) {
+                    final role = (app.currentUser?['role'] ?? '')
+                        .toString()
+                        .toLowerCase()
+                        .trim();
+                    final isAdmin = role == 'admin' || role == 'ceo';
+                    return AppSideNav(
+                      isCollapsed: app.isSidebarCollapsed,
+                      currentLabel: app.currentNavLabel,
+                      isAdmin: isAdmin,
+                      onToggle: app.toggleSidebar,
+                      onSelect: (label) {
+                        app.setCurrentNavLabel(label);
+                        _navigateToPage(context, label);
+                      },
+                    );
+                  },
+                ),
                 // Main Content
                 Expanded(
                   child: Padding(
