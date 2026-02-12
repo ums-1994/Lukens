@@ -168,6 +168,8 @@ def create_notification(
 
             if 'notification_type' in column_names:
                 add_column('notification_type', notification_type)
+            if 'type' in column_names:
+                add_column('type', notification_type)
             if 'title' in column_names:
                 add_column('title', title)
             if 'message' in column_names:
