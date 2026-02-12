@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import 'api_service.dart';
+import '../config/api_config.dart';
+import 'auth_service.dart';
 
 class ContentLibraryService {
-  static String get baseUrl => ApiService.baseUrl;
+  static String get baseUrl => ApiConfig.backendBaseUrl;
 
   // Get headers with authentication
   Map<String, String> _getHeaders({String? token}) {
@@ -27,14 +28,18 @@ class ContentLibraryService {
     String? token,
   }) async {
     try {
-      String url = '$baseUrl/api/content';
+      String url = '${ApiConfig.backendBaseUrl}/api/content';
       if (category != null && category.isNotEmpty) {
         url += '?category=$category';
       }
 
+      // Prefer explicit token, fall back to AuthService token
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
       final response = await http.get(
         Uri.parse(url),
-        headers: _getHeaders(token: token),
+        headers: _getHeaders(token: effectiveToken),
       );
 
       if (response.statusCode == 200) {
@@ -70,11 +75,17 @@ class ContentLibraryService {
   }
 
   // Get a specific content module by ID
-  Future<Map<String, dynamic>?> getContentModule(int contentId) async {
+  Future<Map<String, dynamic>?> getContentModule(
+    int contentId, {
+    String? token,
+  }) async {
     try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
       final response = await http.get(
-        Uri.parse('$baseUrl/api/content/$contentId'),
-        headers: _getHeaders(),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content/$contentId'),
+        headers: _getHeaders(token: effectiveToken),
       );
 
       if (response.statusCode == 200) {
@@ -109,11 +120,15 @@ class ContentLibraryService {
     bool isFolder = false,
     int? parentId,
     String? publicId,
+    String? token,
   }) async {
     try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
       final response = await http.post(
-        Uri.parse('$baseUrl/api/content'),
-        headers: _getHeaders(),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content'),
+        headers: _getHeaders(token: effectiveToken),
         body: json.encode({
           'key': key,
           'label': label,
@@ -142,6 +157,7 @@ class ContentLibraryService {
     String? content,
     String? category,
     String? publicId,
+    String? token,
   }) async {
     try {
       final Map<String, dynamic> body = {};
@@ -150,9 +166,12 @@ class ContentLibraryService {
       if (category != null) body['category'] = category;
       if (publicId != null) body['public_id'] = publicId;
 
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
       final response = await http.put(
-        Uri.parse('$baseUrl/api/content/$contentId'),
-        headers: _getHeaders(),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content/$contentId'),
+        headers: _getHeaders(token: effectiveToken),
         body: json.encode(body),
       );
 
@@ -164,11 +183,17 @@ class ContentLibraryService {
   }
 
   // Delete a content module
-  Future<bool> deleteContentModule(int contentId) async {
+  Future<bool> deleteContentModule(
+    int contentId, {
+    String? token,
+  }) async {
     try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
       final response = await http.delete(
-        Uri.parse('$baseUrl/api/content/$contentId'),
-        headers: _getHeaders(),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/content/$contentId'),
+        headers: _getHeaders(token: effectiveToken),
       );
 
       return response.statusCode == 200;
@@ -185,13 +210,17 @@ class ContentLibraryService {
     String? token,
   }) async {
     try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
+      // Backend creator blueprint is mounted under /api, so final route is /api/upload/template
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/upload/template'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/upload/template'),
       );
 
       // Add authentication headers
-      request.headers.addAll(_getMultipartHeaders(token: token));
+      request.headers.addAll(_getMultipartHeaders(token: effectiveToken));
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -231,13 +260,17 @@ class ContentLibraryService {
     String? token,
   }) async {
     try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
+      // Backend creator blueprint is mounted under /api, so final route is /api/upload/image
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/upload/image'),
+        Uri.parse('${ApiConfig.backendBaseUrl}/api/upload/image'),
       );
 
       // Add authentication headers
-      request.headers.addAll(_getMultipartHeaders(token: token));
+      request.headers.addAll(_getMultipartHeaders(token: effectiveToken));
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -277,12 +310,17 @@ class ContentLibraryService {
     required String label,
     String category = 'Documents',
     int? parentId,
+    String? token,
   }) async {
     try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
       // First, upload the file to Cloudinary
       final uploadResult = await uploadDocument(
         fileBytes: fileBytes,
         fileName: fileName,
+        token: effectiveToken,
       );
 
       if (uploadResult == null || uploadResult['success'] != true) {
@@ -299,6 +337,7 @@ class ContentLibraryService {
         category: category,
         publicId: uploadResult['public_id'],
         parentId: parentId,
+        token: effectiveToken,
       );
 
       if (contentResult != null) {

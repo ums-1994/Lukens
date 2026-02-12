@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:js' as js;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'config/api_config.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
@@ -28,9 +30,12 @@ String get baseUrl {
     }
   }
 
-  // Align with AuthService: always use Render backend by default so
-  // authentication and uploads share the same token/host
-  return AuthService.baseUrl;
+  // Default URLs based on environment
+  if (kDebugMode) {
+    return 'https://lukens-wp8w.onrender.com';
+  }
+  // Production default (Render backend URL)
+  return 'https://lukens-wp8w.onrender.com';
 }
 
 class AppState extends ChangeNotifier {
@@ -41,6 +46,8 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> dashboardCounts = {};
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
+
+  String get _apiBaseUrl => '$baseUrl/api';
 
   Future<void> init() async {
     // IMPORTANT: Sync token from AuthService on startup
@@ -167,7 +174,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteContent(int contentId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("$_apiBaseUrl/content/$contentId"),
         headers: _headers,
       );
       if (r.statusCode == 200 || r.statusCode == 204) {
@@ -204,12 +211,25 @@ class AppState extends ChangeNotifier {
         if (publicId != null) "public_id": publicId,
       };
 
-      final r = await http.post(
-        Uri.parse("$baseUrl/content"),
+      http.Response r = await http.post(
+        Uri.parse("$_apiBaseUrl/content"),
         headers: _headers,
         body: jsonEncode(body),
       );
-      if (r.statusCode == 200) {
+
+      if ((r.statusCode == 400 || r.statusCode == 409 || r.statusCode == 500) &&
+          r.body.contains('content_key_key') &&
+          r.body.toLowerCase().contains('already exists')) {
+        final retryBody = Map<String, dynamic>.from(body);
+        retryBody['key'] = '${key}_${DateTime.now().millisecondsSinceEpoch}';
+        r = await http.post(
+          Uri.parse("$_apiBaseUrl/content"),
+          headers: _headers,
+          body: jsonEncode(retryBody),
+        );
+      }
+
+      if (r.statusCode == 200 || r.statusCode == 201) {
         await fetchContent();
         notifyListeners();
         return true;
@@ -225,23 +245,29 @@ class AppState extends ChangeNotifier {
 
   Future<bool> updateContent(
     int contentId, {
+    String? key,
     String? label,
     String? content,
     String? category,
+    bool? isFolder,
+    int? parentId,
     String? publicId,
   }) async {
     try {
       final body = {
+        if (key != null) "key": key,
         if (label != null) "label": label,
         if (content != null) "content": content,
         if (category != null) "category": category,
+        if (isFolder != null) "is_folder": isFolder,
+        if (parentId != null) "parent_id": parentId,
         if (publicId != null) "public_id": publicId,
       };
 
       if (body.isEmpty) return false;
 
       final r = await http.put(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("$_apiBaseUrl/content/$contentId"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -255,6 +281,26 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       print('Error updating content: $e');
+      return false;
+    }
+  }
+
+  Future<bool> resendVerification(String email) async {
+    try {
+      final r = await http.post(
+        Uri.parse("$_apiBaseUrl/resend-verification"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": email}),
+      );
+
+      if (r.statusCode == 200) {
+        return true;
+      }
+
+      debugPrint('Error resending verification: ${r.statusCode} - ${r.body}');
+      return false;
+    } catch (e) {
+      debugPrint('Error resending verification: $e');
       return false;
     }
   }
@@ -668,7 +714,7 @@ class AppState extends ChangeNotifier {
   Future<void> trackClientView(String proposalId) async {
     try {
       await http.post(
-        Uri.parse("$baseUrl/proposals/$proposalId/client_view"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/client_view"),
         headers: _headers,
       );
     } catch (e) {
@@ -679,7 +725,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getPendingApprovals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals/pending_approval"),
+        Uri.parse("$baseUrl/api/proposals/pending_approval"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -695,7 +741,7 @@ class AppState extends ChangeNotifier {
   Future<List<dynamic>> getMyProposals() async {
     try {
       final r = await http.get(
-        Uri.parse("$baseUrl/proposals/my_proposals"),
+        Uri.parse("$baseUrl/api/proposals/my_proposals"),
         headers: _headers,
       );
       if (r.statusCode == 200) {
@@ -712,7 +758,7 @@ class AppState extends ChangeNotifier {
     if (currentProposal == null) return "No proposal selected";
     final id = currentProposal!["id"];
     final r = await http.post(
-      Uri.parse("$baseUrl/proposals/$id/create_esign_request"),
+      Uri.parse("$baseUrl/api/proposals/$id/create_esign_request"),
       headers: _headers,
       body: jsonEncode({}),
     );
@@ -753,6 +799,25 @@ class AppState extends ChangeNotifier {
       return null;
     } catch (e) {
       debugPrint('DocuSign send error: $e');
+      return null;
+    }
+  }
+
+  Future<Uint8List?> fetchProposalPdfPreviewBytes({
+    required int proposalId,
+  }) async {
+    try {
+      final r = await http.get(
+        Uri.parse("$baseUrl/api/proposals/$proposalId/pdf/preview"),
+        headers: _headers,
+      );
+      if (r.statusCode == 200) {
+        return Uint8List.fromList(r.bodyBytes);
+      }
+      debugPrint('PDF preview failed: ${r.statusCode} - ${r.body}');
+      return null;
+    } catch (e) {
+      debugPrint('PDF preview error: $e');
       return null;
     }
   }
@@ -850,13 +915,15 @@ class AppState extends ChangeNotifier {
 
   Future<String?> login(String username, String password) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/login"),
+      Uri.parse("$_apiBaseUrl/login"),
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
       body: "username=$username&password=$password",
     );
     if (r.statusCode == 200) {
       final data = jsonDecode(r.body);
-      authToken = data["access_token"];
+      // Backend returns {"token": "..."} for legacy login.
+      // Keep compatibility with any older clients expecting access_token.
+      authToken = data["token"] ?? data["access_token"];
 
       // IMPORTANT: Sync token with AuthService for content library
       if (currentUser != null) {
@@ -892,7 +959,7 @@ class AppState extends ChangeNotifier {
   Future<String?> register(String username, String email, String password,
       String fullName, String role) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/register"),
+      Uri.parse("$_apiBaseUrl/register"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "username": username,
@@ -917,7 +984,7 @@ class AppState extends ChangeNotifier {
   Future<void> fetchCurrentUser() async {
     if (authToken == null) return;
     final r = await http.get(
-      Uri.parse("$baseUrl/me"),
+      Uri.parse("$_apiBaseUrl/me"),
       headers: {"Authorization": "Bearer $authToken"},
     );
     if (r.statusCode == 200) {
@@ -927,7 +994,7 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> verifyEmail(String token) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/verify-email"),
+      Uri.parse("$_apiBaseUrl/verify-email"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"token": token}),
     );
@@ -956,7 +1023,7 @@ class AppState extends ChangeNotifier {
 
   Future<String?> resendVerificationEmail(String email) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/resend-verification"),
+      Uri.parse("$_apiBaseUrl/resend-verification"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"email": email}),
     );
@@ -988,10 +1055,11 @@ class AppState extends ChangeNotifier {
         file = await http.MultipartFile.fromPath('file', filePath);
       }
 
-      final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/image"))
-            ..headers.addAll(_multipartHeaders)
-            ..files.add(file);
+      // Creator upload routes are mounted under /api on the backend.
+      final request = http.MultipartRequest(
+          'POST', Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/image"))
+        ..headers.addAll(_multipartHeaders)
+        ..files.add(file);
 
       final response = await request.send();
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -1020,10 +1088,11 @@ class AppState extends ChangeNotifier {
         file = await http.MultipartFile.fromPath('file', filePath);
       }
 
-      final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/template"))
-            ..headers.addAll(_multipartHeaders)
-            ..files.add(file);
+      // Creator upload routes are mounted under /api on the backend.
+      final request = http.MultipartRequest(
+          'POST', Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/template"))
+        ..headers.addAll(_multipartHeaders)
+        ..files.add(file);
 
       final response = await request.send();
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -1042,7 +1111,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteFromCloudinary(String publicId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/upload/$publicId"),
+        Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/$publicId"),
         headers: _headers,
       );
       return r.statusCode == 200;
@@ -1055,7 +1124,7 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>?> getUploadSignature(String publicId) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/upload/signature"),
+        Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/signature"),
         headers: _headers,
         body: jsonEncode({"public_id": publicId}),
       );
@@ -1071,33 +1140,59 @@ class AppState extends ChangeNotifier {
   }
 
   // Create content with Cloudinary URL
-  Future<void> createContentWithCloudinary(String key, String label,
+  Future<bool> createContentWithCloudinary(String key, String label,
       String cloudinaryUrl, String publicId, String category,
       {int? parentId}) async {
     try {
-      final Map<String, dynamic> body = {
-        "key": key,
-        "label": label,
-        "content": cloudinaryUrl, // Store Cloudinary URL
-        "public_id": publicId,
-        "category": category,
-        "created_at": DateTime.now().toIso8601String(),
-      };
-
-      // Add parent_id if provided (for files inside folders)
-      if (parentId != null) {
-        body["parent_id"] = parentId;
+      if (authToken == null && AuthService.token != null) {
+        authToken = AuthService.token;
+        currentUser = AuthService.currentUser;
+        print(
+            '🔄 Synced token from AuthService in createContentWithCloudinary');
       }
 
-      await http.post(
-        Uri.parse("$baseUrl/content"),
-        headers: _headers,
-        body: jsonEncode(body),
-      );
-      await fetchContent();
-      notifyListeners();
+      String requestKey = key;
+
+      Future<http.Response> doRequest() {
+        final Map<String, dynamic> body = {
+          "key": requestKey,
+          "label": label,
+          "content": cloudinaryUrl,
+          "public_id": publicId,
+          "category": category,
+          "created_at": DateTime.now().toIso8601String(),
+        };
+
+        if (parentId != null) {
+          body["parent_id"] = parentId;
+        }
+
+        return http.post(
+          Uri.parse("$_apiBaseUrl/content"),
+          headers: _headers,
+          body: jsonEncode(body),
+        );
+      }
+
+      http.Response r = await doRequest();
+
+      if ((r.statusCode == 400 || r.statusCode == 409 || r.statusCode == 500) &&
+          r.body.contains('content_key_key') &&
+          r.body.toLowerCase().contains('already exists')) {
+        requestKey = '${key}_${DateTime.now().millisecondsSinceEpoch}';
+        r = await doRequest();
+      }
+      if (r.statusCode == 200 || r.statusCode == 201) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      }
+
+      print('Error creating content: ${r.statusCode} - ${r.body}');
+      return false;
     } catch (e) {
       print('Error creating content: $e');
+      return false;
     }
   }
 

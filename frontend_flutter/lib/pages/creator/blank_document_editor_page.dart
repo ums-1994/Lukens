@@ -410,23 +410,36 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         _proposalData = Map<String, dynamic>.from(proposal);
       });
 
+      // Always set basic fields even if content is missing or not JSON
+      setState(() {
+        _proposalStatus = proposal['status'] ?? 'draft';
+        _clientNameController.text = (proposal['client_name'] ?? '').toString();
+        _clientEmailController.text =
+            (proposal['client_email'] ?? '').toString();
+        _titleController.text =
+            (proposal['title'] ?? 'Untitled Document').toString();
+      });
+
       // Parse the content JSON
       if (proposal['content'] != null) {
         try {
-          final contentData = json.decode(proposal['content']);
+          final dynamic rawContent = proposal['content'];
+          final dynamic contentData = rawContent is String
+              ? json.decode(rawContent)
+              : (rawContent is Map
+                  ? Map<String, dynamic>.from(rawContent)
+                  : null);
+
+          if (contentData == null) {
+            throw Exception('Unsupported content format');
+          }
 
           setState(() {
             // Set title
-            _titleController.text = contentData['title'] ??
-                proposal['title'] ??
-                'Untitled Document';
-
-            // Load proposal status
-            _proposalStatus = proposal['status'] ?? 'draft';
-
-            // Load client information
-            _clientNameController.text = proposal['client_name'] ?? '';
-            _clientEmailController.text = proposal['client_email'] ?? '';
+            _titleController.text = (contentData['title'] ??
+                    proposal['title'] ??
+                    'Untitled Document')
+                .toString();
 
             // Clear existing sections
             for (var section in _sections) {
@@ -518,6 +531,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
+
+          // Fallback: treat content as plain text so editor is never blank
+          final String fallbackText = proposal['content']?.toString() ?? '';
+          setState(() {
+            for (var section in _sections) {
+              section.controller.dispose();
+              section.titleController.dispose();
+              section.contentFocus.dispose();
+              section.titleFocus.dispose();
+            }
+            _sections.clear();
+
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: fallbackText,
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
+        }
+      } else {
+        // If backend returned no content, ensure we still have an editable section
+        if (_sections.isEmpty) {
+          setState(() {
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: '',
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
         }
       }
     } catch (e) {
@@ -880,7 +930,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickHeaderLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
@@ -905,7 +959,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickFooterLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
@@ -1095,7 +1153,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        textOnly: true,
+        dialogTitle: 'Insert Text Block',
+      ),
     ).then((selectedModule) {
       if (selectedModule != null && _selectedSectionIndex < _sections.length) {
         // Insert the selected library content into the current section
@@ -4792,10 +4853,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.length,
       (index) {
         final section = _sections[index];
-        final rawTitle = _titleController.text.trim();
-        final displayTitle = rawTitle.isEmpty || rawTitle == 'Untitled Document'
-            ? null
-            : rawTitle;
         final headerLogoWidget = _buildHeaderLogoWidget();
         return Container(
           width: pageWidth,
@@ -4829,7 +4886,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           child: Column(
             children: [
               DocumentHeader(
-                title: displayTitle,
+                title: null,
                 subtitle: null,
                 leading:
                     _headerLogoPosition == 'left' ? headerLogoWidget : null,
@@ -8610,7 +8667,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 child: Column(
                                   children: [
                                     DocumentHeader(
-                                      title: displayTitle,
+                                      title: null,
                                       subtitle: null,
                                       leading: _headerLogoPosition == 'left'
                                           ? headerLogoWidget

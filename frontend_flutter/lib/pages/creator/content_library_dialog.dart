@@ -6,7 +6,20 @@ import '../../api.dart';
 import '../../theme/premium_theme.dart';
 
 class ContentLibrarySelectionDialog extends StatefulWidget {
-  const ContentLibrarySelectionDialog({super.key});
+  final String? category;
+  final String? parentFolderLabel;
+  final bool imagesOnly;
+  final bool textOnly;
+  final String? dialogTitle;
+
+  const ContentLibrarySelectionDialog({
+    super.key,
+    this.category,
+    this.parentFolderLabel,
+    this.imagesOnly = false,
+    this.textOnly = false,
+    this.dialogTitle,
+  });
 
   @override
   State<ContentLibrarySelectionDialog> createState() =>
@@ -19,6 +32,11 @@ class _ContentLibrarySelectionDialogState
   List<Map<String, dynamic>> _modules = [];
   bool _loading = true;
   String _search = '';
+
+  bool _isHttpUrl(dynamic value) {
+    if (value is! String) return false;
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
 
   String _cleanPreviewText(String raw) {
     var text = raw.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '');
@@ -64,13 +82,18 @@ class _ContentLibrarySelectionDialogState
       }
 
       print('✅ Loading content with token (length: ${token.length})');
-      final modules = await _svc.getContentModules(token: token);
-      final nonFolderCount = modules.where((m) => m['is_folder'] != true).length;
+      final modules = await _svc.getContentModules(
+        token: token,
+        category: widget.category,
+      );
+      final nonFolderCount =
+          modules.where((m) => m['is_folder'] != true).length;
       setState(() {
         _modules = modules;
         _loading = false;
       });
-      print('✅ Loaded ${modules.length} content modules (${nonFolderCount} non-folder items available for insertion)');
+      print(
+          '✅ Loaded ${modules.length} content modules (${nonFolderCount} non-folder items available for insertion)');
     } catch (e) {
       print('❌ Error loading content modules: $e');
       setState(() {
@@ -82,27 +105,77 @@ class _ContentLibrarySelectionDialogState
 
   @override
   Widget build(BuildContext context) {
+    int? parentFolderId;
+    if (widget.parentFolderLabel != null &&
+        widget.parentFolderLabel!.trim().isNotEmpty) {
+      final target = widget.parentFolderLabel!.trim().toLowerCase();
+      for (final m in _modules) {
+        final isFolder = m['is_folder'] == true;
+        final label = (m['label'] ?? '').toString().trim().toLowerCase();
+        if (isFolder && label == target) {
+          final id = m['id'];
+          if (id is int) {
+            parentFolderId = id;
+          } else if (id != null) {
+            parentFolderId = int.tryParse(id.toString());
+          }
+          break;
+        }
+      }
+    }
+
     // Filter: exclude folders (only show actual content blocks for insertion)
     // and apply search filter
-    final filtered = _modules
-        .where((m) {
-          // Skip folders - only show content blocks that can be inserted
-          if (m['is_folder'] == true) {
-            return false;
-          }
-          // Apply search filter
-          if (_search.isNotEmpty) {
-            final label = (m['label'] as String? ?? '').toLowerCase();
-            final content = (m['content'] as String? ?? '').toLowerCase();
-            final category = (m['category'] as String? ?? '').toLowerCase();
-            final searchLower = _search.toLowerCase();
-            return label.contains(searchLower) || 
-                   content.contains(searchLower) || 
-                   category.contains(searchLower);
-          }
-          return true;
-        })
-        .toList();
+    final filtered = _modules.where((m) {
+      // Skip folders - only show content blocks that can be inserted
+      if (m['is_folder'] == true) {
+        return false;
+      }
+
+      if (widget.parentFolderLabel != null &&
+          widget.parentFolderLabel!.trim().isNotEmpty) {
+        if (parentFolderId == null) {
+          return false;
+        }
+
+        final pid = m['parent_id'];
+        int? parsedPid;
+        if (pid is int) {
+          parsedPid = pid;
+        } else if (pid != null) {
+          parsedPid = int.tryParse(pid.toString());
+        }
+        if (parsedPid != parentFolderId) {
+          return false;
+        }
+      }
+
+      if (widget.imagesOnly) {
+        final content = m['content'];
+        if (!_isHttpUrl(content)) {
+          return false;
+        }
+      }
+
+      if (widget.textOnly) {
+        final content = m['content'];
+        if (_isHttpUrl(content)) {
+          return false;
+        }
+      }
+
+      // Apply search filter
+      if (_search.isNotEmpty) {
+        final label = (m['label'] as String? ?? '').toLowerCase();
+        final content = (m['content'] as String? ?? '').toLowerCase();
+        final category = (m['category'] as String? ?? '').toLowerCase();
+        final searchLower = _search.toLowerCase();
+        return label.contains(searchLower) ||
+            content.contains(searchLower) ||
+            category.contains(searchLower);
+      }
+      return true;
+    }).toList();
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -131,7 +204,7 @@ class _ContentLibrarySelectionDialogState
                         color: Colors.white, size: 24),
                     const SizedBox(width: 12),
                     Text(
-                      'Insert from Content Library',
+                      widget.dialogTitle ?? 'Insert from Content Library',
                       style: PremiumTheme.titleMedium,
                     ),
                     const Spacer(),
@@ -264,24 +337,60 @@ class _ContentLibrarySelectionDialogState
                                       ? '${preview.substring(0, 150)}...'
                                       : preview;
 
+                                  final showImageThumb = widget.imagesOnly &&
+                                      _isHttpUrl(m['content']);
+
                                   return ListTile(
                                     contentPadding: const EdgeInsets.symmetric(
                                       horizontal: 16,
                                       vertical: 8,
                                     ),
-                                    leading: Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: _getCategoryColor(category)
-                                            .withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        _getCategoryIcon(category),
-                                        color: _getCategoryColor(category),
-                                      ),
-                                    ),
+                                    leading: showImageThumb
+                                        ? ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            child: Image.network(
+                                              (m['content'] as String),
+                                              width: 48,
+                                              height: 48,
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (context, error, stack) {
+                                                return Container(
+                                                  width: 48,
+                                                  height: 48,
+                                                  decoration: BoxDecoration(
+                                                    color: _getCategoryColor(
+                                                            category)
+                                                        .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.image,
+                                                    color: _getCategoryColor(
+                                                        category),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          )
+                                        : Container(
+                                            width: 48,
+                                            height: 48,
+                                            decoration: BoxDecoration(
+                                              color: _getCategoryColor(category)
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Icon(
+                                              _getCategoryIcon(category),
+                                              color:
+                                                  _getCategoryColor(category),
+                                            ),
+                                          ),
                                     title: Text(
                                       m['label'] ?? 'Untitled',
                                       style: const TextStyle(
