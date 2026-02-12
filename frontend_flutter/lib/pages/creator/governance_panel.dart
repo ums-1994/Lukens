@@ -347,10 +347,10 @@ class _GovernancePanelState extends State<GovernancePanel>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: _getStatusColor().withOpacity(0.1),
+                      color: _getStatusColor().withAlpha(25),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _getStatusColor().withOpacity(0.3),
+                        color: _getStatusColor().withAlpha(51),
                         width: 2,
                       ),
                     ),
@@ -631,10 +631,10 @@ class _GovernancePanelState extends State<GovernancePanel>
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: priorityColor.withOpacity(0.05),
+        color: priorityColor.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: priorityColor.withOpacity(0.2),
+          color: priorityColor.withValues(alpha: 0.2),
         ),
       ),
       child: Column(
@@ -661,7 +661,7 @@ class _GovernancePanelState extends State<GovernancePanel>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: priorityColor.withOpacity(0.1),
+                  color: priorityColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
