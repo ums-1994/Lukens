@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -890,7 +892,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -915,7 +917,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

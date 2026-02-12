@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable
+
 import 'package:flutter/foundation.dart';
 
 /// Centralized API configuration for the Flutter application

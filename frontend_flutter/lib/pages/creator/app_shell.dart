@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';

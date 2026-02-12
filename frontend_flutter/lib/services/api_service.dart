@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:convert';
 import 'dart:js' as js;
 import 'package:flutter/foundation.dart';

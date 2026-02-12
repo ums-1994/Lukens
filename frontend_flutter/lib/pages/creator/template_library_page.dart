@@ -1,8 +1,9 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'template_builder.dart';
 import '../../theme/premium_theme.dart';
@@ -10,8 +11,6 @@ import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/footer.dart';
-import '../../widgets/custom_scrollbar.dart';
 
 class TemplateLibraryPage extends StatefulWidget {
   const TemplateLibraryPage({Key? key}) : super(key: key);

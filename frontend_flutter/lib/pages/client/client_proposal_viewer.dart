@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable
+
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -76,7 +78,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       }
 
       if (decoded is Map) {
-        final map = Map<String, dynamic>.from(decoded as Map);
+        final map = Map<String, dynamic>.from(decoded);
         return _parseSectionsFromContent(map);
       }
 
