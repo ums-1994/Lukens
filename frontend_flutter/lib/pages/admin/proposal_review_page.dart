@@ -800,13 +800,36 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                 (section['title'] ?? 'Untitled Section').toString();
             final sectionContent = (section['content'] ?? '').toString();
 
+            bool isTruthy(dynamic value) {
+              if (value is bool) return value;
+              if (value is int) return value == 1;
+              if (value is String) {
+                final v = value.trim().toLowerCase();
+                return v == 'true' || v == '1' || v == 't' || v == 'yes';
+              }
+              return false;
+            }
+
+            String normalize(dynamic value) {
+              return (value ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase()
+                  .replaceAll(RegExp(r'[_\-\s]+'), '');
+            }
+
+            final String? backgroundImageUrl =
+                section['backgroundImageUrl'] as String?;
+
+            final bool isCover = isTruthy(section['isCoverPage']) ||
+                normalize(section['sectionType']) == 'cover' ||
+                (index == 0 && backgroundImageUrl != null);
+
             final int? bgColorValue = section['backgroundColor'] is int
                 ? section['backgroundColor'] as int
                 : int.tryParse(section['backgroundColor']?.toString() ?? '');
             final Color backgroundColor =
                 bgColorValue != null ? Color(bgColorValue) : Colors.white;
-            final String? backgroundImageUrl =
-                section['backgroundImageUrl'] as String?;
 
             return Container(
               width: pageWidth,
@@ -819,10 +842,11 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                     ? DecorationImage(
                         image: NetworkImage(backgroundImageUrl),
                         fit: BoxFit.cover,
-                        opacity: 0.7,
+                        opacity: isCover ? 1.0 : 0.7,
                       )
                     : null,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius:
+                    isCover ? BorderRadius.zero : BorderRadius.circular(4),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.15),
@@ -831,53 +855,55 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                   ),
                 ],
               ),
-              child: Column(
-                children: [
-                  _buildAdminHeader(metadata, documentTitle),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 60,
-                          vertical: 24,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              sectionTitle.isEmpty
-                                  ? 'Untitled Section'
-                                  : sectionTitle,
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1A3A52),
+              child: isCover
+                  ? const SizedBox.expand()
+                  : Column(
+                      children: [
+                        _buildAdminHeader(metadata, documentTitle),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 60,
+                                vertical: 24,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    sectionTitle.isEmpty
+                                        ? 'Untitled Section'
+                                        : sectionTitle,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF1A3A52),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Text(
+                                    sectionContent.isEmpty
+                                        ? '(No content in this section)'
+                                        : sectionContent,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Color(0xFF1A1A1A),
+                                      height: 1.8,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            Text(
-                              sectionContent.isEmpty
-                                  ? '(No content in this section)'
-                                  : sectionContent,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF1A1A1A),
-                                height: 1.8,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
+                        _buildAdminFooter(
+                          metadata: metadata,
+                          pageNumber: index + 1,
+                          totalPages: sections.length,
+                        ),
+                      ],
                     ),
-                  ),
-                  _buildAdminFooter(
-                    metadata: metadata,
-                    pageNumber: index + 1,
-                    totalPages: sections.length,
-                  ),
-                ],
-              ),
             );
           }),
         ],
