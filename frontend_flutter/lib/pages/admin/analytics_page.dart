@@ -53,6 +53,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh analytics when dependencies change (e.g., after creating/editing proposals)
+    final app = context.read<AppState>();
+    if (app.proposals.isNotEmpty) {
+      setState(() {}); // Trigger rebuild to recalculate analytics
+    }
+  }
+
   void _toggleSidebar() {
     setState(() {
       _isSidebarCollapsed = !_isSidebarCollapsed;
@@ -1092,6 +1102,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+
+    // Debug: Print proposals count
+    print('Analytics build: proposals count = ${app.proposals.length}');
 
     // Show loading state if proposals are empty
     if (app.proposals.isEmpty) {
