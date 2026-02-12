@@ -68,11 +68,14 @@ CORS(
         r"/*": {
             "origins": [
                 "https://proposals2025.netlify.app",
-                r"^http://localhost(:\\d+)?$",
-                r"^http://127\\.0\\.0\\.1(:\\d+)?$",
+                r"^http://localhost(:\d+)?$",
+                r"^http://127\.0\.0\.1(:\d+)?$",
                 "http://localhost:5173",
                 "http://localhost:5000",
+                "http://localhost:8000",
                 "http://localhost:8081",
+                "http://localhost:51103",  # Flutter dev server
+                "http://127.0.0.1:51103",  # Flutter dev server alternative
             ],
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
@@ -112,11 +115,11 @@ asgi_app = WsgiToAsgi(app)
 # Mark if database has been initialized
 _db_initialized = False
 
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+# limiter = Limiter(
+#     app=app,
+#     key_func=get_remote_address,
+#     default_limits=["200 per day", "50 per hour"]
+# )
 
 app.config['JSON_SORT_KEYS'] = False
 app.config['PROPAGATE_EXCEPTIONS'] = True
@@ -190,6 +193,8 @@ def _build_db_config_from_env():
         'user': os.getenv('DB_USER', 'postgres'),
         'password': os.getenv('DB_PASSWORD', ''),
         'port': int(os.getenv('DB_PORT', '5432')),
+        'connect_timeout': 30,  # Connection timeout
+        'options': '-c statement_timeout=30000',  # Statement timeout
     }
 
 def get_pg_pool():

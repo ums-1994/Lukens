@@ -13,6 +13,12 @@ window.APP_CONFIG = {
       console.log('🌐 Using APP_API_URL:', window.APP_API_URL);
       return window.APP_API_URL;
     }
+    // Check if we're in development (localhost)
+    if (window.location.hostname === 'localhost') {
+      const devUrl = 'http://localhost:8000';
+      console.log('🌐 Using development API URL:', devUrl);
+      return devUrl;
+    }
     // Default to production backend URL
     const defaultUrl = 'https://lukens-wp8w.onrender.com';
     console.log('🌐 Using default API URL:', defaultUrl);

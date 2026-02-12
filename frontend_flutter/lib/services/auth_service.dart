@@ -16,12 +16,16 @@ class AuthService {
       if (isProduction) {
         print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
         return 'https://lukens-wp8w.onrender.com';
+      } else {
+        print('🌐 Using development API URL: http://localhost:8000');
+        return 'http://localhost:8000';
       }
     }
-    // Default to Render backend (production)
-    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to local backend for development
+    print('🌐 Using development API URL: http://localhost:8000');
+    return 'http://localhost:8000';
   }
+
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 
@@ -164,10 +168,12 @@ class AuthService {
         final data = json.decode(response.body) as Map<String, dynamic>;
         // Backend may return either 'token' or 'access_token' and may include a 'user' object
         final token = data['token'] ?? data['access_token'];
-        final user = data['user'] ?? data['user_profile'] ?? {
-          'email': email,
-          'username': email,
-        };
+        final user = data['user'] ??
+            data['user_profile'] ??
+            {
+              'email': email,
+              'username': email,
+            };
 
         if (token != null) _token = token as String;
         _currentUser = Map<String, dynamic>.from(user as Map);
@@ -231,8 +237,8 @@ class AuthService {
         return data;
       } else {
         final error = json.decode(response.body);
-        throw Exception(
-            error['detail'] ?? 'External JWT login failed with status ${response.statusCode}');
+        throw Exception(error['detail'] ??
+            'External JWT login failed with status ${response.statusCode}');
       }
     } catch (e) {
       print('External JWT login error: $e');

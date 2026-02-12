@@ -374,6 +374,38 @@ def test_auth_blueprint():
 def options_firebase():
     return {}, 200
 
+@bp.post("/dev-login")
+def dev_login():
+    """Development bypass login for testing"""
+    try:
+        # Check if dev bypass is enabled
+        if os.getenv('DEV_BYPASS_AUTH', 'false').lower() != 'true':
+            return {'detail': 'Development bypass not enabled'}, 403
+        
+        # Get default username
+        default_username = os.getenv('DEV_DEFAULT_USERNAME', 'admin')
+        
+        # Generate token
+        token = generate_token(default_username)
+        save_tokens(get_valid_tokens())
+        
+        return {
+            'token': token,
+            'user': {
+                'id': 1,
+                'username': default_username,
+                'email': f'{default_username}@dev.local',
+                'full_name': 'Development User',
+                'role': 'admin',
+                'department': 'Development',
+                'is_active': True
+            }
+        }, 200
+    except Exception as e:
+        print(f'Dev login error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @bp.post("/firebase")
 def firebase_auth():
     """

@@ -22,14 +22,14 @@ load_dotenv()
 
 
 def _build_db_config_from_env():
-    # Use local PostgreSQL credentials for development
+    # Use environment variables from .env file
     return {
-        'host': '192.168.137.147',
-        'database': 'lukens_db',
-        'user': 'postgres',
-        'password': 'property007',
-        'port': 5432,
-        'sslmode': 'disable'
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'database': os.getenv('DB_NAME', 'lukens_db'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', 'property007'),
+        'port': int(os.getenv('DB_PORT', '5434')),
+        'sslmode': os.getenv('DB_SSLMODE', 'disable')
     }
 
     # Original code commented out - using local credentials above

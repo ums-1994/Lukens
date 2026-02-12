@@ -118,7 +118,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
     return proposals.where((raw) {
       if (raw is! Map) return false;
-      final p = raw as Map;
+      final p = raw;
 
       final title = (p['title'] ?? '').toString().toLowerCase();
       final client =
@@ -155,7 +155,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   double _extractAmount(dynamic raw) {
     if (raw is! Map) return 0;
-    final p = raw as Map;
+    final p = raw;
     const keys = [
       'budget',
       'amount',
@@ -224,7 +224,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   // Missing helper methods
   DateTime? _extractDate(dynamic proposal) {
     if (proposal is! Map) return null;
-    final p = proposal as Map;
+    final p = proposal;
     final dateStr = p['created_at'] ?? p['date'];
     if (dateStr == null) return null;
     return DateTime.tryParse(dateStr.toString());
@@ -232,7 +232,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   bool _matchesFilters(dynamic proposal) {
     if (proposal is! Map) return false;
-    final p = proposal as Map;
+    final p = proposal;
 
     // Search filter
     final query = _searchController.text.toLowerCase().trim();
@@ -675,7 +675,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              value: _statusFilter,
+              initialValue: _statusFilter,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
@@ -841,7 +841,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   Widget _buildTableRow(dynamic raw) {
     if (raw is! Map) return const SizedBox.shrink();
-    final p = raw as Map;
+    final p = raw;
 
     final title = (p['title'] ?? 'Untitled Proposal').toString();
     final client = (p['client_name'] ?? p['client'] ?? 'Unknown').toString();
@@ -1679,7 +1679,6 @@ class _KpiData {
   const _KpiData({
     required this.label,
     required this.value,
-    this.subValue,
     required this.icon,
     required this.color,
   });

@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+// Conditional import for JS interop
+import 'dart:html' as html show window;
 
 /// Centralized API configuration for the Flutter application
 class ApiConfig {
@@ -14,42 +16,17 @@ class ApiConfig {
 
   /// Get the backend API base URL
   static String get backendBaseUrl {
-    // Force production for now - remove this after testing
-    print('🔧 FORCING PRODUCTION BACKEND URL: $_productionBackendUrl');
-    return _productionBackendUrl;
-
-    // Original logic below - comment out for now
-    /*
-    // For web builds, try to get from JavaScript config first
+    // For web builds, detect environment and use appropriate URL
     if (kIsWeb) {
       try {
-        final config = js.context['APP_CONFIG'];
-        if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-            final url = apiUrl.toString().replaceAll('"', '').trim();
-            if (url.isNotEmpty) {
-              print('🌐 Using API URL from JavaScript config: $url');
-              return url;
-            }
-          }
-        }
-      } catch (e) {
-        print('⚠️ Failed to read JavaScript config: $e');
-        // Fall through to environment-based detection
-      }
-      
-      // Environment-based fallback with better production detection
-      try {
-        final hostname = js.context['window']['location']['hostname'];
-        print('🔍 Detected hostname: ${hostname ?? 'NULL'}');
-        print('🔍 Current origin: ${js.context['window']['location']['origin'] ?? 'NULL'}');
-        
-        if (hostname != null && hostname.toString().contains('onrender.com')) {
+        final hostname = html.window.location.hostname;
+        print('🔍 Detected hostname: $hostname');
+        print('🔍 Current origin: ${html.window.location.origin}');
+
+        if (hostname?.contains('onrender.com') == true) {
           print('🌐 Detected Render environment, using production backend');
           return _productionBackendUrl;
-        } else if (hostname != null && hostname.toString() == 'localhost') {
+        } else if (hostname == 'localhost') {
           print('🌐 Detected localhost environment, using development backend');
           return _developmentBackendUrl;
         } else {
@@ -71,7 +48,6 @@ class ApiConfig {
       print('🌐 Using development backend (debug mode)');
       return _developmentBackendUrl;
     }
-    */
   }
 
   /// Get the frontend base URL (for deep links, redirects, etc.)
