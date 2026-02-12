@@ -930,7 +930,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickHeaderLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
@@ -955,7 +959,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickFooterLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
