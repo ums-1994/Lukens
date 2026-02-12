@@ -291,9 +291,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           child: Container(
             decoration: BoxDecoration(
               image: DecorationImage(
-                image: const AssetImage(
-                    'assets/images/Khonology Landing Page - Frame 6.png'),
-                fit: BoxFit.cover,
+                image: const AssetImage('assets/images/Background-Dark..png'),
+                fit: BoxFit.fill,
                 alignment: Alignment.center,
                 opacity: _tubeProgress.value,
               ),

@@ -27,7 +27,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   late final AnimationController _fadeInController;
 
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/Background-Dark..png',
   ];
 
   int _currentFrameIndex = 0;
@@ -337,7 +337,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           child: Image.asset(
             _backgroundImages[_currentFrameIndex],
             key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
+            fit: BoxFit.fill,
+            width: double.infinity,
+            height: double.infinity,
             errorBuilder: (context, error, stackTrace) {
               return Container(
                 color: const Color(0xFF000000),

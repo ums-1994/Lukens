@@ -219,25 +219,44 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
 
             // Main Content Area
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    _buildHeader(app),
-                    const SizedBox(height: 24),
+              child: Column(
+                children: [
+                  // Header - Fixed at top
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.transparent,
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                    child: _buildHeader(app),
+                  ),
+                  const SizedBox(height: 24),
 
-                    // Hero Section
-                    _buildHeroSection(),
-                    const SizedBox(height: 24),
+                  // Scrollable Content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Hero Section
+                          _buildHeroSection(),
+                          const SizedBox(height: 24),
 
-                    // Content
-                    _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _buildApprovedList(),
-                  ],
-                ),
+                          // Content
+                          _isLoading
+                              ? const Center(child: CircularProgressIndicator())
+                              : _buildApprovedList(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -254,7 +273,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,

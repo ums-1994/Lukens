@@ -16,9 +16,9 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   late final AnimationController _parallaxController;
   late final AnimationController _frameController;
 
-  // Background images for cinematic sequence (clean geometric look)
+  // Background images for cinematic sequence (using Background-Dark.png)
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/Background-Dark..png',
   ];
 
   int _currentFrameIndex = 0;
@@ -109,7 +109,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final isMobile = size.width < 900;
+    final isMobile =
+        size.width < 1200; // Increased breakpoint for better desktop support
 
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
@@ -165,9 +166,15 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                         _buildAnimatedHeadline(isMobile),
                         SizedBox(height: isMobile ? 24 : 40),
                         _buildSubheading(isMobile),
-                        SizedBox(height: isMobile ? 40 : 56),
+                        SizedBox(
+                            height: isMobile
+                                ? 20
+                                : 32), // Reduced spacing for better 100% zoom
                         _buildCTAButtons(isMobile),
-                        SizedBox(height: isMobile ? 40 : 60),
+                        SizedBox(
+                            height: isMobile
+                                ? 30
+                                : 40), // Reduced bottom spacing for better 100% zoom
                         // Red Discs image (45% of logo size)
                         Center(
                           child: Image.asset(
@@ -204,7 +211,9 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           child: Image.asset(
             _backgroundImages[_currentFrameIndex],
             key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
+            fit: BoxFit.fill,
+            width: double.infinity,
+            height: double.infinity,
             errorBuilder: (context, error, stackTrace) {
               return Container(
                 color: const Color(0xFF000000),
@@ -271,7 +280,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
       style: TextStyle(
         fontFamily: 'Poppins',
         color: Colors.white,
-        fontSize: isMobile ? 40 : 80,
+        fontSize: isMobile ? 32 : 60, // Reduced for better 100% zoom
         fontWeight: FontWeight.w900,
         height: 0.95,
         letterSpacing: -2,
@@ -287,7 +296,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
         style: TextStyle(
           fontFamily: 'Poppins',
           color: Colors.white.withValues(alpha: 0.95),
-          fontSize: isMobile ? 16 : 24,
+          fontSize: isMobile ? 14 : 18, // Reduced for better 100% zoom
           fontWeight: FontWeight.w300,
           height: 1.4,
           letterSpacing: 0.3,
@@ -352,7 +361,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                       'GET STARTED',
                       style: TextStyle(
                         fontFamily: 'Poppins',
-                        fontSize: isMobile ? 16 : 20,
+                        fontSize:
+                            isMobile ? 14 : 16, // Reduced for better 100% zoom
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
                       ),
@@ -396,7 +406,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                   'LEARN MORE',
                   style: TextStyle(
                     fontFamily: 'Poppins',
-                    fontSize: isMobile ? 16 : 20,
+                    fontSize:
+                        isMobile ? 14 : 16, // Reduced for better 100% zoom
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
                   ),
