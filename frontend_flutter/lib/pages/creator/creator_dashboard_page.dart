@@ -644,14 +644,16 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal:
+                              16), // Reduced padding for better 100% zoom
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
                             _getHeaderTitle(userRole),
-                            style:
-                                PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                            style: PremiumTheme.titleLarge.copyWith(
+                                fontSize: 18), // Reduced for better 100% zoom
                           ),
                           Row(
                             children: [
@@ -729,7 +731,8 @@ class _DashboardPageState extends State<DashboardPage>
                   // Scrollable Content
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(
+                          16), // Reduced padding for better 100% zoom
                       child: CustomScrollbar(
                         controller: _scrollController,
                         child: RefreshIndicator(
@@ -760,7 +763,8 @@ class _DashboardPageState extends State<DashboardPage>
 
   Widget _buildFixedSidebar(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isSmall = screenWidth < 768;
+    final isSmall =
+        screenWidth < 1200; // Increased breakpoint for better 100% zoom support
     final effectiveCollapsed = isSmall ? true : _isSidebarCollapsed;
 
     return AnimatedContainer(
@@ -1586,7 +1590,8 @@ class _DashboardPageState extends State<DashboardPage>
                     children: [
                       Text(
                         'AI-Powered Compound Risk Gate',
-                        style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                        style: PremiumTheme.titleMedium.copyWith(
+                            fontSize: 16), // Reduced for better 100% zoom
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -1667,7 +1672,8 @@ class _DashboardPageState extends State<DashboardPage>
                   children: [
                     Text(
                       'AI-Powered Compound Risk Gate',
-                      style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                      style: PremiumTheme.titleMedium.copyWith(
+                          fontSize: 16), // Reduced for better 100% zoom
                     ),
                     const SizedBox(height: 4),
                     Text(
