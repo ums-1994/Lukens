@@ -7,10 +7,10 @@ import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
-import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
+import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -35,6 +35,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Set the current navigation label for consistent sidebar state
+      context.read<AppState>().setCurrentNavLabel('Approved Proposals');
       _loadData();
     });
   }
@@ -154,119 +156,91 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     }
   }
 
+  void _navigateToPage(BuildContext context, String page) {
+    switch (page) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/creator-dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content-library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client-management');
+        break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved-proposals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        AuthService.logout();
+        Navigator.pushReplacementNamed(context, '/login');
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/Global BG.jpg',
-              fit: BoxFit.cover,
+      body: Container(
+        color: Colors.transparent,
+        child: Row(
+          children: [
+            // Consistent Sidebar using AppSideNav
+            Consumer<AppState>(
+              builder: (context, app, child) {
+                final role = (app.currentUser?['role'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .trim();
+                final isAdmin = role == 'admin' || role == 'ceo';
+                return AppSideNav(
+                  isCollapsed: app.isSidebarCollapsed,
+                  currentLabel: app.currentNavLabel,
+                  isAdmin: isAdmin,
+                  onToggle: app.toggleSidebar,
+                  onSelect: (label) {
+                    app.setCurrentNavLabel(label);
+                    _navigateToPage(context, label);
+                  },
+                );
+              },
             ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.black.withValues(alpha: 0.65),
-                  Colors.black.withValues(alpha: 0.35),
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+
+            // Main Content Area
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    _buildHeader(app),
+                    const SizedBox(height: 24),
+
+                    // Hero Section
+                    _buildHeroSection(),
+                    const SizedBox(height: 24),
+
+                    // Content
+                    _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _buildApprovedList(),
+                  ],
+                ),
               ),
             ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Consistent Sidebar using AppSideNav
-                  Consumer<AppState>(
-                    builder: (context, app, child) {
-                      final role = (app.currentUser?['role'] ?? '')
-                          .toString()
-                          .toLowerCase()
-                          .trim();
-                      final isAdmin = role == 'admin' || role == 'ceo';
-                      return AppSideNav(
-                        isCollapsed: app.isSidebarCollapsed,
-                        currentLabel: app.currentNavLabel,
-                        isAdmin: isAdmin,
-                        onToggle: app.toggleSidebar,
-                        onSelect: (label) {
-                          app.setCurrentNavLabel(label);
-                          _navigateToPage(context, label);
-                        },
-                      );
-                    },
-                  ),
-
-                  const SizedBox(width: 24),
-
-                  // Main Content Area
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildHeader(app),
-                        const SizedBox(height: 24),
-                        Expanded(
-                          child: GlassContainer(
-                            borderRadius: 32,
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _buildHeroSection(),
-                                const SizedBox(height: 24),
-                                Expanded(
-                                  child: CustomScrollbar(
-                                    controller: _scrollController,
-                                    child: SingleChildScrollView(
-                                      controller: _scrollController,
-                                      physics:
-                                          const AlwaysScrollableScrollPhysics(),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          _buildSection(
-                                            '📊 Approved Proposals Snapshot',
-                                            _buildSnapshotMetrics(),
-                                          ),
-                                          const SizedBox(height: 24),
-                                          _buildSection(
-                                            '✅ Client-Approved Proposals',
-                                            _isLoading
-                                                ? const Center(
-                                                    child:
-                                                        CircularProgressIndicator())
-                                                : _buildApprovedList(),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -278,64 +252,72 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     final displayRole =
         backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Approved Proposals',
-              style: PremiumTheme.titleLarge,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'View proposals that have been approved and signed by clients',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          ],
-        ),
-        Row(
-          children: [
-            ClipOval(
-              child: Image.asset(
-                'assets/images/User_Profile.png',
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Approved Proposals',
+                style: PremiumTheme.titleLarge,
               ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  email,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+              const SizedBox(height: 4),
+              const Text(
+                'View proposals that have been approved and signed by clients',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              ClipOval(
+                child: Image.asset(
+                  'assets/images/User_Profile.png',
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    email,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                Text(
-                  displayRole,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ],
+                  Text(
+                    displayRole,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildHeroSection() {
-    return GlassContainer(
-      borderRadius: 24,
+    return Container(
       padding: const EdgeInsets.all(24),
-      gradientStart: PremiumTheme.teal,
-      gradientEnd: PremiumTheme.tealGradient.colors.last,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [PremiumTheme.teal, PremiumTheme.teal.withValues(alpha: 0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
       child: Row(
         children: [
           Container(
@@ -389,91 +371,34 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     );
   }
 
-  Widget _buildSection(String title, Widget content) {
-    return GlassContainer(
-      borderRadius: 24,
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: PremiumTheme.titleMedium,
-          ),
-          const SizedBox(height: 20),
-          content,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSnapshotMetrics() {
-    final cards = [
-      _SnapshotMetric(
-        title: 'Approved Proposals',
-        value: _approvedProposals.length.toString(),
-        subtitle: 'Client-approved',
-        gradient: PremiumTheme.blueGradient,
-      ),
-      _SnapshotMetric(
-        title: 'Total Approved Value',
-        value: _formatCurrency(_totalApprovedValue),
-        subtitle: 'All-time',
-        gradient: PremiumTheme.purpleGradient,
-      ),
-      _SnapshotMetric(
-        title: 'Last Approved',
-        value: _lastApprovedDate != null
-            ? _formatRelativeDate(_lastApprovedDate!)
-            : '—',
-        subtitle: _lastApprovedDate != null
-            ? DateFormat('dd MMM yyyy').format(_lastApprovedDate!)
-            : 'Awaiting approvals',
-        gradient: PremiumTheme.orangeGradient,
-      ),
-      _SnapshotMetric(
-        title: 'Average Deal Size',
-        value: _approvedProposals.isEmpty
-            ? _formatCurrency(0)
-            : _formatCurrency(_totalApprovedValue / _approvedProposals.length),
-        subtitle: 'Based on approved deals',
-        gradient: PremiumTheme.tealGradient,
-      ),
-    ];
-
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      childAspectRatio: 2.6,
-      crossAxisSpacing: 20,
-      mainAxisSpacing: 20,
-      children: cards
-          .map((metric) => PremiumStatCard(
-                title: metric.title,
-                value: metric.value,
-                subtitle: metric.subtitle,
-                gradient: metric.gradient,
-              ))
-          .toList(),
-    );
-  }
-
   Widget _buildApprovedList() {
     if (_approvedProposals.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 36),
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(24),
+        ),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.check_circle, size: 54, color: PremiumTheme.teal),
-            SizedBox(height: 12),
+          children: [
+            Icon(
+              Icons.inbox_outlined,
+              size: 64,
+              color: Colors.white54,
+            ),
+            const SizedBox(height: 16),
             Text(
-              'No proposals have been approved yet',
+              'No approved proposals yet',
               style: TextStyle(
-                fontSize: 16,
                 color: Colors.white70,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
               ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Proposals that clients approve and sign will appear here.',
+              style: TextStyle(color: Colors.white54, fontSize: 14),
             ),
           ],
         ),
@@ -481,265 +406,254 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     }
 
     return Column(
-      children: _approvedProposals.map(_buildApprovedCard).toList(),
-    );
-  }
-
-  Widget _buildApprovedCard(Map<String, dynamic> proposal) {
-    final approvedDate = proposal['updated_at'] != null
-        ? DateTime.tryParse(proposal['updated_at'].toString())
-        : null;
-    final value = proposal['budget'];
-    final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
-    final owner = proposal['owner_email'] ??
-        proposal['owner'] ??
-        proposal['user_id']?.toString() ??
-        '';
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: GlassContainer(
-        borderRadius: 20,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Metrics Cards
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    proposal['title'] ?? 'Untitled Proposal',
-                    style: PremiumTheme.bodyLarge.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blue.shade400, Colors.blue.shade600],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                Text(
-                  _formatCurrency(_parseBudget(value)),
-                  style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Total Approved',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _approvedProposals.length.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _buildInfoChip(Icons.business, client),
-                const SizedBox(width: 12),
-                _buildInfoChip(
-                    Icons.calendar_today,
-                    approvedDate != null
-                        ? DateFormat('dd MMM yyyy').format(approvedDate)
-                        : 'Unknown'),
-                if (owner.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  _buildInfoChip(Icons.person, owner),
-                ],
-              ],
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _openProposal(proposal),
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('View Proposal'),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.green.shade400, Colors.green.shade600],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Total Value',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _currencyFormatter.format(_totalApprovedValue),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 24),
+
+        // Proposals List
+        ..._approvedProposals.map((proposal) => _buildProposalCard(proposal)),
+      ],
     );
   }
 
-  Widget _buildInfoChip(IconData icon, String label) {
+  Widget _buildProposalCard(Map<String, dynamic> proposal) {
+    final title = proposal['title']?.toString() ?? 'Untitled Proposal';
+    final client = proposal['client_name']?.toString() ??
+        proposal['client']?.toString() ??
+        'Unknown Client';
+    final budget = proposal['budget']?.toString() ?? '0';
+    final status = proposal['status']?.toString() ?? 'unknown';
+    final date = proposal['updated_at']?.toString();
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.2),
+          width: 1,
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 14, color: Colors.white70),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      client,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Approved',
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Value: ${_currencyFormatter.format(double.tryParse(budget.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0)}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                date != null ? _formatDate(DateTime.tryParse(date)) : 'No date',
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  void _openProposal(Map<String, dynamic> proposal) async {
-    final id = proposal['id']?.toString();
-    if (id == null) return;
-
-    final status = (proposal['status'] ?? '').toString().toLowerCase();
-    final isSigned = status == 'signed' ||
-        status == 'client signed' ||
-        status == 'completed';
-
-    // If signed, show the signed DocuSign document
-    if (isSigned) {
-      final token = AuthService.token;
-      if (token == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Session expired. Please login again.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      // Create a blob URL for the PDF and open it
-      try {
-        final response = await http.get(
-          Uri.parse('$baseUrl/api/proposals/$id/signed-document'),
-          headers: {
-            'Authorization': 'Bearer $token',
-          },
-        );
-
-        if (response.statusCode == 200) {
-          // Create blob from PDF bytes
-          final blob = html.Blob([response.bodyBytes], 'application/pdf');
-          final url = html.Url.createObjectUrlFromBlob(blob);
-
-          // Open in new window
-          html.window.open(url, '_blank');
-
-          // Clean up URL after a delay (optional)
-          Future.delayed(const Duration(minutes: 1), () {
-            html.Url.revokeObjectUrl(url);
-          });
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  'Failed to load signed document: ${response.statusCode}'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading signed document: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } else {
-      // If not signed yet, open in read-only editor
-      Navigator.pushNamed(
-        context,
-        '/compose',
-        arguments: {
-          'id': id,
-          'title': proposal['title'],
-          'readOnly': true,
-        },
-      );
-    }
-  }
-
-  void _exportApprovedProposals() {
-    final buffer = StringBuffer()
-      ..writeln('Title,Client,Value,Approved Date,Owner');
-    for (final proposal in _approvedProposals) {
-      final title = proposal['title']?.toString().replaceAll(',', ' ') ?? '';
-      final client =
-          proposal['client_name']?.toString().replaceAll(',', ' ') ?? '';
-      final value = _formatCurrency(_parseBudget(proposal['budget']));
-      final approvedDate = proposal['updated_at'] != null
-          ? DateFormat('yyyy-MM-dd')
-              .format(DateTime.parse(proposal['updated_at'].toString()))
-          : '';
-      final owner = proposal['owner_email'] ?? proposal['owner'] ?? '';
-      buffer.writeln('"$title","$client","$value","$approvedDate","$owner"');
-    }
-
-    final blob = html.Blob([buffer.toString()]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..setAttribute('download',
-          'approved_proposals_${DateTime.now().millisecondsSinceEpoch}.csv')
-      ..click();
-    html.Url.revokeObjectUrl(url);
-  }
-
-  double _parseBudget(dynamic value) {
-    if (value == null) return 0;
-    if (value is num) return value.toDouble();
-    if (value is String) {
-      final cleaned = value.replaceAll(RegExp(r'[^\d.]'), '');
-      return double.tryParse(cleaned) ?? 0;
-    }
-    return 0;
-  }
-
-  String _formatCurrency(double value) {
-    if (value == 0) return 'R0';
-    return _currencyFormatter.format(value);
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'No date';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   String _formatRelativeDate(DateTime date) {
     final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inDays == 0) {
-      return 'Today';
-    } else if (diff.inDays == 1) {
-      return 'Yesterday';
-    }
-    return '${diff.inDays} days ago';
-  }
+    final difference = now.difference(date);
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
-        break;
-      case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        Navigator.pushReplacementNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Analytics (My Pipeline)':
-        Navigator.pushReplacementNamed(context, '/analytics');
-        break;
-      case 'Approved Proposals':
-        // Already here
-        break;
-      case 'Logout':
-        AuthService.logout();
-        Navigator.pushNamedAndRemoveUntil(
-            context, '/login', (Route<dynamic> route) => false);
-        break;
+    if (difference.inDays > 0) {
+      return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} hour${difference.inHours == 1 ? '' : 's'} ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} minute${difference.inMinutes == 1 ? '' : 's'} ago';
+    } else {
+      return 'Just now';
     }
   }
-}
 
-class _SnapshotMetric {
-  final String title;
-  final String value;
-  final String subtitle;
-  final Gradient gradient;
+  Future<void> _exportApprovedProposals() async {
+    try {
+      final csvData = [
+        ['Title', 'Client', 'Budget', 'Status', 'Date Approved'],
+        ..._approvedProposals.map((proposal) => [
+              proposal['title']?.toString() ?? '',
+              proposal['client_name']?.toString() ??
+                  proposal['client']?.toString() ??
+                  '',
+              proposal['budget']?.toString() ?? '',
+              proposal['status']?.toString() ?? '',
+              proposal['updated_at']?.toString() ?? '',
+            ]),
+      ];
 
-  _SnapshotMetric({
-    required this.title,
-    required this.value,
-    required this.subtitle,
-    required this.gradient,
-  });
+      final csv = csvData
+          .map((row) => row
+              .map((cell) => '"${cell.toString().replaceAll('"', '""')}"')
+              .join(','))
+          .join('\n');
+
+      final bytes = const Utf8Encoder().convert(csv);
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download',
+            'approved-proposals-${DateTime.now().millisecondsSinceEpoch}.csv')
+        ..click();
+
+      html.document.body?.append(anchor);
+      anchor.remove();
+      html.Url.revokeObjectUrl(url);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Approved proposals exported successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 }
