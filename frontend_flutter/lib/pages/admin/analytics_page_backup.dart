@@ -2681,8 +2681,33 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       body: Container(
         color: Colors.transparent,
         height: MediaQuery.of(context).size.height,
-        child: Column(
+        child: Row(
           children: [
+            // Consistent Sidebar using AppSideNav
+            Consumer<AppState>(
+              builder: (context, app, _) {
+                final user = AuthService.currentUser ?? app.currentUser;
+                final role =
+                    (user?['role'] ?? '').toString().toLowerCase().trim();
+                final isAdmin = role == 'admin' || role == 'ceo';
+                return AppSideNav(
+                  isCollapsed: app.isSidebarCollapsed,
+                  currentLabel: app.currentNavLabel,
+                  isAdmin: isAdmin,
+                  onToggle: app.toggleSidebar,
+                  onSelect: (label) {
+                    app.setCurrentNavLabel(label);
+                    _navigateToPage(context, label);
+                  },
+                );
+              },
+            ),
+
+            // Main Content Area
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
             Container(
               height: 70,
               decoration: BoxDecoration(
