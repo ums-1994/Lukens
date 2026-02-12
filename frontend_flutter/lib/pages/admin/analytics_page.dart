@@ -1067,6 +1067,131 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+
+    // Show loading state if proposals are empty
+    if (app.proposals.isEmpty) {
+      return Scaffold(
+        body: Container(
+          color: Colors.transparent,
+          child: Row(
+            children: [
+              // Fixed Sidebar - Full Height
+              FixedSidebar(
+                currentPage: 'Analytics (My Pipeline)',
+                isCollapsed: _isSidebarCollapsed,
+                onToggle: _toggleSidebar,
+                onNavigate: (label) => _navigateToPage(context, label),
+                onLogout: () => _handleLogout(context),
+              ),
+
+              // Main Content Area - Empty State
+              Expanded(
+                child: Column(
+                  children: [
+                    // Header
+                    Container(
+                      height: 70,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.black.withValues(alpha: 0.3),
+                            Colors.transparent,
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Analytics Dashboard',
+                              style: PremiumTheme.titleLarge
+                                  .copyWith(fontSize: 22),
+                            ),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 35,
+                                  height: 35,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF3498DB),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'A',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Admin User',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Content Area - Empty State
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.analytics_outlined,
+                              size: 64,
+                              color: Colors.white54,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No proposals available',
+                              style: PremiumTheme.titleMedium.copyWith(
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Create proposals to see analytics here',
+                              style: PremiumTheme.bodyMedium.copyWith(
+                                color: Colors.white54,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/proposals');
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Create Proposal'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Color(0xFF3498DB),
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final analytics = _calculateAnalytics(app.proposals);
     final metrics = _buildMetricCards(analytics);
     final userName = _getUserName(app.currentUser);
