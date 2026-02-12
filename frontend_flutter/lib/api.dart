@@ -812,17 +812,348 @@ class AppState extends ChangeNotifier {
   // Proposal Analytics
   Future<Map<String, dynamic>?> getProposalAnalytics(String proposalId) async {
     try {
-      final r = await http.get(
+      final response = await http.get(
         Uri.parse("$baseUrl/api/proposals/$proposalId/analytics"),
-        headers: _headers,
+        headers: {'Authorization': 'Bearer $authToken'},
       );
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Error fetching analytics: ${response.statusCode}');
+        return null;
       }
     } catch (e) {
-      print('Error fetching proposal analytics: $e');
+      print('Error fetching analytics: $e');
+      return null;
     }
-    return null;
+  }
+
+  Future<Map<String, dynamic>?> getClientEngagementAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (owner != null) queryParams['owner'] = owner;
+      if (proposalType != null) queryParams['proposal_type'] = proposalType;
+      if (client != null) queryParams['client'] = client;
+      if (region != null) queryParams['region'] = region;
+      if (industry != null) queryParams['industry'] = industry;
+      if (scope != null) queryParams['scope'] = scope;
+      if (department != null) queryParams['department'] = department;
+
+      final uri = Uri.parse('$baseUrl/api/analytics/client-engagement')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Client engagement analytics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Client engagement analytics exception: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getProposalPipelineAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
+    String? scope,
+    String? department,
+    String? stageFilter,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (owner != null) queryParams['owner'] = owner;
+      if (proposalType != null) queryParams['proposal_type'] = proposalType;
+      if (client != null) queryParams['client'] = client;
+      if (region != null) queryParams['region'] = region;
+      if (industry != null) queryParams['industry'] = industry;
+      if (scope != null) queryParams['scope'] = scope;
+      if (department != null) queryParams['department'] = department;
+      if (stageFilter != null) queryParams['stage_filter'] = stageFilter;
+
+      final uri = Uri.parse('$baseUrl/api/analytics/pipeline-bundle')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Pipeline bundle analytics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Pipeline bundle analytics exception: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getCompletionRatesAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (owner != null) queryParams['owner'] = owner;
+      if (proposalType != null) queryParams['proposal_type'] = proposalType;
+      if (client != null) queryParams['client'] = client;
+      if (region != null) queryParams['region'] = region;
+      if (industry != null) queryParams['industry'] = industry;
+      if (scope != null) queryParams['scope'] = scope;
+      if (department != null) queryParams['department'] = department;
+
+      final uri = Uri.parse('$baseUrl/api/analytics/completion-rates')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Completion rates analytics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Completion rates analytics exception: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getCollaborationLoadAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (owner != null) queryParams['owner'] = owner;
+      if (proposalType != null) queryParams['proposal_type'] = proposalType;
+      if (client != null) queryParams['client'] = client;
+      if (region != null) queryParams['region'] = region;
+      if (industry != null) queryParams['industry'] = industry;
+      if (scope != null) queryParams['scope'] = scope;
+      if (department != null) queryParams['department'] = department;
+
+      final uri = Uri.parse('$baseUrl/api/analytics/collaboration-load')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Collaboration load analytics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Collaboration load analytics exception: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getRiskGateSummary({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (owner != null) queryParams['owner'] = owner;
+      if (proposalType != null) queryParams['proposal_type'] = proposalType;
+      if (client != null) queryParams['client'] = client;
+      if (region != null) queryParams['region'] = region;
+      if (industry != null) queryParams['industry'] = industry;
+      if (scope != null) queryParams['scope'] = scope;
+      if (department != null) queryParams['department'] = department;
+
+      final uri = Uri.parse('$baseUrl/api/analytics/risk-gate-summary')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Risk gate summary analytics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Risk gate summary analytics exception: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getRiskGateProposals({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
+    String? scope,
+    String? department,
+    String? riskStatus,
+    int? limit,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (owner != null) queryParams['owner'] = owner;
+      if (proposalType != null) queryParams['proposal_type'] = proposalType;
+      if (client != null) queryParams['client'] = client;
+      if (region != null) queryParams['region'] = region;
+      if (industry != null) queryParams['industry'] = industry;
+      if (scope != null) queryParams['scope'] = scope;
+      if (department != null) queryParams['department'] = department;
+      if (riskStatus != null) queryParams['risk_status'] = riskStatus;
+      if (limit != null) queryParams['limit'] = limit.toString();
+
+      final uri = Uri.parse('$baseUrl/api/analytics/risk-gate-proposals')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Risk gate proposals analytics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Risk gate proposals analytics exception: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getCycleTimeAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (startDate != null) queryParams['start_date'] = startDate;
+      if (endDate != null) queryParams['end_date'] = endDate;
+      if (owner != null) queryParams['owner'] = owner;
+      if (proposalType != null) queryParams['proposal_type'] = proposalType;
+      if (client != null) queryParams['client'] = client;
+      if (region != null) queryParams['region'] = region;
+      if (industry != null) queryParams['industry'] = industry;
+      if (scope != null) queryParams['scope'] = scope;
+      if (department != null) queryParams['department'] = department;
+
+      final uri = Uri.parse('$baseUrl/api/analytics/cycle-time')
+          .replace(queryParameters: queryParams);
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        print('Cycle time analytics error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Cycle time analytics exception: $e');
+      return null;
+    }
   }
 
   Future<String?> clientSignProposal(
