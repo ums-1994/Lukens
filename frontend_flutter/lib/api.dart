@@ -32,7 +32,7 @@ String get baseUrl {
 
   // Default URLs based on environment
   if (kDebugMode) {
-    return 'http://127.0.0.1:5000';
+    return 'https://lukens-wp8w.onrender.com';
   }
   // Production default (Render backend URL)
   return 'https://lukens-wp8w.onrender.com';
@@ -174,7 +174,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteContent(int contentId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("$_apiBaseUrl/content/$contentId"),
         headers: _headers,
       );
       if (r.statusCode == 200 || r.statusCode == 204) {
@@ -211,12 +211,25 @@ class AppState extends ChangeNotifier {
         if (publicId != null) "public_id": publicId,
       };
 
-      final r = await http.post(
-        Uri.parse("$baseUrl/content"),
+      http.Response r = await http.post(
+        Uri.parse("$_apiBaseUrl/content"),
         headers: _headers,
         body: jsonEncode(body),
       );
-      if (r.statusCode == 200) {
+
+      if ((r.statusCode == 400 || r.statusCode == 409 || r.statusCode == 500) &&
+          r.body.contains('content_key_key') &&
+          r.body.toLowerCase().contains('already exists')) {
+        final retryBody = Map<String, dynamic>.from(body);
+        retryBody['key'] = '${key}_${DateTime.now().millisecondsSinceEpoch}';
+        r = await http.post(
+          Uri.parse("$_apiBaseUrl/content"),
+          headers: _headers,
+          body: jsonEncode(retryBody),
+        );
+      }
+
+      if (r.statusCode == 200 || r.statusCode == 201) {
         await fetchContent();
         notifyListeners();
         return true;
@@ -254,7 +267,7 @@ class AppState extends ChangeNotifier {
       if (body.isEmpty) return false;
 
       final r = await http.put(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("$_apiBaseUrl/content/$contentId"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -1131,25 +1144,44 @@ class AppState extends ChangeNotifier {
       String cloudinaryUrl, String publicId, String category,
       {int? parentId}) async {
     try {
-      final Map<String, dynamic> body = {
-        "key": key,
-        "label": label,
-        "content": cloudinaryUrl, // Store Cloudinary URL
-        "public_id": publicId,
-        "category": category,
-        "created_at": DateTime.now().toIso8601String(),
-      };
-
-      // Add parent_id if provided (for files inside folders)
-      if (parentId != null) {
-        body["parent_id"] = parentId;
+      if (authToken == null && AuthService.token != null) {
+        authToken = AuthService.token;
+        currentUser = AuthService.currentUser;
+        print(
+            '🔄 Synced token from AuthService in createContentWithCloudinary');
       }
 
-      final r = await http.post(
-        Uri.parse("$_apiBaseUrl/content"),
-        headers: _headers,
-        body: jsonEncode(body),
-      );
+      String requestKey = key;
+
+      Future<http.Response> doRequest() {
+        final Map<String, dynamic> body = {
+          "key": requestKey,
+          "label": label,
+          "content": cloudinaryUrl,
+          "public_id": publicId,
+          "category": category,
+          "created_at": DateTime.now().toIso8601String(),
+        };
+
+        if (parentId != null) {
+          body["parent_id"] = parentId;
+        }
+
+        return http.post(
+          Uri.parse("$_apiBaseUrl/content"),
+          headers: _headers,
+          body: jsonEncode(body),
+        );
+      }
+
+      http.Response r = await doRequest();
+
+      if ((r.statusCode == 400 || r.statusCode == 409 || r.statusCode == 500) &&
+          r.body.contains('content_key_key') &&
+          r.body.toLowerCase().contains('already exists')) {
+        requestKey = '${key}_${DateTime.now().millisecondsSinceEpoch}';
+        r = await doRequest();
+      }
       if (r.statusCode == 200 || r.statusCode == 201) {
         await fetchContent();
         notifyListeners();

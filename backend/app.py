@@ -80,16 +80,10 @@ CORS(
     supports_credentials=True,
     resources={
         r"/*": {
-            "origins": [
-                "https://proposals2025.netlify.app",
-                r"^http://localhost(:\d+)?$",
-                r"^http://127\.0\.0\.1(:\d+)?$",
-                "http://localhost:5173",
-                "http://localhost:5000",
-                "http://localhost:8081",
-            ],
-            "allow_headers": ["Content-Type", "Authorization"],
+            "origins": ["*"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+            "expose_headers": ["Content-Type", "Authorization"],
         }
     },
 )
@@ -97,7 +91,14 @@ CORS(
 @app.route("/", methods=["OPTIONS"])
 @app.route("/<path:remaining>", methods=["OPTIONS"])
 def handle_options_preflight(remaining=None):
-    return {}, 200
+    resp = Response("", status=200)
+    origin = request.headers.get('Origin')
+    if origin:
+        resp.headers['Access-Control-Allow-Origin'] = origin
+    resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    return resp
 
 # Register API blueprints
 from api.routes.auth import bp as auth_bp
