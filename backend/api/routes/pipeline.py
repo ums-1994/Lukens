@@ -59,6 +59,38 @@ def _sections_readiness(sections) -> tuple[int, list[str]]:
     return score, issues
 
 
+def _extract_sections_from_content(content_raw) -> dict:
+    if not content_raw:
+        return {}
+
+    content_obj = content_raw
+    if isinstance(content_raw, str):
+        try:
+            import json
+
+            content_obj = json.loads(content_raw)
+        except Exception:
+            return {}
+
+    if not isinstance(content_obj, dict):
+        return {}
+
+    raw_sections = content_obj.get("sections")
+    if not isinstance(raw_sections, list):
+        return {}
+
+    out: dict = {}
+    for s in raw_sections:
+        if not isinstance(s, dict):
+            continue
+        title = s.get("title")
+        if not isinstance(title, str) or not title.strip():
+            continue
+        content_val = s.get("content")
+        out[title.strip()] = content_val
+    return out
+
+
 @bp.get("/analytics/proposal-pipeline")
 @token_required
 def proposal_pipeline(username=None, user_id=None, email=None):
@@ -643,7 +675,8 @@ def completion_rates(username=None, user_id=None, email=None):
                 p.{client_expr} AS client,
                 u.id AS owner_id,
                 COALESCE(u.full_name, u.username, u.email) AS owner,
-                {sections_expr} AS sections
+                {sections_expr} AS sections,
+                p.content AS content
             FROM proposals p
             LEFT JOIN users u ON {join_cond}
             {clients_join}
@@ -657,7 +690,7 @@ def completion_rates(username=None, user_id=None, email=None):
         passed = 0
         failed = 0
 
-        for pid, title, status, created_at, updated_at, client, owner_id_row, owner, sections_raw in cursor.fetchall() or []:
+        for pid, title, status, created_at, updated_at, client, owner_id_row, owner, sections_raw, content_raw in cursor.fetchall() or []:
             sections = {}
             if sections_raw:
                 if isinstance(sections_raw, dict):
@@ -669,6 +702,9 @@ def completion_rates(username=None, user_id=None, email=None):
                         sections = json.loads(sections_raw)
                     except Exception:
                         sections = {}
+
+            if not sections:
+                sections = _extract_sections_from_content(content_raw)
 
             score, issues = _sections_readiness(sections)
             ok = len(issues) == 0

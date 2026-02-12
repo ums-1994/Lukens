@@ -1,33 +1,10 @@
 import 'dart:convert';
-import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
-  // Prefer explicit config injected into the web page when available
-  if (kIsWeb) {
-    try {
-      // Try to get from window.APP_CONFIG.API_URL
-      final config = js.context['APP_CONFIG'];
-      if (config != null) {
-        final configObj = config as js.JsObject;
-        final apiUrl = configObj['API_URL'];
-        if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-          return apiUrl.toString().replaceAll('"', '');
-        }
-      }
-      // Fallback: try window.REACT_APP_API_URL
-      final envUrl = js.context['REACT_APP_API_URL'];
-      if (envUrl != null && envUrl.toString().isNotEmpty) {
-        return envUrl.toString().replaceAll('"', '');
-      }
-    } catch (e) {
-      print('⚠️ Could not read API URL from config: $e');
-    }
-  }
-
   // Align with AuthService: always use Render backend by default so
   // authentication and uploads share the same token/host
   return AuthService.baseUrl;
@@ -41,6 +18,20 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> dashboardCounts = {};
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
+
+  bool isSidebarCollapsed = true;
+  String currentNavLabel = 'Dashboard';
+
+  void toggleSidebar() {
+    isSidebarCollapsed = !isSidebarCollapsed;
+    notifyListeners();
+  }
+
+  void setCurrentNavLabel(String label) {
+    if (currentNavLabel == label) return;
+    currentNavLabel = label;
+    notifyListeners();
+  }
 
   Future<void> init() async {
     // IMPORTANT: Sync token from AuthService on startup

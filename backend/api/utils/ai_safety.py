@@ -31,10 +31,7 @@ _GOOGLE_API_KEY_RE = re.compile(r"\bAIza[0-9A-Za-z\-_]{30,}\b")
 _BEARER_RE = re.compile(r"\bBearer\s+[A-Za-z0-9\-\._~\+/]+=*\b", re.IGNORECASE)
 _PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 
-# Some strong indicators that we should NOT send any of this content to third-party AI.
-_DO_NOT_SEND_PATTERNS: List[Tuple[str, re.Pattern]] = [
-    ("email", _EMAIL_RE),
-    ("phone", _PHONE_RE),
+_BLOCK_OUTBOUND_PATTERNS: List[Tuple[str, re.Pattern]] = [
     ("private_key", _PRIVATE_KEY_RE),
     ("openai_api_key", _OPENAI_KEY_RE),
     ("openai_api_key", _OPENAI_KEY_V2_RE),
@@ -49,7 +46,7 @@ def _redact_text(text: str) -> Tuple[str, List[str], List[str]]:
     redactions: List[str] = []
     block_reasons: List[str] = []
 
-    for name, pattern in _DO_NOT_SEND_PATTERNS:
+    for name, pattern in _BLOCK_OUTBOUND_PATTERNS:
         if pattern.search(text):
             block_reasons.append(name)
 

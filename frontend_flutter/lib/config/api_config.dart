@@ -14,9 +14,11 @@ class ApiConfig {
 
   /// Get the backend API base URL
   static String get backendBaseUrl {
-    // Force production for now - remove this after testing
-    print('🔧 FORCING PRODUCTION BACKEND URL: $_productionBackendUrl');
-    return _productionBackendUrl;
+    if (kReleaseMode) {
+      return _productionBackendUrl;
+    }
+
+    return _developmentBackendUrl;
 
     // Original logic below - comment out for now
     /*

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -7,10 +7,10 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'package:intl/intl.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class ApproverDashboardPage extends StatefulWidget {
   const ApproverDashboardPage({super.key});
@@ -26,9 +26,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
-  String _currentPage = 'Dashboard';
   int _highRiskCount = 0;
   int _approvedThisMonthCount = 0;
   int _sentToClientCount = 0;
@@ -38,19 +35,15 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
+      if (!mounted) return;
+      context.read<AppState>().setCurrentNavLabel('Dashboard');
     });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -70,31 +63,31 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   Future<void> _loadData() async {
-    print('🔄 Approver Dashboard: Loading data...');
+    print('ðŸ”„ Approver Dashboard: Loading data...');
     if (!mounted) return;
 
     setState(() => _isLoading = true);
 
     try {
-      print('🔄 Restoring session from storage...');
+      print('ðŸ”„ Restoring session from storage...');
       AuthService.restoreSessionFromStorage();
 
       var token = AuthService.token;
-      print('🔑 After restore - Token available: ${token != null}');
-      print('🔑 After restore - User: ${AuthService.currentUser?['email']}');
-      print('🔑 After restore - isLoggedIn: ${AuthService.isLoggedIn}');
+      print('ðŸ”‘ After restore - Token available: ${token != null}');
+      print('ðŸ”‘ After restore - User: ${AuthService.currentUser?['email']}');
+      print('ðŸ”‘ After restore - isLoggedIn: ${AuthService.isLoggedIn}');
 
       if (token == null) {
         print(
-            '⚠️ Token still null after restore, checking localStorage directly...');
+            'âš ï¸ Token still null after restore, checking localStorage directly...');
         try {
-          final data = html.window.localStorage['lukens_auth_session'];
-          print('📦 localStorage data exists: ${data != null}');
+          final data = web.window.localStorage.getItem('lukens_auth_session');
+          print('ðŸ“¦ localStorage data exists: ${data != null}');
           if (data != null) {
-            print('📦 localStorage content: ${data.substring(0, 50)}...');
+            print('ðŸ“¦ localStorage content: ${data.substring(0, 50)}...');
           }
         } catch (e) {
-          print('❌ Error accessing localStorage: $e');
+          print('âŒ Error accessing localStorage: $e');
         }
 
         await Future.delayed(const Duration(milliseconds: 500));
@@ -102,13 +95,13 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       }
 
       if (token == null) {
-        print('❌ No token available after restoration attempts');
+        print('âŒ No token available after restoration attempts');
         if (mounted) {
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text(
-                  '⚠️ Session expired. Please switch back to Creator mode.'),
+                  'âš ï¸ Session expired. Please switch back to Creator mode.'),
               backgroundColor: Colors.orange,
               action: SnackBarAction(
                 label: 'Retry',
@@ -121,11 +114,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         return;
       }
 
-      print('📡 Fetching proposals from API...');
+      print('ðŸ“¡ Fetching proposals from API...');
 
       // Fetch pending approvals
       print(
-          '🌐 Fetching pending approvals from: ${ApiService.baseUrl}/api/proposals/pending_approval');
+          'ðŸŒ Fetching pending approvals from: ${ApiService.baseUrl}/api/proposals/pending_approval');
       final pendingResponse = await http.get(
         Uri.parse('${ApiService.baseUrl}/api/proposals/pending_approval'),
         headers: {
@@ -135,7 +128,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          print('⏱️ Timeout! Pending approvals API call took too long');
+          print('â±ï¸ Timeout! Pending approvals API call took too long');
           throw Exception('Request timed out');
         },
       );
@@ -146,10 +139,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         pending = (pendingData['proposals'] as List? ?? [])
             .map((p) => Map<String, dynamic>.from(p))
             .toList();
-        print('✅ Pending approvals received: ${pending.length}');
+        print('âœ… Pending approvals received: ${pending.length}');
       } else {
         print(
-            '⚠️ Failed to fetch pending approvals: ${pendingResponse.statusCode}');
+            'âš ï¸ Failed to fetch pending approvals: ${pendingResponse.statusCode}');
       }
 
       int highRiskCount = 0;
@@ -243,7 +236,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           recentApprovals = recentApprovals.sublist(0, 5);
         }
       } catch (e) {
-        print('⚠️ Error computing approver metrics: $e');
+        print('âš ï¸ Error computing approver metrics: $e');
       }
 
       if (mounted) {
@@ -258,7 +251,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         });
       }
     } catch (e, stackTrace) {
-      print('❌ Error loading approver data: $e');
+      print('âŒ Error loading approver data: $e');
       print('Stack trace: $stackTrace');
       if (mounted) {
         setState(() => _isLoading = false);
@@ -291,8 +284,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -310,8 +303,45 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   Expanded(
                     child: Row(
                       children: [
-                        Material(
-                          child: _buildSidebar(context),
+                        Consumer<AppState>(
+                          builder: (context, app, _) {
+                            final user =
+                                AuthService.currentUser ?? app.currentUser;
+                            final role = (user?['role'] ?? '')
+                                .toString()
+                                .toLowerCase()
+                                .trim();
+                            final isAdmin = role == 'admin' || role == 'ceo';
+                            return AppSideNav(
+                              isCollapsed: app.isSidebarCollapsed,
+                              currentLabel: app.currentNavLabel,
+                              isAdmin: isAdmin,
+                              extraItems: const [
+                                {
+                                  'label': 'Approvals',
+                                  'icon':
+                                      'assets/images/Time Allocation_Approval_Blue.png'
+                                },
+                                {
+                                  'label': 'History',
+                                  'icon': 'assets/images/analytics.png'
+                                },
+                                {
+                                  'label': 'Settings',
+                                  'icon': 'assets/images/analytics.png'
+                                },
+                                {
+                                  'label': 'Sign Out',
+                                  'icon': 'assets/images/Logout_KhonoBuzz.png'
+                                },
+                              ],
+                              onToggle: app.toggleSidebar,
+                              onSelect: (label) {
+                                app.setCurrentNavLabel(label);
+                                _navigateToPage(context, label);
+                              },
+                            );
+                          },
                         ),
                         const SizedBox(width: 24),
                         Expanded(
@@ -430,7 +460,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     final status = proposal['status']?.toString() ?? 'Pending';
     final dateLabel = submittedDate != null
         ? DateFormat('dd MMM yyyy').format(submittedDate)
-        : '—';
+        : 'â€”';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -481,18 +511,18 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     Color fg;
 
     if (lower.contains('pending')) {
-      bg = PremiumTheme.orange.withOpacity(0.15);
+      bg = PremiumTheme.orange.withValues(alpha: 0.15);
       fg = PremiumTheme.orange;
     } else if (lower.contains('approved') || lower.contains('signed')) {
-      bg = PremiumTheme.success.withOpacity(0.15);
+      bg = PremiumTheme.success.withValues(alpha: 0.15);
       fg = PremiumTheme.success;
     } else if (lower.contains('rejected') ||
         lower.contains('declined') ||
         lower.contains('lost')) {
-      bg = PremiumTheme.error.withOpacity(0.15);
+      bg = PremiumTheme.error.withValues(alpha: 0.15);
       fg = PremiumTheme.error;
     } else {
-      bg = Colors.white.withOpacity(0.08);
+      bg = Colors.white.withValues(alpha: 0.08);
       fg = Colors.white70;
     }
 
@@ -688,7 +718,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(
@@ -741,221 +771,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         ],
       ),
     );
-  }
-
-  Widget _buildSidebar(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: _isSidebarCollapsed ? 90.0 : 250.0,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
-          ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem(
-                'Approvals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approvals',
-                context),
-            _buildNavItem('History', 'assets/images/analytics.png',
-                _currentPage == 'History', context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: const Color(0xFF2C3E50),
-              ),
-            const SizedBox(height: 12),
-            _buildNavItem('Settings', 'assets/images/analytics.png',
-                _currentPage == 'Settings', context),
-            _buildNavItem('Sign Out', 'assets/images/Logout_KhonoBuzz.png',
-                false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                setState(() => _currentPage = label);
-                _navigateToPage(context, label);
-              },
-              borderRadius: BorderRadius.circular(30),
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            setState(() => _currentPage = label);
-            _navigateToPage(context, label);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              border:
-                  isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isActive
-                          ? const Color(0xFFE74C3C)
-                          : const Color(0xFFCBD5E1),
-                      width: isActive ? 2 : 1,
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(6),
-                  child: ClipOval(
-                    child: AssetService.buildImageWidget(assetPath,
-                        fit: BoxFit.contain),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                      fontSize: 14,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-                if (isActive)
-                  const Icon(Icons.arrow_forward_ios,
-                      size: 12, color: Colors.white),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
   }
 
   Widget _buildPendingApprovalsList() {
@@ -1014,10 +829,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.orange.withOpacity(0.2),
+                    color: PremiumTheme.orange.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: PremiumTheme.orange.withOpacity(0.3),
+                      color: PremiumTheme.orange.withValues(alpha: 0.3),
                       width: 1,
                     ),
                   ),
@@ -1093,7 +908,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -1235,7 +1050,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✅ Proposal approved and sent to client!'),
+              content: Text('âœ… Proposal approved and sent to client!'),
               backgroundColor: Color(0xFF2ECC71),
             ),
           );
@@ -1268,7 +1083,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         throw Exception(errorMessage);
       }
     } catch (e) {
-      print('❌ Error approving proposal: $e');
+      print('âŒ Error approving proposal: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1347,7 +1162,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✅ Proposal rejected and returned to draft'),
+              content: Text('âœ… Proposal rejected and returned to draft'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -1359,7 +1174,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         throw Exception(error['detail'] ?? 'Failed to reject proposal');
       }
     } catch (e) {
-      print('❌ Error rejecting proposal: $e');
+      print('âŒ Error rejecting proposal: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

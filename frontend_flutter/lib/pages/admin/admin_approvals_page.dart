@@ -1,16 +1,17 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:js_interop';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class AdminApprovalsPage extends StatefulWidget {
   const AdminApprovalsPage({super.key});
@@ -28,8 +29,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
   String _currentPage = 'Admin Approvals';
 
   // Admin approvals inbox state
@@ -42,19 +41,15 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
+      if (!mounted) return;
+      context.read<AppState>().setCurrentNavLabel('Approvals');
     });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -91,7 +86,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('⚠️ Session expired. Please login again.'),
+              content: Text('âš ï¸ Session expired. Please login again.'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -276,8 +271,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -295,7 +290,27 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                   Expanded(
                     child: Row(
                       children: [
-                        Material(child: _buildSidebar(context)),
+                        Consumer<AppState>(
+                          builder: (context, app, _) {
+                            final user =
+                                AuthService.currentUser ?? app.currentUser;
+                            final role = (user?['role'] ?? '')
+                                .toString()
+                                .toLowerCase()
+                                .trim();
+                            final isAdmin = role == 'admin' || role == 'ceo';
+                            return AppSideNav(
+                              isCollapsed: app.isSidebarCollapsed,
+                              currentLabel: app.currentNavLabel,
+                              isAdmin: isAdmin,
+                              onToggle: app.toggleSidebar,
+                              onSelect: (label) {
+                                app.setCurrentNavLabel(label);
+                                _navigateToPage(context, label);
+                              },
+                            );
+                          },
+                        ),
                         const SizedBox(width: 24),
                         Expanded(
                           child: GlassContainer(
@@ -428,7 +443,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(
@@ -493,219 +508,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     );
   }
 
-  Widget _buildSidebar(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: _isSidebarCollapsed ? 90.0 : 250.0,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
-          ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem(
-                'Approvals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Admin Approvals',
-                context),
-            _buildNavItem('Analytics', 'assets/images/analytics.png',
-                _currentPage == 'Analytics', context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: const Color(0xFF2C3E50),
-              ),
-            const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                setState(() => _currentPage = label);
-                _navigateToPage(context, label);
-              },
-              borderRadius: BorderRadius.circular(30),
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            setState(() => _currentPage = label);
-            _navigateToPage(context, label);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              border:
-                  isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isActive
-                          ? const Color(0xFFE74C3C)
-                          : const Color(0xFFCBD5E1),
-                      width: isActive ? 2 : 1,
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(6),
-                  child: ClipOval(
-                    child: AssetService.buildImageWidget(assetPath,
-                        fit: BoxFit.contain),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                      fontSize: 14,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-                if (isActive)
-                  const Icon(Icons.arrow_forward_ios,
-                      size: 12, color: Colors.white),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
-  }
-
   Widget _buildApprovalsToolbar() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -748,13 +550,13 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                 size: 18,
               ),
               filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
+              fillColor: Colors.white.withValues(alpha: 0.04),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide:
-                    BorderSide(color: Colors.white.withOpacity(0.12), width: 1),
+                    BorderSide(color: Colors.white.withValues(alpha: 0.12), width: 1),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -769,9 +571,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.06),
+            color: Colors.white.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.12)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
           child: const Icon(
             Icons.filter_alt_outlined,
@@ -844,12 +646,12 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white.withOpacity(0.06) : Colors.transparent,
+          color: isActive ? Colors.white.withValues(alpha: 0.06) : Colors.transparent,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: isActive
                 ? const Color(0xFF3498DB)
-                : Colors.white.withOpacity(0.18),
+                : Colors.white.withValues(alpha: 0.18),
             width: 1,
           ),
         ),
@@ -869,8 +671,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
               decoration: BoxDecoration(
                 color: isActive
-                    ? const Color(0xFF3498DB).withOpacity(0.25)
-                    : Colors.white.withOpacity(0.08),
+                    ? const Color(0xFF3498DB).withValues(alpha: 0.25)
+                    : Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -970,7 +772,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           Container(
             margin: const EdgeInsets.symmetric(vertical: 6),
             height: 1,
-            color: Colors.white.withOpacity(0.06),
+            color: Colors.white.withValues(alpha: 0.06),
           ),
         );
       }
@@ -986,7 +788,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           const SizedBox(height: 8),
           Container(
             height: 1,
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
           ),
           const SizedBox(height: 4),
           ...rows,
@@ -1090,7 +892,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   Widget _buildTableRow(int index, Map<String, dynamic> proposal) {
-    final id = proposal['id']?.toString() ?? '—';
+    final id = proposal['id']?.toString() ?? 'â€”';
     final title = proposal['title']?.toString() ?? 'Untitled Proposal';
     final client =
         (proposal['client_name'] ?? proposal['client'] ?? 'Unknown').toString();
@@ -1238,7 +1040,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       case 'rejected':
         return 'Rejected';
       default:
-        if (status.isEmpty) return '—';
+        if (status.isEmpty) return 'â€”';
         return status
             .split(' ')
             .where((p) => p.isNotEmpty)
@@ -1274,8 +1076,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   Widget _buildStatusChip(String label, Color color) {
     final bgColor = color == Colors.white70
-        ? Colors.white.withOpacity(0.08)
-        : color.withOpacity(0.2);
+        ? Colors.white.withValues(alpha: 0.08)
+        : color.withValues(alpha: 0.2);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1326,8 +1128,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   Widget _buildRiskChip(String label, Color color) {
     final bgColor = color == Colors.white70
-        ? Colors.white.withOpacity(0.08)
-        : color.withOpacity(0.18);
+        ? Colors.white.withValues(alpha: 0.08)
+        : color.withValues(alpha: 0.18);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1379,7 +1181,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         title: 'Last Approved',
         value: _lastApprovedDate != null
             ? _formatRelativeDate(_lastApprovedDate!)
-            : '—',
+            : 'â€”',
         subtitle: _lastApprovedDate != null
             ? DateFormat('dd MMM yyyy').format(_lastApprovedDate!)
             : 'Awaiting approvals',
@@ -1510,7 +1312,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -1557,11 +1359,14 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         );
 
         if (response.statusCode == 200) {
-          final blob = html.Blob([response.bodyBytes], 'application/pdf');
-          final url = html.Url.createObjectUrlFromBlob(blob);
-          html.window.open(url, '_blank');
+          final blob = web.Blob(
+            [response.bodyBytes.toJS].toJS,
+            web.BlobPropertyBag(type: 'application/pdf'),
+          );
+          final url = web.URL.createObjectURL(blob);
+          web.window.open(url, '_blank');
           Future.delayed(const Duration(minutes: 1), () {
-            html.Url.revokeObjectUrl(url);
+            web.URL.revokeObjectURL(url);
           });
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1609,13 +1414,16 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       buffer.writeln('"$title","$client","$value","$approvedDate","$owner"');
     }
 
-    final blob = html.Blob([buffer.toString()]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..setAttribute('download',
-          'approved_proposals_${DateTime.now().millisecondsSinceEpoch}.csv')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    final blob = web.Blob([buffer.toString().toJS].toJS);
+    final url = web.URL.createObjectURL(blob);
+    final anchor = web.document.createElement('a') as web.HTMLAnchorElement;
+    anchor.href = url;
+    anchor.setAttribute(
+      'download',
+      'approved_proposals_${DateTime.now().millisecondsSinceEpoch}.csv',
+    );
+    anchor.click();
+    web.URL.revokeObjectURL(url);
   }
 
   double _parseBudget(dynamic value) {

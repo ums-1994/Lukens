@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
@@ -98,7 +98,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       final password = _passwordController.text;
 
       // Step 1: Sign in with Firebase
-      print('🔥 Signing in with Firebase...');
+      print('ðŸ”¥ Signing in with Firebase...');
       final firebaseCredential =
           await FirebaseService.signInWithEmailAndPassword(
         email: email,
@@ -120,7 +120,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       }
 
       // Step 2: Get Firebase ID token
-      print('🔥 Getting Firebase ID token...');
+      print('ðŸ”¥ Getting Firebase ID token...');
       final firebaseIdToken = await firebaseCredential.user!.getIdToken();
 
       if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
@@ -137,10 +137,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       }
 
       print(
-          '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
+          'âœ… Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
-      print('📡 Sending Firebase token to backend...');
+      print('ðŸ“¡ Sending Firebase token to backend...');
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
@@ -192,10 +192,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           // Use RoleService mapping as one view of the role
           final currentRole = roleService.currentRole;
 
-          print('🔍 Login: Raw role from backend: "$rawRole"');
-          print('🔍 Login: Normalized role: "$userRole"');
-          print('🔍 Login: Frontend mapped role: $currentRole');
-          print('🔍 Login: Full userProfile: $userProfile');
+          print('ðŸ” Login: Raw role from backend: "$rawRole"');
+          print('ðŸ” Login: Normalized role: "$userRole"');
+          print('ðŸ” Login: Frontend mapped role: $currentRole');
+          print('ðŸ” Login: Full userProfile: $userProfile');
 
           String dashboardRoute;
 
@@ -212,22 +212,22 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
             print(
-                '✅ Routing to Admin/Approver Dashboard (from normalized role)');
+                'âœ… Routing to Admin/Approver Dashboard (from normalized role)');
           } else if (isFinance) {
             dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard (from normalized role)');
+            print('âœ… Routing to Finance Dashboard (from normalized role)');
           } else if (isManager) {
             dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard (Manager normalized role)');
+            print('âœ… Routing to Creator Dashboard (Manager normalized role)');
           } else {
             // Fallback: treat unknown roles as manager
             dashboardRoute = '/creator_dashboard';
             print(
-                '⚠️ Unknown normalized role "$userRole", defaulting to Creator Dashboard');
+                'âš ï¸ Unknown normalized role "$userRole", defaulting to Creator Dashboard');
           }
 
           print(
-              '🔀 Redirecting user with normalized role "$userRole" to $dashboardRoute');
+              'ðŸ”€ Redirecting user with normalized role "$userRole" to $dashboardRoute');
 
           Navigator.pushNamedAndRemoveUntil(
             context,
@@ -246,7 +246,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        print('❌ Login error: $e');
+        print('âŒ Login error: $e');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Login failed: ${e.toString()}'),
@@ -277,9 +277,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.black.withOpacity(0.5),
-                  Colors.black.withOpacity(0.7),
-                  Colors.black.withOpacity(0.6),
+                  Colors.black.withValues(alpha: 0.5),
+                  Colors.black.withValues(alpha: 0.7),
+                  Colors.black.withValues(alpha: 0.6),
                 ],
               ),
             ),
@@ -329,7 +329,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),
@@ -352,7 +352,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.04)),
                   size: const Size(70, 70),
                 ),
               ),
@@ -368,7 +368,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -383,15 +383,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     return Container(
       constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 500),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withOpacity(0.95),
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE9293A).withOpacity(0.3),
+          color: const Color(0xFFE9293A).withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFE9293A).withOpacity(0.2),
+            color: const Color(0xFFE9293A).withValues(alpha: 0.2),
             blurRadius: 40,
             spreadRadius: 0,
           ),
@@ -419,7 +419,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) {
                     return const Text(
-                      '✕ Khonology',
+                      'âœ• Khonology',
                       style: TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: 56,
@@ -481,7 +481,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE9293A).withOpacity(0.4),
+                    color: const Color(0xFFE9293A).withValues(alpha: 0.4),
                     blurRadius: 20,
                     spreadRadius: 2,
                   ),

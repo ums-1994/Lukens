@@ -1,15 +1,16 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
+import 'dart:js_interop';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class ApprovedProposalsPage extends StatefulWidget {
   const ApprovedProposalsPage({super.key});
@@ -27,38 +28,32 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
   String _currentPage = 'Approved Proposals';
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
+      if (!mounted) return;
+      context.read<AppState>().setCurrentNavLabel('Approved Proposals');
     });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   Future<void> _loadData() async {
-    print('🔄 Approved Proposals: Loading data...');
+    print('ðŸ”„ Approved Proposals: Loading data...');
     if (!mounted) return;
 
     setState(() => _isLoading = true);
 
     try {
-      print('🔄 Restoring session from storage...');
+      print('ðŸ”„ Restoring session from storage...');
       AuthService.restoreSessionFromStorage();
 
       var token = AuthService.token;
@@ -68,12 +63,12 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       }
 
       if (token == null) {
-        print('❌ No token available');
+        print('âŒ No token available');
         if (mounted) {
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('⚠️ Session expired. Please login again.'),
+              content: Text('âš ï¸ Session expired. Please login again.'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -81,16 +76,16 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         return;
       }
 
-      print('📡 Fetching proposals from API...');
+      print('ðŸ“¡ Fetching proposals from API...');
       final proposals = await ApiService.getProposals(token).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          print('⏱️ Timeout! API call took too long');
+          print('â±ï¸ Timeout! API call took too long');
           throw Exception('Request timed out');
         },
       );
-      print('✅ API Response received!');
-      print('✅ Number of proposals: ${proposals.length}');
+      print('âœ… API Response received!');
+      print('âœ… Number of proposals: ${proposals.length}');
 
       // Filter for client-approved/signed proposals
       final approved = proposals
@@ -146,7 +141,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         });
       }
     } catch (e, stackTrace) {
-      print('❌ Error loading approved proposals: $e');
+      print('âŒ Error loading approved proposals: $e');
       print('Stack trace: $stackTrace');
       if (mounted) {
         setState(() => _isLoading = false);
@@ -179,8 +174,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -198,7 +193,27 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                   Expanded(
                     child: Row(
                       children: [
-                        _buildSidebar(context),
+                        Consumer<AppState>(
+                          builder: (context, app, _) {
+                            final user =
+                                AuthService.currentUser ?? app.currentUser;
+                            final role = (user?['role'] ?? '')
+                                .toString()
+                                .toLowerCase()
+                                .trim();
+                            final isAdmin = role == 'admin' || role == 'ceo';
+                            return AppSideNav(
+                              isCollapsed: app.isSidebarCollapsed,
+                              currentLabel: app.currentNavLabel,
+                              isAdmin: isAdmin,
+                              onToggle: app.toggleSidebar,
+                              onSelect: (label) {
+                                app.setCurrentNavLabel(label);
+                                _navigateToPage(context, label);
+                              },
+                            );
+                          },
+                        ),
                         const SizedBox(width: 24),
                         Expanded(
                           child: GlassContainer(
@@ -221,12 +236,12 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                                             CrossAxisAlignment.start,
                                         children: [
                                           _buildSection(
-                                            '📊 Approved Proposals Snapshot',
+                                            'ðŸ“Š Approved Proposals Snapshot',
                                             _buildSnapshotMetrics(),
                                           ),
                                           const SizedBox(height: 24),
                                           _buildSection(
-                                            '✅ Client-Approved Proposals',
+                                            'âœ… Client-Approved Proposals',
                                             _isLoading
                                                 ? const Center(
                                                     child:
@@ -351,7 +366,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(
@@ -416,230 +431,6 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     );
   }
 
-  Widget _buildSidebar(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: _isSidebarCollapsed ? 90.0 : 250.0,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
-          ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-                _currentPage == 'My Proposals', context),
-            _buildNavItem('Templates', 'assets/images/content_library.png',
-                _currentPage == 'Templates', context),
-            _buildNavItem(
-                'Content Library',
-                'assets/images/content_library.png',
-                _currentPage == 'Content Library',
-                context),
-            _buildNavItem(
-                'Client Management',
-                'assets/images/collaborations.png',
-                _currentPage == 'Client Management',
-                context),
-            _buildNavItem(
-                'Approved Proposals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approved Proposals',
-                context),
-            _buildNavItem(
-                'Analytics (My Pipeline)',
-                'assets/images/analytics.png',
-                _currentPage == 'Analytics (My Pipeline)',
-                context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: const Color(0xFF2C3E50),
-              ),
-            const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border:
-                isActive ? Border.all(color: const Color(0xFF2980B9)) : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
-  }
-
   Widget _buildSnapshotMetrics() {
     final cards = [
       _SnapshotMetric(
@@ -658,7 +449,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         title: 'Last Approved',
         value: _lastApprovedDate != null
             ? _formatRelativeDate(_lastApprovedDate!)
-            : '—',
+            : 'â€”',
         subtitle: _lastApprovedDate != null
             ? DateFormat('dd MMM yyyy').format(_lastApprovedDate!)
             : 'Awaiting approvals',
@@ -789,7 +580,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -839,15 +630,18 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
 
         if (response.statusCode == 200) {
           // Create blob from PDF bytes
-          final blob = html.Blob([response.bodyBytes], 'application/pdf');
-          final url = html.Url.createObjectUrlFromBlob(blob);
+          final blob = web.Blob(
+            [response.bodyBytes.toJS].toJS,
+            web.BlobPropertyBag(type: 'application/pdf'),
+          );
+          final url = web.URL.createObjectURL(blob);
 
           // Open in new window
-          html.window.open(url, '_blank');
+          web.window.open(url, '_blank');
 
           // Clean up URL after a delay (optional)
           Future.delayed(const Duration(minutes: 1), () {
-            html.Url.revokeObjectUrl(url);
+            web.URL.revokeObjectURL(url);
           });
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -896,13 +690,16 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       buffer.writeln('"$title","$client","$value","$approvedDate","$owner"');
     }
 
-    final blob = html.Blob([buffer.toString()]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)
-      ..setAttribute('download',
-          'approved_proposals_${DateTime.now().millisecondsSinceEpoch}.csv')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    final blob = web.Blob([buffer.toString().toJS].toJS);
+    final url = web.URL.createObjectURL(blob);
+    final anchor = web.document.createElement('a') as web.HTMLAnchorElement;
+    anchor.href = url;
+    anchor.setAttribute(
+      'download',
+      'approved_proposals_${DateTime.now().millisecondsSinceEpoch}.csv',
+    );
+    anchor.click();
+    web.URL.revokeObjectURL(url);
   }
 
   double _parseBudget(dynamic value) {

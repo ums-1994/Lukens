@@ -45,6 +45,16 @@ def _stable_json_hash(payload) -> str:
     ).hexdigest()
 
 
+def _table_exists(conn, table_name: str) -> bool:
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT to_regclass(%s)", (table_name,))
+        row = cursor.fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False
+
+
 def _get_user_role(conn, username: str) -> Optional[str]:
     cursor = conn.cursor()
     cursor.execute("SELECT role FROM users WHERE username = %s", (username,))
@@ -194,7 +204,7 @@ def _build_kb_citations(conn, issues: list) -> list:
 def analyze(username=None):
     """Risk Gate analyze endpoint (persists a run for override/audit support)."""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         proposal_id = data.get("proposal_id")
         if not proposal_id:
             return {"detail": "proposal_id is required"}, 400
@@ -223,7 +233,10 @@ def analyze(username=None):
                         }
                     )
 
-                kb_citations = _build_kb_citations(conn, safety_issues)
+                try:
+                    kb_citations = _build_kb_citations(conn, safety_issues)
+                except Exception:
+                    kb_citations = []
                 response_body = {
                     "status": "BLOCK",
                     "risk_score": 100,
@@ -236,26 +249,27 @@ def analyze(username=None):
                     },
                 }
 
-                cursor.execute(
-                    """
-                    INSERT INTO risk_gate_runs (proposal_id, requested_by, status, risk_score, issues, kb_citations, redaction_summary)
-                    VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
-                    RETURNING id
-                    """,
-                    (
-                        proposal_id,
-                        username,
-                        response_body["status"],
-                        response_body["risk_score"],
-                        _stable_json_dumps(response_body["issues"]),
-                        _stable_json_dumps(response_body["kb_citations"]),
-                        _stable_json_dumps(response_body["redaction_summary"]),
-                    ),
-                )
-                run_id = cursor.fetchone()["id"]
-                conn.commit()
-
-                response_body["run_id"] = run_id
+                if _table_exists(conn, "risk_gate_runs"):
+                    cursor.execute(
+                        """
+                        INSERT INTO risk_gate_runs (proposal_id, requested_by, status, risk_score, issues, kb_citations, redaction_summary)
+                        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+                        RETURNING id
+                        """,
+                        (
+                            proposal_id,
+                            username,
+                            response_body["status"],
+                            response_body["risk_score"],
+                            _stable_json_dumps(response_body["issues"]),
+                            _stable_json_dumps(response_body["kb_citations"]),
+                            _stable_json_dumps(response_body["redaction_summary"]),
+                        ),
+                    )
+                    run_row = cursor.fetchone() or {}
+                    conn.commit()
+                    if isinstance(run_row, dict) and run_row.get("id") is not None:
+                        response_body["run_id"] = run_row.get("id")
                 return response_body, 400
 
             # Run AI analysis
@@ -282,7 +296,10 @@ def analyze(username=None):
                 risk_score = 50
 
             # KB citations
-            kb_citations = _build_kb_citations(conn, issues)
+            try:
+                kb_citations = _build_kb_citations(conn, issues)
+            except Exception:
+                kb_citations = []
 
             # Decision
             status = _map_score_to_status(risk_score, issues)
@@ -294,27 +311,38 @@ def analyze(username=None):
                 "sanitized_payload_hash": _stable_json_hash(safety_result.sanitized),
             }
 
-            cursor.execute(
-                """
-                INSERT INTO risk_gate_runs (proposal_id, requested_by, status, risk_score, issues, kb_citations, redaction_summary)
-                VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
-                RETURNING id
-                """,
-                (
-                    proposal_id,
-                    username,
-                    status,
-                    int(risk_score or 0),
-                    _stable_json_dumps(issues),
-                    _stable_json_dumps(kb_citations),
-                    _stable_json_dumps(redaction_summary),
-                ),
-            )
-            run_id = cursor.fetchone()["id"]
-            conn.commit()
+            response_body = {
+                "status": status,
+                "risk_score": risk_score,
+                "issues": issues,
+                "kb_citations": kb_citations,
+                "redaction_summary": redaction_summary,
+            }
+
+            if _table_exists(conn, "risk_gate_runs"):
+                cursor.execute(
+                    """
+                    INSERT INTO risk_gate_runs (proposal_id, requested_by, status, risk_score, issues, kb_citations, redaction_summary)
+                    VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+                    RETURNING id
+                    """,
+                    (
+                        proposal_id,
+                        username,
+                        status,
+                        int(risk_score or 0),
+                        _stable_json_dumps(issues),
+                        _stable_json_dumps(kb_citations),
+                        _stable_json_dumps(redaction_summary),
+                    ),
+                )
+                run_row = cursor.fetchone() or {}
+                conn.commit()
+                if isinstance(run_row, dict) and run_row.get("id") is not None:
+                    response_body["run_id"] = run_row.get("id")
 
             return {
-                "run_id": run_id,
+                "run_id": response_body.get("run_id"),
                 "status": status,
                 "risk_score": risk_score,
                 "issues": issues,

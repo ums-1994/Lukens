@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'template_builder.dart';
@@ -6,6 +6,7 @@ import '../../theme/premium_theme.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
+import '../../widgets/app_side_nav.dart';
 
 class TemplateLibraryPage extends StatefulWidget {
   const TemplateLibraryPage({Key? key}) : super(key: key);
@@ -20,9 +21,6 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   String _typeFilter = 'all';
   String _statusFilter = 'all';
   bool _isLoading = true;
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
-  String _currentPage = 'Templates';
 
   List<Template> _templates = [];
   List<Template> _filteredTemplates = [];
@@ -59,17 +57,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _animationController.value = 1.0;
     _loadTemplates();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AppState>().setCurrentNavLabel('Templates');
+    });
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -107,7 +104,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             TemplateSection(title: 'Risks & Mitigation', required: true),
             TemplateSection(title: 'Governance Model', required: true),
             TemplateSection(
-                title: 'Appendix – Company Profile', required: true),
+                title: 'Appendix â€“ Company Profile', required: true),
           ],
           dynamicFields: [
             DynamicField(fieldKey: 'client_name', fieldName: 'Client Name'),
@@ -165,19 +162,19 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 "title": "Project Timeline",
                 "required": true,
                 "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"timeline\", \"project\", \"module\"] -->\n<h1>Project Timeline</h1>\n\n<table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Duration</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Discovery</td>\n<td>1–2 Weeks</td>\n<td>Requirements & assessment</td>\n</tr>\n<tr>\n<td>Design</td>\n<td>1 Week</td>\n<td>Architecture & workflow design</td>\n</tr>\n<tr>\n<td>Build</td>\n<td>2–4 Weeks</td>\n<td>Development & configuration</td>\n</tr>\n<tr>\n<td>UAT</td>\n<td>1–2 Weeks</td>\n<td>Testing & validation</td>\n</tr>\n<tr>\n<td>Go-Live</td>\n<td>1 Week</td>\n<td>Deployment & full handover</td>\n</tr>\n</tbody>\n</table>"
+                    "<!-- tags: [\"template\", \"proposal\", \"timeline\", \"project\", \"module\"] -->\n<h1>Project Timeline</h1>\n\n<table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Duration</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Discovery</td>\n<td>1â€“2 Weeks</td>\n<td>Requirements & assessment</td>\n</tr>\n<tr>\n<td>Design</td>\n<td>1 Week</td>\n<td>Architecture & workflow design</td>\n</tr>\n<tr>\n<td>Build</td>\n<td>2â€“4 Weeks</td>\n<td>Development & configuration</td>\n</tr>\n<tr>\n<td>UAT</td>\n<td>1â€“2 Weeks</td>\n<td>Testing & validation</td>\n</tr>\n<tr>\n<td>Go-Live</td>\n<td>1 Week</td>\n<td>Deployment & full handover</td>\n</tr>\n</tbody>\n</table>"
               },
               {
                 "title": "Team & Bios",
                 "required": true,
                 "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"team\", \"bios\", \"module\"] -->\n<h1>Team & Bios</h1>\n\n<h2>Engagement Lead – {{Name}}</h2>\n<p>Responsible for oversight, governance, and stakeholder engagement.</p>\n\n<h2>Technical Lead – {{Name}}</h2>\n<p>Owns architecture, technical design, integration, and delivery.</p>\n\n<h2>Business Analyst – {{Name}}</h2>\n<p>Facilitates workshops, documents requirements, and translations.</p>\n\n<h2>QA/Test Analyst – {{Name}}</h2>\n<p>Ensures solution quality and manages UAT cycles.</p>"
+                    "<!-- tags: [\"template\", \"proposal\", \"team\", \"bios\", \"module\"] -->\n<h1>Team & Bios</h1>\n\n<h2>Engagement Lead â€“ {{Name}}</h2>\n<p>Responsible for oversight, governance, and stakeholder engagement.</p>\n\n<h2>Technical Lead â€“ {{Name}}</h2>\n<p>Owns architecture, technical design, integration, and delivery.</p>\n\n<h2>Business Analyst â€“ {{Name}}</h2>\n<p>Facilitates workshops, documents requirements, and translations.</p>\n\n<h2>QA/Test Analyst â€“ {{Name}}</h2>\n<p>Ensures solution quality and manages UAT cycles.</p>"
               },
               {
                 "title": "Delivery Approach",
                 "required": true,
                 "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"delivery\", \"approach\", \"module\"] -->\n<h1>Delivery Approach</h1>\n\n<p>Khonology follows a structured delivery methodology combining Agile, Lean, and governance best practices.</p>\n\n<h2>Key Features</h2>\n<ul>\n<li>Iterative sprint cycles</li>\n<li>Frequent stakeholder engagement</li>\n<li>Automated governance checkpoints</li>\n<li>Traceability from requirements → delivery → reporting</li>\n</ul>"
+                    "<!-- tags: [\"template\", \"proposal\", \"delivery\", \"approach\", \"module\"] -->\n<h1>Delivery Approach</h1>\n\n<p>Khonology follows a structured delivery methodology combining Agile, Lean, and governance best practices.</p>\n\n<h2>Key Features</h2>\n<ul>\n<li>Iterative sprint cycles</li>\n<li>Frequent stakeholder engagement</li>\n<li>Automated governance checkpoints</li>\n<li>Traceability from requirements â†’ delivery â†’ reporting</li>\n</ul>"
               },
               {
                 "title": "Pricing Table",
@@ -198,10 +195,10 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                     "<!-- tags: [\"template\", \"proposal\", \"governance\", \"model\", \"module\"] -->\n<h1>Governance Model</h1>\n\n<h2>Governance Structure</h2>\n<ul>\n<li>Engagement Lead</li>\n<li>Product Owner (Client)</li>\n<li>Delivery Team</li>\n<li>QA & Compliance Group</li>\n</ul>\n\n<h2>Tools</h2>\n<ul>\n<li>Jira</li>\n<li>Teams/Email</li>\n<li>Automated reporting dashboard</li>\n</ul>\n\n<h2>Cadence</h2>\n<ul>\n<li>Daily standups</li>\n<li>Weekly status updates</li>\n<li>Monthly executive review</li>\n</ul>"
               },
               {
-                "title": "Appendix – Company Profile",
+                "title": "Appendix â€“ Company Profile",
                 "required": true,
                 "content":
-                    "<!-- tags: [\"template\", \"proposal\", \"company\", \"profile\", \"module\"] -->\n<h1>Appendix – Company Profile</h1>\n\n<h2>About Khonology</h2>\n<p>Khonology is a South African-based digital consulting and technology delivery company specialising in:</p>\n<ul>\n<li>Enterprise automation</li>\n<li>Digital transformation</li>\n<li>ESG reporting</li>\n<li>Data engineering & cloud</li>\n<li>Business analysis and enterprise delivery</li>\n</ul>\n\n<p>We partner with organisations to deliver impactful solutions that transform operations and unlock measurable value.</p>"
+                    "<!-- tags: [\"template\", \"proposal\", \"company\", \"profile\", \"module\"] -->\n<h1>Appendix â€“ Company Profile</h1>\n\n<h2>About Khonology</h2>\n<p>Khonology is a South African-based digital consulting and technology delivery company specialising in:</p>\n<ul>\n<li>Enterprise automation</li>\n<li>Digital transformation</li>\n<li>ESG reporting</li>\n<li>Data engineering & cloud</li>\n<li>Business analysis and enterprise delivery</li>\n</ul>\n\n<p>We partner with organisations to deliver impactful solutions that transform operations and unlock measurable value.</p>"
               }
             ]
           }),
@@ -398,17 +395,6 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     );
   }
 
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
-  }
-
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
       case 'Dashboard':
@@ -473,227 +459,6 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     );
   }
 
-  Widget _buildSidebar(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: _isSidebarCollapsed ? 90.0 : 250.0,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
-          ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-                _currentPage == 'My Proposals', context),
-            _buildNavItem('Templates', 'assets/images/content_library.png',
-                _currentPage == 'Templates', context),
-            _buildNavItem(
-                'Content Library',
-                'assets/images/content_library.png',
-                _currentPage == 'Content Library',
-                context),
-            _buildNavItem(
-                'Client Management',
-                'assets/images/collaborations.png',
-                _currentPage == 'Client Management',
-                context),
-            _buildNavItem(
-                'Approved Proposals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approved Proposals',
-                context),
-            _buildNavItem(
-                'Analytics (My Pipeline)',
-                'assets/images/analytics.png',
-                _currentPage == 'Analytics (My Pipeline)',
-                context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: const Color(0xFF2C3E50),
-              ),
-            const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -704,8 +469,26 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 child: CircularProgressIndicator(color: PremiumTheme.teal))
             : Row(
                 children: [
-                  // Sidebar
-                  _buildSidebar(context),
+                  Consumer<AppState>(
+                    builder: (context, app, _) {
+                      final user = AuthService.currentUser ?? app.currentUser;
+                      final role = (user?['role'] ?? '')
+                          .toString()
+                          .toLowerCase()
+                          .trim();
+                      final isAdmin = role == 'admin' || role == 'ceo';
+                      return AppSideNav(
+                        isCollapsed: app.isSidebarCollapsed,
+                        currentLabel: app.currentNavLabel,
+                        isAdmin: isAdmin,
+                        onToggle: app.toggleSidebar,
+                        onSelect: (label) {
+                          app.setCurrentNavLabel(label);
+                          _navigateToPage(context, label);
+                        },
+                      );
+                    },
+                  ),
                   // Content Area
                   Expanded(
                     child: SingleChildScrollView(
@@ -794,11 +577,11 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 fillColor: PremiumTheme.darkBg2,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -821,7 +604,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             decoration: BoxDecoration(
               color: PremiumTheme.darkBg2,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: DropdownButtonFormField<String>(
               initialValue: _typeFilter,
@@ -870,7 +653,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             decoration: BoxDecoration(
               color: PremiumTheme.darkBg2,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: DropdownButtonFormField<String>(
               initialValue: _statusFilter,
@@ -1068,8 +851,8 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     return Container(
       decoration: PremiumTheme.glassCard(
         borderRadius: 16,
-        gradientStart: cardColor.withOpacity(0.1),
-        gradientEnd: cardColor.withOpacity(0.05),
+        gradientStart: cardColor.withValues(alpha: 0.1),
+        gradientEnd: cardColor.withValues(alpha: 0.05),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1113,7 +896,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                             color: PremiumTheme.darkBg3,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                                color: Colors.white.withOpacity(0.1)),
+                                color: Colors.white.withValues(alpha: 0.1)),
                           ),
                           child: Text(
                             template.templateType.toUpperCase(),
@@ -1126,10 +909,10 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: statusConfig.color.withOpacity(0.2),
+                            color: statusConfig.color.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                                color: statusConfig.color.withOpacity(0.3)),
+                                color: statusConfig.color.withValues(alpha: 0.3)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1149,10 +932,10 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: PremiumTheme.purple.withOpacity(0.2),
+                              color: PremiumTheme.purple.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                  color: PremiumTheme.purple.withOpacity(0.3)),
+                                  color: PremiumTheme.purple.withValues(alpha: 0.3)),
                             ),
                             child: const Text(
                               'Public',
@@ -1172,7 +955,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           const Spacer(),
           // Stats
           Text(
-            '${template.sections.length} sections • ${template.usageCount} uses',
+            '${template.sections.length} sections â€¢ ${template.usageCount} uses',
             style:
                 const TextStyle(fontSize: 12, color: PremiumTheme.textTertiary),
           ),
@@ -1206,7 +989,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                     );
                   },
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                     foregroundColor: PremiumTheme.textSecondary,
                   ),
                   child: const Icon(Icons.edit, size: 16),
@@ -1215,7 +998,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 OutlinedButton(
                   onPressed: () => _cloneTemplate(template),
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                     foregroundColor: PremiumTheme.textSecondary,
                   ),
                   child: const Icon(Icons.copy, size: 16),
@@ -1234,11 +1017,11 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                   child: OutlinedButton.icon(
                     onPressed: () => _cloneTemplate(template),
                     icon: Icon(Icons.copy,
-                        size: 16, color: Colors.white.withOpacity(0.7)),
+                        size: 16, color: Colors.white.withValues(alpha: 0.7)),
                     label: Text('Clone',
-                        style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
@@ -1334,7 +1117,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: PremiumTheme.teal.withOpacity(0.2),
+                      color: PremiumTheme.teal.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(Icons.preview,
@@ -1395,7 +1178,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             decoration: BoxDecoration(
               color: PremiumTheme.darkBg3,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: Text(
               template.description!,
@@ -1418,7 +1201,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
               decoration: BoxDecoration(
                 color: PremiumTheme.darkBg3,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
               child: ListTile(
                 title: Text(
@@ -1433,7 +1216,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: PremiumTheme.success.withOpacity(0.2),
+                          color: PremiumTheme.success.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Text(
@@ -1645,7 +1428,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '• ',
+                'â€¢ ',
                 style: TextStyle(
                   color: PremiumTheme.teal,
                   fontSize: 18,
@@ -1703,7 +1486,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '• ',
+                'â€¢ ',
                 style: TextStyle(
                   color: PremiumTheme.teal,
                   fontSize: 18,
@@ -1819,9 +1602,9 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
       padding: const EdgeInsets.only(bottom: 24, top: 8),
       child: Container(
         decoration: BoxDecoration(
-          color: PremiumTheme.darkBg3.withOpacity(0.5),
+          color: PremiumTheme.darkBg3.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         ),
         child: Table(
           columnWidths: Map.fromIterable(
@@ -1830,19 +1613,19 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             value: (index) => const FlexColumnWidth(1),
           ),
           border: TableBorder(
-            horizontalInside: BorderSide(color: Colors.white.withOpacity(0.1)),
-            verticalInside: BorderSide(color: Colors.white.withOpacity(0.1)),
-            bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
-            top: BorderSide(color: Colors.white.withOpacity(0.1)),
-            left: BorderSide(color: Colors.white.withOpacity(0.1)),
-            right: BorderSide(color: Colors.white.withOpacity(0.1)),
+            horizontalInside: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            verticalInside: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            left: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            right: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
           ),
           children: [
             // Header row
             if (headers.isNotEmpty)
               TableRow(
                 decoration: BoxDecoration(
-                  color: PremiumTheme.teal.withOpacity(0.2),
+                  color: PremiumTheme.teal.withValues(alpha: 0.2),
                 ),
                 children: headers
                     .map((header) => Padding(

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/content_library_service.dart';
 import '../../services/auth_service.dart';
@@ -55,7 +55,7 @@ class _ContentLibrarySelectionDialogState
     try {
       final token = _getToken();
       if (token == null || token.isEmpty) {
-        print('⚠️ No authentication token available');
+        print('âš ï¸ No authentication token available');
         setState(() {
           _modules = [];
           _loading = false;
@@ -63,16 +63,16 @@ class _ContentLibrarySelectionDialogState
         return;
       }
 
-      print('✅ Loading content with token (length: ${token.length})');
+      print('âœ… Loading content with token (length: ${token.length})');
       final modules = await _svc.getContentModules(token: token);
       final nonFolderCount = modules.where((m) => m['is_folder'] != true).length;
       setState(() {
         _modules = modules;
         _loading = false;
       });
-      print('✅ Loaded ${modules.length} content modules (${nonFolderCount} non-folder items available for insertion)');
+      print('âœ… Loaded ${modules.length} content modules (${nonFolderCount} non-folder items available for insertion)');
     } catch (e) {
-      print('❌ Error loading content modules: $e');
+      print('âŒ Error loading content modules: $e');
       setState(() {
         _modules = [];
         _loading = false;
@@ -274,7 +274,7 @@ class _ContentLibrarySelectionDialogState
                                       height: 48,
                                       decoration: BoxDecoration(
                                         color: _getCategoryColor(category)
-                                            .withOpacity(0.1),
+                                            .withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Icon(
@@ -301,7 +301,7 @@ class _ContentLibrarySelectionDialogState
                                           ),
                                           decoration: BoxDecoration(
                                             color: _getCategoryColor(category)
-                                                .withOpacity(0.1),
+                                                .withValues(alpha: 0.1),
                                             borderRadius:
                                                 BorderRadius.circular(12),
                                           ),

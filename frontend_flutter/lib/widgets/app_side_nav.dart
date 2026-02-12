@@ -10,6 +10,7 @@ class AppSideNav extends StatelessWidget {
     required this.onSelect,
     required this.onToggle,
     required this.isAdmin,
+    this.extraItems = const [],
   });
 
   final bool isCollapsed;
@@ -17,6 +18,7 @@ class AppSideNav extends StatelessWidget {
   final ValueChanged<String> onSelect;
   final VoidCallback onToggle;
   final bool isAdmin;
+  final List<Map<String, String>> extraItems;
 
   static const double collapsedWidth = 90.0;
   static const double expandedWidth = 250.0;
@@ -44,8 +46,8 @@ class AppSideNav extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
+              Colors.black.withValues(alpha: 0.3),
+              Colors.black.withValues(alpha: 0.2),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
@@ -109,6 +111,8 @@ class AppSideNav extends StatelessWidget {
                       for (final it in _items)
                         if (!_shouldHideItemForAdmin(it['label']!))
                           _buildItem(it['label']!, it['icon']!),
+                      for (final it in extraItems)
+                        _buildItem(it['label']!, it['icon']!),
                     ],
                   ),
                 ),
@@ -137,9 +141,6 @@ class AppSideNav extends StatelessWidget {
   }
 
   bool _shouldHideItemForAdmin(String label) {
-    if (!isAdmin) return false;
-    if (label == 'My Proposals') return true;
-    if (label == 'Analytics (My Pipeline)') return true;
     return false;
   }
 
@@ -163,13 +164,15 @@ class AppSideNav extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            // Keep row background transparent so the sidebar color is stable
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            // Use a subtle red border to indicate the active item
-            border: active
-                ? Border.all(color: const Color(0xFFE74C3C), width: 1)
-                : null,
+            color:
+                active ? PremiumTheme.purple.withValues(alpha: 0.25) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: active
+                  ? PremiumTheme.purple
+                  : PremiumTheme.glassWhiteBorder.withValues(alpha: 0.7),
+              width: active ? 1.5 : 1,
+            ),
           ),
           child: Row(
             children: [
@@ -189,7 +192,8 @@ class AppSideNav extends StatelessWidget {
                   ),
                 ),
               ),
-              if (active) const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+              if (active)
+                const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
             ],
           ),
         ),
@@ -209,13 +213,13 @@ class AppSideNav extends StatelessWidget {
         color: const Color(0xFF111827),
         shape: BoxShape.circle,
         border: Border.all(
-          color: active ? const Color(0xFFE74C3C) : const Color(0xFF4B5563),
+          color: active ? PremiumTheme.purple : const Color(0xFF4B5563),
           width: active ? 2 : 1,
         ),
         boxShadow: active
             ? [
                 BoxShadow(
-                  color: const Color(0xFFE74C3C).withValues(alpha: 0.25),
+                  color: PremiumTheme.purple.withValues(alpha: 0.25),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),

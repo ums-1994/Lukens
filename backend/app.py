@@ -159,11 +159,26 @@ app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp, url_prefix='/api/risk-gate')
 
 # Expose upload and content library routes at root (no /api prefix) for frontend compatibility
-from api.routes.creator import upload_image, upload_template, get_content, create_content
+from api.routes.creator import (
+    upload_image,
+    upload_template,
+    get_content as creator_get_content,
+    create_content as creator_create_content,
+)
 app.add_url_rule('/upload/image', view_func=upload_image, methods=['POST'])
 app.add_url_rule('/upload/template', view_func=upload_template, methods=['POST'])
-app.add_url_rule('/content', view_func=get_content, methods=['GET'])
-app.add_url_rule('/content', view_func=create_content, methods=['POST'])
+app.add_url_rule(
+    '/content',
+    endpoint='creator_get_content_root',
+    view_func=creator_get_content,
+    methods=['GET'],
+)
+app.add_url_rule(
+    '/content',
+    endpoint='creator_create_content_root',
+    view_func=creator_create_content,
+    methods=['POST'],
+)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = Starlette()
@@ -175,8 +190,13 @@ _db_initialized = False
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
+    default_limits=["200 per day", "50 per hour"],
 )
+
+
+@limiter.request_filter
+def _skip_rate_limit_for_options():
+    return request.method == "OPTIONS"
 
 app.config['JSON_SORT_KEYS'] = False
 app.config['PROPAGATE_EXCEPTIONS'] = True
@@ -2440,7 +2460,6 @@ def get_user_profile(username=None, user_id=None, email=None):
 # Content library endpoints
 
 @app.get("/api/content")
-@app.get("/content")
 @token_required
 def get_content(username):
     try:
@@ -3586,32 +3605,6 @@ def client_sign_proposal(username, proposal_id):
         conn.commit()
         release_pg_conn(conn)
         return {'detail': 'Proposal signed by client'}, 200
-    except Exception as e:
-        return {'detail': str(e)}, 500
-
-@app.post("/upload/image")
-@token_required
-def upload_image(username):
-    try:
-        if 'file' not in request.files:
-            return {'detail': 'No file provided'}, 400
-        
-        file = request.files['file']
-        result = cloudinary.uploader.upload(file)
-        return result, 200
-    except Exception as e:
-        return {'detail': str(e)}, 500
-
-@app.post("/upload/template")
-@token_required
-def upload_template(username):
-    try:
-        if 'file' not in request.files:
-            return {'detail': 'No file provided'}, 400
-        
-        file = request.files['file']
-        result = cloudinary.uploader.upload(file)
-        return result, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -6504,7 +6497,11 @@ def get_clients(username=None, user_id=None, email=None):
                     user_row = cursor.fetchone()
                 if not user_row:
                     return jsonify({"error": "User not found"}), 404
-                resolved_user_id = user_row['id'] if isinstance(user_row, dict) else user_row[0]
+
+                if isinstance(user_row, dict) or hasattr(user_row, 'keys'):
+                    resolved_user_id = user_row.get('id') if isinstance(user_row, dict) else user_row['id']
+                else:
+                    resolved_user_id = user_row[0]
 
             user_id = resolved_user_id
 
@@ -6516,7 +6513,11 @@ def get_clients(username=None, user_id=None, email=None):
                   AND table_schema = current_schema()
                 """
             )
-            client_columns = {row[0] for row in cursor.fetchall() if row and row[0]}
+            client_columns = {
+                (row.get('column_name') if isinstance(row, dict) else row['column_name'])
+                for row in (cursor.fetchall() or [])
+                if row and (row.get('column_name') if isinstance(row, dict) else row.get('column_name', None) if hasattr(row, 'get') else row['column_name'])
+            }
             order_by_col = 'created_at' if 'created_at' in client_columns else 'id'
             
             # Get all clients

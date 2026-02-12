@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +10,7 @@ import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/app_side_nav.dart';
 import '../shared/proposal_insights_modal.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -50,6 +51,7 @@ class _DashboardPageState extends State<DashboardPage>
         app.authToken = AuthService.token;
         app.currentUser = AuthService.currentUser;
       }
+      app.setCurrentNavLabel('Dashboard');
       await _refreshData();
       await _loadRiskData(app);
     });
@@ -570,7 +572,7 @@ class _DashboardPageState extends State<DashboardPage>
           return decoded.cast<String, dynamic>();
         }
       } catch (e) {
-        debugPrint('⚠️ Failed to decode notification metadata: $e');
+        debugPrint('âš ï¸ Failed to decode notification metadata: $e');
       }
     }
     return <String, dynamic>{};
@@ -627,7 +629,7 @@ class _DashboardPageState extends State<DashboardPage>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.black.withOpacity(0.3),
+                    Colors.black.withValues(alpha: 0.3),
                     Colors.transparent,
                   ],
                   begin: Alignment.topCenter,
@@ -734,139 +736,23 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: Row(
                 children: [
-                  // Collapsible Sidebar with Glass Effect
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.2),
-                        ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      border: Border(
-                        right: BorderSide(
-                          color: PremiumTheme.glassWhiteBorder,
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: PremiumTheme.glassWhite,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: PremiumTheme.glassWhiteBorder,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              _currentPage == 'My Proposals',
-                              context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Client Management',
-                              context),
-                          _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approved Proposals',
-                              context),
-                          _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              _currentPage == 'Analytics (My Pipeline)',
-                              context),
-
-                          const SizedBox(height: 20),
-
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-
-                          const SizedBox(height: 12),
-
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
+                  Consumer<AppState>(
+                    builder: (context, app, _) {
+                      final user = AuthService.currentUser ?? app.currentUser;
+                      final role =
+                          (user?['role'] ?? '').toString().toLowerCase().trim();
+                      final isAdmin = role == 'admin' || role == 'ceo';
+                      return AppSideNav(
+                        isCollapsed: app.isSidebarCollapsed,
+                        currentLabel: app.currentNavLabel,
+                        isAdmin: isAdmin,
+                        onToggle: app.toggleSidebar,
+                        onSelect: (label) {
+                          app.setCurrentNavLabel(label);
+                          _navigateToPage(context, label);
+                        },
+                      );
+                    },
                   ),
 
                   // Content Area
@@ -1299,7 +1185,7 @@ class _DashboardPageState extends State<DashboardPage>
       try {
         await app.markNotificationRead(notificationId);
       } catch (e) {
-        debugPrint('⚠️ Failed to mark notification as read: $e');
+        debugPrint('âš ï¸ Failed to mark notification as read: $e');
       }
     }
 
@@ -1366,8 +1252,8 @@ class _DashboardPageState extends State<DashboardPage>
     if (_riskItems.isEmpty) {
       return GlassContainer(
         borderRadius: 24,
-        gradientStart: PremiumTheme.teal.withOpacity(0.3),
-        gradientEnd: PremiumTheme.info.withOpacity(0.2),
+        gradientStart: PremiumTheme.teal.withValues(alpha: 0.3),
+        gradientEnd: PremiumTheme.info.withValues(alpha: 0.2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1376,7 +1262,7 @@ class _DashboardPageState extends State<DashboardPage>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.teal.withOpacity(0.2),
+                    color: PremiumTheme.teal.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -1421,7 +1307,7 @@ class _DashboardPageState extends State<DashboardPage>
                     Icon(
                       Icons.verified_user,
                       size: 48,
-                      color: PremiumTheme.teal.withOpacity(0.7),
+                      color: PremiumTheme.teal.withValues(alpha: 0.7),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -1447,8 +1333,8 @@ class _DashboardPageState extends State<DashboardPage>
 
     return GlassContainer(
       borderRadius: 24,
-      gradientStart: PremiumTheme.orange.withOpacity(0.3),
-      gradientEnd: PremiumTheme.error.withOpacity(0.2),
+      gradientStart: PremiumTheme.orange.withValues(alpha: 0.3),
+      gradientEnd: PremiumTheme.error.withValues(alpha: 0.2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1457,7 +1343,7 @@ class _DashboardPageState extends State<DashboardPage>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: PremiumTheme.orange.withOpacity(0.2),
+                  color: PremiumTheme.orange.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
@@ -1488,7 +1374,7 @@ class _DashboardPageState extends State<DashboardPage>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.orange.withOpacity(0.2),
+                    color: PremiumTheme.orange.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -1585,13 +1471,13 @@ class _DashboardPageState extends State<DashboardPage>
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: severity == 'high'
-                      ? PremiumTheme.error.withOpacity(0.2)
-                      : PremiumTheme.orange.withOpacity(0.2),
+                      ? PremiumTheme.error.withValues(alpha: 0.2)
+                      : PremiumTheme.orange.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: severity == 'high'
-                        ? PremiumTheme.error.withOpacity(0.3)
-                        : PremiumTheme.orange.withOpacity(0.3),
+                        ? PremiumTheme.error.withValues(alpha: 0.3)
+                        : PremiumTheme.orange.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),
@@ -1786,8 +1672,8 @@ class _DashboardPageState extends State<DashboardPage>
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: isActive
-                      ? Colors.white.withOpacity(0.3)
-                      : PremiumTheme.teal.withOpacity(0.2),
+                      ? Colors.white.withValues(alpha: 0.3)
+                      : PremiumTheme.teal.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -1836,10 +1722,10 @@ class _DashboardPageState extends State<DashboardPage>
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: PremiumTheme.info.withOpacity(0.2),
+                      color: PremiumTheme.info.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: PremiumTheme.info.withOpacity(0.3),
+                        color: PremiumTheme.info.withValues(alpha: 0.3),
                         width: 1,
                       ),
                     ),
@@ -1879,7 +1765,7 @@ class _DashboardPageState extends State<DashboardPage>
                           if (isSentToClient) ...[
                             const SizedBox(width: 8),
                             Text(
-                              '•',
+                              'â€¢',
                               style: PremiumTheme.bodyMedium.copyWith(
                                 fontSize: 13,
                               ),
@@ -1924,10 +1810,10 @@ class _DashboardPageState extends State<DashboardPage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.2),
+                  color: statusColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: statusColor.withOpacity(0.3),
+                    color: statusColor.withValues(alpha: 0.3),
                     width: 1,
                   ),
                 ),

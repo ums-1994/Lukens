@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
@@ -70,7 +70,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         }
       }
     } catch (e) {
-      print('❌ Error parsing URL: $e');
+      print('âŒ Error parsing URL: $e');
     }
 
     if (token == null || token.isEmpty) {
@@ -224,8 +224,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
@@ -274,7 +274,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             TemplateSection(title: 'Risks & Mitigation', required: true),
             TemplateSection(title: 'Governance Model', required: true),
             TemplateSection(
-                title: 'Appendix – Company Profile', required: true),
+                title: 'Appendix â€“ Company Profile', required: true),
           ],
           dynamicFields: [],
           usageCount: 0,
@@ -445,7 +445,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                   ...issues.take(3).map((issue) => Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '• ${(issue['title'] ?? issue['section'] ?? issue['category'] ?? 'Issue').toString()}',
+                          'â€¢ ${(issue['title'] ?? issue['section'] ?? issue['category'] ?? 'Issue').toString()}',
                         ),
                       )),
                 ],
@@ -808,8 +808,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -966,7 +966,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       case 'Scope of Work':
         return 'scope_deliverables';
       case 'Company Profile':
-      case 'Appendix – Company Profile':
+      case 'Appendix â€“ Company Profile':
         return 'company_profile';
       case 'Terms & Conditions':
         return 'terms_conditions';
@@ -1012,7 +1012,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             ),
             const SizedBox(height: 4),
             Text(
-              'Step ${_currentStep + 1} of $_totalSteps: ${_getStepTitle(_currentStep)} • ${((_currentStep + 1) / _totalSteps * 100).round()}% Complete',
+              'Step ${_currentStep + 1} of $_totalSteps: ${_getStepTitle(_currentStep)} â€¢ ${((_currentStep + 1) / _totalSteps * 100).round()}% Complete',
               style: PremiumTheme.bodyMedium,
             ),
           ],
@@ -1104,15 +1104,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     ),
                     const SizedBox(height: 16),
                     _buildNextStepItem(
-                        '• Your proposal will be created in draft status',
+                        'â€¢ Your proposal will be created in draft status',
                         PremiumTheme.info),
                     _buildNextStepItem(
-                        '• You can continue editing and adding content',
+                        'â€¢ You can continue editing and adding content',
                         PremiumTheme.info),
                     _buildNextStepItem(
-                        '• Submit for approval when ready', PremiumTheme.info),
+                        'â€¢ Submit for approval when ready', PremiumTheme.info),
                     _buildNextStepItem(
-                        '• Track progress through the approval workflow',
+                        'â€¢ Track progress through the approval workflow',
                         PremiumTheme.info),
                   ],
                 ),
@@ -1503,7 +1503,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     ? PremiumTheme.success
                     : isActive
                         ? const Color(0xFFEAF2F8) // Light blue background
-                        : const Color(0xFFEAF2F8).withOpacity(0.5),
+                        : const Color(0xFFEAF2F8).withValues(alpha: 0.5),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isCompleted
@@ -1522,7 +1522,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           fontWeight: FontWeight.bold,
                           color: isActive
                               ? PremiumTheme.info // Blue text
-                              : PremiumTheme.info.withOpacity(0.6),
+                              : PremiumTheme.info.withValues(alpha: 0.6),
                         ),
                       ),
               ),
@@ -1592,7 +1592,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                         ),
                       ),
                       Text(
-                        '$score% • $statusLabel',
+                        '$score% â€¢ $statusLabel',
                         style: PremiumTheme.bodyMedium.copyWith(
                           color: statusColor,
                           fontWeight: FontWeight.w600,
@@ -1627,7 +1627,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: PremiumTheme.error.withOpacity(0.12),
+                            color: PremiumTheme.error.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1908,7 +1908,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                   width: 60,
                                   height: 60,
                                   decoration: BoxDecoration(
-                                    color: color.withOpacity(0.2),
+                                    color: color.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(
@@ -2025,10 +2025,10 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.08),
+                            color: Colors.green.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                                color: Colors.green.withOpacity(0.3)),
+                                color: Colors.green.withValues(alpha: 0.3)),
                           ),
                           child: Row(
                             children: [
@@ -2062,10 +2062,10 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.12),
+                              color: Colors.orange.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                  color: Colors.orange.withOpacity(0.4)),
+                                  color: Colors.orange.withValues(alpha: 0.4)),
                             ),
                             child: Row(
                               children: [
@@ -2469,12 +2469,12 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: module['category'] == 'Company'
-                  ? PremiumTheme.info.withOpacity(0.2)
+                  ? PremiumTheme.info.withValues(alpha: 0.2)
                   : module['category'] == 'Project'
-                      ? PremiumTheme.success.withOpacity(0.2)
+                      ? PremiumTheme.success.withValues(alpha: 0.2)
                       : module['category'] == 'Legal'
-                          ? PremiumTheme.error.withOpacity(0.2)
-                          : PremiumTheme.purple.withOpacity(0.2),
+                          ? PremiumTheme.error.withValues(alpha: 0.2)
+                          : PremiumTheme.purple.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -2737,7 +2737,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
           ),
           prefixIcon: Icon(icon, color: PremiumTheme.teal),
           filled: true,
-          fillColor: PremiumTheme.glassWhite.withOpacity(0.5),
+          fillColor: PremiumTheme.glassWhite.withValues(alpha: 0.5),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: PremiumTheme.glassWhiteBorder),
@@ -3193,7 +3193,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: riskColor.withOpacity(0.2),
+                      color: riskColor.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
@@ -3460,16 +3460,16 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 ),
               ),
               const SizedBox(height: 12),
-              _buildApprovalChecklistItem('✓ Governance checks passed'),
-              _buildApprovalChecklistItem('✓ Risk assessment completed'),
-              _buildApprovalChecklistItem('✓ All required sections complete'),
-              _buildApprovalChecklistItem('✓ Content reviewed for accuracy'),
+              _buildApprovalChecklistItem('âœ“ Governance checks passed'),
+              _buildApprovalChecklistItem('âœ“ Risk assessment completed'),
+              _buildApprovalChecklistItem('âœ“ All required sections complete'),
+              _buildApprovalChecklistItem('âœ“ Content reviewed for accuracy'),
               if (_hasRiskGateOverride()) ...[
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.12),
+                    color: Colors.orange.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.orange),
                   ),
@@ -3516,7 +3516,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.success.withOpacity(0.2),
+                    color: PremiumTheme.success.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: PremiumTheme.success),
                   ),
@@ -3554,7 +3554,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: PremiumTheme.error.withOpacity(0.12),
+                      color: PremiumTheme.error.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: PremiumTheme.error),
                     ),
@@ -3636,7 +3636,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.success.withOpacity(0.2),
+                    color: PremiumTheme.success.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: PremiumTheme.success),
                   ),

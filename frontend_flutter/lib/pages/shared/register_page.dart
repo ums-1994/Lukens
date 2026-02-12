@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/firebase_service.dart';
 import '../../services/auth_service.dart';
@@ -30,12 +30,6 @@ class _RegisterPageState extends State<RegisterPage>
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
   double _passwordStrength = 0.0;
-  Map<String, bool> _criteria = {
-    'minLength': false,
-    'uppercase': false,
-    'number': false,
-    'special': false,
-  };
 
   late final AnimationController _frameController;
   late final AnimationController _parallaxController;
@@ -119,12 +113,6 @@ class _RegisterPageState extends State<RegisterPage>
         .where((e) => e)
         .length;
     setState(() {
-      _criteria = {
-        'minLength': hasMinLength,
-        'uppercase': hasUppercase,
-        'number': hasNumber,
-        'special': hasSpecial,
-      };
       _passwordStrength = passed / 4.0;
     });
   }
@@ -158,11 +146,11 @@ class _RegisterPageState extends State<RegisterPage>
       } else {
         role = 'manager'; // Default to manager
       }
-      print('🔍 Selected role from UI: "$_selectedRole"');
-      print('🔍 Mapped role for backend: "$role"');
+      print('ðŸ” Selected role from UI: "$_selectedRole"');
+      print('ðŸ” Mapped role for backend: "$role"');
 
       // Step 1: Create user in Firebase
-      print('🔥 Creating user in Firebase...');
+      print('ðŸ”¥ Creating user in Firebase...');
       UserCredential? firebaseCredential;
       String? firebaseError;
 
@@ -175,7 +163,7 @@ class _RegisterPageState extends State<RegisterPage>
           role: role,
         );
       } catch (e) {
-        print('❌ Firebase registration error: $e');
+        print('âŒ Firebase registration error: $e');
         firebaseError = e.toString();
       }
 
@@ -216,7 +204,7 @@ class _RegisterPageState extends State<RegisterPage>
       }
 
       // Step 2: Get Firebase ID token
-      print('🔥 Getting Firebase ID token...');
+      print('ðŸ”¥ Getting Firebase ID token...');
       final firebaseIdToken = await firebaseCredential.user!.getIdToken();
 
       if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
@@ -233,17 +221,17 @@ class _RegisterPageState extends State<RegisterPage>
       }
 
       print(
-          '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
+          'âœ… Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
-      print('📡 Syncing user to backend database...');
-      print('🔍 Sending role to backend: "$role"');
-      print('🔍 Selected role from dropdown: "$_selectedRole"');
+      print('ðŸ“¡ Syncing user to backend database...');
+      print('ðŸ” Sending role to backend: "$role"');
+      print('ðŸ” Selected role from dropdown: "$_selectedRole"');
       final requestBody = {
         'id_token': firebaseIdToken,
         'role': role, // Send role to backend
       };
-      print('🔍 Request body role: "${requestBody['role']}"');
+      print('ðŸ” Request body role: "${requestBody['role']}"');
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
@@ -280,7 +268,7 @@ class _RegisterPageState extends State<RegisterPage>
           if (backendRole != requestedRoleNormalized) {
             // Role might need to be updated in backend
             print(
-                '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
+                'âš ï¸ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
           }
 
           // Auto-login after successful registration
@@ -302,22 +290,22 @@ class _RegisterPageState extends State<RegisterPage>
           final userRole = rawRole.toLowerCase().trim();
           final currentRole = roleService.currentRole;
 
-          print('🔍 User role from backend: "$userRole"');
-          print('🔍 Requested role: "$role"');
-          print('🔍 Frontend mapped role: $currentRole');
+          print('ðŸ” User role from backend: "$userRole"');
+          print('ðŸ” Requested role: "$role"');
+          print('ðŸ” Frontend mapped role: $currentRole');
 
           String dashboardRoute;
 
           if (currentRole == UserRole.approver ||
               currentRole == UserRole.admin) {
             dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
+            print('âœ… Routing to Admin/Approver Dashboard (from RoleService)');
           } else if (currentRole == UserRole.finance) {
             dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard (from RoleService)');
+            print('âœ… Routing to Finance Dashboard (from RoleService)');
           } else {
             dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard (from RoleService)');
+            print('âœ… Routing to Creator Dashboard (from RoleService)');
           }
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -351,7 +339,7 @@ class _RegisterPageState extends State<RegisterPage>
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        print('❌ Registration error: $e');
+        print('âŒ Registration error: $e');
         String errorMessage = 'Registration failed. Please try again.';
 
         // Parse Firebase errors
@@ -395,9 +383,9 @@ class _RegisterPageState extends State<RegisterPage>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.black.withOpacity(0.5),
-                  Colors.black.withOpacity(0.7),
-                  Colors.black.withOpacity(0.6),
+                  Colors.black.withValues(alpha: 0.5),
+                  Colors.black.withValues(alpha: 0.7),
+                  Colors.black.withValues(alpha: 0.6),
                 ],
               ),
             ),
@@ -447,7 +435,7 @@ class _RegisterPageState extends State<RegisterPage>
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),
@@ -470,7 +458,7 @@ class _RegisterPageState extends State<RegisterPage>
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.04)),
                   size: const Size(70, 70),
                 ),
               ),
@@ -486,7 +474,7 @@ class _RegisterPageState extends State<RegisterPage>
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -501,15 +489,15 @@ class _RegisterPageState extends State<RegisterPage>
     return Container(
       constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 500),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withOpacity(0.95),
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE9293A).withOpacity(0.3),
+          color: const Color(0xFFE9293A).withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFE9293A).withOpacity(0.2),
+            color: const Color(0xFFE9293A).withValues(alpha: 0.2),
             blurRadius: 40,
             spreadRadius: 0,
           ),
@@ -537,7 +525,7 @@ class _RegisterPageState extends State<RegisterPage>
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) {
                     return const Text(
-                      '✕ Khonology',
+                      'âœ• Khonology',
                       style: TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: 56,
@@ -695,7 +683,7 @@ class _RegisterPageState extends State<RegisterPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE9293A).withOpacity(0.4),
+                    color: const Color(0xFFE9293A).withValues(alpha: 0.4),
                     blurRadius: 20,
                     spreadRadius: 2,
                   ),

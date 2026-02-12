@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../services/auth_service.dart';
@@ -466,7 +466,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✅ Proposal approved and sent to client!'),
+              content: Text('âœ… Proposal approved and sent to client!'),
               backgroundColor: Colors.green,
             ),
           );
@@ -555,7 +555,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✅ Proposal rejected and returned to draft'),
+              content: Text('âœ… Proposal rejected and returned to draft'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -631,7 +631,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       }
     } catch (e) {
       print(
-          '⚠️ Failed to parse proposal document content for admin preview: $e');
+          'âš ï¸ Failed to parse proposal document content for admin preview: $e');
     }
     return null;
   }
@@ -726,7 +726,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.grey[100]!.withOpacity(0.9),
+          color: Colors.grey[100]!.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey[300]!),
         ),
@@ -854,7 +854,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                 borderRadius: BorderRadius.circular(4),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
+                    color: Colors.black.withValues(alpha: 0.15),
                     blurRadius: 20,
                     offset: const Offset(0, 5),
                   ),
@@ -1162,7 +1162,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                       const EdgeInsets.all(12),
                                                   decoration: BoxDecoration(
                                                     color: Colors.white
-                                                        .withOpacity(0.1),
+                                                        .withValues(alpha: 0.1),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                             8),
@@ -1248,7 +1248,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                       Container(
                                         padding: const EdgeInsets.all(12),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.1),
+                                          color: Colors.white.withValues(alpha: 0.1),
                                           borderRadius:
                                               BorderRadius.circular(8),
                                         ),
@@ -1311,7 +1311,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                     const EdgeInsets.all(12),
                                                 decoration: BoxDecoration(
                                                   color: Colors.white
-                                                      .withOpacity(0.1),
+                                                      .withValues(alpha: 0.1),
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
@@ -1377,10 +1377,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: PremiumTheme.orange.withOpacity(0.2),
+        color: PremiumTheme.orange.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: PremiumTheme.orange.withOpacity(0.3),
+          color: PremiumTheme.orange.withValues(alpha: 0.3),
           width: 1,
         ),
       ),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/api_service.dart';
@@ -177,17 +177,17 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
       case 'company_profile':
         return 'Khonology is a leading technology consulting firm with over 10 years of experience in digital transformation. We specialize in helping organizations modernize their technology infrastructure and processes.';
       case 'scope_deliverables':
-        return 'Our services include:\n\n• Project planning and requirements analysis\n• System design and architecture\n• Implementation and deployment\n• Testing and quality assurance\n• Training and knowledge transfer\n• Ongoing support and maintenance';
+        return 'Our services include:\n\nâ€¢ Project planning and requirements analysis\nâ€¢ System design and architecture\nâ€¢ Implementation and deployment\nâ€¢ Testing and quality assurance\nâ€¢ Training and knowledge transfer\nâ€¢ Ongoing support and maintenance';
       case 'delivery_approach':
-        return 'We follow an agile methodology that emphasizes:\n\n• Regular communication and feedback\n• Iterative development and testing\n• Risk mitigation and quality assurance\n• Transparent reporting and documentation';
+        return 'We follow an agile methodology that emphasizes:\n\nâ€¢ Regular communication and feedback\nâ€¢ Iterative development and testing\nâ€¢ Risk mitigation and quality assurance\nâ€¢ Transparent reporting and documentation';
       case 'case_studies':
-        return 'Recent Success Stories:\n\n• Digital transformation for Fortune 500 company\n• Cloud migration reducing costs by 40%\n• Mobile app development with 100k+ downloads\n• Data analytics platform improving decision making';
+        return 'Recent Success Stories:\n\nâ€¢ Digital transformation for Fortune 500 company\nâ€¢ Cloud migration reducing costs by 40%\nâ€¢ Mobile app development with 100k+ downloads\nâ€¢ Data analytics platform improving decision making';
       case 'team_bios':
-        return 'Our team includes:\n\n• Senior Project Manager with 15+ years experience\n• Lead Developer with expertise in modern technologies\n• UX/UI Designer focused on user experience\n• Quality Assurance Specialist ensuring excellence';
+        return 'Our team includes:\n\nâ€¢ Senior Project Manager with 15+ years experience\nâ€¢ Lead Developer with expertise in modern technologies\nâ€¢ UX/UI Designer focused on user experience\nâ€¢ Quality Assurance Specialist ensuring excellence';
       case 'assumptions_risks':
-        return 'Project Assumptions:\n\n• Client will provide necessary access and resources\n• Requirements will remain stable during development\n• Key stakeholders will be available for feedback\n\nRisk Mitigation:\n\n• Regular check-ins and status updates\n• Flexible approach to accommodate changes\n• Comprehensive testing and quality assurance';
+        return 'Project Assumptions:\n\nâ€¢ Client will provide necessary access and resources\nâ€¢ Requirements will remain stable during development\nâ€¢ Key stakeholders will be available for feedback\n\nRisk Mitigation:\n\nâ€¢ Regular check-ins and status updates\nâ€¢ Flexible approach to accommodate changes\nâ€¢ Comprehensive testing and quality assurance';
       case 'terms_conditions':
-        return 'Terms and Conditions:\n\n• Payment terms: 50% upfront, 50% on completion\n• Project timeline: 3-6 months from contract signing\n• Warranty: 90 days post-completion support\n• Intellectual property: Client retains ownership of custom work';
+        return 'Terms and Conditions:\n\nâ€¢ Payment terms: 50% upfront, 50% on completion\nâ€¢ Project timeline: 3-6 months from contract signing\nâ€¢ Warranty: 90 days post-completion support\nâ€¢ Intellectual property: Client retains ownership of custom work';
       default:
         return '';
     }
@@ -387,7 +387,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -414,7 +414,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Opp ${_proposalData['opportunityId'] ?? ''} • Stage: ${_proposalData['engagementStage'] ?? 'Proposal Drafted'} • Owner: ${_proposalData['ownerName'] ?? ''}',
+                  'Opp ${_proposalData['opportunityId'] ?? ''} â€¢ Stage: ${_proposalData['engagementStage'] ?? 'Proposal Drafted'} â€¢ Owner: ${_proposalData['ownerName'] ?? ''}',
                   style: const TextStyle(
                     fontSize: 13,
                     color: Colors.grey,
@@ -423,7 +423,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Draft v$versionNumber • ${_formatDate(createdDate)}',
+                  'Draft v$versionNumber â€¢ ${_formatDate(createdDate)}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: Colors.grey,
@@ -451,7 +451,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -557,7 +557,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),

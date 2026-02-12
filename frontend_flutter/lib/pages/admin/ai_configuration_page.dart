@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../../services/ai_analysis_service.dart';
 
 class AIConfigurationPage extends StatefulWidget {
@@ -57,14 +57,14 @@ class _AIConfigurationPageState extends State<AIConfigurationPage> {
       final result = await AIAnalysisService.analyzeProposalContent(testData);
 
       setState(() {
-        _testResult = '✅ AI Analysis Successful!\n\n'
+        _testResult = 'âœ… AI Analysis Successful!\n\n'
             'Risk Score: ${result['riskScore']}\n'
             'Status: ${result['status']}\n'
             'Issues Found: ${result['issues']?.length ?? 0}';
       });
     } catch (e) {
       setState(() {
-        _testResult = '❌ AI Analysis Failed: $e';
+        _testResult = 'âŒ AI Analysis Failed: $e';
       });
     } finally {
       setState(() {
@@ -151,7 +151,7 @@ class _AIConfigurationPageState extends State<AIConfigurationPage> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -251,7 +251,7 @@ class _AIConfigurationPageState extends State<AIConfigurationPage> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -314,12 +314,12 @@ class _AIConfigurationPageState extends State<AIConfigurationPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: _testResult.contains('✅')
+                        color: _testResult.contains('âœ…')
                             ? Colors.green[50]
                             : Colors.red[50],
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: _testResult.contains('✅')
+                          color: _testResult.contains('âœ…')
                               ? Colors.green
                               : Colors.red,
                           width: 1,
@@ -328,7 +328,7 @@ class _AIConfigurationPageState extends State<AIConfigurationPage> {
                       child: Text(
                         _testResult,
                         style: TextStyle(
-                          color: _testResult.contains('✅')
+                          color: _testResult.contains('âœ…')
                               ? Colors.green[800]
                               : Colors.red[800],
                           fontFamily: 'monospace',
@@ -370,11 +370,11 @@ class _AIConfigurationPageState extends State<AIConfigurationPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '• Analyzes proposal content for potential risks and issues\n'
-                    '• Detects unrealistic timelines and vague scope\n'
-                    '• Identifies missing critical information\n'
-                    '• Provides actionable recommendations\n'
-                    '• Updates in real-time as you edit your proposal',
+                    'â€¢ Analyzes proposal content for potential risks and issues\n'
+                    'â€¢ Detects unrealistic timelines and vague scope\n'
+                    'â€¢ Identifies missing critical information\n'
+                    'â€¢ Provides actionable recommendations\n'
+                    'â€¢ Updates in real-time as you edit your proposal',
                     style: TextStyle(
                       color: Colors.blue[800],
                       fontSize: 14,

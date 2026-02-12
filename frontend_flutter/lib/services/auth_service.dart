@@ -1,30 +1,44 @@
 import 'dart:convert';
-import 'dart:js' as js;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
 
 class AuthService {
+  static String? _readGlobalString(String key) {
+    try {
+      final v = globalContext.getProperty(key.toJS);
+      if (v.isUndefinedOrNull) return null;
+      final s = v.toString();
+      final cleaned = s.replaceAll('"', '').trim();
+      if (cleaned.isEmpty) return null;
+      return cleaned;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
     if (kIsWeb) {
       try {
-        final config = js.context['APP_CONFIG'];
-        if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+        final config = globalContext.getProperty('APP_CONFIG'.toJS);
+        if (!config.isUndefinedOrNull) {
+          final apiUrl = (config as JSObject).getProperty('API_URL'.toJS);
+          if (!apiUrl.isUndefinedOrNull) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
-            print('🌐 Using API URL from APP_CONFIG: $url');
-            return url;
+            if (url.isNotEmpty) {
+              print('🌐 Using API URL from APP_CONFIG: $url');
+              return url;
+            }
           }
         }
 
-        final envUrl = js.context['REACT_APP_API_URL'];
-        if (envUrl != null && envUrl.toString().isNotEmpty) {
-          final url = envUrl.toString().replaceAll('"', '').trim();
-          print('🌐 Using API URL from REACT_APP_API_URL: $url');
-          return url;
+        final envUrl = _readGlobalString('REACT_APP_API_URL');
+        if (envUrl != null) {
+          print('🌐 Using API URL from REACT_APP_API_URL: $envUrl');
+          return envUrl;
         }
       } catch (e) {
         print('⚠️ AuthService: Could not read API URL from config: $e');

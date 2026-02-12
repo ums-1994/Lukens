@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/role_service.dart';
 import '../services/auth_service.dart';
@@ -16,7 +16,7 @@ class RoleSwitcher extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFF3498DB).withOpacity(0.1),
+              color: const Color(0xFF3498DB).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: const Color(0xFF3498DB),
@@ -71,7 +71,7 @@ class RoleSwitcher extends StatelessWidget {
                       const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                   decoration: BoxDecoration(
                     color: isCurrentRole
-                        ? const Color(0xFF3498DB).withOpacity(0.1)
+                        ? const Color(0xFF3498DB).withValues(alpha: 0.1)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -126,12 +126,12 @@ class RoleSwitcher extends StatelessWidget {
           onSelected: (role) async {
             if (role != roleService.currentRole) {
               print(
-                  '🔄 Role switch requested from ${roleService.currentRole} to $role');
+                  'ðŸ”„ Role switch requested from ${roleService.currentRole} to $role');
               print(
-                  '🔑 Token before switch: ${AuthService.token != null ? "${AuthService.token!.substring(0, 20)}..." : "null"}');
+                  'ðŸ”‘ Token before switch: ${AuthService.token != null ? "${AuthService.token!.substring(0, 20)}..." : "null"}');
               print(
-                  '👤 User before switch: ${AuthService.currentUser?['email'] ?? "null"}');
-              print('✅ isLoggedIn: ${AuthService.isLoggedIn}');
+                  'ðŸ‘¤ User before switch: ${AuthService.currentUser?['email'] ?? "null"}');
+              print('âœ… isLoggedIn: ${AuthService.isLoggedIn}');
 
               await roleService.switchRole(role);
 
@@ -156,20 +156,20 @@ class RoleSwitcher extends StatelessWidget {
                 await Future.delayed(const Duration(milliseconds: 100));
 
                 print(
-                    '🔑 Token after role switch: ${AuthService.token != null ? "${AuthService.token!.substring(0, 20)}..." : "null"}');
+                    'ðŸ”‘ Token after role switch: ${AuthService.token != null ? "${AuthService.token!.substring(0, 20)}..." : "null"}');
 
                 // Navigate based on role
                 if (context.mounted) {
                   if (role == UserRole.approver) {
-                    print('➡️ Navigating to approver dashboard...');
+                    print('âž¡ï¸ Navigating to approver dashboard...');
                     Navigator.of(context)
                         .pushReplacementNamed('/approver_dashboard');
                   } else if (role == UserRole.finance) {
-                    print('➡️ Navigating to finance dashboard...');
+                    print('âž¡ï¸ Navigating to finance dashboard...');
                     Navigator.of(context)
                         .pushReplacementNamed('/finance_dashboard');
                   } else if (role == UserRole.creator) {
-                    print('➡️ Navigating to creator dashboard...');
+                    print('âž¡ï¸ Navigating to creator dashboard...');
                     Navigator.of(context).pushReplacementNamed('/dashboard');
                   }
                 }
@@ -195,7 +195,7 @@ class CompactRoleSwitcher extends StatelessWidget {
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF3498DB).withOpacity(0.1),
+              color: const Color(0xFF3498DB).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Row(

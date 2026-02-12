@@ -11,8 +11,10 @@ import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 
 import '../../api.dart';
+import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
 
 class AnalyticsPage extends StatefulWidget {
@@ -38,8 +40,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final TextEditingController _globalIndustryCtrl = TextEditingController();
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
   static const String _currencySymbol = 'R';
   final NumberFormat _currencyFormatter =
@@ -50,11 +50,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
       app.fetchProposals();
@@ -65,6 +60,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       if (!mounted) return;
       if (!_cycleTimeAutoRefresh) return;
       setState(() => _cycleTimeRefreshTick++);
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AppState>().setCurrentNavLabel('Analytics (My Pipeline)');
     });
   }
 
@@ -1223,7 +1223,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   @override
   void dispose() {
-    _animationController.dispose();
     _scrollController.dispose();
     _cycleTimeRefreshTimer?.cancel();
     _cycleTimeOwnerCtrl.dispose();
@@ -1234,17 +1233,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     _globalOwnerCtrl.dispose();
     _globalProposalTypeCtrl.dispose();
     super.dispose();
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
   }
 
   void _exportAsCSV() {
@@ -2723,111 +2711,23 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             Expanded(
               child: Row(
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: _isSidebarCollapsed ? 0 : 8,
-                                      ),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          _buildNavItem('Dashboard',
-                              'assets/images/Dahboard.png', false, context),
-                          _buildNavItem('My Proposals',
-                              'assets/images/My_Proposals.png', false, context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              false,
-                              context),
-                          _buildNavItem(
-                            'Content Library',
-                            'assets/images/content_library.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Client Management',
-                            'assets/images/collaborations.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Approved Proposals',
-                            'assets/images/Time Allocation_Approval_Blue.png',
-                            false,
-                            context,
-                          ),
-                          _buildNavItem(
-                            'Analytics (My Pipeline)',
-                            'assets/images/analytics.png',
-                            true,
-                            context,
-                          ),
-                          const SizedBox(height: 20),
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-                          const SizedBox(height: 12),
-                          _buildNavItem(
-                            'Logout',
-                            'assets/images/Logout_KhonoBuzz.png',
-                            false,
-                            context,
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
+                  Consumer<AppState>(
+                    builder: (context, app, _) {
+                      final user = AuthService.currentUser ?? app.currentUser;
+                      final role =
+                          (user?['role'] ?? '').toString().toLowerCase().trim();
+                      final isAdmin = role == 'admin' || role == 'ceo';
+                      return AppSideNav(
+                        isCollapsed: app.isSidebarCollapsed,
+                        currentLabel: app.currentNavLabel,
+                        isAdmin: isAdmin,
+                        onToggle: app.toggleSidebar,
+                        onSelect: (label) {
+                          app.setCurrentNavLabel(label);
+                          _navigateToPage(context, label);
+                        },
+                      );
+                    },
                   ),
                   Expanded(
                     child: CustomScrollbar(
@@ -3168,118 +3068,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-    String label,
-    String assetPath,
-    bool isActive,
-    BuildContext context,
-  ) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 13,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
-          ),
         ),
       ),
     );
@@ -4260,11 +4048,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/creator_dashboard');
         break;
+      case 'Approvals':
+        Navigator.pushReplacementNamed(context, '/admin_approvals');
+        break;
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');

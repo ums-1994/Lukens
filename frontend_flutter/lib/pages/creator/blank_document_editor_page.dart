@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -12,6 +12,7 @@ import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
+import '../../widgets/app_side_nav.dart';
 import '../../widgets/header.dart';
 import 'governance_panel.dart';
 // Import models from document_editor
@@ -128,7 +129,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void initState() {
     super.initState();
 
-    print('📄 BlankDocumentEditorPage initState');
+    print('ðŸ“„ BlankDocumentEditorPage initState');
     print('   proposalId: ${widget.proposalId}');
     print('   proposalTitle: ${widget.proposalTitle}');
     print('   initialTitle: ${widget.initialTitle}');
@@ -206,19 +207,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = AuthService.token;
       if (token != null && token.isNotEmpty) {
         _authToken = token;
-        print('✅ Auth token initialized successfully from AuthService');
+        print('âœ… Auth token initialized successfully from AuthService');
         print('Token length: ${token.length}');
       } else {
-        print('⚠️ No token in AuthService - user may not be logged in');
+        print('âš ï¸ No token in AuthService - user may not be logged in');
 
         // Try to get from AppState as fallback
         if (mounted) {
           final appState = context.read<AppState>();
           if (appState.authToken != null) {
             _authToken = appState.authToken;
-            print('✅ Auth token retrieved from AppState');
+            print('âœ… Auth token retrieved from AppState');
           } else {
-            print('❌ No auth token found in AppState either');
+            print('âŒ No auth token found in AppState either');
           }
         }
       }
@@ -237,7 +238,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Load images from content library
       _loadLibraryImages();
     } catch (e) {
-      print('❌ Error initializing auth: $e');
+      print('âŒ Error initializing auth: $e');
     }
   }
 
@@ -305,7 +306,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     try {
       final token = await _getAuthToken();
       if (token == null) {
-        print('⚠️ No token available for loading library images');
+        print('âš ï¸ No token available for loading library images');
         return;
       }
 
@@ -352,13 +353,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _isLoadingLibraryImages = false;
         });
 
-        print('✅ Loaded ${_libraryImages.length} images from library');
+        print('âœ… Loaded ${_libraryImages.length} images from library');
       } else {
-        print('⚠️ Failed to load library images: ${response.statusCode}');
+        print('âš ï¸ Failed to load library images: ${response.statusCode}');
         setState(() => _isLoadingLibraryImages = false);
       }
     } catch (e) {
-      print('❌ Error loading library images: $e');
+      print('âŒ Error loading library images: $e');
       setState(() => _isLoadingLibraryImages = false);
     }
   }
@@ -368,7 +369,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = await _getAuthToken();
       if (token == null) return;
 
-      print('🔄 Loading proposal content for ID $proposalId...');
+      print('ðŸ”„ Loading proposal content for ID $proposalId...');
 
       Map<String, dynamic> proposal = <String, dynamic>{};
 
@@ -389,7 +390,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           }
         }
       } catch (e) {
-        print('⚠️ Error fetching proposal $proposalId by ID: $e');
+        print('âš ï¸ Error fetching proposal $proposalId by ID: $e');
       }
 
       // Fallback: get proposals list and search by ID (creator view behaviour).
@@ -402,7 +403,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
 
       if (proposal.isEmpty) {
-        print('⚠️ Proposal $proposalId not found');
+        print('âš ï¸ Proposal $proposalId not found');
         return;
       }
 
@@ -437,10 +438,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           setState(() {
             // Set title
-            _titleController.text = (contentData['title'] ??
-                    proposal['title'] ??
-                    'Untitled Document')
-                .toString();
+            final contentTitleRaw =
+                contentData is Map ? contentData['title'] : null;
+            final contentTitle =
+                contentTitleRaw is String ? contentTitleRaw.trim() : '';
+            final proposalTitleRaw = proposal['title'];
+            final proposalTitle =
+                proposalTitleRaw is String ? proposalTitleRaw.trim() : '';
+            final existingTitle = _titleController.text.trim();
+
+            _titleController.text = contentTitle.isNotEmpty
+                ? contentTitle
+                : (proposalTitle.isNotEmpty
+                    ? proposalTitle
+                    : (existingTitle.isNotEmpty
+                        ? existingTitle
+                        : 'Untitled Document'));
+
+            // Load proposal status
+            _proposalStatus = proposal['status'] ?? 'draft';
+
+            // Load client information
+            _clientNameController.text = proposal['client_name'] ?? '';
+            _clientEmailController.text = proposal['client_email'] ?? '';
 
             // Clear existing sections
             for (var section in _sections) {
@@ -479,7 +499,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               : DocumentTable.fromJson(
                                   Map<String, dynamic>.from(tableData as Map));
                         } catch (e) {
-                          print('⚠️ Error loading table: $e');
+                          print('âš ï¸ Error loading table: $e');
                           return DocumentTable();
                         }
                       }).toList() ??
@@ -529,7 +549,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             }
           });
 
-          print('✅ Loaded proposal content with ${_sections.length} sections');
+          print('âœ… Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
 
@@ -572,7 +592,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       }
     } catch (e) {
-      print('⚠️ Error loading proposal: $e');
+      print('âš ï¸ Error loading proposal: $e');
     }
   }
 
@@ -581,7 +601,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = await _getAuthToken();
       if (token == null) return;
 
-      print('🔄 Loading versions for proposal $proposalId...');
+      print('ðŸ”„ Loading versions for proposal $proposalId...');
       final versions = await ApiService.getVersions(
         token: token,
         proposalId: proposalId,
@@ -605,17 +625,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     'User #${version['created_by']}',
               });
             } catch (e) {
-              print('⚠️ Error parsing version content: $e');
+              print('âš ï¸ Error parsing version content: $e');
             }
           }
           if (_versionHistory.isNotEmpty) {
             _currentVersionNumber = _versionHistory.last['version_number'] + 1;
           }
         });
-        print('✅ Loaded ${versions.length} versions');
+        print('âœ… Loaded ${versions.length} versions');
       }
     } catch (e) {
-      print('⚠️ Error loading versions: $e');
+      print('âš ï¸ Error loading versions: $e');
     }
   }
 
@@ -623,11 +643,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     try {
       final token = await _getAuthToken();
       if (token == null) {
-        print('❌ No auth token available for loading comments');
+        print('âŒ No auth token available for loading comments');
         return;
       }
 
-      print('🔄 Loading comments for proposal $proposalId...');
+      print('ðŸ”„ Loading comments for proposal $proposalId...');
       final response = await ApiService.getComments(
         token: token,
         proposalId: proposalId,
@@ -635,7 +655,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       );
 
       if (response == null) {
-        print('⚠️ No response from comments API');
+        print('âš ï¸ No response from comments API');
         return;
       }
 
@@ -643,7 +663,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final total = response['total'] ?? 0;
       // Note: openCount and resolvedCount are available but not used in this method
 
-      print('📦 Received $total comments (${comments.length} root) from API');
+      print('ðŸ“¦ Received $total comments (${comments.length} root) from API');
 
       // Flatten threaded structure for display (convert to flat list with replies nested)
       List<Map<String, dynamic>> flatComments = [];
@@ -688,17 +708,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           });
         }
       });
-      print('✅ Loaded ${flatComments.length} comments (including replies)');
+      print('âœ… Loaded ${flatComments.length} comments (including replies)');
 
       if (mounted) {
         try {
           await context.read<AppState>().fetchNotifications();
         } catch (e) {
-          print('⚠️ Error refreshing notifications: $e');
+          print('âš ï¸ Error refreshing notifications: $e');
         }
       }
     } catch (e) {
-      print('⚠️ Error loading comments: $e');
+      print('âš ï¸ Error loading comments: $e');
     }
   }
 
@@ -709,7 +729,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = await _getAuthToken();
       if (token == null) return;
 
-      print('🔄 Loading collaborators for proposal $_savedProposalId...');
+      print('ðŸ”„ Loading collaborators for proposal $_savedProposalId...');
       final response = await http.get(
         Uri.parse('$baseUrl/api/proposals/$_savedProposalId/collaborators'),
         headers: {
@@ -726,7 +746,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             // Handle both 'email' and 'invited_email' fields (backend returns 'email' for both)
             final email = collab['invited_email'] ?? collab['email'] ?? '';
             if (email.isEmpty) {
-              print('⚠️ Skipping collaborator without email: ${collab['id']}');
+              print('âš ï¸ Skipping collaborator without email: ${collab['id']}');
               continue;
             }
 
@@ -747,10 +767,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           }
           _isCollaborating = _collaborators.isNotEmpty;
         });
-        print('✅ Loaded ${_collaborators.length} collaborators');
+        print('âœ… Loaded ${_collaborators.length} collaborators');
       } else {
         print(
-            '⚠️ Failed to load collaborators: ${response.statusCode} - ${response.body}');
+            'âš ï¸ Failed to load collaborators: ${response.statusCode} - ${response.body}');
         String errorMsg = 'Failed to load collaborators';
         if (response.statusCode == 401) {
           errorMsg = 'Authentication required to view collaborators';
@@ -759,7 +779,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         } else if (response.statusCode == 404) {
           errorMsg = 'Proposal not found';
         }
-        print('❌ $errorMsg');
+        print('âŒ $errorMsg');
 
         // Clear collaborators on error to avoid stale data
         setState(() {
@@ -768,8 +788,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         });
       }
     } catch (e) {
-      print('⚠️ Error loading collaborators: $e');
-      print('⚠️ Error details: ${e.toString()}');
+      print('âš ï¸ Error loading collaborators: $e');
+      print('âš ï¸ Error details: ${e.toString()}');
       // Don't show error to user as this is called automatically
       // Errors will be visible in console logs
     }
@@ -822,7 +842,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final token = AuthService.token;
     if (token != null && token.isNotEmpty) {
       _authToken = token;
-      print('✅ Got auth token from AuthService');
+      print('âœ… Got auth token from AuthService');
       return _authToken;
     }
 
@@ -832,7 +852,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         final appState = context.read<AppState>();
         if (appState.authToken != null && appState.authToken!.isNotEmpty) {
           _authToken = appState.authToken;
-          print('✅ Got auth token from AppState');
+          print('âœ… Got auth token from AppState');
           return _authToken;
         }
       } catch (e) {
@@ -840,7 +860,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
     }
 
-    print('❌ Cannot get auth token - user not logged in');
+    print('âŒ Cannot get auth token - user not logged in');
     return null;
   }
 
@@ -1180,7 +1200,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           }
         } else {
           // If it's a URL (like a document), add it as a reference link
-          textToInsert = '[📎 Document: $title]($content)';
+          textToInsert = '[ðŸ“Ž Document: $title]($content)';
         }
 
         setState(() {
@@ -1437,7 +1457,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         _mentionSuggestions = [];
         _isSearchingMentions = false;
       });
-      print('⚠️ Error loading mention suggestions: $e');
+      print('âš ï¸ Error loading mention suggestions: $e');
     }
   }
 
@@ -1481,7 +1501,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Mentioned @$mentionKey — they will be notified'),
+        content: Text('Mentioned @$mentionKey â€” they will be notified'),
         backgroundColor: const Color(0xFF00BCD4),
         duration: const Duration(seconds: 2),
       ),
@@ -1643,14 +1663,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           try {
             await context.read<AppState>().fetchNotifications();
           } catch (e) {
-            print('⚠️ Error refreshing notifications after comment: $e');
+            print('âš ï¸ Error refreshing notifications after comment: $e');
           }
         }
       } else {
         throw Exception('Failed to save comment');
       }
     } catch (e) {
-      print('⚠️ Error saving comment to database: $e');
+      print('âš ï¸ Error saving comment to database: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error saving comment: ${e.toString()}'),
@@ -1699,7 +1719,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         throw Exception('Failed to resolve comment');
       }
     } catch (e) {
-      print('⚠️ Error resolving comment: $e');
+      print('âš ï¸ Error resolving comment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1750,7 +1770,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         throw Exception('Failed to reopen comment');
       }
     } catch (e) {
-      print('⚠️ Error reopening comment: $e');
+      print('âš ï¸ Error reopening comment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1840,7 +1860,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           try {
             await context.read<AppState>().fetchProposals();
           } catch (e) {
-            print('⚠️ Error refreshing proposals: $e');
+            print('âš ï¸ Error refreshing proposals: $e');
           }
 
           // Navigate back to proposals page after a delay
@@ -1853,7 +1873,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         throw Exception('Failed to archive proposal');
       }
     } catch (e) {
-      print('⚠️ Error archiving proposal: $e');
+      print('âš ï¸ Error archiving proposal: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1933,14 +1953,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           try {
             await context.read<AppState>().fetchProposals();
           } catch (e) {
-            print('⚠️ Error refreshing proposals: $e');
+            print('âš ï¸ Error refreshing proposals: $e');
           }
         }
       } else {
         throw Exception('Failed to restore proposal');
       }
     } catch (e) {
-      print('⚠️ Error restoring proposal: $e');
+      print('âš ï¸ Error restoring proposal: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2263,7 +2283,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Show success message and navigate back to My Proposals
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✅ Proposal sent for approval successfully!'),
+              content: Text('âœ… Proposal sent for approval successfully!'),
               backgroundColor: Color(0xFF2ECC71),
               duration: Duration(seconds: 2),
             ),
@@ -2281,7 +2301,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         throw Exception('Failed to send for approval');
       }
     } catch (e) {
-      print('❌ Error sending for approval: $e');
+      print('âŒ Error sending for approval: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2387,7 +2407,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 Text(
                   widget.requireVersionDescription
                       ? 'Auto-saved (no new version created)'
-                      : 'Auto-saved · Version $_currentVersionNumber',
+                      : 'Auto-saved Â· Version $_currentVersionNumber',
                 ),
               ],
             ),
@@ -2479,7 +2499,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     try {
       if (_savedProposalId == null) {
         // Create new proposal
-        print('📝 Creating new proposal...');
+        print('ðŸ“ Creating new proposal...');
         final result = await ApiService.createProposal(
           token: token,
           title: title,
@@ -2493,7 +2513,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           status: _proposalStatus ?? 'draft',
         );
 
-        print('🔍 Create proposal result: $result');
+        print('ðŸ” Create proposal result: $result');
 
         if (result != null && result['id'] != null) {
           final newProposalId = result['id'] is int
@@ -2504,20 +2524,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             // Store proposal data for GovernancePanel
             _proposalData = Map<String, dynamic>.from(result);
           });
-          print('✅ Proposal created with ID: $_savedProposalId');
+          print('âœ… Proposal created with ID: $_savedProposalId');
           print(
-              '💾 Proposal ID saved in state - future saves will UPDATE this proposal');
+              'ðŸ’¾ Proposal ID saved in state - future saves will UPDATE this proposal');
           // Reload full proposal data to ensure we have everything
           if (newProposalId != null) {
             await _loadProposalFromDatabase(newProposalId);
           }
         } else {
-          print('⚠️ Proposal creation returned null or no ID');
-          print('🔍 Full result: $result');
+          print('âš ï¸ Proposal creation returned null or no ID');
+          print('ðŸ” Full result: $result');
         }
       } else {
         // Update existing proposal
-        print('🔄 Updating existing proposal ID: $_savedProposalId...');
+        print('ðŸ”„ Updating existing proposal ID: $_savedProposalId...');
         final result = await ApiService.updateProposal(
           token: token,
           id: _savedProposalId!,
@@ -2531,8 +2551,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               : _clientEmailController.text.trim(),
           status: _proposalStatus ?? 'draft',
         );
-        print('✅ Proposal updated: $_savedProposalId');
-        print('🔍 Update result: $result');
+        print('âœ… Proposal updated: $_savedProposalId');
+        print('ðŸ” Update result: $result');
         // Update proposal data if result is available
         if (result != null) {
           setState(() {
@@ -2544,7 +2564,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       }
     } catch (e) {
-      print('❌ Error saving to backend: $e');
+      print('âŒ Error saving to backend: $e');
       rethrow;
     }
   }
@@ -2590,10 +2610,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             content: content,
             changeDescription: changeDescription,
           );
-          print('✅ Version $_currentVersionNumber saved to database');
+          print('âœ… Version $_currentVersionNumber saved to database');
         }
       } catch (e) {
-        print('⚠️ Error saving version to database: $e');
+        print('âš ï¸ Error saving version to database: $e');
         // Continue silently - version is still in memory
       }
     }
@@ -2641,7 +2661,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     : DocumentTable.fromJson(
                         Map<String, dynamic>.from(tableData as Map));
               } catch (e) {
-                print('⚠️ Error loading table: $e');
+                print('âš ï¸ Error loading table: $e');
                 return DocumentTable();
               }
             }).toList() ??
@@ -2968,12 +2988,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _getCurrencySymbol() {
     final currencyMap = {
       'USD': '\$',
-      'EUR': '€',
-      'GBP': '£',
+      'EUR': 'â‚¬',
+      'GBP': 'Â£',
       'ZAR': 'R',
-      'JPY': '¥',
-      'CNY': '¥',
-      'INR': '₹',
+      'JPY': 'Â¥',
+      'CNY': 'Â¥',
+      'INR': 'â‚¹',
       'AUD': 'A\$',
       'CAD': 'C\$',
     };
@@ -3023,8 +3043,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 Expanded(
                   child: Text(
                     _savedProposalId != null
-                        ? 'Document saved successfully • Version $_currentVersionNumber'
-                        : 'Document created and saved • Version $_currentVersionNumber',
+                        ? 'Document saved successfully â€¢ Version $_currentVersionNumber'
+                        : 'Document created and saved â€¢ Version $_currentVersionNumber',
                   ),
                 ),
               ],
@@ -3363,7 +3383,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     color: Colors.white,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -3558,104 +3578,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildLeftSidebar() {
-    return GestureDetector(
-      onTap: () {
-        if (_isSidebarCollapsed) {
-          setState(() => _isSidebarCollapsed = false);
-        }
+    return Consumer<AppState>(
+      builder: (context, app, _) {
+        final user = AuthService.currentUser ?? app.currentUser;
+        final role = (user?['role'] ?? '').toString().toLowerCase().trim();
+        final isAdmin = role == 'admin' || role == 'ceo';
+        return AppSideNav(
+          isCollapsed: app.isSidebarCollapsed,
+          currentLabel: app.currentNavLabel,
+          isAdmin: isAdmin,
+          onToggle: app.toggleSidebar,
+          onSelect: (label) {
+            app.setCurrentNavLabel(label);
+            _navigateToPage(label);
+          },
+        );
       },
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: _isSidebarCollapsed ? 90.0 : 250.0,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          border: Border(
-            right: BorderSide(
-              color: PremiumTheme.glassWhiteBorder,
-              width: 1,
-            ),
-          ),
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              const SizedBox(height: 16),
-              // Toggle button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: InkWell(
-                  onTap: _toggleSidebar,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: PremiumTheme.glassWhite,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: PremiumTheme.glassWhiteBorder,
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: _isSidebarCollapsed
-                          ? MainAxisAlignment.center
-                          : MainAxisAlignment.spaceBetween,
-                      children: [
-                        if (!_isSidebarCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8,
-                          ),
-                          child: Icon(
-                            _isSidebarCollapsed
-                                ? Icons.keyboard_arrow_right
-                                : Icons.keyboard_arrow_left,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Navigation items - show admin sidebar if user is admin
-              _buildAdminSidebarItems(),
-              const SizedBox(height: 20),
-              // Divider
-              if (!_isSidebarCollapsed)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  height: 1,
-                  color: const Color(0xFF2C3E50),
-                ),
-              const SizedBox(height: 12),
-              // Logout button
-              _buildNavItem(
-                  'Logout', 'assets/images/Logout_KhonoBuzz.png', false),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -4250,10 +4188,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: _isSaving
-                        ? Colors.blue.withOpacity(0.1)
+                        ? Colors.blue.withValues(alpha: 0.1)
                         : (_hasUnsavedChanges
-                            ? Colors.orange.withOpacity(0.1)
-                            : Colors.green.withOpacity(0.1)),
+                            ? Colors.orange.withValues(alpha: 0.1)
+                            : Colors.green.withValues(alpha: 0.1)),
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
                       color: _isSaving
@@ -4717,7 +4655,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final pageChip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey[100]!.withOpacity(0.9),
+        color: Colors.grey[100]!.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey[300]!),
       ),
@@ -5068,7 +5006,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             borderRadius: BorderRadius.circular(8),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -5241,7 +5179,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           margin: const EdgeInsets.symmetric(vertical: 2),
           decoration: BoxDecoration(
             color: isActive
-                ? const Color(0xFF00BCD4).withOpacity(0.3)
+                ? const Color(0xFF00BCD4).withValues(alpha: 0.3)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
             border: isActive
@@ -5310,7 +5248,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4).withOpacity(0.1),
+              color: const Color(0xFF00BCD4).withValues(alpha: 0.1),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(8),
                 topRight: Radius.circular(8),
@@ -5536,7 +5474,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4).withOpacity(0.1),
+              color: const Color(0xFF00BCD4).withValues(alpha: 0.1),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(8),
                 topRight: Radius.circular(8),
@@ -6314,7 +6252,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: const Color(0xFF00BCD4).withOpacity(0.3),
+                        color: const Color(0xFF00BCD4).withValues(alpha: 0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -6907,7 +6845,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     final section = _sections[_selectedSectionIndex];
                     final currentText = section.controller.text;
                     section.controller.text =
-                        currentText + '\n• Item 1\n• Item 2\n• Item 3';
+                        currentText + '\nâ€¢ Item 1\nâ€¢ Item 2\nâ€¢ Item 3';
                   });
                 }
               },
@@ -7918,7 +7856,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                 if (username != null && username.isNotEmpty)
                                   '@$username',
                                 if (email != null && email.isNotEmpty) email,
-                              ].join(' • '),
+                              ].join(' â€¢ '),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.grey[600],
@@ -8219,7 +8157,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       border: Border.all(color: Colors.grey[300]!),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha: 0.1),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         ),
@@ -8281,7 +8219,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                             if (email != null &&
                                                 email.isNotEmpty)
                                               email,
-                                          ].join(' • '),
+                                          ].join(' â€¢ '),
                                           style: TextStyle(
                                             fontSize: 10,
                                             color: Colors.grey[600],
@@ -8369,7 +8307,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         border: Border.all(
           color: isResolved
               ? Colors.grey[300]!
-              : const Color(0xFF00BCD4).withOpacity(0.3),
+              : const Color(0xFF00BCD4).withValues(alpha: 0.3),
           width: isReply ? 1 : 1.5,
         ),
       ),
@@ -8451,7 +8389,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    isResolved ? '✓' : 'OPEN',
+                    isResolved ? 'âœ“' : 'OPEN',
                     style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
@@ -8956,7 +8894,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF9C27B0).withOpacity(0.1),
+                                color: const Color(0xFF9C27B0).withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
@@ -9944,10 +9882,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                               .showSnackBar(
                                             SnackBar(
                                               content: Text(emailSent
-                                                  ? '✅ Invitation sent to $email'
+                                                  ? 'âœ… Invitation sent to $email'
                                                   : emailError != null
-                                                      ? '⚠️ Invitation created but email failed: ${emailError.toString().substring(0, 50)}...'
-                                                      : '⚠️ Invitation created but email failed to send. Check SMTP configuration.'),
+                                                      ? 'âš ï¸ Invitation created but email failed: ${emailError.toString().substring(0, 50)}...'
+                                                      : 'âš ï¸ Invitation created but email failed to send. Check SMTP configuration.'),
                                               backgroundColor: emailSent
                                                   ? Colors.green
                                                   : Colors.orange,
@@ -9972,7 +9910,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                       }
                                     } catch (e) {
                                       print(
-                                          '❌ Error inviting collaborator: $e');
+                                          'âŒ Error inviting collaborator: $e');
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
@@ -254,7 +254,7 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
+              color: iconColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor, size: 20),
@@ -273,7 +273,7 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$timeAgo • $clientName',
+                  '$timeAgo â€¢ $clientName',
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 12,
@@ -399,9 +399,9 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

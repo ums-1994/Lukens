@@ -1,32 +1,46 @@
 import 'dart:convert';
-import 'dart:js' as js;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 // ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class ApiService {
+  static String? _readGlobalString(String key) {
+    try {
+      final v = globalContext.getProperty(key.toJS);
+      if (v.isUndefinedOrNull) return null;
+      final s = v.toString();
+      final cleaned = s.replaceAll('"', '').trim();
+      if (cleaned.isEmpty) return null;
+      return cleaned;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
     if (kIsWeb) {
       try {
         // Try to get from window.APP_CONFIG.API_URL
-        final config = js.context['APP_CONFIG'];
-        if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+        final config = globalContext.getProperty('APP_CONFIG'.toJS);
+        if (!config.isUndefinedOrNull) {
+          final apiUrl = (config as JSObject).getProperty('API_URL'.toJS);
+          if (!apiUrl.isUndefinedOrNull) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
-            print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
-            return url;
+            if (url.isNotEmpty) {
+              print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
+              return url;
+            }
           }
         }
         // Fallback: try window.REACT_APP_API_URL
-        final envUrl = js.context['REACT_APP_API_URL'];
-        if (envUrl != null && envUrl.toString().isNotEmpty) {
-          final url = envUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
-          return url;
+        final envUrl = _readGlobalString('REACT_APP_API_URL');
+        if (envUrl != null) {
+          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $envUrl');
+          return envUrl;
         }
       } catch (e) {
         print('⚠️ ApiService: Could not read API URL from config: $e');
@@ -34,20 +48,20 @@ class ApiService {
     }
     // Check if we're in production (not localhost)
     if (kIsWeb) {
-      final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isLocalhost = hostname.contains('localhost') || hostname == '127.0.0.1';
-        if (isLocalhost) {
-          print('🌐 ApiService: Using local API URL: http://127.0.0.1:8000');
-          return 'http://127.0.0.1:8000';
-        }
+      final hostname = web.window.location.hostname;
+      final isLocalhost =
+          hostname.contains('localhost') || hostname == '127.0.0.1';
+      if (isLocalhost) {
+        print('🌐 ApiService: Using local API URL: http://127.0.0.1:8000');
+        return 'http://127.0.0.1:8000';
+      }
 
-        final isProduction = hostname.contains('netlify.app') || hostname.contains('onrender.com');
-        if (isProduction) {
-          print(
-              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
+      final isProduction =
+          hostname.contains('netlify.app') || hostname.contains('onrender.com');
+      if (isProduction) {
+        print(
+            '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+        return 'https://lukens-wp8w.onrender.com';
       }
     }
 

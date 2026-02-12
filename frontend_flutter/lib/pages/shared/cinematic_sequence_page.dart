@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
 class CinematicSequencePage extends StatefulWidget {
@@ -127,9 +127,9 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.black.withOpacity(0.4),
-                  Colors.black.withOpacity(0.6),
-                  Colors.black.withOpacity(0.5),
+                  Colors.black.withValues(alpha: 0.4),
+                  Colors.black.withValues(alpha: 0.6),
+                  Colors.black.withValues(alpha: 0.5),
                 ],
               ),
             ),
@@ -208,7 +208,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
             // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
             final darkness = 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),
@@ -229,7 +229,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  painter: TrianglePainter(color: Colors.white.withValues(alpha: 0.04)),
                   size: const Size(70, 70),
                 ),
               ),
@@ -242,7 +242,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                  painter: TrianglePainter(color: Colors.white.withValues(alpha: 0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -255,7 +255,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi * 0.6,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.03)),
+                  painter: TrianglePainter(color: Colors.white.withValues(alpha: 0.03)),
                   size: const Size(60, 60),
                 ),
               ),
@@ -268,7 +268,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.7,
                 child: CustomPaint(
-                  painter: TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  painter: TrianglePainter(color: Colors.white.withValues(alpha: 0.04)),
                   size: const Size(80, 80),
                 ),
               ),
@@ -334,7 +334,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
         'Smart Proposal & SOW Builder for Digital Teams',
         style: TextStyle(
           fontFamily: 'Poppins',
-          color: Colors.white.withOpacity(0.95),
+          color: Colors.white.withValues(alpha: 0.95),
           fontSize: isMobile ? 16 : 24,
           fontWeight: FontWeight.w300,
           height: 1.4,
@@ -373,7 +373,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFFE9293A).withOpacity(glowIntensity),
+                        color: const Color(0xFFE9293A).withValues(alpha: glowIntensity),
                         blurRadius: 24,
                         spreadRadius: 4,
                       ),

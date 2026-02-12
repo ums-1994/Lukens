@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
@@ -189,7 +189,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
             );
           },
           child: Tooltip(
-            message: 'Mentioned — will be notified',
+            message: 'Mentioned â€” will be notified',
             child: Text(
               uname,
               style: const TextStyle(
@@ -216,18 +216,18 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
     try {
       // Get the full URL from the browser
       final currentUrl = web.window.location.href;
-      print('🔍 Full URL: $currentUrl');
-      print('🔍 Hash: ${web.window.location.hash}');
-      print('🔍 Search: ${web.window.location.search}');
+      print('ðŸ” Full URL: $currentUrl');
+      print('ðŸ” Hash: ${web.window.location.hash}');
+      print('ðŸ” Search: ${web.window.location.search}');
 
       // Parse the URL
       final uri = Uri.parse(currentUrl);
-      print('🔍 URI Fragment: ${uri.fragment}');
-      print('🔍 URI Query: ${uri.query}');
+      print('ðŸ” URI Fragment: ${uri.fragment}');
+      print('ðŸ” URI Query: ${uri.query}');
 
       // Try 1: Direct query parameters (before #)
       token = uri.queryParameters['token'];
-      print('📍 Try 1 - Token from URI query params: $token');
+      print('ðŸ“ Try 1 - Token from URI query params: $token');
 
       // Try 2: From window.location.search
       if (token == null || token.isEmpty) {
@@ -235,26 +235,26 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         if (search.isNotEmpty) {
           final searchUri = Uri.parse('http://dummy$search');
           token = searchUri.queryParameters['token'];
-          print('📍 Try 2 - Token from location.search: $token');
+          print('ðŸ“ Try 2 - Token from location.search: $token');
         }
       }
 
       // Try 3: Parse from fragment (after #)
       if ((token == null || token.isEmpty) && uri.fragment.isNotEmpty) {
         final fragment = uri.fragment;
-        print('📍 Try 3 - Parsing fragment: $fragment');
+        print('ðŸ“ Try 3 - Parsing fragment: $fragment');
 
         // Fragment might be like: /collaborate?token=xyz
         if (fragment.contains('token=')) {
           final queryStart = fragment.indexOf('?');
           if (queryStart != -1) {
             final queryString = fragment.substring(queryStart + 1);
-            print('📍 Query string from fragment: $queryString');
+            print('ðŸ“ Query string from fragment: $queryString');
 
             // Parse query string manually
             final params = Uri.splitQueryString(queryString);
             token = params['token'];
-            print('📍 Token from fragment: $token');
+            print('ðŸ“ Token from fragment: $token');
           }
         }
       }
@@ -266,13 +266,13 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
           final tokenMatch = RegExp(r'token=([^&]+)').firstMatch(hash);
           if (tokenMatch != null) {
             token = tokenMatch.group(1);
-            print('📍 Try 4 - Token from regex: $token');
+            print('ðŸ“ Try 4 - Token from regex: $token');
           }
         }
       }
     } catch (e, stackTrace) {
-      print('❌ Error parsing URL: $e');
-      print('❌ Stack trace: $stackTrace');
+      print('âŒ Error parsing URL: $e');
+      print('âŒ Stack trace: $stackTrace');
     }
 
     if (token == null || token.isEmpty) {
@@ -284,7 +284,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
       return;
     }
 
-    print('✅ Token extracted successfully: ${token.substring(0, 20)}...');
+    print('âœ… Token extracted successfully: ${token.substring(0, 20)}...');
     setState(() {
       _accessToken = token;
     });
@@ -736,7 +736,7 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
                                           boxShadow: [
                                             BoxShadow(
                                               color: Colors.black
-                                                  .withOpacity(0.05),
+                                                  .withValues(alpha: 0.05),
                                               blurRadius: 6,
                                               offset: const Offset(0, 2),
                                             ),

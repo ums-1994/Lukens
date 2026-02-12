@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:ui' show ImageFilter;
 import 'cinematic_sequence_page.dart';
 
@@ -34,7 +34,7 @@ class StartupPage extends StatelessWidget {
               Text(
                 'Create and manage proposals effortlessly.',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.8),
+                  color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.8),
                 ),
               ),
               const SizedBox(height: 48),

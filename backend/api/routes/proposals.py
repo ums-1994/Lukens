@@ -387,31 +387,34 @@ def get_proposals(username=None, user_id=None, email=None):
                     has_clients = False
                 if has_clients and ('client_id' in existing_columns or 'client_email' in existing_columns):
                     if 'client_id' in existing_columns:
-                        industry_join = ' LEFT JOIN clients c ON c.id = proposals.client_id '
+                        industry_join = ' LEFT JOIN clients c ON c.id = p.client_id '
                     else:
-                        industry_join = ' LEFT JOIN clients c ON c.email = proposals.client_email '
+                        industry_join = ' LEFT JOIN clients c ON c.email = p.client_email '
                     industry_select = ', c.industry AS industry'
 
                 owner_type = (col_types.get('owner_id') or '').lower()
                 owner_is_text = owner_type in {'character varying', 'varchar', 'text'}
 
+                qualified_select_cols = [f"p.{c}" for c in select_cols]
+                qualified_order_by_col = f"p.{order_by_col}"
+
                 if owner_is_text:
-                    where_sql = "(owner_id::text = %s::text"
+                    where_sql = "(p.owner_id::text = %s::text"
                     params = [str(user_id)]
                     if email:
-                        where_sql += " OR lower(owner_id::text) = lower(%s::text)"
+                        where_sql += " OR lower(p.owner_id::text) = lower(%s::text)"
                         params.append(email)
                     if username:
-                        where_sql += " OR lower(owner_id::text) = lower(%s::text)"
+                        where_sql += " OR lower(p.owner_id::text) = lower(%s::text)"
                         params.append(username)
                     where_sql += ")"
                 else:
-                    where_sql = "owner_id = %s"
+                    where_sql = "p.owner_id = %s"
                     params = [user_id]
 
-                query = f'''SELECT {', '.join(select_cols)}{industry_select}
-                     FROM proposals{industry_join} WHERE {where_sql}
-                     ORDER BY {order_by_col} DESC'''
+                query = f'''SELECT {', '.join(qualified_select_cols)}{industry_select}
+                     FROM proposals p{industry_join} WHERE {where_sql}
+                     ORDER BY {qualified_order_by_col} DESC'''
                 cursor.execute(query, tuple(params))
             elif 'user_id' in existing_columns:
                 select_cols = ['id', 'user_id', 'title', 'content', 'status']
@@ -444,23 +447,26 @@ def get_proposals(username=None, user_id=None, email=None):
                     has_clients = False
                 if has_clients and ('client_id' in existing_columns or 'client_email' in existing_columns):
                     if 'client_id' in existing_columns:
-                        industry_join = ' LEFT JOIN clients c ON c.id = proposals.client_id '
+                        industry_join = ' LEFT JOIN clients c ON c.id = p.client_id '
                     else:
-                        industry_join = ' LEFT JOIN clients c ON c.email = proposals.client_email '
+                        industry_join = ' LEFT JOIN clients c ON c.email = p.client_email '
                     industry_select = ', c.industry AS industry'
 
                 user_col_type = (col_types.get('user_id') or '').lower()
                 user_col_is_text = user_col_type in {'character varying', 'varchar', 'text'}
+
+                qualified_select_cols = [f"p.{c}" for c in select_cols]
+                qualified_order_by_col = f"p.{order_by_col}"
                 if user_col_is_text:
-                    where_sql = "user_id::text = %s::text"
+                    where_sql = "p.user_id::text = %s::text"
                     params = [str(user_id)]
                 else:
-                    where_sql = "user_id = %s"
+                    where_sql = "p.user_id = %s"
                     params = [user_id]
 
-                query = f'''SELECT {', '.join(select_cols)}{industry_select}
-                   FROM proposals{industry_join} WHERE {where_sql}
-                     ORDER BY {order_by_col} DESC'''
+                query = f'''SELECT {', '.join(qualified_select_cols)}{industry_select}
+                   FROM proposals p{industry_join} WHERE {where_sql}
+                     ORDER BY {qualified_order_by_col} DESC'''
                 cursor.execute(query, tuple(params))
             else:
                 print(f"⚠️ No owner_id or user_id column found in proposals table")
@@ -628,6 +634,16 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             updates = ['updated_at = NOW()']
             params = []
 
+            existing_client_value = None
+            if 'client' in existing_columns:
+                cursor.execute("SELECT client FROM proposals WHERE id = %s", (proposal_id,))
+                row = cursor.fetchone()
+                existing_client_value = row[0] if row else None
+            elif 'client_name' in existing_columns:
+                cursor.execute("SELECT client_name FROM proposals WHERE id = %s", (proposal_id,))
+                row = cursor.fetchone()
+                existing_client_value = row[0] if row else None
+
             old_status = None
             new_status = None
             if 'status' in data:
@@ -663,9 +679,20 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             elif 'client_name' in existing_columns:
                 client_col = 'client_name'
 
-            if client_col and ('client_name' in data or 'client' in data):
+            if client_col and (
+                'client_name' in data
+                or 'client' in data
+                or (existing_client_value is None or str(existing_client_value).strip() == '')
+            ):
+                client_value = (
+                    (data.get('client_name') or '').strip()
+                    or (data.get('client') or '').strip()
+                    or (data.get('client_email') or '').strip()
+                    or (str(existing_client_value).strip() if existing_client_value is not None else '')
+                    or 'Unknown Client'
+                )
                 updates.append(f"{client_col} = %s")
-                params.append(data.get('client_name') or data.get('client'))
+                params.append(client_value)
             if 'client_email' in data and 'client_email' in existing_columns:
                 updates.append('client_email = %s')
                 params.append(data['client_email'])

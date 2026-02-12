@@ -459,11 +459,12 @@ Rules:
 # CONTENT LIBRARY ROUTES
 # ============================================================================
 
-@bp.get("/content")
+@bp.get("/content", endpoint="creator_get_content")
 def get_content():
     """Get all content items (no auth for content library)"""
     try:
         category = request.args.get('category', None)
+        
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
@@ -928,7 +929,19 @@ def upload_image():
         
         file = request.files['file']
         result = cloudinary.uploader.upload(file)
-        return result, 200
+
+        url = result.get('secure_url') or result.get('url')
+        public_id = result.get('public_id')
+        filename = result.get('original_filename') or file.filename or 'file'
+        size = result.get('bytes')
+
+        return {
+            'success': True,
+            'url': url,
+            'public_id': public_id,
+            'filename': filename,
+            'size': size,
+        }, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -941,7 +954,19 @@ def upload_template():
         
         file = request.files['file']
         result = cloudinary.uploader.upload(file)
-        return result, 200
+
+        url = result.get('secure_url') or result.get('url')
+        public_id = result.get('public_id')
+        filename = result.get('original_filename') or file.filename or 'file'
+        size = result.get('bytes')
+
+        return {
+            'success': True,
+            'url': url,
+            'public_id': public_id,
+            'filename': filename,
+            'size': size,
+        }, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
