@@ -22,6 +22,7 @@ try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
     from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
     from io import BytesIO
     PDF_AVAILABLE = True
 except ImportError:
@@ -458,6 +459,57 @@ def generate_proposal_pdf(
 
         return []
 
+    def _find_cover_image_url(structured):
+        try:
+            if not isinstance(structured, dict):
+                return None
+
+            for key in (
+                'coverImageUrl',
+                'cover_image_url',
+                'coverUrl',
+                'cover_url',
+                'backgroundImageUrl',
+            ):
+                v = structured.get(key)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+
+            for section in _normalize_sections(structured) or []:
+                if not isinstance(section, dict):
+                    continue
+
+                is_cover = section.get('isCoverPage') or section.get('cover') or section.get('is_cover')
+                if is_cover:
+                    v = (
+                        section.get('backgroundImageUrl')
+                        or section.get('coverImageUrl')
+                        or section.get('coverUrl')
+                    )
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+
+                v = section.get('backgroundImageUrl')
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        except Exception:
+            return None
+        return None
+
+    def _fetch_cover_bytes(url: str):
+        if not url or not isinstance(url, str):
+            return None
+        url = url.strip()
+        if not (url.startswith('http://') or url.startswith('https://')):
+            return None
+        try:
+            import urllib.request
+
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                return resp.read()
+        except Exception:
+            return None
+
     _SKIP_KEYS = {
         'backgroundColor',
         'backgroundImageUrl',
@@ -591,6 +643,9 @@ def generate_proposal_pdf(
     sections = _normalize_sections(structured)
     t_parse_ms = (time.perf_counter() - t_parse0) * 1000.0
 
+    cover_url = _find_cover_image_url(structured)
+    cover_bytes = _fetch_cover_bytes(cover_url) if cover_url else None
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -661,16 +716,9 @@ def generate_proposal_pdf(
         spaceAfter=2,
     )
 
-    doc_title = (title or "Business Proposal").strip() or "Business Proposal"
-    elements.append(Paragraph(html.escape(doc_title), title_style))
-    meta_bits = [f"Proposal ID: {proposal_id}"]
-    if client_name:
-        meta_bits.append(f"Client: {client_name}")
-    if client_email:
-        meta_bits.append(f"Client Email: {client_email}")
-    meta_bits.append(f"Generated: {created_at.strftime('%Y-%m-%d %H:%M:%S')}")
-    elements.append(Paragraph(html.escape(" | ".join(meta_bits)), meta_style))
-    elements.append(Spacer(1, 0.2 * inch))
+    if cover_bytes:
+        elements.append(Spacer(1, 0.01 * inch))
+        elements.append(PageBreak())
 
     t_elements0 = time.perf_counter()
 
@@ -760,8 +808,19 @@ def generate_proposal_pdf(
     elements.append(Spacer(1, 0.15 * inch))
     elements.append(Paragraph("Date: _________________________________", content_style))
 
-    header_title = (title or "Untitled Proposal").strip() or "Untitled Proposal"
-    generated_label = created_at.strftime("Generated %Y-%m-%d %H:%M")
+    has_cover_page = bool(cover_bytes)
+
+    def _draw_cover_page(c, _doc):
+        if not cover_bytes:
+            return
+        try:
+            page_width, page_height = _doc.pagesize
+            img = ImageReader(BytesIO(cover_bytes))
+            c.saveState()
+            c.drawImage(img, 0, 0, width=page_width, height=page_height, preserveAspectRatio=True, anchor='c')
+            c.restoreState()
+        except Exception:
+            pass
 
     class _NumberedCanvas(canvas.Canvas):
         def __init__(self, *args, **kwargs):
@@ -783,32 +842,13 @@ def generate_proposal_pdf(
         def _draw_header_footer(self, total_pages: int):
             page_width, page_height = doc.pagesize
             page_num = self.getPageNumber()
-
+            if has_cover_page and page_num == 1:
+                return
             self.saveState()
             self.setFont("Helvetica", 8)
             self.setFillColorRGB(0.25, 0.25, 0.25)
-
-            header_y = page_height - (0.6 * inch)
-            footer_y = 0.6 * inch
-
-            self.setStrokeColorRGB(0.8, 0.8, 0.8)
-            self.setLineWidth(0.5)
-            self.line(doc.leftMargin, header_y - 8, page_width - doc.rightMargin, header_y - 8)
-            self.line(doc.leftMargin, footer_y + 8, page_width - doc.rightMargin, footer_y + 8)
-
-            header_left = header_title
-            if client_name:
-                header_left = f"{header_left} - {str(client_name).strip()}"
-            self.drawString(doc.leftMargin, header_y, header_left)
-            self.drawRightString(page_width - doc.rightMargin, header_y, generated_label)
-
-            footer_left = f"Proposal #{proposal_id}"
-            footer_center = client_email.strip() if isinstance(client_email, str) and client_email.strip() else ""
+            footer_y = 0.55 * inch
             footer_right = f"Page {page_num} of {total_pages}"
-
-            self.drawString(doc.leftMargin, footer_y, footer_left)
-            if footer_center:
-                self.drawCentredString(page_width / 2.0, footer_y, footer_center)
             self.drawRightString(page_width - doc.rightMargin, footer_y, footer_right)
             self.restoreState()
 
@@ -816,6 +856,7 @@ def generate_proposal_pdf(
     doc.build(
         elements,
         canvasmaker=_NumberedCanvas,
+        onFirstPage=_draw_cover_page,
     )
     t_build_ms = (time.perf_counter() - t_build0) * 1000.0
 
