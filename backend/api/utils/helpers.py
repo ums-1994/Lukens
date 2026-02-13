@@ -510,6 +510,40 @@ def generate_proposal_pdf(
         except Exception:
             return None
 
+    def _get_meta_dict(structured):
+        if not isinstance(structured, dict):
+            return {}
+        meta = structured.get('metadata')
+        if isinstance(meta, dict):
+            return meta
+        return {}
+
+    def _extract_logo_config(metadata: dict):
+        if not isinstance(metadata, dict):
+            return None, None, None, None
+        header_logo_url = metadata.get('headerLogoUrl') or metadata.get('header_logo_url')
+        footer_logo_url = metadata.get('footerLogoUrl') or metadata.get('footer_logo_url')
+        header_pos = (metadata.get('headerLogoPosition') or 'right')
+        footer_pos = (metadata.get('footerLogoPosition') or 'left')
+
+        if isinstance(header_logo_url, str):
+            header_logo_url = header_logo_url.strip()
+        else:
+            header_logo_url = None
+        if isinstance(footer_logo_url, str):
+            footer_logo_url = footer_logo_url.strip()
+        else:
+            footer_logo_url = None
+
+        header_pos = str(header_pos).strip().lower()
+        footer_pos = str(footer_pos).strip().lower()
+        if header_pos not in ('left', 'center', 'right'):
+            header_pos = 'right'
+        if footer_pos not in ('left', 'center', 'right'):
+            footer_pos = 'left'
+
+        return header_logo_url, footer_logo_url, header_pos, footer_pos
+
     _SKIP_KEYS = {
         'backgroundColor',
         'backgroundImageUrl',
@@ -645,6 +679,11 @@ def generate_proposal_pdf(
 
     cover_url = _find_cover_image_url(structured)
     cover_bytes = _fetch_cover_bytes(cover_url) if cover_url else None
+
+    metadata = _get_meta_dict(structured)
+    header_logo_url, footer_logo_url, header_logo_pos, footer_logo_pos = _extract_logo_config(metadata)
+    header_logo_bytes = _fetch_cover_bytes(header_logo_url) if header_logo_url else None
+    footer_logo_bytes = _fetch_cover_bytes(footer_logo_url) if footer_logo_url else None
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -811,6 +850,30 @@ def generate_proposal_pdf(
     has_cover_page = bool(cover_bytes)
     header_title = (title or "Proposal").strip() or "Proposal"
 
+    def _pos_x(pos: str, *, left_x: float, right_x: float, width: float):
+        if pos == 'left':
+            return left_x
+        if pos == 'center':
+            return (left_x + right_x) / 2.0 - (width / 2.0)
+        return right_x - width
+
+    def _draw_logo(c, _doc, *, img_bytes, y: float, height: float, pos: str):
+        if not img_bytes:
+            return
+        try:
+            page_width, _ = _doc.pagesize
+            img = ImageReader(BytesIO(img_bytes))
+            iw, ih = img.getSize()
+            if not iw or not ih:
+                return
+            width = height * (float(iw) / float(ih))
+            left_x = doc.leftMargin
+            right_x = page_width - doc.rightMargin
+            x = _pos_x(pos, left_x=left_x, right_x=right_x, width=width)
+            c.drawImage(img, x, y, width=width, height=height, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            return
+
     def _draw_cover_page(c, _doc):
         if not cover_bytes:
             return
@@ -857,8 +920,10 @@ def generate_proposal_pdf(
             self.line(doc.leftMargin, header_y - 8, page_width - doc.rightMargin, header_y - 8)
             self.line(doc.leftMargin, footer_y + 8, page_width - doc.rightMargin, footer_y + 8)
 
+            _draw_logo(self, doc, img_bytes=header_logo_bytes, y=header_y - 6, height=0.28 * inch, pos=header_logo_pos)
             self.drawString(doc.leftMargin, header_y, header_title)
 
+            _draw_logo(self, doc, img_bytes=footer_logo_bytes, y=footer_y - 3, height=0.22 * inch, pos=footer_logo_pos)
             footer_right = f"Page {page_num} of {total_pages}"
             self.drawRightString(page_width - doc.rightMargin, footer_y, footer_right)
             self.restoreState()
