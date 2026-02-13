@@ -809,6 +809,7 @@ def generate_proposal_pdf(
     elements.append(Paragraph("Date: _________________________________", content_style))
 
     has_cover_page = bool(cover_bytes)
+    header_title = (title or "Proposal").strip() or "Proposal"
 
     def _draw_cover_page(c, _doc):
         if not cover_bytes:
@@ -847,7 +848,17 @@ def generate_proposal_pdf(
             self.saveState()
             self.setFont("Helvetica", 8)
             self.setFillColorRGB(0.25, 0.25, 0.25)
-            footer_y = 0.55 * inch
+
+            header_y = page_height - (0.75 * inch)
+            footer_y = 0.75 * inch
+
+            self.setStrokeColorRGB(0.85, 0.85, 0.85)
+            self.setLineWidth(0.5)
+            self.line(doc.leftMargin, header_y - 8, page_width - doc.rightMargin, header_y - 8)
+            self.line(doc.leftMargin, footer_y + 8, page_width - doc.rightMargin, footer_y + 8)
+
+            self.drawString(doc.leftMargin, header_y, header_title)
+
             footer_right = f"Page {page_num} of {total_pages}"
             self.drawRightString(page_width - doc.rightMargin, footer_y, footer_right)
             self.restoreState()
