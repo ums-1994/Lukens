@@ -5739,8 +5739,85 @@ def get_proposal_signatures(username, proposal_id):
 def docusign_webhook():
     """Handle DocuSign webhook events"""
     try:
-        # Get event data
-        event_data = request.get_json()
+        def _extract_event_from_json(payload: dict):
+            if not isinstance(payload, dict):
+                return None, None, payload
+
+            event = payload.get('event') or payload.get('Event')
+            envelope_id = (
+                payload.get('envelopeId')
+                or payload.get('envelope_id')
+                or payload.get('EnvelopeId')
+                or payload.get('EnvelopeID')
+            )
+
+            if not event:
+                status = payload.get('status') or payload.get('Status')
+                if status:
+                    event = str(status).strip().lower()
+
+            if envelope_id is not None:
+                envelope_id = str(envelope_id).strip()
+
+            return event, envelope_id, payload
+
+        def _extract_event_from_xml(xml_bytes: bytes):
+            if not xml_bytes:
+                return None, None, None
+            try:
+                import xml.etree.ElementTree as ET
+
+                root = ET.fromstring(xml_bytes)
+
+                def _find_text(tag_suffix: str):
+                    for el in root.iter():
+                        if isinstance(el.tag, str) and el.tag.lower().endswith(tag_suffix.lower()):
+                            if el.text and str(el.text).strip():
+                                return str(el.text).strip()
+                    return None
+
+                envelope_id = (
+                    _find_text('EnvelopeID')
+                    or _find_text('EnvelopeId')
+                    or _find_text('EnvelopeId')
+                )
+
+                status = (
+                    _find_text('Status')
+                    or _find_text('EnvelopeStatus')
+                    or _find_text('StatusCode')
+                )
+
+                event = None
+                if status:
+                    event = str(status).strip().lower()
+
+                return event, envelope_id, status
+            except Exception:
+                return None, None, None
+
+        def _map_event_to_action(event: str | None):
+            if not event:
+                return None
+            e = str(event).strip().lower()
+            if e in {'envelope-completed', 'completed', 'complete', 'signed'}:
+                return 'completed'
+            if e in {'envelope-declined', 'declined', 'decline'}:
+                return 'declined'
+            if e in {'envelope-voided', 'voided', 'void'}:
+                return 'voided'
+            if e in {'recipient-sent', 'sent', 'delivered', 'processing', 'created'}:
+                return 'ignored'
+            return 'ignored'
+
+        # DocuSign Connect may send XML by default.
+        event_data = request.get_json(silent=True)
+        event, envelope_id, parsed_payload = _extract_event_from_json(event_data)
+        xml_status = None
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            event, envelope_id, xml_status = _extract_event_from_xml(raw_body)
+            parsed_payload = {'xml_status': xml_status}
         
         # Validate HMAC signature (if configured)
         hmac_key = os.getenv('DOCUSIGN_WEBHOOK_HMAC_KEY')
@@ -5748,13 +5825,15 @@ def docusign_webhook():
             signature = request.headers.get('X-DocuSign-Signature-1')
             # TODO: Validate signature
         
-        event = event_data.get('event')
-        envelope_id = event_data.get('envelopeId')
-        
         if not envelope_id:
-            return {'detail': 'No envelope ID provided'}, 400
-        
-        print(f"📬 DocuSign webhook received: {event} for envelope {envelope_id}")
+            print("⚠️ DocuSign webhook: could not parse envelopeId")
+            return {'message': 'Webhook received'}, 200
+
+        action = _map_event_to_action(event)
+        print(f"📬 DocuSign webhook received: {event} (action={action}) for envelope {envelope_id}")
+
+        if action in (None, 'ignored'):
+            return {'message': 'Webhook ignored'}, 200
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -5769,10 +5848,10 @@ def docusign_webhook():
             signature = cursor.fetchone()
             if not signature:
                 print(f"⚠️ Signature record not found for envelope {envelope_id}")
-                return {'message': 'Signature record not found'}, 404
-            
+                return {'message': 'Webhook processed'}, 200
+
             # Handle different events
-            if event == 'envelope-completed':
+            if action == 'completed':
                 # Signature completed
                 cursor.execute("""
                     UPDATE proposal_signatures 
@@ -5796,9 +5875,13 @@ def docusign_webhook():
                 
                 print(f"✅ Envelope {envelope_id} completed")
                 
-            elif event == 'envelope-declined':
+            elif action == 'declined':
                 # Signature declined
-                decline_reason = event_data.get('declineReason', 'No reason provided')
+                decline_reason = None
+                if isinstance(event_data, dict):
+                    decline_reason = event_data.get('declineReason')
+                if not decline_reason:
+                    decline_reason = 'No reason provided'
                 
                 cursor.execute("""
                     UPDATE proposal_signatures 
@@ -5822,7 +5905,7 @@ def docusign_webhook():
                 
                 print(f"⚠️ Envelope {envelope_id} declined")
                 
-            elif event == 'envelope-voided':
+            elif action == 'voided':
                 # Envelope voided
                 cursor.execute("""
                     UPDATE proposal_signatures 
