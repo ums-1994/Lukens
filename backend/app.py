@@ -5739,6 +5739,38 @@ def get_proposal_signatures(username, proposal_id):
 def docusign_webhook():
     """Handle DocuSign webhook events"""
     try:
+        def _safe_preview(value, max_len: int = 800):
+            try:
+                if value is None:
+                    return None
+                if isinstance(value, bytes):
+                    s = value.decode('utf-8', errors='replace')
+                else:
+                    s = str(value)
+                s = s.replace('\r', ' ').replace('\n', ' ')
+                if len(s) > max_len:
+                    return s[:max_len] + "..."
+                return s
+            except Exception:
+                return None
+
+        def _deep_find_key(obj, keys: set[str], *, max_depth: int = 10, _depth: int = 0):
+            if _depth > max_depth:
+                return None
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if isinstance(k, str) and k in keys:
+                        return v
+                    found = _deep_find_key(v, keys, max_depth=max_depth, _depth=_depth + 1)
+                    if found is not None:
+                        return found
+            elif isinstance(obj, list):
+                for item in obj:
+                    found = _deep_find_key(item, keys, max_depth=max_depth, _depth=_depth + 1)
+                    if found is not None:
+                        return found
+            return None
+
         def _extract_event_from_json(payload: dict):
             if not isinstance(payload, dict):
                 return None, None, payload
@@ -5750,6 +5782,17 @@ def docusign_webhook():
                 or payload.get('EnvelopeId')
                 or payload.get('EnvelopeID')
             )
+            if not envelope_id:
+                envelope_id = _deep_find_key(
+                    payload,
+                    {
+                        'envelopeId',
+                        'envelope_id',
+                        'EnvelopeId',
+                        'EnvelopeID',
+                        'envelopeID',
+                    },
+                )
 
             if not event:
                 status = payload.get('status') or payload.get('Status')
@@ -5796,6 +5839,42 @@ def docusign_webhook():
             except Exception:
                 return None, None, None
 
+        def _find_envelope_id_in_text(text: str | bytes | None):
+            try:
+                if not text:
+                    return None
+                if isinstance(text, bytes):
+                    s = text.decode('utf-8', errors='ignore')
+                else:
+                    s = str(text)
+                # DocuSign envelope ids are GUIDs
+                m = re.search(r"(?i)<\s*EnvelopeID\s*>\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*<\s*/\s*EnvelopeID\s*>", s)
+                if m:
+                    return m.group(1).strip()
+                m = re.search(r"(?i)envelopeid\s*[:=]\s*\"?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\"?", s)
+                if m:
+                    return m.group(1).strip()
+                return None
+            except Exception:
+                return None
+
+        def _extract_xml_candidate_from_raw(raw_body: bytes | None):
+            if not raw_body:
+                return None
+            try:
+                body_text = raw_body.decode('utf-8', errors='ignore')
+            except Exception:
+                return None
+
+            # Multipart bodies: pull the first XML-like fragment.
+            lt = body_text.find('<')
+            gt = body_text.rfind('>')
+            if lt != -1 and gt != -1 and gt > lt:
+                candidate = body_text[lt:gt + 1].strip()
+                if candidate.startswith('<') and candidate.endswith('>') and len(candidate) >= 20:
+                    return candidate.encode('utf-8', errors='ignore')
+            return None
+
         def _map_event_to_action(event: str | None):
             if not event:
                 return None
@@ -5810,14 +5889,53 @@ def docusign_webhook():
                 return 'ignored'
             return 'ignored'
 
-        # DocuSign Connect may send XML by default.
+        # DocuSign Connect may send XML by default, or embed XML inside multipart/form fields.
         event_data = request.get_json(silent=True)
         event, envelope_id, parsed_payload = _extract_event_from_json(event_data)
         xml_status = None
+
+        # Try form fields/files first (common Connect configurations)
+        if not envelope_id:
+            form_xml = None
+            try:
+                form_xml = request.form.get('xml') or request.form.get('XML')
+            except Exception:
+                form_xml = None
+            if form_xml:
+                event, envelope_id, xml_status = _extract_event_from_xml(form_xml.encode('utf-8', errors='ignore'))
+                parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            try:
+                if request.files:
+                    for f in request.files.values():
+                        try:
+                            data = f.read()
+                        except Exception:
+                            data = None
+                        if data:
+                            event, envelope_id, xml_status = _extract_event_from_xml(data)
+                            if envelope_id:
+                                parsed_payload = {'xml_status': xml_status}
+                                break
+            except Exception:
+                pass
+
         if not envelope_id:
             raw_body = request.get_data(cache=False)
             event, envelope_id, xml_status = _extract_event_from_xml(raw_body)
             parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            embedded_xml = _extract_xml_candidate_from_raw(raw_body)
+            if embedded_xml:
+                event, envelope_id, xml_status = _extract_event_from_xml(embedded_xml)
+                parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            envelope_id = _find_envelope_id_in_text(raw_body)
         
         # Validate HMAC signature (if configured)
         hmac_key = os.getenv('DOCUSIGN_WEBHOOK_HMAC_KEY')
@@ -5826,7 +5944,11 @@ def docusign_webhook():
             # TODO: Validate signature
         
         if not envelope_id:
+            ct = request.headers.get('Content-Type')
+            raw_body = request.get_data(cache=False)
             print("⚠️ DocuSign webhook: could not parse envelopeId")
+            print(f"   content-type={ct}")
+            print(f"   body_preview={_safe_preview(raw_body)}")
             return {'message': 'Webhook received'}, 200
 
         action = _map_event_to_action(event)
