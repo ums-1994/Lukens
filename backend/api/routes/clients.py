@@ -571,13 +571,22 @@ def get_clients(username=None):
                 """
                 query_params = ()
             else:
-                query = f"""
-                    SELECT {', '.join(select_fields)}
-                    FROM clients
-                    WHERE created_by = %s OR created_by IS NULL
-                    ORDER BY {order_by}
-                """
-                query_params = (user_id,)
+                if 'created_by' in available_columns:
+                    query = f"""
+                        SELECT {', '.join(select_fields)}
+                        FROM clients
+                        WHERE created_by = %s OR created_by IS NULL
+                        ORDER BY {order_by}
+                    """
+                    query_params = (user_id,)
+                else:
+                    # Older schemas may not have created_by; fall back to returning all clients
+                    query = f"""
+                        SELECT {', '.join(select_fields)}
+                        FROM clients
+                        ORDER BY {order_by}
+                    """
+                    query_params = ()
             
             try:
                 cursor.execute(query, query_params)
@@ -648,7 +657,9 @@ def create_client(username=None):
 
             user_id = user_row['id']
             user_role = (user_row.get('role') or '').lower().strip()
-            if user_role not in ['finance', 'admin', 'ceo']:
+            allowed_roles = {'finance', 'admin', 'ceo'}
+            is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
+            if user_role not in allowed_roles and not is_finance_variant:
                 return jsonify({"error": "Insufficient permissions"}), 403
 
             additional_info = None
