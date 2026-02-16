@@ -676,11 +676,24 @@ def create_client(username=None):
                 # Serialize to JSON for compatibility with both json/jsonb and text columns
                 additional_info = json.dumps(additional_info_obj) if additional_info_obj else None
 
-            insert_fields = ['company_name', 'email']
-            insert_values = [company_name, email]
-            update_set_parts = [
-                'company_name = EXCLUDED.company_name',
-            ]
+            insert_fields = ['email']
+            insert_values = [email]
+            update_set_parts = []
+
+            if 'company_name' in clients_columns:
+                insert_fields.insert(0, 'company_name')
+                insert_values.insert(0, company_name)
+                update_set_parts.append('company_name = EXCLUDED.company_name')
+
+            if 'name' in clients_columns:
+                # Older schemas often use `name` as the primary non-null field
+                insert_fields.insert(0, 'name')
+                insert_values.insert(0, company_name)
+                update_set_parts.append('name = EXCLUDED.name')
+
+            if not update_set_parts:
+                # Ensure ON CONFLICT has at least one assignment
+                update_set_parts.append('email = EXCLUDED.email')
 
             if 'status' in clients_columns:
                 insert_fields.append('status')
@@ -711,7 +724,11 @@ def create_client(username=None):
             if 'updated_at' in clients_columns:
                 update_set_parts.append('updated_at = CURRENT_TIMESTAMP')
 
-            returning_fields = ['id', 'company_name', 'email']
+            returning_fields = ['id', 'email']
+            if 'company_name' in clients_columns:
+                returning_fields.insert(1, 'company_name')
+            if 'name' in clients_columns:
+                returning_fields.insert(1, 'name')
             if 'status' in clients_columns:
                 returning_fields.append('status')
             if 'created_at' in clients_columns:
