@@ -113,6 +113,7 @@ def create_proposal(username=None, user_id=None, email=None):
             template_key = data.get('template_key') or data.get('templateKey')
             template_type = data.get('template_type') or data.get('templateType')
             client_id = data.get('client_id')
+            budget = data.get('budget')
             
             # Insert
             cursor.execute(
@@ -138,6 +139,10 @@ def create_proposal(username=None, user_id=None, email=None):
             if 'client_email' in existing_columns:
                 insert_cols.append('client_email')
                 values.append(client_email)
+
+            if 'budget' in existing_columns and budget is not None:
+                insert_cols.append('budget')
+                values.append(budget)
 
             if template_key and 'template_key' in existing_columns:
                 insert_cols.append('template_key')
@@ -223,6 +228,14 @@ def create_proposal(username=None, user_id=None, email=None):
                 new_proposal['client'] = client_name
 
             new_proposal['client_email'] = row_dict.get('client_email') or client_email
+
+            if 'budget' in row_dict:
+                try:
+                    new_proposal['budget'] = float(row_dict['budget']) if row_dict['budget'] is not None else None
+                except (ValueError, TypeError):
+                    new_proposal['budget'] = None
+            else:
+                new_proposal['budget'] = None
 
             if 'owner_id' in row_dict:
                 new_proposal['owner_id'] = row_dict.get('owner_id')

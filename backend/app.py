@@ -3036,15 +3036,15 @@ def send_for_approval(username, proposal_id):
             if current_status != 'draft':
                 return {'detail': f'Proposal is already {current_status}'}, 400
             
-            # Update status to Pending CEO Approval
+            # Legacy endpoint name, but new workflow status
             cursor.execute(
                 '''UPDATE proposals SET status = %s, updated_at = NOW() 
                    WHERE id = %s RETURNING status''',
-                ('Pending CEO Approval', proposal_id)
+                ('Pending Finance', proposal_id)
             )
             result = cursor.fetchone()
 
-            if current_status is not None and str(current_status) != 'Pending CEO Approval':
+            if current_status is not None and str(current_status) != 'Pending Finance':
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                 u = cursor.fetchone()
                 actor_id = u[0] if u else None
@@ -3052,8 +3052,8 @@ def send_for_approval(username, proposal_id):
                     proposal_id=proposal_id,
                     user_id=actor_id,
                     action_type="status_changed",
-                    description=f"Status changed: {current_status} → Pending CEO Approval",
-                    metadata={"from": current_status, "to": "Pending CEO Approval"},
+                    description=f"Status changed: {current_status} → Pending Finance",
+                    metadata={"from": current_status, "to": "Pending Finance"},
                 )
             conn.commit()
             

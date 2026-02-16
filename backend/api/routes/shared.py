@@ -95,6 +95,7 @@ def preview_proposal_pdf(username=None, proposal_id=None):
     """Return the exact same PDF bytes that are sent to DocuSign (for in-app preview)."""
     try:
         from flask import send_file
+        from io import BytesIO
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

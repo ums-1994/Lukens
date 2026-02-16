@@ -36,6 +36,15 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   String searchQuery = "";
   String typeFilter = "all";
   bool _showAIGenerator = false;
+  final Set<int> _loggedImageIds = <int>{};
+
+  String? _extractFirstHttpUrl(dynamic value) {
+    if (value is! String) return null;
+    final s = value.trim();
+    if (s.isEmpty) return null;
+    final match = RegExp(r'https?://[^\s\)\]]+').firstMatch(s);
+    return match?.group(0);
+  }
 
   static const Set<String> _textCategories = {
     'sections',
@@ -1560,7 +1569,22 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                           bool isImage =
                                               selectedCategory == "Images";
                                           String? imageUrl =
-                                              isImage ? item["content"] : null;
+                                              isImage ? _extractFirstHttpUrl(item["content"]) : null;
+
+                                          if (isImage) {
+                                            final id = item["id"];
+                                            final parsedId = id is int
+                                                ? id
+                                                : int.tryParse(id?.toString() ??
+                                                    '');
+                                            if (parsedId != null &&
+                                                !_loggedImageIds
+                                                    .contains(parsedId)) {
+                                              _loggedImageIds.add(parsedId);
+                                              debugPrint(
+                                                  '[ContentLibrary Images] id=$parsedId label=${item["label"]} raw=${item["content"]} extracted=$imageUrl');
+                                            }
+                                          }
 
                                           return GestureDetector(
                                             onLongPress: () {

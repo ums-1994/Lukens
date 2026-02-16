@@ -32,6 +32,25 @@ class _DashboardPageState extends State<DashboardPage>
   // AI Risk Gate mock data
   List<Map<String, dynamic>> _riskItems = [];
 
+  Future<void> _sendToFinance(Map<String, dynamic> proposal) async {
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(id, 'Pending Finance');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sent to Finance.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to send to Finance.')),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1716,6 +1735,12 @@ class _DashboardPageState extends State<DashboardPage>
     final title = proposal['title'] ?? 'Untitled';
     final subtitle = 'Last modified: ${_formatDate(proposal['updated_at'])}';
     final isSentToClient = status.toLowerCase() == 'sent to client';
+    final lowerStatus = status.toLowerCase().trim();
+    final canSendToFinance = lowerStatus != 'pending finance' &&
+        lowerStatus != 'finance in progress' &&
+        lowerStatus != 'pending approval' &&
+        lowerStatus != 'sent to client' &&
+        lowerStatus != 'signed';
     final clientName = proposal['client_name'] ?? proposal['client'] ?? '';
 
     return Container(
@@ -1845,6 +1870,17 @@ class _DashboardPageState extends State<DashboardPage>
                   ),
                 ),
               ),
+              if (canSendToFinance) ...[
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () => _sendToFinance(proposal),
+                  icon: const Icon(Icons.send, size: 18),
+                  label: const Text('Send to Finance'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: PremiumTheme.teal,
+                  ),
+                ),
+              ],
               if (isSentToClient) ...[
                 const SizedBox(width: 8),
                 IconButton(

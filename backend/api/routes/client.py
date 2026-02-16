@@ -4,6 +4,7 @@ Client role routes - Viewing proposals, commenting, approving/rejecting, signing
 from flask import Blueprint, request, jsonify
 import os
 import traceback
+from psycopg2 import sql
 import psycopg2.extras
 from datetime import datetime
 
@@ -272,11 +273,23 @@ def get_client_proposals():
                 return {'detail': 'Client invitations not configured (missing invited email column)'}, 500
             
             # Get invitation details to find client email
-            cursor.execute("""
-                SELECT proposal_id, invited_email, expires_at
-                FROM collaboration_invitations
-                WHERE {token_col} = %s
-                """,
+            expires_select = (
+                sql.Identifier(expires_col)
+                if expires_col
+                else sql.SQL('NULL::timestamp')
+            )
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT proposal_id, {email_col} as invited_email, {expires_col} as expires_at
+                    FROM collaboration_invitations
+                    WHERE {token_col} = %s
+                    """
+                ).format(
+                    email_col=sql.Identifier(email_col),
+                    expires_col=expires_select,
+                    token_col=sql.Identifier(token_col),
+                ),
                 (token,),
             )
             
@@ -378,11 +391,23 @@ def get_client_proposal_details(proposal_id):
                 return {'detail': 'Client invitations not configured (missing invited email column)'}, 500
             
             # Verify token and get client email
-            cursor.execute("""
-                SELECT proposal_id, invited_email, expires_at
-                FROM collaboration_invitations
-                WHERE {token_col} = %s
-                """,
+            expires_select = (
+                sql.Identifier(expires_col)
+                if expires_col
+                else sql.SQL('NULL::timestamp')
+            )
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT proposal_id, {email_col} as invited_email, {expires_col} as expires_at
+                    FROM collaboration_invitations
+                    WHERE {token_col} = %s
+                    """
+                ).format(
+                    email_col=sql.Identifier(email_col),
+                    expires_col=expires_select,
+                    token_col=sql.Identifier(token_col),
+                ),
                 (token,),
             )
             

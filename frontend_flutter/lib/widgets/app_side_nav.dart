@@ -201,48 +201,65 @@ class AppSideNav extends StatelessWidget {
         ),
       );
     }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: _expandedItemVerticalPadding),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => onSelect(label),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: _expandedItemInternalVerticalPadding),
-          decoration: BoxDecoration(
-            color:
-                active ? PremiumTheme.purple.withValues(alpha: 0.25) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: active
-                  ? PremiumTheme.purple
-                  : PremiumTheme.glassWhiteBorder.withValues(alpha: 0.7),
-              width: active ? 1.5 : 1,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 120) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: _collapsedItemVerticalPadding),
+            child: InkWell(
+              onTap: () => onSelect(label),
+              borderRadius: BorderRadius.circular(30),
+              child: _buildCollapsedIcon(assetPath, active),
             ),
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: _expandedIconBoxSize,
-                height: _expandedIconBoxSize,
-                child: _buildWhiteCircleIcon(assetPath, active),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: active ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: _labelFontSize,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-                  ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: _expandedItemVerticalPadding),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => onSelect(label),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: _expandedItemInternalVerticalPadding),
+              decoration: BoxDecoration(
+                color:
+                    active ? PremiumTheme.purple.withValues(alpha: 0.25) : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: active
+                      ? PremiumTheme.purple
+                      : PremiumTheme.glassWhiteBorder.withValues(alpha: 0.7),
+                  width: active ? 1.5 : 1,
                 ),
               ),
-              if (active)
-                const Icon(Icons.arrow_forward_ios, size: 10, color: Colors.white),
-            ],
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: _expandedIconBoxSize,
+                    height: _expandedIconBoxSize,
+                    child: _buildWhiteCircleIcon(assetPath, active),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: active ? Colors.white : const Color(0xFFECF0F1),
+                        fontSize: _labelFontSize,
+                        fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                  if (active)
+                    const Icon(Icons.arrow_forward_ios, size: 10, color: Colors.white),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

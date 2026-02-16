@@ -128,7 +128,7 @@ def get_pending_approvals(username=None):
                     updated_at,
                     {budget_expr} AS budget
                 FROM proposals
-                WHERE status IN ('Pending CEO Approval', 'In Review', 'Submitted')
+                WHERE status IN ('Pending CEO Approval', 'In Review', 'Submitted', 'Pending Approval')
                 ORDER BY {order_by}
             '''
 

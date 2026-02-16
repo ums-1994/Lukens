@@ -495,7 +495,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> createProposal(String title, String client,
-      {String? templateKey, dynamic clientId}) async {
+      {String? templateKey, dynamic clientId, double? budget}) async {
     try {
       final r = await http.post(
         Uri.parse("$baseUrl/api/proposals"),
@@ -505,6 +505,7 @@ class AppState extends ChangeNotifier {
           "client": client,
           "template_key": templateKey,
           if (clientId != null) "client_id": clientId,
+          if (budget != null) "budget": budget,
         }),
       );
       final p = jsonDecode(r.body);
@@ -538,13 +539,27 @@ class AppState extends ChangeNotifier {
 
   Future<void> updateProposalStatus(String proposalId, String status) async {
     try {
-      final r = await http.patch(
-        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+      http.Response r;
+
+      // Prefer the canonical API route (registered under /api)
+      r = await http.patch(
+        Uri.parse("$baseUrl/api/proposals/$proposalId/status"),
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
+
+      // Backwards compatibility: some deployments exposed routes without /api
+      if (r.statusCode == 404) {
+        r = await http.patch(
+          Uri.parse("$baseUrl/proposals/$proposalId/status"),
+          headers: _headers,
+          body: jsonEncode({"status": status}),
+        );
+      }
+
       if (r.statusCode == 200) {
         await fetchProposals();
+        await fetchDashboard();
         notifyListeners();
       }
     } catch (e) {

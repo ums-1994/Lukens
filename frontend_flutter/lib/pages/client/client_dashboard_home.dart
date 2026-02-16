@@ -100,7 +100,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       final response = await http
           .get(
-            Uri.parse('$baseUrl/api/client/proposals?token=$_accessToken'),
+            Uri.parse('$baseUrl/client/proposals?token=$_accessToken'),
           )
           .timeout(
             const Duration(seconds: 8),

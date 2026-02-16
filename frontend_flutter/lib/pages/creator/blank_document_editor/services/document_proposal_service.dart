@@ -352,17 +352,17 @@ class DocumentProposalService {
     String token,
   ) async {
     try {
-      final response = await http.post(
-        Uri.parse(
-            '${ApiService.baseUrl}/api/proposals/$proposalId/send-for-approval'),
+      final response = await http.patch(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/status'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
+        body: json.encode({'status': 'Pending Finance'}),
       );
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        return {'status': 'Pending Finance'};
       } else {
         throw Exception('Failed to send for approval');
       }

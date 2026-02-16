@@ -698,6 +698,13 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     try {
       final app = context.read<AppState>();
 
+      double? parsedBudget;
+      final estRaw = (_formData['estimatedValue'] ?? '').toString().trim();
+      if (estRaw.isNotEmpty) {
+        final cleaned = estRaw.replaceAll(RegExp(r'[^0-9.\-]'), '');
+        parsedBudget = double.tryParse(cleaned);
+      }
+
       // Create proposal in backend so that downstream flows have a real ID
       final created = await app.createProposal(
         _formData['opportunityName'],
@@ -706,6 +713,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             ? _formData['templateId'].toString()
             : null,
         clientId: _formData['clientId'],
+        budget: parsedBudget,
       );
 
       final proposalId = (created != null && created['id'] != null)

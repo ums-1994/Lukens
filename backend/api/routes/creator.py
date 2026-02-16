@@ -771,16 +771,16 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
             srow = cursor.fetchone()
             old_status = srow[0] if srow else None
             
-            # Update status to "Pending CEO Approval" (more descriptive than "In Review")
+            # Backwards compatible endpoint name, but new workflow status
             cursor.execute(
-                '''UPDATE proposals SET status = 'Pending CEO Approval', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
+                '''UPDATE proposals SET status = 'Pending Finance', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
                 (proposal_id,)
             )
             conn.commit()
 
-            if old_status is not None and old_status != 'Pending CEO Approval':
-                log_status_change(proposal_id, user_id, old_status, 'Pending CEO Approval')
-            return {'detail': 'Proposal sent for approval', 'status': 'Pending CEO Approval'}, 200
+            if old_status is not None and old_status != 'Pending Finance':
+                log_status_change(proposal_id, user_id, old_status, 'Pending Finance')
+            return {'detail': 'Proposal sent to finance', 'status': 'Pending Finance'}, 200
     except Exception as e:
         print(f"❌ Error sending proposal for approval: {e}")
         import traceback
@@ -1036,7 +1036,12 @@ def upload_image():
             return {'detail': 'No file provided'}, 400
         
         file = request.files['file']
-        result = cloudinary.uploader.upload(file)
+        result = cloudinary.uploader.upload(
+            file,
+            resource_type='image',
+            type='upload',
+            access_mode='public',
+        )
 
         url = result.get('secure_url') or result.get('url')
         public_id = result.get('public_id')
@@ -1061,7 +1066,12 @@ def upload_template():
             return {'detail': 'No file provided'}, 400
         
         file = request.files['file']
-        result = cloudinary.uploader.upload(file)
+        result = cloudinary.uploader.upload(
+            file,
+            resource_type='auto',
+            type='upload',
+            access_mode='public',
+        )
 
         url = result.get('secure_url') or result.get('url')
         public_id = result.get('public_id')

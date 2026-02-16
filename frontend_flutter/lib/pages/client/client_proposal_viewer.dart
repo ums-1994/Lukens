@@ -506,7 +506,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       final response = await http
           .get(
             Uri.parse(
-                '$baseUrl/api/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
+                '$baseUrl/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
           )
           .timeout(_networkTimeout);
 

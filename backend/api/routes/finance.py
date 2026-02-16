@@ -123,22 +123,16 @@ def get_finance_metrics(username=None, user_id=None, email=None):
                 s = _safe_lower(status)
                 if not s:
                     return False
-                if 'signed' in s:
-                    return False
-                if 'sent to client' in s or 'released' in s:
-                    return False
-                # Exclude any finance decision statuses (support both underscore and space)
-                if 'finance_' in s or 'finance approved' in s or 'finance rejected' in s:
-                    return False
-                return 'approved' in s
+                return (s == 'pending finance') or (s == 'finance in progress')
 
+            # For this workflow, "approved" means "submitted onwards to approver"
             def _is_fin_approved(status: str) -> bool:
                 s = _safe_lower(status)
-                return ('finance_approved' in s) or ('finance approved' in s)
+                return s == 'pending approval'
 
             def _is_fin_rejected(status: str) -> bool:
                 s = _safe_lower(status)
-                return ('finance_rejected' in s) or ('finance rejected' in s)
+                return ('finance_rejected' in s) or (s == 'finance rejected')
 
             queue_items = []
             queue_value = 0.0

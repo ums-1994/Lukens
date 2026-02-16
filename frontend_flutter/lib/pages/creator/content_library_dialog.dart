@@ -62,6 +62,14 @@ class _ContentLibrarySelectionDialogState
     return value.startsWith('http://') || value.startsWith('https://');
   }
 
+  String? _extractFirstHttpUrl(dynamic value) {
+    if (value is! String) return null;
+    final s = value.trim();
+    if (s.isEmpty) return null;
+    final match = RegExp(r'https?://[^\s\)\]]+').firstMatch(s);
+    return match?.group(0);
+  }
+
   String _cleanPreviewText(String raw) {
     var text = raw.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), '');
     text = text.replaceAll(RegExp(r'<[^>]+>'), '');
@@ -349,8 +357,9 @@ class _ContentLibrarySelectionDialogState
                                       final m = filtered[index];
                                       final label = (m['label'] ?? 'Untitled')
                                           .toString();
-                                      final imageUrl = (m['content'] ?? '')
-                                          .toString();
+                                      final imageUrl =
+                                          _extractFirstHttpUrl(m['content']) ??
+                                              '';
 
                                       return InkWell(
                                         borderRadius: BorderRadius.circular(12),
@@ -428,7 +437,8 @@ class _ContentLibrarySelectionDialogState
 
                                       final showImageThumb =
                                           widget.imagesOnly &&
-                                              _isHttpUrl(m['content']);
+                                              _extractFirstHttpUrl(m['content']) !=
+                                                  null;
 
                                       return ListTile(
                                         contentPadding:
@@ -441,7 +451,8 @@ class _ContentLibrarySelectionDialogState
                                                 borderRadius:
                                                     BorderRadius.circular(8),
                                                 child: Image.network(
-                                                  (m['content'] as String),
+                                                  _extractFirstHttpUrl(m['content']) ??
+                                                      '',
                                                   width: 48,
                                                   height: 48,
                                                   fit: BoxFit.cover,

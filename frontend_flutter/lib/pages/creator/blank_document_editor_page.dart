@@ -2283,7 +2283,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2ECC71),
             ),
-            child: const Text('Send for Approval'),
+            child: const Text('Send to Finance'),
           ),
         ],
       ),
@@ -2297,26 +2297,25 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         throw Exception('Not authenticated');
       }
 
-      final response = await http.post(
-        Uri.parse(
-            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
+      final response = await http.patch(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$_savedProposalId/status'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
+        body: json.encode({'status': 'Pending Finance'}),
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
         setState(() {
-          _proposalStatus = data['status'];
+          _proposalStatus = 'Pending Finance';
         });
 
         if (mounted) {
           // Show success message and navigate back to My Proposals
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('âœ… Proposal sent for approval successfully!'),
+              content: Text('âœ… Proposal sent to Finance successfully!'),
               backgroundColor: Color(0xFF2ECC71),
               duration: Duration(seconds: 2),
             ),
@@ -2331,14 +2330,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           );
         }
       } else {
-        throw Exception('Failed to send for approval');
+        throw Exception('Failed to send to finance');
       }
     } catch (e) {
-      print('âŒ Error sending for approval: $e');
+      print('âŒ Error sending to finance: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to send for approval: $e'),
+            content: Text('Failed to send to Finance: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -4450,7 +4449,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ElevatedButton.icon(
                   onPressed: _sendForApproval,
                   icon: const Icon(Icons.send, size: 16),
-                  label: const Text('Send for Approval'),
+                  label: const Text('Send to Finance'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2ECC71),
                     foregroundColor: Colors.white,

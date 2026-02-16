@@ -282,7 +282,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   String _formatCurrency(double amount) {
-    if (amount <= 0) return '--';
+    if (amount.isNaN || amount.isInfinite) return '--';
     final rounded = amount.round();
     final s = rounded.toString();
     final buf = StringBuffer();
@@ -364,6 +364,11 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
     final tableRows = queueItems.isNotEmpty ? queueItems : proposals;
 
+    double displayedValue = 0;
+    for (final p in tableRows) {
+      displayedValue += _extractAmount(p);
+    }
+
     return Scaffold(
       body: Container(
         color: Colors.transparent,
@@ -444,10 +449,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                                   ),
                                 if (_currentTab == 'proposals') ...[
                                   _buildSummaryRow(
-                                    totalCount: queueCount ?? totalCount,
-                                    pendingCount: financeRejectedCount ?? pendingCount,
-                                    approvedCount: financeApprovedCount ?? approvedCount,
-                                    totalAmount: queueValue ?? totalAmount,
+                                    queueCount: queueCount ?? totalCount,
+                                    rejectedCount:
+                                        financeRejectedCount ?? pendingCount,
+                                    approvedCount:
+                                        financeApprovedCount ?? approvedCount,
+                                    queueValue: displayedValue,
                                   ),
                                   const SizedBox(height: 16),
                                   if (attention.isNotEmpty) ...[
@@ -685,36 +692,36 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Widget _buildSummaryRow({
-    required int totalCount,
-    required int pendingCount,
+    required int queueCount,
+    required int rejectedCount,
     required int approvedCount,
-    required double totalAmount,
+    required double queueValue,
   }) {
     final cards = <Widget>[
       _buildSummaryCard(
         label: 'Finance Queue',
-        value: totalCount.toString(),
-        subtitle: 'Approved, not yet released/signed',
+        value: queueCount.toString(),
+        subtitle: 'Pending finance review',
         icon: Icons.folder_open,
         color: PremiumTheme.teal,
       ),
       _buildSummaryCard(
         label: 'Rejected',
-        value: pendingCount.toString(),
+        value: rejectedCount.toString(),
         subtitle: 'Rejected by finance',
-        icon: Icons.hourglass_empty,
-        color: Colors.orange,
+        icon: Icons.cancel,
+        color: Colors.red,
       ),
       _buildSummaryCard(
         label: 'Approved',
         value: approvedCount.toString(),
-        subtitle: 'Approved by finance',
+        subtitle: 'Submitted to approver',
         icon: Icons.check_circle,
         color: Colors.green,
       ),
       _buildSummaryCard(
         label: 'Queue Value',
-        value: _formatCurrency(totalAmount),
+        value: _formatCurrency(queueValue),
         subtitle: 'Total value awaiting finance',
         icon: Icons.attach_money,
         color: PremiumTheme.info,
@@ -988,6 +995,10 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     final client = (p['client_name'] ?? p['client'] ?? 'Unknown').toString();
     final status = (p['status'] ?? 'Draft').toString();
     final amount = _extractAmount(p);
+    final lower = status.toLowerCase().trim();
+    final canSubmitToApprover =
+        lower == 'pending finance' || lower == 'finance in progress';
+    final proposalId = p['id']?.toString();
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -1019,12 +1030,33 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             flex: 2,
             child: Align(
               alignment: Alignment.centerRight,
-              child: Text(
-                _formatCurrency(amount),
-                style: PremiumTheme.bodyMedium.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    _formatCurrency(amount),
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (canSubmitToApprover && proposalId != null) ...[
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () async {
+                        final app = context.read<AppState>();
+                        await app.updateProposalStatus(
+                            proposalId, 'Pending Approval');
+                        await _fetchFinanceMetrics(app);
+                      },
+                      child: Text(
+                        'Submit',
+                        style: PremiumTheme.bodyMedium
+                            .copyWith(color: PremiumTheme.teal),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
