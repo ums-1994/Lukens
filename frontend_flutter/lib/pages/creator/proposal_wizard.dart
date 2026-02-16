@@ -2097,31 +2097,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                         const SizedBox(height: 20),
                         // Client Details Fields (auto-populated or manual)
                         if (!_useManualEntry && _selectedClient != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: Colors.green.withValues(alpha: 0.3)),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.check_circle,
-                                    color: Colors.green, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Client details auto-filled from database. Update the client record in Client Management to change these values.',
-                                    style: TextStyle(
-                                        color: Colors.green.shade300,
-                                        fontSize: 12),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
                           if ((_formData['clientName']?.toString().isEmpty ??
                                   true) ||
                               (_formData['clientEmail']?.toString().isEmpty ??
