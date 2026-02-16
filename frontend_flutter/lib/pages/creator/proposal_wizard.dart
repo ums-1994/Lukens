@@ -2796,6 +2796,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     return Directionality(
       textDirection: TextDirection.ltr,
       child: TextFormField(
+        key: ValueKey('$label::$value'),
         initialValue: value,
         readOnly: true,
         textDirection: TextDirection.ltr,
