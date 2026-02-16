@@ -32,6 +32,11 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
 
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -46,7 +51,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   }
 
   Future<void> _loadProposal() async {
-    setState(() {
+    _safeSetState(() {
       _isLoading = true;
       _error = null;
     });
@@ -54,7 +59,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     try {
       final token = AuthService.token;
       if (token == null) {
-        setState(() {
+        _safeSetState(() {
           _error = 'Not authenticated';
           _isLoading = false;
         });
@@ -63,7 +68,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
       final proposalId = int.tryParse(widget.proposalId);
       if (proposalId == null) {
-        setState(() {
+        _safeSetState(() {
           _error = 'Invalid proposal ID';
           _isLoading = false;
         });
@@ -137,7 +142,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       }
 
       if (proposal == null || proposal.isEmpty) {
-        setState(() {
+        _safeSetState(() {
           _error = 'Proposal not found';
           _isLoading = false;
         });
@@ -150,12 +155,12 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       // Load comments
       await _loadComments(proposalId, token);
 
-      setState(() {
+      _safeSetState(() {
         _proposal = proposal;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
+      _safeSetState(() {
         _error = 'Error loading proposal: $e';
         _isLoading = false;
       });
@@ -194,7 +199,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           return normalized;
         }).toList();
 
-        setState(() {
+        _safeSetState(() {
           _versions = versions;
         });
       }
@@ -237,7 +242,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           comments = [Map<String, dynamic>.from(data)];
         }
 
-        setState(() {
+        _safeSetState(() {
           _comments = comments.map((c) {
             // Normalize comment structure
             final authorName = c['author_name'] ??
@@ -266,7 +271,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   Future<void> _submitComment() async {
     if (_commentController.text.trim().isEmpty) return;
 
-    setState(() => _isSubmittingComment = true);
+    _safeSetState(() => _isSubmittingComment = true);
 
     try {
       final token = AuthService.token;
@@ -323,7 +328,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         );
       }
     } finally {
-      setState(() => _isSubmittingComment = false);
+      _safeSetState(() => _isSubmittingComment = false);
     }
   }
 
@@ -800,13 +805,36 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                 (section['title'] ?? 'Untitled Section').toString();
             final sectionContent = (section['content'] ?? '').toString();
 
+            bool isTruthy(dynamic value) {
+              if (value is bool) return value;
+              if (value is int) return value == 1;
+              if (value is String) {
+                final v = value.trim().toLowerCase();
+                return v == 'true' || v == '1' || v == 't' || v == 'yes';
+              }
+              return false;
+            }
+
+            String normalize(dynamic value) {
+              return (value ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase()
+                  .replaceAll(RegExp(r'[_\-\s]+'), '');
+            }
+
+            final String? backgroundImageUrl =
+                section['backgroundImageUrl'] as String?;
+
+            final bool isCover = isTruthy(section['isCoverPage']) ||
+                normalize(section['sectionType']) == 'cover' ||
+                (index == 0 && backgroundImageUrl != null);
+
             final int? bgColorValue = section['backgroundColor'] is int
                 ? section['backgroundColor'] as int
                 : int.tryParse(section['backgroundColor']?.toString() ?? '');
             final Color backgroundColor =
                 bgColorValue != null ? Color(bgColorValue) : Colors.white;
-            final String? backgroundImageUrl =
-                section['backgroundImageUrl'] as String?;
 
             return Container(
               width: pageWidth,
@@ -819,10 +847,11 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                     ? DecorationImage(
                         image: NetworkImage(backgroundImageUrl),
                         fit: BoxFit.cover,
-                        opacity: 0.7,
+                        opacity: isCover ? 1.0 : 0.7,
                       )
                     : null,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius:
+                    isCover ? BorderRadius.zero : BorderRadius.circular(4),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.15),
@@ -831,53 +860,55 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                   ),
                 ],
               ),
-              child: Column(
-                children: [
-                  _buildAdminHeader(metadata, documentTitle),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 60,
-                          vertical: 24,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              sectionTitle.isEmpty
-                                  ? 'Untitled Section'
-                                  : sectionTitle,
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1A3A52),
+              child: isCover
+                  ? const SizedBox.expand()
+                  : Column(
+                      children: [
+                        _buildAdminHeader(metadata, documentTitle),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 60,
+                                vertical: 24,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    sectionTitle.isEmpty
+                                        ? 'Untitled Section'
+                                        : sectionTitle,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF1A3A52),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Text(
+                                    sectionContent.isEmpty
+                                        ? '(No content in this section)'
+                                        : sectionContent,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Color(0xFF1A1A1A),
+                                      height: 1.8,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            Text(
-                              sectionContent.isEmpty
-                                  ? '(No content in this section)'
-                                  : sectionContent,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF1A1A1A),
-                                height: 1.8,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
+                        _buildAdminFooter(
+                          metadata: metadata,
+                          pageNumber: index + 1,
+                          totalPages: sections.length,
+                        ),
+                      ],
                     ),
-                  ),
-                  _buildAdminFooter(
-                    metadata: metadata,
-                    pageNumber: index + 1,
-                    totalPages: sections.length,
-                  ),
-                ],
-              ),
             );
           }),
         ],
@@ -909,7 +940,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
             ),
             IconButton(
               icon: const Icon(Icons.history, color: Colors.white),
-              onPressed: () => setState(() => _showVersions = !_showVersions),
+              onPressed: () =>
+                  _safeSetState(() => _showVersions = !_showVersions),
               tooltip: 'Versions',
             ),
             IconButton(

@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:js' as js;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'config/api_config.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
@@ -27,9 +29,10 @@ String get baseUrl {
       print('⚠️ Could not read API URL from config: $e');
     }
   }
+
   // Default URLs based on environment
   if (kDebugMode) {
-    return 'http://127.0.0.1:5000';
+    return 'https://lukens-wp8w.onrender.com';
   }
   // Production default (Render backend URL)
   return 'https://lukens-wp8w.onrender.com';
@@ -171,7 +174,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteContent(int contentId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("$_apiBaseUrl/content/$contentId"),
         headers: _headers,
       );
       if (r.statusCode == 200 || r.statusCode == 204) {
@@ -208,12 +211,25 @@ class AppState extends ChangeNotifier {
         if (publicId != null) "public_id": publicId,
       };
 
-      final r = await http.post(
-        Uri.parse("$baseUrl/content"),
+      http.Response r = await http.post(
+        Uri.parse("$_apiBaseUrl/content"),
         headers: _headers,
         body: jsonEncode(body),
       );
-      if (r.statusCode == 200) {
+
+      if ((r.statusCode == 400 || r.statusCode == 409 || r.statusCode == 500) &&
+          r.body.contains('content_key_key') &&
+          r.body.toLowerCase().contains('already exists')) {
+        final retryBody = Map<String, dynamic>.from(body);
+        retryBody['key'] = '${key}_${DateTime.now().millisecondsSinceEpoch}';
+        r = await http.post(
+          Uri.parse("$_apiBaseUrl/content"),
+          headers: _headers,
+          body: jsonEncode(retryBody),
+        );
+      }
+
+      if (r.statusCode == 200 || r.statusCode == 201) {
         await fetchContent();
         notifyListeners();
         return true;
@@ -227,7 +243,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateContent(int contentId, {
+  Future<bool> updateContent(
+    int contentId, {
     String? key,
     String? label,
     String? content,
@@ -250,7 +267,7 @@ class AppState extends ChangeNotifier {
       if (body.isEmpty) return false;
 
       final r = await http.put(
-        Uri.parse("$baseUrl/content/$contentId"),
+        Uri.parse("$_apiBaseUrl/content/$contentId"),
         headers: _headers,
         body: jsonEncode(body),
       );
@@ -549,6 +566,217 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       print('Error analyzing proposal with AI: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getCompletionRatesAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/completion-rates").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty) 'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching completion rates analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getProposalPipelineAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    String? stage,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/proposal-pipeline").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty) 'department': department,
+          if (stage != null && stage.isNotEmpty) 'stage': stage,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching proposal pipeline analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getClientEngagementAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/client-engagement").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching client engagement analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getCollaborationLoadAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri =
+          Uri.parse("$baseUrl/api/analytics/collaboration-load").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching collaboration load analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getRiskGateProposals({
+    required String riskStatus,
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    int? limit,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/risk-gate/proposals").replace(
+        queryParameters: {
+          'risk_status': riskStatus,
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (limit != null) 'limit': limit.toString(),
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching risk gate proposals: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getRiskGateSummary({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/risk-gate/summary").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching risk gate summary: $e');
     }
     return null;
   }
@@ -871,6 +1099,40 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  // Cycle Time Analytics
+  Future<Map<String, dynamic>?> getCycleTimeAnalytics({
+    String? startDate,
+    String? endDate,
+    String? status,
+    String? owner,
+    String? proposalType,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/cycle-time").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (status != null && status.isNotEmpty) 'status': status,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching cycle time analytics: $e');
+    }
+    return null;
+  }
+
   Future<String?> clientSignProposal(
       String proposalId, String signerName) async {
     final r = await http.post(
@@ -904,7 +1166,9 @@ class AppState extends ChangeNotifier {
     );
     if (r.statusCode == 200) {
       final data = jsonDecode(r.body);
-      authToken = data["access_token"];
+      // Backend returns {"token": "..."} for legacy login.
+      // Keep compatibility with any older clients expecting access_token.
+      authToken = data["token"] ?? data["access_token"];
 
       // IMPORTANT: Sync token with AuthService for content library
       if (currentUser != null) {
@@ -1036,10 +1300,11 @@ class AppState extends ChangeNotifier {
         file = await http.MultipartFile.fromPath('file', filePath);
       }
 
-      final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/image"))
-            ..headers.addAll(_multipartHeaders)
-            ..files.add(file);
+      // Creator upload routes are mounted under /api on the backend.
+      final request = http.MultipartRequest(
+          'POST', Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/image"))
+        ..headers.addAll(_multipartHeaders)
+        ..files.add(file);
 
       final response = await request.send();
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -1068,10 +1333,11 @@ class AppState extends ChangeNotifier {
         file = await http.MultipartFile.fromPath('file', filePath);
       }
 
-      final request =
-          http.MultipartRequest('POST', Uri.parse("$baseUrl/upload/template"))
-            ..headers.addAll(_multipartHeaders)
-            ..files.add(file);
+      // Creator upload routes are mounted under /api on the backend.
+      final request = http.MultipartRequest(
+          'POST', Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/template"))
+        ..headers.addAll(_multipartHeaders)
+        ..files.add(file);
 
       final response = await request.send();
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -1090,7 +1356,7 @@ class AppState extends ChangeNotifier {
   Future<bool> deleteFromCloudinary(String publicId) async {
     try {
       final r = await http.delete(
-        Uri.parse("$baseUrl/upload/$publicId"),
+        Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/$publicId"),
         headers: _headers,
       );
       return r.statusCode == 200;
@@ -1103,7 +1369,7 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>?> getUploadSignature(String publicId) async {
     try {
       final r = await http.post(
-        Uri.parse("$baseUrl/upload/signature"),
+        Uri.parse("${ApiConfig.backendBaseUrl}/api/upload/signature"),
         headers: _headers,
         body: jsonEncode({"public_id": publicId}),
       );
@@ -1119,33 +1385,59 @@ class AppState extends ChangeNotifier {
   }
 
   // Create content with Cloudinary URL
-  Future<void> createContentWithCloudinary(String key, String label,
+  Future<bool> createContentWithCloudinary(String key, String label,
       String cloudinaryUrl, String publicId, String category,
       {int? parentId}) async {
     try {
-      final Map<String, dynamic> body = {
-        "key": key,
-        "label": label,
-        "content": cloudinaryUrl, // Store Cloudinary URL
-        "public_id": publicId,
-        "category": category,
-        "created_at": DateTime.now().toIso8601String(),
-      };
-
-      // Add parent_id if provided (for files inside folders)
-      if (parentId != null) {
-        body["parent_id"] = parentId;
+      if (authToken == null && AuthService.token != null) {
+        authToken = AuthService.token;
+        currentUser = AuthService.currentUser;
+        print(
+            '🔄 Synced token from AuthService in createContentWithCloudinary');
       }
 
-      await http.post(
-        Uri.parse("$baseUrl/content"),
-        headers: _headers,
-        body: jsonEncode(body),
-      );
-      await fetchContent();
-      notifyListeners();
+      String requestKey = key;
+
+      Future<http.Response> doRequest() {
+        final Map<String, dynamic> body = {
+          "key": requestKey,
+          "label": label,
+          "content": cloudinaryUrl,
+          "public_id": publicId,
+          "category": category,
+          "created_at": DateTime.now().toIso8601String(),
+        };
+
+        if (parentId != null) {
+          body["parent_id"] = parentId;
+        }
+
+        return http.post(
+          Uri.parse("$_apiBaseUrl/content"),
+          headers: _headers,
+          body: jsonEncode(body),
+        );
+      }
+
+      http.Response r = await doRequest();
+
+      if ((r.statusCode == 400 || r.statusCode == 409 || r.statusCode == 500) &&
+          r.body.contains('content_key_key') &&
+          r.body.toLowerCase().contains('already exists')) {
+        requestKey = '${key}_${DateTime.now().millisecondsSinceEpoch}';
+        r = await doRequest();
+      }
+      if (r.statusCode == 200 || r.statusCode == 201) {
+        await fetchContent();
+        notifyListeners();
+        return true;
+      }
+
+      print('Error creating content: ${r.statusCode} - ${r.body}');
+      return false;
     } catch (e) {
       print('Error creating content: $e');
+      return false;
     }
   }
 

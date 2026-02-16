@@ -566,11 +566,15 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
                                 ),
                               ),
                               const Spacer(),
-                              Text(
-                                'Shared by ${proposal?['owner_name'] ?? proposal?['owner_email'] ?? 'Unknown'}',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey[600],
+                              Expanded(
+                                child: Text(
+                                  'Shared by ${proposal?['owner_name'] ?? proposal?['owner_email'] ?? 'Unknown'}',
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[600],
+                                  ),
                                 ),
                               ),
                             ],

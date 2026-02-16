@@ -22,6 +22,7 @@ try:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
     from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
     from io import BytesIO
     PDF_AVAILABLE = True
 except ImportError:
@@ -168,6 +169,8 @@ def create_notification(
 
             if 'notification_type' in column_names:
                 add_column('notification_type', notification_type)
+            if 'type' in column_names:
+                add_column('type', notification_type)
             if 'title' in column_names:
                 add_column('title', title)
             if 'message' in column_names:
@@ -383,7 +386,16 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
         print(f"⚠️ Failed to process mentions: {e}")
 
 
-def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
+def generate_proposal_pdf(
+    proposal_id,
+    title,
+    content,
+    client_name=None,
+    client_email=None,
+    signer_name=None,
+    signer_title=None,
+    signed_date=None,
+):
     """Generate PDF from proposal content"""
     if not PDF_AVAILABLE:
         raise Exception("ReportLab not installed. PDF generation unavailable.")
@@ -446,6 +458,91 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
             return [{"title": "Proposal", "body": structured.get("text")}]
 
         return []
+
+    def _find_cover_image_url(structured):
+        try:
+            if not isinstance(structured, dict):
+                return None
+
+            for key in (
+                'coverImageUrl',
+                'cover_image_url',
+                'coverUrl',
+                'cover_url',
+                'backgroundImageUrl',
+            ):
+                v = structured.get(key)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+
+            for section in _normalize_sections(structured) or []:
+                if not isinstance(section, dict):
+                    continue
+
+                is_cover = section.get('isCoverPage') or section.get('cover') or section.get('is_cover')
+                if is_cover:
+                    v = (
+                        section.get('backgroundImageUrl')
+                        or section.get('coverImageUrl')
+                        or section.get('coverUrl')
+                    )
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+
+                v = section.get('backgroundImageUrl')
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        except Exception:
+            return None
+        return None
+
+    def _fetch_cover_bytes(url: str):
+        if not url or not isinstance(url, str):
+            return None
+        url = url.strip()
+        if not (url.startswith('http://') or url.startswith('https://')):
+            return None
+        try:
+            import urllib.request
+
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                return resp.read()
+        except Exception:
+            return None
+
+    def _get_meta_dict(structured):
+        if not isinstance(structured, dict):
+            return {}
+        meta = structured.get('metadata')
+        if isinstance(meta, dict):
+            return meta
+        return {}
+
+    def _extract_logo_config(metadata: dict):
+        if not isinstance(metadata, dict):
+            return None, None, None, None
+        header_logo_url = metadata.get('headerLogoUrl') or metadata.get('header_logo_url')
+        footer_logo_url = metadata.get('footerLogoUrl') or metadata.get('footer_logo_url')
+        header_pos = (metadata.get('headerLogoPosition') or 'right')
+        footer_pos = (metadata.get('footerLogoPosition') or 'left')
+
+        if isinstance(header_logo_url, str):
+            header_logo_url = header_logo_url.strip()
+        else:
+            header_logo_url = None
+        if isinstance(footer_logo_url, str):
+            footer_logo_url = footer_logo_url.strip()
+        else:
+            footer_logo_url = None
+
+        header_pos = str(header_pos).strip().lower()
+        footer_pos = str(footer_pos).strip().lower()
+        if header_pos not in ('left', 'center', 'right'):
+            header_pos = 'right'
+        if footer_pos not in ('left', 'center', 'right'):
+            footer_pos = 'left'
+
+        return header_logo_url, footer_logo_url, header_pos, footer_pos
 
     _SKIP_KEYS = {
         'backgroundColor',
@@ -580,6 +677,14 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
     sections = _normalize_sections(structured)
     t_parse_ms = (time.perf_counter() - t_parse0) * 1000.0
 
+    cover_url = _find_cover_image_url(structured)
+    cover_bytes = _fetch_cover_bytes(cover_url) if cover_url else None
+
+    metadata = _get_meta_dict(structured)
+    header_logo_url, footer_logo_url, header_logo_pos, footer_logo_pos = _extract_logo_config(metadata)
+    header_logo_bytes = _fetch_cover_bytes(header_logo_url) if header_logo_url else None
+    footer_logo_bytes = _fetch_cover_bytes(footer_logo_url) if footer_logo_url else None
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -641,6 +746,7 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
         alignment=TA_LEFT,
         spaceAfter=6,
     )
+
     bullet_style = ParagraphStyle(
         "Bullet",
         parent=content_style,
@@ -649,16 +755,9 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
         spaceAfter=2,
     )
 
-    doc_title = (title or "Business Proposal").strip() or "Business Proposal"
-    elements.append(Paragraph(html.escape(doc_title), title_style))
-    meta_bits = [f"Proposal ID: {proposal_id}"]
-    if client_name:
-        meta_bits.append(f"Client: {client_name}")
-    if client_email:
-        meta_bits.append(f"Client Email: {client_email}")
-    meta_bits.append(f"Generated: {created_at.strftime('%Y-%m-%d %H:%M:%S')}")
-    elements.append(Paragraph(html.escape(" | ".join(meta_bits)), meta_style))
-    elements.append(Spacer(1, 0.2 * inch))
+    if cover_bytes:
+        elements.append(Spacer(1, 0.01 * inch))
+        elements.append(PageBreak())
 
     t_elements0 = time.perf_counter()
 
@@ -748,8 +847,44 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
     elements.append(Spacer(1, 0.15 * inch))
     elements.append(Paragraph("Date: _________________________________", content_style))
 
-    header_title = (title or "Untitled Proposal").strip() or "Untitled Proposal"
-    generated_label = created_at.strftime("Generated %Y-%m-%d %H:%M")
+    has_cover_page = bool(cover_bytes)
+    header_title = (title or "Proposal").strip() or "Proposal"
+
+    def _pos_x(pos: str, *, left_x: float, right_x: float, width: float):
+        if pos == 'left':
+            return left_x
+        if pos == 'center':
+            return (left_x + right_x) / 2.0 - (width / 2.0)
+        return right_x - width
+
+    def _draw_logo(c, _doc, *, img_bytes, y: float, height: float, pos: str):
+        if not img_bytes:
+            return
+        try:
+            page_width, _ = _doc.pagesize
+            img = ImageReader(BytesIO(img_bytes))
+            iw, ih = img.getSize()
+            if not iw or not ih:
+                return
+            width = height * (float(iw) / float(ih))
+            left_x = doc.leftMargin
+            right_x = page_width - doc.rightMargin
+            x = _pos_x(pos, left_x=left_x, right_x=right_x, width=width)
+            c.drawImage(img, x, y, width=width, height=height, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            return
+
+    def _draw_cover_page(c, _doc):
+        if not cover_bytes:
+            return
+        try:
+            page_width, page_height = _doc.pagesize
+            img = ImageReader(BytesIO(cover_bytes))
+            c.saveState()
+            c.drawImage(img, 0, 0, width=page_width, height=page_height, preserveAspectRatio=True, anchor='c')
+            c.restoreState()
+        except Exception:
+            pass
 
     class _NumberedCanvas(canvas.Canvas):
         def __init__(self, *args, **kwargs):
@@ -771,32 +906,25 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
         def _draw_header_footer(self, total_pages: int):
             page_width, page_height = doc.pagesize
             page_num = self.getPageNumber()
-
+            if has_cover_page and page_num == 1:
+                return
             self.saveState()
             self.setFont("Helvetica", 8)
             self.setFillColorRGB(0.25, 0.25, 0.25)
 
-            header_y = page_height - (0.6 * inch)
-            footer_y = 0.6 * inch
+            header_y = page_height - (0.75 * inch)
+            footer_y = 0.75 * inch
 
-            self.setStrokeColorRGB(0.8, 0.8, 0.8)
+            self.setStrokeColorRGB(0.85, 0.85, 0.85)
             self.setLineWidth(0.5)
             self.line(doc.leftMargin, header_y - 8, page_width - doc.rightMargin, header_y - 8)
             self.line(doc.leftMargin, footer_y + 8, page_width - doc.rightMargin, footer_y + 8)
 
-            header_left = header_title
-            if client_name:
-                header_left = f"{header_left} - {str(client_name).strip()}"
-            self.drawString(doc.leftMargin, header_y, header_left)
-            self.drawRightString(page_width - doc.rightMargin, header_y, generated_label)
+            _draw_logo(self, doc, img_bytes=header_logo_bytes, y=header_y - 6, height=0.28 * inch, pos=header_logo_pos)
+            self.drawString(doc.leftMargin, header_y, header_title)
 
-            footer_left = f"Proposal #{proposal_id}"
-            footer_center = client_email.strip() if isinstance(client_email, str) and client_email.strip() else ""
+            _draw_logo(self, doc, img_bytes=footer_logo_bytes, y=footer_y - 3, height=0.22 * inch, pos=footer_logo_pos)
             footer_right = f"Page {page_num} of {total_pages}"
-
-            self.drawString(doc.leftMargin, footer_y, footer_left)
-            if footer_center:
-                self.drawCentredString(page_width / 2.0, footer_y, footer_center)
             self.drawRightString(page_width - doc.rightMargin, footer_y, footer_right)
             self.restoreState()
 
@@ -804,6 +932,7 @@ def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_
     doc.build(
         elements,
         canvasmaker=_NumberedCanvas,
+        onFirstPage=_draw_cover_page,
     )
     t_build_ms = (time.perf_counter() - t_build0) * 1000.0
 
@@ -824,6 +953,13 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
     Create DocuSign envelope with redirect signing (works on HTTP)
     Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
     """
+    if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+        return {
+            'disabled': True,
+            'reason': 'docusign_disabled',
+            'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+        }
+
     # Re-check DocuSign availability in case import failed at module load
     try:
         from docusign_esign import (

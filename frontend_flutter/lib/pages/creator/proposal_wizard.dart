@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
 import '../../services/client_service.dart';
@@ -65,6 +66,22 @@ class _ProposalWizardPageState extends State<ProposalWizard>
 
   String _riskGateStatusUpper() {
     return (_riskAssessment['status'] ?? '').toString().trim().toUpperCase();
+  }
+
+  Map<String, dynamic> _parseAdditionalInfo(dynamic raw) {
+    if (raw == null) return {};
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.isEmpty) return {};
+      try {
+        final decoded = json.decode(s);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return {};
   }
 
   bool _hasRiskGateOverride() {
@@ -215,20 +232,35 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       _useManualEntry = client == null;
 
       if (client != null) {
+        final additional = _parseAdditionalInfo(client['additional_info']);
         // Auto-populate client details
         _formData['clientName'] =
             client['company_name'] ?? client['name'] ?? '';
         _formData['clientEmail'] = client['email'] ?? '';
-        _formData['clientHolding'] =
-            client['organization'] ?? client['holding'] ?? '';
-        _formData['clientAddress'] =
-            client['location'] ?? client['address'] ?? '';
-        _formData['clientContactName'] =
-            client['contact_person'] ?? client['contact_name'] ?? '';
-        _formData['clientContactEmail'] =
-            client['contact_email'] ?? client['email'] ?? '';
-        _formData['clientContactMobile'] =
-            client['phone'] ?? client['mobile'] ?? '';
+        _formData['clientHolding'] = client['organization'] ??
+            client['holding'] ??
+            additional['holding_information'] ??
+            additional['holdingInformation'] ??
+            '';
+        _formData['clientAddress'] = client['location'] ??
+            client['address'] ??
+            additional['address'] ??
+            '';
+        _formData['clientContactName'] = client['contact_person'] ??
+            client['contact_name'] ??
+            additional['client_contact_name'] ??
+            additional['clientContactName'] ??
+            '';
+        _formData['clientContactEmail'] = client['contact_email'] ??
+            additional['client_contact_email'] ??
+            additional['clientContactEmail'] ??
+            client['email'] ??
+            '';
+        _formData['clientContactMobile'] = client['phone'] ??
+            client['mobile'] ??
+            additional['client_contact_mobile'] ??
+            additional['clientContactMobile'] ??
+            '';
         _formData['clientId'] = client['id'];
       } else {
         // Clear fields when switching to manual entry
@@ -2723,6 +2755,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     return Directionality(
       textDirection: TextDirection.ltr,
       child: TextFormField(
+        key: ValueKey('$label::$value'),
         initialValue: value,
         readOnly: true,
         textDirection: TextDirection.ltr,

@@ -2,11 +2,12 @@
 Creator role routes - Content management, proposal CRUD, AI features, uploads
 """
 from flask import Blueprint, request, jsonify
-import io
-import json
+from flask_cors import cross_origin
 import os
-import re
+import json
 import traceback
+from datetime import datetime, timedelta, timezone
+import psycopg2
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
@@ -29,6 +30,14 @@ from api.utils.decorators import token_required
 from api.utils.ai_safety import AISafetyError
 
 bp = Blueprint('creator', __name__, url_prefix='')
+
+
+def _build_upload_base_url():
+    forwarded_proto = (request.headers.get('x-forwarded-proto') or '').split(',')[0].strip()
+    forwarded_host = (request.headers.get('x-forwarded-host') or '').split(',')[0].strip()
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}"
+    return request.host_url.rstrip('/')
 
 
 def _normalize_kb_filter(value):
@@ -459,9 +468,8 @@ Rules:
 # ============================================================================
 
 @bp.get("/content")
-@token_required
-def get_content(username=None):
-    """Get all content items"""
+def get_content():
+    """Get all content items (no auth for content library)"""
     try:
         category = request.args.get('category', None)
         with get_db_connection() as conn:
@@ -502,9 +510,8 @@ def get_content(username=None):
         return {'detail': str(e)}, 500
 
 @bp.post("/content")
-@token_required
-def create_content(username=None):
-    """Create a new content item"""
+def create_content():
+    """Create a new content item (no auth for content library)"""
     try:
         data = request.get_json()
         
@@ -969,8 +976,16 @@ def send_to_client(username=None, proposal_id=None):
 # ============================================================================
 
 @bp.post("/upload/image")
-@token_required
-def upload_image(username=None):
+@cross_origin(
+    origins=[
+        "http://localhost:8081",
+        "http://localhost:8082",
+        "http://127.0.0.1:8081",
+        "http://127.0.0.1:8082",
+    ],
+    supports_credentials=True,
+)
+def upload_image():
     """Upload an image to Cloudinary"""
     try:
         if 'file' not in request.files:
@@ -993,9 +1008,47 @@ def upload_image(username=None):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+
+@bp.post("/upload/image/local")
+@cross_origin(origins=["http://localhost:8081", "https://backend-sow.onrender.com"], supports_credentials=True)
+def upload_image_local():
+    """Temporary local upload: save image in UPLOAD_FOLDER and return a public URL."""
+    try:
+        if 'file' not in request.files:
+            return {'detail': 'No file provided'}, 400
+
+        file = request.files['file']
+        filename = file.filename or 'upload'
+
+        from werkzeug.utils import secure_filename
+        import secrets
+        ext = ''
+        if '.' in filename:
+            ext = '.' + filename.rsplit('.', 1)[1].lower()
+
+        safe_name = secure_filename(filename.rsplit('.', 1)[0]) or 'upload'
+        stored_name = f"{safe_name}_{secrets.token_hex(8)}{ext}"
+
+        upload_folder = os.getenv('UPLOAD_FOLDER', './uploads')
+        os.makedirs(upload_folder, exist_ok=True)
+        file_path = os.path.join(upload_folder, stored_name)
+        file.save(file_path)
+
+        base_url = _build_upload_base_url()
+        file_url = f"{base_url}/uploads/{stored_name}"
+
+        return {
+            'success': True,
+            'url': file_url,
+            'public_id': stored_name,
+            'filename': stored_name,
+            'storage': 'local',
+        }, 201
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
 @bp.post("/upload/template")
-@token_required
-def upload_template(username=None):
+def upload_template():
     """Upload a template to Cloudinary"""
     try:
         if 'file' not in request.files:
@@ -1758,43 +1811,63 @@ def submit_ai_feedback(username=None):
 @bp.get("/api/proposals/<int:proposal_id>/collaborators")
 @bp.get("/proposals/<int:proposal_id>/collaborators")
 @token_required
-def get_proposal_collaborators(username=None, proposal_id=None):
+def get_proposal_collaborators(username=None, proposal_id=None, user_id=None, email=None):
     """Get all collaborators for a proposal"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID from username (try multiple times in case user was just created)
-            user_row = None
-            for attempt in range(3):
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user_row = cursor.fetchone()
-                if user_row:
-                    break
-                # If user not found and this is the first attempt, wait a bit (user might have just been created)
-                if attempt == 0:
-                    import time
-                    time.sleep(0.1)  # Small delay to allow transaction to commit
-            
-            if not user_row:
-                print(f"❌ User lookup failed after 3 attempts for username: {username}")
-                return {'detail': 'User not found'}, 404
-            
-            # Handle both tuple and dict results (RealDictCursor returns dict)
-            user_id = user_row['id'] if isinstance(user_row, dict) else (user_row[0] if isinstance(user_row, (tuple, list)) else None)
-            if not user_id:
-                print(f"❌ Could not extract user_id from user_row: {user_row}")
-                return {'detail': 'User not found'}, 404
+            effective_user_id = user_id
+            if not effective_user_id:
+                user_row = None
+                for attempt in range(3):
+                    if email:
+                        cursor.execute(
+                            'SELECT id FROM users WHERE email = %s ORDER BY id DESC LIMIT 1',
+                            (email,),
+                        )
+                    else:
+                        cursor.execute(
+                            'SELECT id FROM users WHERE username = %s ORDER BY id DESC LIMIT 1',
+                            (username,),
+                        )
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        break
+                    if attempt == 0:
+                        import time
+                        time.sleep(0.1)
+
+                if not user_row:
+                    print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                    return {'detail': 'User not found'}, 404
+
+                effective_user_id = user_row['id'] if isinstance(user_row, dict) else (user_row[0] if isinstance(user_row, (tuple, list)) else None)
+                if not effective_user_id:
+                    print(f"❌ Could not extract user_id from user_row: {user_row}")
+                    return {'detail': 'User not found'}, 404
             
             # Verify ownership
-            cursor.execute('SELECT owner_id FROM proposals WHERE id = %s', (proposal_id,))
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            proposal_columns = [row['column_name'] if isinstance(row, dict) else row[0] for row in cursor.fetchall()]
+            owner_col = 'owner_id' if 'owner_id' in proposal_columns else ('user_id' if 'user_id' in proposal_columns else None)
+            if not owner_col:
+                return {'detail': 'Proposals table is missing owner column'}, 500
+
+            cursor.execute(f'SELECT {owner_col} as owner_id FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
             # Handle both dict and tuple results
             owner_id = proposal['owner_id'] if isinstance(proposal, dict) else proposal[0]
-            if owner_id != user_id:
+            if str(owner_id) != str(effective_user_id):
                 return {'detail': 'Access denied'}, 403
             
             # Get active collaborators from collaborators table
@@ -1839,53 +1912,75 @@ def get_proposal_collaborators(username=None, proposal_id=None):
 @bp.post("/api/proposals/<int:proposal_id>/invite")
 @bp.post("/proposals/<int:proposal_id>/invite")
 @token_required
-def invite_collaborator(username=None, proposal_id=None):
+def invite_collaborator(username=None, proposal_id=None, user_id=None, email=None):
     """Invite a collaborator to a proposal"""
     try:
         data = request.get_json()
-        email = data.get('email')
+        auth_email = email
+        invited_email = data.get('email')
         
-        if not email:
+        if not invited_email:
             return {'detail': 'Email is required'}, 400
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID from username (try multiple times in case user was just created)
-            user_row = None
-            for attempt in range(3):
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user_row = cursor.fetchone()
-                if user_row:
-                    break
-                # If user not found and this is the first attempt, wait a bit (user might have just been created)
-                if attempt == 0:
-                    import time
-                    time.sleep(0.1)  # Small delay to allow transaction to commit
-            
-            if not user_row:
-                print(f"❌ User lookup failed after 3 attempts for username: {username}")
-                return {'detail': 'User not found'}, 404
-            # Handle both tuple and dict results
-            user_id = user_row[0] if isinstance(user_row, (tuple, list)) else user_row.get('id') if isinstance(user_row, dict) else None
-            if not user_id:
-                print(f"❌ Could not extract user_id from user_row: {user_row}")
-                return {'detail': 'User not found'}, 404
+            effective_user_id = user_id
+            if not effective_user_id:
+                user_row = None
+                for attempt in range(3):
+                    if auth_email:
+                        cursor.execute(
+                            'SELECT id FROM users WHERE lower(email) = lower(%s) ORDER BY id DESC LIMIT 1',
+                            (auth_email,),
+                        )
+                    else:
+                        cursor.execute(
+                            'SELECT id FROM users WHERE username = %s ORDER BY id DESC LIMIT 1',
+                            (username,),
+                        )
+                    user_row = cursor.fetchone()
+                    if user_row:
+                        break
+                    if attempt == 0:
+                        import time
+                        time.sleep(0.1)
+
+                if not user_row:
+                    print(f"❌ User lookup failed after 3 attempts for username: {username}")
+                    return {'detail': 'User not found'}, 404
+
+                effective_user_id = user_row.get('id') if isinstance(user_row, dict) else (user_row[0] if isinstance(user_row, (tuple, list)) else None)
+                if not effective_user_id:
+                    print(f"❌ Could not extract user_id from user_row: {user_row}")
+                    return {'detail': 'User not found'}, 404
             
             # Verify ownership
-            cursor.execute('SELECT owner_id, title FROM proposals WHERE id = %s', (proposal_id,))
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            proposal_columns = [row['column_name'] if isinstance(row, dict) else row[0] for row in cursor.fetchall()]
+            owner_col = 'owner_id' if 'owner_id' in proposal_columns else ('user_id' if 'user_id' in proposal_columns else None)
+            if not owner_col:
+                return {'detail': 'Proposals table is missing owner column'}, 500
+
+            cursor.execute(f'SELECT {owner_col} as owner_id, title FROM proposals WHERE id = %s', (proposal_id,))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            if proposal['owner_id'] != user_id:
+            if str(proposal.get('owner_id')) != str(effective_user_id):
                 return {'detail': 'Access denied'}, 403
             
             # Check if invitation already exists
             cursor.execute("""
                 SELECT id FROM collaboration_invitations
                 WHERE proposal_id = %s AND invited_email = %s
-            """, (proposal_id, email))
+            """, (proposal_id, invited_email))
             existing = cursor.fetchone()
             if existing:
                 return {'detail': 'Invitation already sent to this email'}, 400
@@ -1894,12 +1989,7 @@ def invite_collaborator(username=None, proposal_id=None):
             import secrets
             access_token = secrets.token_urlsafe(32)
             
-            # Get the user ID from the users table (invited_by is required)
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
-                return {'detail': 'User not found'}, 404
-            invited_by_user_id = user_row['id']
+            invited_by_user_id = effective_user_id
             
             # All collaborators get 'edit' permission (full access: edit, comment, suggest)
             permission_level = 'edit'
@@ -1911,7 +2001,7 @@ def invite_collaborator(username=None, proposal_id=None):
                 VALUES (%s, %s, %s, %s, %s, 'pending')
                 RETURNING id, proposal_id, invited_email, permission_level, 
                           status, invited_at, access_token
-            """, (proposal_id, email, invited_by_user_id, permission_level, access_token))
+            """, (proposal_id, invited_email, invited_by_user_id, permission_level, access_token))
             
             invitation = cursor.fetchone()
             conn.commit()
@@ -1938,15 +2028,15 @@ def invite_collaborator(username=None, proposal_id=None):
                 """
                 
                 send_email(
-                    to_email=email,
+                    to_email=invited_email,
                     subject=f"Collaboration Invitation: {proposal['title']}",
                     html_content=email_body
                 )
                 email_sent = True
-                print(f"✅ Invitation email sent successfully to {email}")
+                print(f"✅ Invitation email sent successfully to {invited_email}")
             except Exception as e:
                 email_error = str(e)
-                print(f"❌ Error sending invitation email to {email}: {email_error}")
+                print(f"❌ Error sending invitation email to {invited_email}: {email_error}")
                 print(f"⚠️ Email service may not be configured. Check SMTP settings.")
                 traceback.print_exc()
             

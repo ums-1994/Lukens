@@ -20,13 +20,11 @@ bp = Blueprint('approver', __name__)
 # APPROVER ROUTES
 # ============================================================================
 
-@bp.route("/api/proposals/pending_approval", methods=['OPTIONS'])
 @bp.route("/proposals/pending_approval", methods=['OPTIONS'])
 def options_pending_approvals():
     """Handle CORS preflight for pending approvals endpoint"""
     return {}, 200
 
-@bp.get("/api/proposals/pending_approval")
 @bp.get("/proposals/pending_approval")
 @token_required
 def get_pending_approvals(username=None):
@@ -141,7 +139,6 @@ def get_pending_approvals(username=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/proposals/<int:proposal_id>/approve")
 @bp.post("/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username=None, proposal_id=None):
@@ -510,18 +507,30 @@ def approve_proposal(username=None, proposal_id=None):
                                 return_url=return_url,
                             )
 
-                            signing_url = envelope_result['signing_url']
-                            envelope_id = envelope_result['envelope_id']
+                            if not isinstance(envelope_result, dict):
+                                raise Exception(f"Unexpected DocuSign response type: {type(envelope_result).__name__}")
+
+                            if envelope_result.get('disabled'):
+                                raise Exception(envelope_result.get('detail') or 'DocuSign is disabled on this server')
+
+                            signing_url = envelope_result.get('signing_url')
+                            envelope_id = envelope_result.get('envelope_id')
                             envelope_status = envelope_result.get('envelope_status', {})
                             
                             print(f"✅ DocuSign envelope created successfully!")
                             print(f"   Envelope ID: {envelope_id}")
-                            print(f"   Signing URL: {signing_url[:50]}...")
+                            if signing_url:
+                                print(f"   Signing URL: {signing_url[:50]}...")
+                            else:
+                                print("⚠️  WARNING: DocuSign did not return a signing URL")
                             print(f"   Envelope Status: {envelope_status.get('status', 'unknown')}")
                             
                             # Verify envelope was actually created
                             if not envelope_id:
                                 raise Exception("DocuSign envelope creation returned no envelope ID")
+
+                            if not signing_url:
+                                raise Exception("DocuSign recipient view returned no URL")
                             
                             # Check envelope status
                             if envelope_status.get('status', '').lower() != 'sent':
@@ -678,20 +687,24 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"[EMAIL] ❌ Failed to send proposal email to {effective_client_email}")
                             print(f"   Check SENDGRID_* or SMTP_* env vars and logs above for details")
                             return {
-                                'detail': 'Proposal approved but email failed to send (secure link not delivered). Fix email configuration and retry.',
-                                'error': 'email_send_failed',
+                                'detail': 'Proposal approved but email failed to send (secure link not delivered). Fix email configuration and retry, or manually share client_link.',
+                                'warning': 'email_send_failed',
                                 'proposal_id': proposal_id,
                                 'client_email': effective_client_email,
-                            }, 502
+                                'client_link': client_link,
+                                'email_sent': False,
+                            }, 200
                     except Exception as email_error:
                         print(f"[EMAIL] Error sending proposal email: {email_error}")
                         traceback.print_exc()
                         return {
-                            'detail': 'Proposal approved but email failed to send due to server error. Check email configuration and retry.',
-                            'error': 'email_send_exception',
+                            'detail': 'Proposal approved but email failed to send due to server error. Check email configuration and retry, or manually share client_link.',
+                            'warning': 'email_send_exception',
                             'proposal_id': proposal_id,
                             'client_email': effective_client_email,
-                        }, 502
+                            'client_link': client_link,
+                            'email_sent': False,
+                        }, 200
                 
                 return {
                     'detail': 'Proposal approved and sent to client',
@@ -706,13 +719,12 @@ def approve_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/proposals/<int:proposal_id>/reject")
 @bp.post("/proposals/<int:proposal_id>/reject")
 @token_required
 def reject_proposal(username=None, proposal_id=None):
-    """Reject proposal and send back to draft"""
+    """Reject proposal and send back to creator"""
     try:
-        data = request.get_json(force=True, silent=True) or {}
+        data = request.get_json()
         comments = data.get('comments', '')
         
         with get_db_connection() as conn:

@@ -25,6 +25,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalTitle;
   final String? initialTitle;
   final Map<String, dynamic>? aiGeneratedSections;
+  final String? initialCoverImageUrl;
   final bool readOnly; // For approver view-only mode
   final bool
       isCollaborator; // For collaborator mode - hide navigation, show only editor
@@ -36,6 +37,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.proposalTitle,
     this.initialTitle,
     this.aiGeneratedSections,
+    this.initialCoverImageUrl,
     this.readOnly = false, // Default to editable
     this.isCollaborator = false, // Default to false
     this.requireVersionDescription = false,
@@ -175,8 +177,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
       final initialSection = DocumentSection(
-        title: 'Untitled Section',
+        title: widget.initialCoverImageUrl != null ? '' : 'Untitled Section',
         content: '',
+        backgroundImageUrl: widget.initialCoverImageUrl,
+        sectionType: widget.initialCoverImageUrl != null ? 'cover' : 'content',
+        isCoverPage: widget.initialCoverImageUrl != null,
       );
       _sections.add(initialSection);
 
@@ -197,6 +202,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Get auth token and load existing data if editing
     _initializeAuth();
+  }
+
+  bool _isTruthy(dynamic value) {
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1' || v == 't' || v == 'yes';
+    }
+    return false;
   }
 
   Future<void> _initializeAuth() async {
@@ -410,23 +425,36 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         _proposalData = Map<String, dynamic>.from(proposal);
       });
 
+      // Always set basic fields even if content is missing or not JSON
+      setState(() {
+        _proposalStatus = proposal['status'] ?? 'draft';
+        _clientNameController.text = (proposal['client_name'] ?? '').toString();
+        _clientEmailController.text =
+            (proposal['client_email'] ?? '').toString();
+        _titleController.text =
+            (proposal['title'] ?? 'Untitled Document').toString();
+      });
+
       // Parse the content JSON
       if (proposal['content'] != null) {
         try {
-          final contentData = json.decode(proposal['content']);
+          final dynamic rawContent = proposal['content'];
+          final dynamic contentData = rawContent is String
+              ? json.decode(rawContent)
+              : (rawContent is Map
+                  ? Map<String, dynamic>.from(rawContent)
+                  : null);
+
+          if (contentData == null) {
+            throw Exception('Unsupported content format');
+          }
 
           setState(() {
             // Set title
-            _titleController.text = contentData['title'] ??
-                proposal['title'] ??
-                'Untitled Document';
-
-            // Load proposal status
-            _proposalStatus = proposal['status'] ?? 'draft';
-
-            // Load client information
-            _clientNameController.text = proposal['client_name'] ?? '';
-            _clientEmailController.text = proposal['client_email'] ?? '';
+            _titleController.text = (contentData['title'] ??
+                    proposal['title'] ??
+                    'Untitled Document')
+                .toString();
 
             // Clear existing sections
             for (var section in _sections) {
@@ -441,17 +469,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             final List<dynamic> savedSections = contentData['sections'] ?? [];
             if (savedSections.isNotEmpty) {
               for (var sectionData in savedSections) {
+                final String sectionTypeRaw =
+                    (sectionData['sectionType'] ?? 'content').toString();
+                final String sectionTypeNormalized =
+                    sectionTypeRaw.trim().toLowerCase();
+                final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
+                    sectionTypeNormalized == 'cover';
                 final newSection = DocumentSection(
-                  title: sectionData['title'] ?? 'Untitled Section',
+                  title: (sectionData['title'] ??
+                          (isCover ? '' : 'Untitled Section'))
+                      .toString(),
                   content: sectionData['content'] ?? '',
                   backgroundColor: sectionData['backgroundColor'] != null
                       ? Color(sectionData['backgroundColor'] as int)
                       : Colors.white,
                   backgroundImageUrl:
                       sectionData['backgroundImageUrl'] as String?,
-                  sectionType:
-                      sectionData['sectionType'] as String? ?? 'content',
-                  isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+                  sectionType: sectionTypeRaw,
+                  isCoverPage: isCover,
                   inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
                           ?.map((img) =>
                               InlineImage.fromJson(img as Map<String, dynamic>))
@@ -518,6 +553,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
+
+          // Fallback: treat content as plain text so editor is never blank
+          final String fallbackText = proposal['content']?.toString() ?? '';
+          setState(() {
+            for (var section in _sections) {
+              section.controller.dispose();
+              section.titleController.dispose();
+              section.contentFocus.dispose();
+              section.titleFocus.dispose();
+            }
+            _sections.clear();
+
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: fallbackText,
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
+        }
+      } else {
+        // If backend returned no content, ensure we still have an editable section
+        if (_sections.isEmpty) {
+          setState(() {
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: '',
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
         }
       }
     } catch (e) {
@@ -880,7 +952,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickHeaderLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
@@ -905,7 +981,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickFooterLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
@@ -1095,7 +1175,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        textOnly: true,
+        dialogTitle: 'Insert Text Block',
+      ),
     ).then((selectedModule) {
       if (selectedModule != null && _selectedSectionIndex < _sections.length) {
         // Insert the selected library content into the current section
@@ -2566,15 +2649,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
     for (var sectionData in savedSections) {
+      final String sectionTypeRaw =
+          (sectionData['sectionType'] ?? 'content').toString();
+      final String sectionTypeNormalized = sectionTypeRaw.trim().toLowerCase();
+      final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
+          sectionTypeNormalized == 'cover';
       final newSection = DocumentSection(
-        title: sectionData['title'] ?? 'Untitled Section',
+        title: (sectionData['title'] ?? (isCover ? '' : 'Untitled Section'))
+            .toString(),
         content: sectionData['content'] ?? '',
         backgroundColor: sectionData['backgroundColor'] != null
             ? Color(sectionData['backgroundColor'] as int)
             : Colors.white,
         backgroundImageUrl: sectionData['backgroundImageUrl'] as String?,
-        sectionType: sectionData['sectionType'] as String? ?? 'content',
-        isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+        sectionType: sectionTypeRaw,
+        isCoverPage: isCover,
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
             ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
             .toList(),
@@ -4792,11 +4881,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.length,
       (index) {
         final section = _sections[index];
-        final rawTitle = _titleController.text.trim();
-        final displayTitle = rawTitle.isEmpty || rawTitle == 'Untitled Document'
-            ? null
-            : rawTitle;
         final headerLogoWidget = _buildHeaderLogoWidget();
+        final isCover = section.isCoverPage ||
+            section.sectionType.trim().toLowerCase() == 'cover';
         return Container(
           width: pageWidth,
           height: pageHeight,
@@ -4809,10 +4896,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ? DecorationImage(
                     image: NetworkImage(section.backgroundImageUrl!),
                     fit: BoxFit.cover,
-                    opacity: 0.7, // Background image visibility
+                    opacity: isCover ? 1.0 : 0.7, // Full-bleed cover image
                   )
                 : null,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius:
+                isCover ? BorderRadius.zero : BorderRadius.circular(4),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.15),
@@ -4826,39 +4914,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ],
           ),
-          child: Column(
-            children: [
-              DocumentHeader(
-                title: displayTitle,
-                subtitle: null,
-                leading:
-                    _headerLogoPosition == 'left' ? headerLogoWidget : null,
-                center:
-                    _headerLogoPosition == 'center' ? headerLogoWidget : null,
-                trailing:
-                    _headerLogoPosition == 'right' ? headerLogoWidget : null,
-                backgroundImageUrl: _headerBackgroundImageUrl,
-                onTap: _pickHeaderLogo,
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 60,
-                      vertical: 24,
+          child: isCover
+              ? const SizedBox.expand()
+              : Column(
+                  children: [
+                    DocumentHeader(
+                      title: null,
+                      subtitle: null,
+                      leading: _headerLogoPosition == 'left'
+                          ? headerLogoWidget
+                          : null,
+                      center: _headerLogoPosition == 'center'
+                          ? headerLogoWidget
+                          : null,
+                      trailing: _headerLogoPosition == 'right'
+                          ? headerLogoWidget
+                          : null,
+                      backgroundImageUrl: _headerBackgroundImageUrl,
+                      onTap: _pickHeaderLogo,
                     ),
-                    child: _buildSectionContent(index),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 60,
+                            vertical: 24,
+                          ),
+                          child: _buildSectionContent(index),
+                        ),
+                      ),
+                    ),
+                    _buildDraggableFooter(
+                      pageNumber: index + 1,
+                      totalPages: _sections.length,
+                      showDivider: true,
+                      enableDragging: true,
+                    ),
+                  ],
                 ),
-              ),
-              _buildDraggableFooter(
-                pageNumber: index + 1,
-                totalPages: _sections.length,
-                showDivider: true,
-                enableDragging: true,
-              ),
-            ],
-          ),
         );
       },
     );
@@ -8573,13 +8666,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               // Match A4 layout used in _buildA4Pages
                               const double pageWidth = 900;
                               const double pageHeight = 1273;
-
-                              final rawTitle = _titleController.text.trim();
-                              final displayTitle = rawTitle.isEmpty ||
-                                      rawTitle == 'Untitled Document'
-                                  ? null
-                                  : rawTitle;
                               final headerLogoWidget = _buildHeaderLogoWidget();
+                              final isCover = section.isCoverPage ||
+                                  section.sectionType.trim().toLowerCase() ==
+                                      'cover';
 
                               return Container(
                                 width: pageWidth,
@@ -8594,10 +8684,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                           image: NetworkImage(
                                               section.backgroundImageUrl!),
                                           fit: BoxFit.cover,
-                                          opacity: 0.7,
+                                          opacity: isCover ? 1.0 : 0.7,
                                         )
                                       : null,
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: isCover
+                                      ? BorderRadius.zero
+                                      : BorderRadius.circular(4),
                                   boxShadow: [
                                     BoxShadow(
                                       color:
@@ -8607,84 +8699,97 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                     ),
                                   ],
                                 ),
-                                child: Column(
-                                  children: [
-                                    DocumentHeader(
-                                      title: displayTitle,
-                                      subtitle: null,
-                                      leading: _headerLogoPosition == 'left'
-                                          ? headerLogoWidget
-                                          : null,
-                                      center: _headerLogoPosition == 'center'
-                                          ? headerLogoWidget
-                                          : null,
-                                      trailing: _headerLogoPosition == 'right'
-                                          ? headerLogoWidget
-                                          : null,
-                                      backgroundImageUrl:
-                                          _headerBackgroundImageUrl,
-                                      showDivider: false,
-                                    ),
-                                    Expanded(
-                                      child: SingleChildScrollView(
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 60,
-                                            vertical: 24,
+                                child: isCover
+                                    ? const SizedBox.expand()
+                                    : Column(
+                                        children: [
+                                          DocumentHeader(
+                                            title: null,
+                                            subtitle: null,
+                                            leading:
+                                                _headerLogoPosition == 'left'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            center:
+                                                _headerLogoPosition == 'center'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            trailing:
+                                                _headerLogoPosition == 'right'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            backgroundImageUrl:
+                                                _headerBackgroundImageUrl,
+                                            showDivider: false,
                                           ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              // Section title
-                                              Text(
-                                                section.titleController.text
-                                                        .isEmpty
-                                                    ? 'Untitled Section'
-                                                    : section
-                                                        .titleController.text,
-                                                style: const TextStyle(
-                                                  fontSize: 24,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Color(0xFF1A3A52),
+                                          Expanded(
+                                            child: SingleChildScrollView(
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 60,
+                                                  vertical: 24,
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    // Section title
+                                                    Text(
+                                                      section.titleController
+                                                              .text.isEmpty
+                                                          ? 'Untitled Section'
+                                                          : section
+                                                              .titleController
+                                                              .text,
+                                                      style: const TextStyle(
+                                                        fontSize: 24,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color:
+                                                            Color(0xFF1A3A52),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 24),
+                                                    // Section content
+                                                    Text(
+                                                      section.controller.text
+                                                              .isEmpty
+                                                          ? '(No content in this section)'
+                                                          : section
+                                                              .controller.text,
+                                                      style: const TextStyle(
+                                                        fontSize: 14,
+                                                        color:
+                                                            Color(0xFF1A1A1A),
+                                                        height: 1.8,
+                                                        letterSpacing: 0.2,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 20),
+                                                    if (section
+                                                        .tables.isNotEmpty) ...[
+                                                      ...section.tables
+                                                          .map((table) =>
+                                                              _buildReadOnlyTable(
+                                                                  table))
+                                                          .toList(),
+                                                      const SizedBox(
+                                                          height: 12),
+                                                    ],
+                                                  ],
                                                 ),
                                               ),
-                                              const SizedBox(height: 24),
-                                              // Section content
-                                              Text(
-                                                section.controller.text.isEmpty
-                                                    ? '(No content in this section)'
-                                                    : section.controller.text,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  color: Color(0xFF1A1A1A),
-                                                  height: 1.8,
-                                                  letterSpacing: 0.2,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 20),
-                                              if (section
-                                                  .tables.isNotEmpty) ...[
-                                                ...section.tables
-                                                    .map((table) =>
-                                                        _buildReadOnlyTable(
-                                                            table))
-                                                    .toList(),
-                                                const SizedBox(height: 12),
-                                              ],
-                                            ],
+                                            ),
                                           ),
-                                        ),
+                                          _buildDraggableFooter(
+                                            pageNumber: index + 1,
+                                            totalPages: _sections.length,
+                                            showDivider: false,
+                                            enableDragging: false,
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                    _buildDraggableFooter(
-                                      pageNumber: index + 1,
-                                      totalPages: _sections.length,
-                                      showDivider: false,
-                                      enableDragging: false,
-                                    ),
-                                  ],
-                                ),
                               );
                             }).toList(),
                           ],
