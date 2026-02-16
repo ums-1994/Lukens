@@ -2,6 +2,7 @@
 Client management routes
 """
 from flask import Blueprint, request, jsonify
+import json
 import os
 import secrets
 import traceback
@@ -616,12 +617,29 @@ def create_client(username=None):
         contact_person = (data.get('contact_person') or '').strip()
         email = (data.get('email') or '').strip()
         phone = (data.get('phone') or '').strip()
+        holding_information = (data.get('holding_information') or '').strip()
+        address = (data.get('address') or '').strip()
+        client_contact_email = (data.get('client_contact_email') or '').strip()
+        client_contact_mobile = (data.get('client_contact_mobile') or '').strip()
 
         if not company_name or not email:
             return jsonify({"error": "Company name and email are required"}), 400
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='clients'
+                """
+            )
+            clients_columns = {
+                (row[0] if isinstance(row, tuple) else row.get('column_name'))
+                for row in cursor.fetchall()
+            }
+            clients_columns = {c for c in clients_columns if c}
 
             cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
             user_row = cursor.fetchone()
@@ -633,19 +651,70 @@ def create_client(username=None):
             if user_role not in ['finance', 'admin', 'ceo']:
                 return jsonify({"error": "Insufficient permissions"}), 403
 
+            additional_info = None
+            if 'additional_info' in clients_columns:
+                additional_info_obj = {
+                    'holding_information': holding_information or None,
+                    'address': address or None,
+                    'client_contact_email': client_contact_email or None,
+                    'client_contact_mobile': client_contact_mobile or None,
+                }
+                additional_info_obj = {
+                    k: v for k, v in additional_info_obj.items() if v is not None
+                }
+                # Serialize to JSON for compatibility with both json/jsonb and text columns
+                additional_info = json.dumps(additional_info_obj) if additional_info_obj else None
+
+            insert_fields = ['company_name', 'email', 'status', 'created_by']
+            insert_values = [company_name, email, 'active', user_id]
+            update_set_parts = [
+                'company_name = EXCLUDED.company_name',
+                'status = EXCLUDED.status',
+                'updated_at = CURRENT_TIMESTAMP',
+            ]
+
+            if 'contact_person' in clients_columns:
+                insert_fields.insert(1, 'contact_person')
+                insert_values.insert(1, contact_person or None)
+                update_set_parts.insert(1, 'contact_person = EXCLUDED.contact_person')
+
+            if 'phone' in clients_columns:
+                insert_fields.insert(2, 'phone')
+                insert_values.insert(2, phone or None)
+                update_set_parts.insert(2, 'phone = EXCLUDED.phone')
+
+            if 'additional_info' in clients_columns:
+                insert_fields.append('additional_info')
+                insert_values.append(additional_info)
+                update_set_parts.insert(
+                    len(update_set_parts) - 1,
+                    'additional_info = COALESCE(EXCLUDED.additional_info, clients.additional_info)'
+                )
+
+            returning_fields = [
+                'id',
+                'company_name',
+                'email',
+                'status',
+                'created_at',
+                'updated_at',
+            ]
+            if 'contact_person' in clients_columns:
+                returning_fields.insert(2, 'contact_person')
+            if 'phone' in clients_columns:
+                returning_fields.insert(4, 'phone')
+            if 'additional_info' in clients_columns:
+                returning_fields.insert(-3, 'additional_info')
+
             cursor.execute(
-                """
-                INSERT INTO clients (company_name, contact_person, email, phone, status, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                f"""
+                INSERT INTO clients ({', '.join(insert_fields)})
+                VALUES ({', '.join(['%s'] * len(insert_fields))})
                 ON CONFLICT (email) DO UPDATE SET
-                    company_name = EXCLUDED.company_name,
-                    contact_person = EXCLUDED.contact_person,
-                    phone = EXCLUDED.phone,
-                    status = EXCLUDED.status,
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING id, company_name, contact_person, email, phone, status, created_at, updated_at
+                    {', '.join(update_set_parts)}
+                RETURNING {', '.join(returning_fields)}
                 """,
-                (company_name, contact_person or None, email, phone or None, 'active', user_id),
+                tuple(insert_values),
             )
             client = cursor.fetchone()
             conn.commit()

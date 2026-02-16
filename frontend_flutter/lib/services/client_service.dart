@@ -20,6 +20,10 @@ class ClientService {
     String? contactPerson,
     required String email,
     String? phone,
+    String? holdingInformation,
+    String? address,
+    String? clientContactEmail,
+    String? clientContactMobile,
   }) async {
     try {
       final response = await http.post(
@@ -30,6 +34,10 @@ class ClientService {
           'contact_person': contactPerson,
           'email': email,
           'phone': phone,
+          'holding_information': holdingInformation,
+          'address': address,
+          'client_contact_email': clientContactEmail,
+          'client_contact_mobile': clientContactMobile,
         }),
       );
 
