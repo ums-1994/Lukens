@@ -159,6 +159,7 @@ from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
+from api.routes.finance import bp as finance_bp
 from api.utils.decorators import token_required as firebase_token_required
 from api.utils.database import get_db_connection as shared_get_db_connection
 
@@ -174,6 +175,7 @@ app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp, url_prefix='/api/risk-gate')
+app.register_blueprint(finance_bp, url_prefix='/api')
 
 # Expose upload and content library routes at root (no /api prefix) for frontend compatibility
 from api.routes.creator import (

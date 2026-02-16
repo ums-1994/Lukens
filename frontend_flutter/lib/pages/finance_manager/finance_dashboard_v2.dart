@@ -1,5 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
@@ -23,10 +25,117 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   final ScrollController _scrollController = ScrollController();
   String _currentTab = 'proposals'; // 'proposals' or 'clients'
 
+  bool _isMetricsLoading = false;
+  String? _metricsError;
+  Map<String, dynamic>? _financeMetrics;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+  }
+
+  Widget _buildNeedsAttention(List<Map<String, dynamic>> items) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: PremiumTheme.darkBg2.withValues(alpha: 0.85),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded,
+                  color: Colors.orange, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Needs Attention',
+                  style: PremiumTheme.titleMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'High value proposals stuck in finance queue',
+            style: PremiumTheme.bodyMedium
+                .copyWith(color: PremiumTheme.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          for (final it in items.take(6)) ...[
+            _attentionRow(it),
+            if (it != items.take(6).last) const SizedBox(height: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _attentionRow(Map<String, dynamic> it) {
+    final title = (it['title'] ?? 'Untitled').toString();
+    final client = (it['client_name'] ?? it['client'] ?? '').toString();
+    final days = (it['days_in_stage'] is num)
+        ? (it['days_in_stage'] as num).toInt()
+        : int.tryParse((it['days_in_stage'] ?? '').toString());
+    final budget = (it['budget'] is num)
+        ? (it['budget'] as num).toDouble()
+        : double.tryParse((it['budget'] ?? '').toString()) ?? 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white.withValues(alpha: 0.04),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: PremiumTheme.bodyMedium
+                      .copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  client.isEmpty
+                      ? (days != null ? '$days days in queue' : 'In queue')
+                      : (days != null ? '$client • $days days in queue' : client),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: PremiumTheme.bodySmall
+                      .copyWith(color: Colors.white.withValues(alpha: 0.75)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            _formatCurrency(budget),
+            style: PremiumTheme.bodyMedium
+                .copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -58,10 +167,50 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         app.fetchProposals(),
         app.fetchDashboard(),
       ]);
+
+      await _fetchFinanceMetrics(app);
     } catch (e) {
       debugPrint('Finance dashboard load error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchFinanceMetrics(AppState app) async {
+    if (_isMetricsLoading) return;
+    final token = app.authToken ?? AuthService.token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() {
+      _isMetricsLoading = true;
+      _metricsError = null;
+    });
+
+    try {
+      final r = await http.get(
+        Uri.parse('${AuthService.baseUrl}/api/finance/metrics'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (r.statusCode >= 200 && r.statusCode < 300) {
+        final decoded = jsonDecode(r.body);
+        if (decoded is Map) {
+          setState(() => _financeMetrics = decoded.cast<String, dynamic>());
+        } else {
+          setState(() => _metricsError = 'Unexpected response format');
+        }
+      } else {
+        setState(() => _metricsError = 'Failed to load finance metrics (${r.statusCode})');
+      }
+    } catch (e) {
+      setState(() => _metricsError = 'Failed to load finance metrics');
+    } finally {
+      if (mounted) {
+        setState(() => _isMetricsLoading = false);
+      }
     }
   }
 
@@ -152,6 +301,30 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     final app = context.watch<AppState>();
     final proposals = _getFilteredProposals(app);
 
+    final queue = (_financeMetrics?['queue'] as Map?)?.cast<String, dynamic>();
+    final decisions =
+        (_financeMetrics?['decisions'] as Map?)?.cast<String, dynamic>();
+    final approvedDecision =
+        (decisions?['approved'] as Map?)?.cast<String, dynamic>();
+    final rejectedDecision =
+        (decisions?['rejected'] as Map?)?.cast<String, dynamic>();
+
+    final attentionRaw = _financeMetrics?['attention'];
+    final List<Map<String, dynamic>> attention = attentionRaw is List
+        ? attentionRaw
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+
+    final queueItemsRaw = (_financeMetrics?['items'] as Map?)?['queue'];
+    final List<Map<String, dynamic>> queueItems = queueItemsRaw is List
+        ? queueItemsRaw
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+
     final totalCount = proposals.length;
     final pendingCount = proposals
         .where((p) => ((p['status'] ?? '')
@@ -173,8 +346,23 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       totalAmount += _extractAmount(p);
     }
 
+    final queueCount = (queue?['count'] is num)
+        ? (queue!['count'] as num).toInt()
+        : null;
+    final queueValue = (queue?['value'] is num)
+        ? (queue!['value'] as num).toDouble()
+        : null;
+    final financeApprovedCount = (approvedDecision?['count'] is num)
+        ? (approvedDecision!['count'] as num).toInt()
+        : null;
+    final financeRejectedCount = (rejectedDecision?['count'] is num)
+        ? (rejectedDecision!['count'] as num).toInt()
+        : null;
+
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 900;
+
+    final tableRows = queueItems.isNotEmpty ? queueItems : proposals;
 
     return Scaffold(
       body: Container(
@@ -202,17 +390,73 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                               children: [
                                 _buildTabSelector(),
                                 const SizedBox(height: 16),
+                                if (_isMetricsLoading)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: LinearProgressIndicator(
+                                      minHeight: 3,
+                                      backgroundColor:
+                                          Colors.white.withValues(alpha: 0.08),
+                                      valueColor:
+                                          AlwaysStoppedAnimation(PremiumTheme.teal),
+                                    ),
+                                  ),
+                                if (_metricsError != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color:
+                                              Colors.red.withValues(alpha: 0.25),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.error_outline,
+                                              color: Colors.redAccent, size: 18),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              _metricsError!,
+                                              style: PremiumTheme.bodyMedium.copyWith(
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                          TextButton(
+                                            onPressed: _isMetricsLoading
+                                                ? null
+                                                : () => _fetchFinanceMetrics(app),
+                                            child: Text(
+                                              'Retry',
+                                              style: PremiumTheme.bodyMedium.copyWith(
+                                                color: PremiumTheme.teal,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 if (_currentTab == 'proposals') ...[
                                   _buildSummaryRow(
-                                    totalCount: totalCount,
-                                    pendingCount: pendingCount,
-                                    approvedCount: approvedCount,
-                                    totalAmount: totalAmount,
+                                    totalCount: queueCount ?? totalCount,
+                                    pendingCount: financeRejectedCount ?? pendingCount,
+                                    approvedCount: financeApprovedCount ?? approvedCount,
+                                    totalAmount: queueValue ?? totalAmount,
                                   ),
                                   const SizedBox(height: 16),
+                                  if (attention.isNotEmpty) ...[
+                                    _buildNeedsAttention(attention),
+                                    const SizedBox(height: 16),
+                                  ],
                                   _buildFilters(),
                                   const SizedBox(height: 16),
-                                  _buildTable(proposals),
+                                  _buildTable(tableRows),
                                 ] else ...[
                                   Expanded(
                                     child: ClientManagementPage(),
@@ -448,30 +692,30 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }) {
     final cards = <Widget>[
       _buildSummaryCard(
-        label: 'Total Proposals',
+        label: 'Finance Queue',
         value: totalCount.toString(),
-        subtitle: 'Across all statuses',
+        subtitle: 'Approved, not yet released/signed',
         icon: Icons.folder_open,
         color: PremiumTheme.teal,
       ),
       _buildSummaryCard(
-        label: 'Pending Internal',
+        label: 'Rejected',
         value: pendingCount.toString(),
-        subtitle: 'Need review / approval',
+        subtitle: 'Rejected by finance',
         icon: Icons.hourglass_empty,
         color: Colors.orange,
       ),
       _buildSummaryCard(
-        label: 'Approved / Signed',
+        label: 'Approved',
         value: approvedCount.toString(),
-        subtitle: 'Approved or client-signed',
+        subtitle: 'Approved by finance',
         icon: Icons.check_circle,
         color: Colors.green,
       ),
       _buildSummaryCard(
-        label: 'Total Value',
+        label: 'Queue Value',
         value: _formatCurrency(totalAmount),
-        subtitle: 'Sum of budgets / amounts',
+        subtitle: 'Total value awaiting finance',
         icon: Icons.attach_money,
         color: PremiumTheme.info,
       ),

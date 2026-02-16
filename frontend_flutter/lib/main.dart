@@ -432,9 +432,36 @@ class MyApp extends StatelessWidget {
           '/proposal_review': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
                 as Map<String, dynamic>?;
+            final roleService = Provider.of<RoleService>(context, listen: false);
+            final canReview = roleService.isApprover() || roleService.isAdmin();
+
+            final proposalId = args?['id']?.toString() ?? '';
+            final proposalTitle = args?['title']?.toString();
+
+            if (!canReview) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!context.mounted) return;
+                if (proposalId.isNotEmpty) {
+                  Navigator.pushReplacementNamed(
+                    context,
+                    '/compose',
+                    arguments: {
+                      'proposalId': proposalId,
+                      'proposalTitle': proposalTitle,
+                      'readOnly': false,
+                    },
+                  );
+                } else {
+                  Navigator.pushReplacementNamed(context, '/creator_dashboard');
+                }
+              });
+
+              return const SizedBox.shrink();
+            }
+
             return ProposalReviewPage(
-              proposalId: args?['id']?.toString() ?? '',
-              proposalTitle: args?['title']?.toString(),
+              proposalId: proposalId,
+              proposalTitle: proposalTitle,
             );
           },
           '/admin_dashboard': (context) => const ApproverDashboardPage(),

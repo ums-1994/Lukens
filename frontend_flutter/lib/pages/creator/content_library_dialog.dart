@@ -344,50 +344,65 @@ class _ContentLibrarySelectionDialogState
                                       mainAxisSpacing: 12,
                                       childAspectRatio: 1,
                                     ),
-                                    leading: Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: _getCategoryColor(category)
-                                            .withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        _getCategoryIcon(category),
-                                        color: _getCategoryColor(category),
-                                      ),
-                                    ),
-                                    title: Text(
-                                      m['label'] ?? 'Untitled',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                    subtitle: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const SizedBox(height: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _getCategoryColor(category)
-                                                .withValues(alpha: 0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            category,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color:
-                                                  _getCategoryColor(category),
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                    itemCount: filtered.length,
+                                    itemBuilder: (context, index) {
+                                      final m = filtered[index];
+                                      final label = (m['label'] ?? 'Untitled')
+                                          .toString();
+                                      final imageUrl = (m['content'] ?? '')
+                                          .toString();
+
+                                      return InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () => Navigator.of(context).pop(m),
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              Image.network(
+                                                imageUrl,
+                                                fit: BoxFit.cover,
+                                                errorBuilder:
+                                                    (context, error, stack) {
+                                                  return Container(
+                                                    color: Colors.black
+                                                        .withValues(alpha: 0.04),
+                                                    alignment: Alignment.center,
+                                                    child: Icon(
+                                                      Icons.broken_image,
+                                                      color: Colors.grey[500],
+                                                      size: 32,
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                              Align(
+                                                alignment: Alignment.bottomCenter,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 6,
+                                                  ),
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.55),
+                                                  child: Text(
+                                                    label,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       );

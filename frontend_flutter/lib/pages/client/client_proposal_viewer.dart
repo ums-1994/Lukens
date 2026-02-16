@@ -1226,6 +1226,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   Widget _buildProposalContent(Map<String, dynamic> proposal) {
     if (!kIsWeb) {
+      final content = proposal['content']?.toString() ?? '';
       return SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Container(
@@ -1241,12 +1242,18 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               ),
             ],
           ),
+          child: SelectableText(
+            content.isNotEmpty ? content : 'No proposal content available.',
+            style: const TextStyle(
+              fontSize: 15,
+              height: 1.8,
+              color: Color(0xFF34495E),
+            ),
+          ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildProposalContent(Map<String, dynamic> proposal) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Container(
@@ -1291,6 +1298,19 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         ),
       ),
     );
+  }
+
+  void _onSectionChanged(int newIndex) {
+    if (_sections.isEmpty) return;
+    final bounded = newIndex.clamp(0, _sections.length - 1);
+    if (bounded == _currentSectionIndex) return;
+
+    _logCurrentSectionView();
+
+    setState(() {
+      _currentSectionIndex = bounded;
+      _sectionViewStart = DateTime.now();
+    });
   }
 
   Widget _buildContentSections(dynamic content) {

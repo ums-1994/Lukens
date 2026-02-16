@@ -13,6 +13,8 @@ String get baseUrl {
   return AuthService.baseUrl;
 }
 
+String get _apiBaseUrl => baseUrl;
+
 class AppState extends ChangeNotifier {
   AppState() {
     _loadThemeMode();
