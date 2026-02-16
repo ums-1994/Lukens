@@ -60,6 +60,69 @@ class ClientService {
     }
   }
 
+  /// Update a client (finance/admin)
+  static Future<Map<String, dynamic>?> updateClient({
+    required String token,
+    required int clientId,
+    String? companyName,
+    String? email,
+    String? contactPerson,
+    String? phone,
+    String? holdingInformation,
+    String? address,
+    String? clientContactEmail,
+    String? clientContactMobile,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$_clientsBase/$clientId'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          if (companyName != null) 'company_name': companyName,
+          if (email != null) 'email': email,
+          if (contactPerson != null) 'contact_person': contactPerson,
+          if (phone != null) 'phone': phone,
+          if (holdingInformation != null)
+            'holding_information': holdingInformation,
+          if (address != null) 'address': address,
+          if (clientContactEmail != null)
+            'client_contact_email': clientContactEmail,
+          if (clientContactMobile != null)
+            'client_contact_mobile': clientContactMobile,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      }
+
+      print('Error updating client: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error updating client: $e');
+      return null;
+    }
+  }
+
+  /// Delete a client (finance/admin)
+  static Future<bool> deleteClient({
+    required String token,
+    required int clientId,
+  }) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_clientsBase/$clientId'),
+        headers: _getHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error deleting client: $e');
+      return false;
+    }
+  }
+
   // ============================================================
   // CLIENT MANAGEMENT
   // ============================================================

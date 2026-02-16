@@ -2271,6 +2271,28 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       const SizedBox(height: 20),
                       if (_useManualEntry ||
                           _selectedClient == null ||
+                          (_formData['clientContactMobile']
+                                  ?.toString()
+                                  .isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Contact Mobile',
+                          'Mobile number',
+                          (value) => setState(
+                              () => _formData['clientContactMobile'] = value),
+                          Icons.phone_iphone,
+                          keyboardType: TextInputType.phone,
+                          controller: _clientContactMobileController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Contact Mobile',
+                          _formData['clientContactMobile']?.toString() ?? '',
+                          Icons.phone_iphone,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
                           (_formData['clientHolding']?.toString().isEmpty ??
                               true))
                         _buildTextField(
@@ -2305,28 +2327,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           'Client Address',
                           _formData['clientAddress']?.toString() ?? '',
                           Icons.location_on_outlined,
-                        ),
-                      const SizedBox(height: 20),
-                      if (_useManualEntry ||
-                          _selectedClient == null ||
-                          (_formData['clientContactMobile']
-                                  ?.toString()
-                                  .isEmpty ??
-                              true))
-                        _buildTextField(
-                          'Client Contact Mobile',
-                          'Mobile number',
-                          (value) => setState(
-                              () => _formData['clientContactMobile'] = value),
-                          Icons.phone_iphone,
-                          keyboardType: TextInputType.phone,
-                          controller: _clientContactMobileController,
-                        )
-                      else
-                        _buildReadOnlyField(
-                          'Client Contact Mobile',
-                          _formData['clientContactMobile']?.toString() ?? '',
-                          Icons.phone_iphone,
                         ),
                     ],
                   ),
