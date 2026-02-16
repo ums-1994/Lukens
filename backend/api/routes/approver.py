@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
-from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification
+from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification, resolve_user_id
 
 bp = Blueprint('approver', __name__)
 
@@ -357,8 +357,11 @@ def approve_proposal(username=None, proposal_id=None):
                 # Notify proposal creator about approval
                 try:
                     if creator:
+                        creator_id = resolve_user_id(cursor, creator)
+                        if not creator_id:
+                            raise RuntimeError(f"Could not resolve proposal creator identifier: {creator}")
                         create_notification(
-                            user_id=creator,
+                            user_id=creator_id,
                             notification_type='proposal_approved',
                             title='Proposal Approved',
                             message=f"Your proposal '{display_title}' for {client_name or 'Client'} has been approved by {approver_name}.",
