@@ -1,7 +1,7 @@
-﻿import 'dart:convert';
+import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'package:provider/provider.dart';
@@ -31,6 +31,8 @@ class _DashboardPageState extends State<DashboardPage>
 
   // AI Risk Gate mock data
   List<Map<String, dynamic>> _riskItems = [];
+
+  Timer? _notificationsTimer;
 
   Future<void> _sendToFinance(Map<String, dynamic> proposal) async {
     final id = proposal['id']?.toString();
@@ -73,6 +75,21 @@ class _DashboardPageState extends State<DashboardPage>
       app.setCurrentNavLabel('Dashboard');
       await _refreshData();
       await _loadRiskData(app);
+
+      _notificationsTimer?.cancel();
+      _notificationsTimer = Timer.periodic(
+        const Duration(seconds: 20),
+        (_) async {
+          if (!mounted) return;
+          final app = context.read<AppState>();
+          if (app.authToken == null && AuthService.token != null) {
+            app.authToken = AuthService.token;
+            app.currentUser = AuthService.currentUser;
+          }
+          if (app.authToken == null) return;
+          await app.fetchNotifications();
+        },
+      );
     });
   }
 
@@ -297,6 +314,7 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   void dispose() {
+    _notificationsTimer?.cancel();
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
