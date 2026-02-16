@@ -7,6 +7,7 @@ import os
 import secrets
 import traceback
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import psycopg2.extras
@@ -701,7 +702,8 @@ def create_client(username=None):
                 update_set_parts.append('status = EXCLUDED.status')
 
             if 'token' in clients_columns:
-                token_value = secrets.token_urlsafe(32)
+                # Use UUID format for compatibility with schemas where token is a UUID column
+                token_value = str(uuid.uuid4())
                 insert_fields.append('token')
                 insert_values.append(token_value)
                 # Preserve existing token if the client already exists
