@@ -31,7 +31,8 @@ class _FinanceClientManagementPageState
     final contactNameController = TextEditingController(
         text: (client['contact_person'] ?? '').toString());
     final contactEmailController = TextEditingController(
-        text: (client['client_contact_email'] ?? '').toString());
+        text: (client['client_contact_email'] ?? client['email'] ?? '')
+            .toString());
     final contactMobileController = TextEditingController(
         text: (client['client_contact_mobile'] ?? client['phone'] ?? '')
             .toString());

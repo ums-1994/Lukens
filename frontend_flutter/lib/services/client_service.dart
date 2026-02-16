@@ -75,7 +75,6 @@ class ClientService {
       final cleanAddress = clean(address);
       final cleanClientContactEmail = clean(clientContactEmail);
       final cleanClientContactMobile = clean(clientContactMobile);
-
       final response = await http.patch(
         Uri.parse('$_clientsBase/$clientId'),
         headers: _getHeaders(token),
