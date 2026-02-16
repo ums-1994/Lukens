@@ -1518,12 +1518,18 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final company = client['company_name'] ?? 'N/A';
     final contact = client['contact_person'] ?? 'N/A';
     final email = client['email'] ?? 'N/A';
-    final industryRaw = client['industry'];
-    final industry = (industryRaw == null ||
-            industryRaw.toString().trim().isEmpty ||
-            industryRaw.toString().trim().toLowerCase() == 'n/a')
+    // Get holding information from various possible keys
+    final holdingInfo = client['holding_information'] ??
+        client['holdingInformation'] ??
+        client['holding'] ??
+        client['client_holding'] ??
+        client['industry']; // fallback to industry if holding is not found
+
+    final industry = (holdingInfo == null ||
+            holdingInfo.toString().trim().isEmpty ||
+            holdingInfo.toString().trim().toLowerCase() == 'n/a')
         ? 'Holding'
-        : industryRaw.toString();
+        : holdingInfo.toString();
     final status = client['status'] ?? 'active';
 
     return Container(
