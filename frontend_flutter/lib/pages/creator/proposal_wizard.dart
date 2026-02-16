@@ -107,6 +107,22 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   final ScrollController _contentModulesScrollController = ScrollController();
   final ScrollController _projectDetailsScrollController = ScrollController();
 
+  // Persistent controllers for client fields to ensure they update correctly
+  final TextEditingController _clientNameController = TextEditingController();
+  final TextEditingController _clientEmailController = TextEditingController();
+  final TextEditingController _clientHoldingController =
+      TextEditingController();
+  final TextEditingController _clientAddressController =
+      TextEditingController();
+  final TextEditingController _clientContactNameController =
+      TextEditingController();
+  final TextEditingController _clientContactEmailController =
+      TextEditingController();
+  final TextEditingController _clientContactMobileController =
+      TextEditingController();
+  final TextEditingController _proposalTitleController =
+      TextEditingController();
+
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
     {'number': '1', 'label': 'Compose'},
@@ -289,6 +305,18 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             additional['client_contact_number'] ??
             '';
         _formData['clientId'] = client['id'];
+
+        // Update controllers
+        _clientNameController.text = _formData['clientName'] ?? '';
+        _clientEmailController.text = _formData['clientEmail'] ?? '';
+        _clientHoldingController.text = _formData['clientHolding'] ?? '';
+        _clientAddressController.text = _formData['clientAddress'] ?? '';
+        _clientContactNameController.text =
+            _formData['clientContactName'] ?? '';
+        _clientContactEmailController.text =
+            _formData['clientContactEmail'] ?? '';
+        _clientContactMobileController.text =
+            _formData['clientContactMobile'] ?? '';
       } else {
         // Clear fields when switching to manual entry
         _formData['clientName'] = '';
@@ -299,6 +327,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         _formData['clientContactEmail'] = '';
         _formData['clientContactMobile'] = '';
         _formData['clientId'] = null;
+
+        // Clear controllers
+        _clientNameController.clear();
+        _clientEmailController.clear();
+        _clientHoldingController.clear();
+        _clientAddressController.clear();
+        _clientContactNameController.clear();
+        _clientContactEmailController.clear();
+        _clientContactMobileController.clear();
       }
     });
   }
@@ -408,6 +445,16 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     _templateGridScrollController.dispose();
     _contentModulesScrollController.dispose();
     _projectDetailsScrollController.dispose();
+
+    _clientNameController.dispose();
+    _clientEmailController.dispose();
+    _clientHoldingController.dispose();
+    _clientAddressController.dispose();
+    _clientContactNameController.dispose();
+    _clientContactEmailController.dispose();
+    _clientContactMobileController.dispose();
+    _proposalTitleController.dispose();
+
     super.dispose();
   }
 
@@ -2029,20 +2076,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   }
 
   Widget _buildClientDetails() {
-    // Initialize controllers with current values and explicit LTR direction
-    final proposalTitleController = TextEditingController(
-        text: _formData['proposalTitle']?.toString() ?? '');
-    final clientNameController =
-        TextEditingController(text: _formData['clientName']?.toString() ?? '');
-    final clientEmailController =
-        TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
-    final clientHoldingController = TextEditingController(
-        text: _formData['clientHolding']?.toString() ?? '');
-    final clientAddressController = TextEditingController(
-        text: _formData['clientAddress']?.toString() ?? '');
-    final clientContactMobileController = TextEditingController(
-        text: _formData['clientContactMobile']?.toString() ?? '');
-
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Builder(
@@ -2073,7 +2106,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                         (value) =>
                             setState(() => _formData['proposalTitle'] = value),
                         Icons.description_outlined,
-                        controller: proposalTitleController,
+                        controller: _proposalTitleController,
                       ),
                       const SizedBox(height: 20),
                       // Client Selection Dropdown (active clients only)
@@ -2154,7 +2187,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 (value) => setState(
                                     () => _formData['clientName'] = value),
                                 Icons.business_outlined,
-                                controller: clientNameController,
+                                controller: _clientNameController,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -2173,7 +2206,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 }),
                                 Icons.email_outlined,
                                 keyboardType: TextInputType.emailAddress,
-                                controller: clientEmailController,
+                                controller: _clientEmailController,
                               ),
                             ),
                           ],
@@ -2194,7 +2227,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                       (value) => setState(() =>
                                           _formData['clientName'] = value),
                                       Icons.business_outlined,
-                                      controller: clientNameController,
+                                      controller: _clientNameController,
                                     )
                                   : _buildReadOnlyField(
                                       'Client Name',
@@ -2223,7 +2256,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                       }),
                                       Icons.email_outlined,
                                       keyboardType: TextInputType.emailAddress,
-                                      controller: clientEmailController,
+                                      controller: _clientEmailController,
                                     )
                                   : _buildReadOnlyField(
                                       'Client Email',
@@ -2246,7 +2279,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           (value) => setState(
                               () => _formData['clientHolding'] = value),
                           Icons.account_tree_outlined,
-                          controller: clientHoldingController,
+                          controller: _clientHoldingController,
                         )
                       else
                         _buildReadOnlyField(
@@ -2265,7 +2298,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           (value) => setState(
                               () => _formData['clientAddress'] = value),
                           Icons.location_on_outlined,
-                          controller: clientAddressController,
+                          controller: _clientAddressController,
                         )
                       else
                         _buildReadOnlyField(
@@ -2287,7 +2320,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                               () => _formData['clientContactMobile'] = value),
                           Icons.phone_iphone,
                           keyboardType: TextInputType.phone,
-                          controller: clientContactMobileController,
+                          controller: _clientContactMobileController,
                         )
                       else
                         _buildReadOnlyField(
