@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import '../../api.dart';
@@ -232,34 +233,60 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       _useManualEntry = client == null;
 
       if (client != null) {
-        final additional = _parseAdditionalInfo(client['additional_info']);
+        if (kDebugMode) {
+          try {
+            debugPrint(
+                'ProposalWizard selected client: ${json.encode(client)}');
+          } catch (e) {
+            debugPrint('ProposalWizard selected client (non-JSON): $client');
+            debugPrint('ProposalWizard selected client encode error: $e');
+          }
+        }
+
+        final additional = _parseAdditionalInfo(
+          client['additional_info'] ?? client['additionalInfo'],
+        );
         // Auto-populate client details
         _formData['clientName'] =
             client['company_name'] ?? client['name'] ?? '';
         _formData['clientEmail'] = client['email'] ?? '';
         _formData['clientHolding'] = client['organization'] ??
             client['holding'] ??
+            client['holding_information'] ??
+            client['holdingInformation'] ??
+            client['holding_info'] ??
             additional['holding_information'] ??
             additional['holdingInformation'] ??
+            additional['holding_info'] ??
             '';
         _formData['clientAddress'] = client['location'] ??
             client['address'] ??
+            client['client_address'] ??
+            client['clientAddress'] ??
+            client['physical_address'] ??
             additional['address'] ??
+            additional['client_address'] ??
+            additional['clientAddress'] ??
             '';
         _formData['clientContactName'] = client['contact_person'] ??
             client['contact_name'] ??
+            client['client_contact_name'] ??
             additional['client_contact_name'] ??
             additional['clientContactName'] ??
             '';
         _formData['clientContactEmail'] = client['contact_email'] ??
+            client['client_contact_email'] ??
             additional['client_contact_email'] ??
             additional['clientContactEmail'] ??
             client['email'] ??
             '';
         _formData['clientContactMobile'] = client['phone'] ??
             client['mobile'] ??
+            client['client_contact_mobile'] ??
+            client['client_contact_number'] ??
             additional['client_contact_mobile'] ??
             additional['clientContactMobile'] ??
+            additional['client_contact_number'] ??
             '';
         _formData['clientId'] = client['id'];
       } else {
