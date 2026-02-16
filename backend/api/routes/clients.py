@@ -494,6 +494,10 @@ def get_clients(username=None):
 
             user_id = user_row['id']
 
+            cursor.execute("SELECT role FROM users WHERE username = %s", (username,))
+            role_row = cursor.fetchone() or {}
+            user_role = (role_row.get('role') or '').lower().strip()
+
             # Check which columns exist in the clients table
             cursor.execute("""
                 SELECT column_name 
@@ -558,15 +562,24 @@ def get_clients(username=None):
                     print(f"[ERROR] Invalid user_id type: {type(user_id)} = {user_id}")
                     return jsonify({"error": "Invalid user ID"}), 400
             
-            query = f"""
-                SELECT {', '.join(select_fields)}
-                FROM clients
-                WHERE created_by = %s OR created_by IS NULL
-                ORDER BY {order_by}
-            """
+            if user_role == 'manager':
+                query = f"""
+                    SELECT {', '.join(select_fields)}
+                    FROM clients
+                    ORDER BY {order_by}
+                """
+                query_params = ()
+            else:
+                query = f"""
+                    SELECT {', '.join(select_fields)}
+                    FROM clients
+                    WHERE created_by = %s OR created_by IS NULL
+                    ORDER BY {order_by}
+                """
+                query_params = (user_id,)
             
             try:
-                cursor.execute(query, (user_id,))
+                cursor.execute(query, query_params)
                 clients = cursor.fetchall()
             except Exception as query_error:
                 print(f"[ERROR] Query execution failed: {type(query_error).__name__}: {query_error}")
@@ -589,6 +602,63 @@ def get_clients(username=None):
 
     except Exception as exc:
         print(f"[ERROR] Error fetching clients: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.post("/clients")
+@token_required
+def create_client(username=None):
+    """Create a client (finance/admin)"""
+    try:
+        data = request.json or {}
+        company_name = (data.get('company_name') or '').strip()
+        contact_person = (data.get('contact_person') or '').strip()
+        email = (data.get('email') or '').strip()
+        phone = (data.get('phone') or '').strip()
+
+        if not company_name or not email:
+            return jsonify({"error": "Company name and email are required"}), 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"error": "User not found"}), 404
+
+            user_id = user_row['id']
+            user_role = (user_row.get('role') or '').lower().strip()
+            if user_role not in ['finance', 'admin', 'ceo']:
+                return jsonify({"error": "Insufficient permissions"}), 403
+
+            cursor.execute(
+                """
+                INSERT INTO clients (company_name, contact_person, email, phone, status, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET
+                    company_name = EXCLUDED.company_name,
+                    contact_person = EXCLUDED.contact_person,
+                    phone = EXCLUDED.phone,
+                    status = EXCLUDED.status,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id, company_name, contact_person, email, phone, status, created_at, updated_at
+                """,
+                (company_name, contact_person or None, email, phone or None, 'active', user_id),
+            )
+            client = cursor.fetchone()
+            conn.commit()
+
+            result = dict(client) if client else {}
+            for key, value in result.items():
+                if isinstance(value, datetime):
+                    result[key] = value.isoformat()
+
+            return jsonify({"success": True, "client": result}), 201
+
+    except Exception as exc:
+        print(f"[ERROR] Error creating client: {exc}")
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
 

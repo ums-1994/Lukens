@@ -1,7 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui_web' as ui_web;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web/web.dart' as web;
 import '../../api.dart';
@@ -28,7 +35,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   String? _signingUrl;
   String? _signatureStatus;
   List<Map<String, dynamic>> _comments = [];
-  List<Map<String, dynamic>> _activityLog = [];
   final TextEditingController _commentController = TextEditingController();
   bool _isSubmittingComment = false;
   String? _currentSessionId;
@@ -39,13 +45,70 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   int _selectedTab = 0; // 0: Content, 1: Comments
 
+  String? _pdfObjectUrl;
+  bool _isPdfLoading = false;
+  String? _pdfError;
+  late final String _pdfViewType;
+  bool _pdfViewRegistered = false;
+  html.IFrameElement? _pdfIframe;
+  bool _pdfIframeListenersAttached = false;
+
+  static const Duration _networkTimeout = Duration(seconds: 20);
+
   @override
   void initState() {
     super.initState();
+    _pdfViewType = 'pdf-preview-${DateTime.now().microsecondsSinceEpoch}';
+    _initPdfView();
     _checkIfReturnedFromSigning();
     _loadProposal();
     _startSession();
     _logEvent('open');
+  }
+
+  void _initPdfView() {
+    if (!kIsWeb || _pdfViewRegistered) return;
+    _pdfViewRegistered = true;
+
+    // ignore: undefined_prefixed_name
+    ui_web.platformViewRegistry.registerViewFactory(_pdfViewType, (int viewId) {
+      _pdfIframe ??= html.IFrameElement()
+        ..style.border = 'none'
+        ..style.width = '100%'
+        ..style.height = '100%'
+        ..allow = 'fullscreen';
+
+      // If we already computed the PDF URL before the iframe existed,
+      // ensure we apply it as soon as the iframe is created.
+      final pendingUrl = _pdfObjectUrl;
+      if (pendingUrl != null && pendingUrl.isNotEmpty) {
+        _pdfIframe!.src = pendingUrl;
+      }
+
+      if (!_pdfIframeListenersAttached) {
+        _pdfIframeListenersAttached = true;
+        _pdfIframe!.onLoad.listen((_) {
+          if (!mounted) return;
+          if (_isPdfLoading) {
+            setState(() {
+              _isPdfLoading = false;
+            });
+          }
+        });
+
+        _pdfIframe!.onError.listen((_) {
+          if (!mounted) return;
+          if (_isPdfLoading || _pdfError == null) {
+            setState(() {
+              _isPdfLoading = false;
+              _pdfError =
+                  'Failed to load PDF preview. Use Export PDF to open it in a new tab.';
+            });
+          }
+        });
+      }
+      return _pdfIframe!;
+    });
   }
 
   List<Map<String, dynamic>> _parseSectionsFromContent(dynamic content) {
@@ -76,7 +139,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       }
 
       if (decoded is Map) {
-        final map = Map<String, dynamic>.from(decoded as Map);
+        final map = Map<String, dynamic>.from(decoded);
         return _parseSectionsFromContent(map);
       }
 
@@ -119,36 +182,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     });
   }
 
-  void _onSectionChanged(int newIndex) {
-    if (_sections.isEmpty) return;
-    if (newIndex < 0 || newIndex >= _sections.length) return;
-
-    final now = DateTime.now();
-
-    // Log time spent on previous section before switching
-    if (_sectionViewStart != null && newIndex != _currentSectionIndex) {
-      final prevIndex = _currentSectionIndex.clamp(0, _sections.length - 1);
-      final previousSection = _sections[prevIndex];
-      final prevTitle =
-          (previousSection['title']?.toString().trim().isNotEmpty ?? false)
-              ? previousSection['title'].toString().trim()
-              : 'Section ${prevIndex + 1}';
-
-      final durationSeconds = now.difference(_sectionViewStart!).inSeconds;
-      final safeDuration = durationSeconds <= 0 ? 1 : durationSeconds;
-
-      _logEvent('view_section', metadata: {
-        'section': prevTitle,
-        'duration': safeDuration,
-      });
-    }
-
-    setState(() {
-      _currentSectionIndex = newIndex;
-      _sectionViewStart = now;
-    });
-  }
-
   void _checkIfReturnedFromSigning() {
     // Check if we're returning from DocuSign signing
     if (kIsWeb) {
@@ -177,8 +210,231 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     _logCurrentSectionView();
     _endSession();
     _logEvent('close');
-    _commentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPdfPreview() async {
+    if (!kIsWeb) return;
+    _initPdfView();
+    setState(() {
+      _isPdfLoading = true;
+      _pdfError = null;
+    });
+
+    try {
+      // Load directly via URL so the browser can stream + cache.
+      final url =
+          '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}';
+
+// Probe the endpoint first. Iframe load events are unreliable for PDFs
+      // and can lead to an endless spinner. A small Range request gives us a
+      // fast, deterministic signal.
+      http.Response probe;
+      try {
+        probe = await http.get(
+          Uri.parse(url),
+          headers: const {
+            'Range': 'bytes=0-0',
+          },
+        ).timeout(const Duration(seconds: 25));
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _isPdfLoading = false;
+          _pdfError =
+              'Unable to load PDF preview (network). Please retry, or use Export PDF.';
+        });
+        return;
+      }
+
+      final status = probe.statusCode;
+      final contentType = (probe.headers['content-type'] ?? '').toLowerCase();
+      final isPdf = contentType.contains('application/pdf');
+      final ok = status == 200 || status == 206;
+
+      if (!ok || !isPdf) {
+        String details = '';
+        try {
+          final decoded = jsonDecode(probe.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            details = decoded['detail'].toString();
+          }
+        } catch (_) {
+          // ignore
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _isPdfLoading = false;
+          _pdfError = details.isNotEmpty
+              ? details
+              : 'PDF not available. Use Export PDF to open it in a new tab.';
+        });
+        return;
+      }
+
+      // Probe succeeded - load the full PDF in the iframe.
+      _pdfObjectUrl = url;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final iframe = _pdfIframe;
+        if (iframe != null && mounted) {
+          iframe.src = url;
+        }
+      });
+
+      // _isPdfLoading will flip to false in the iframe onLoad listener.
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isPdfLoading = false;
+        _pdfError = e.toString();
+      });
+    }
+  }
+
+  Future<void> _exportPdf() async {
+    final url =
+        '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}&download=1';
+    if (kIsWeb) {
+      web.window.open(url, '_blank');
+      return;
+    }
+    await launchUrlString(url);
+  }
+
+  Future<void> _exportWord() async {
+    final url =
+        '$baseUrl/api/client/proposals/${widget.proposalId}/export/word?token=${Uri.encodeComponent(widget.accessToken)}';
+    if (kIsWeb) {
+      web.window.open(url, '_blank');
+      return;
+    }
+    await launchUrlString(url);
+  }
+
+  Future<void> _uploadSignedBytes({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Uploading signed document...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    final uri = Uri.parse(
+      '$baseUrl/api/client/proposals/${widget.proposalId}/upload-signed',
+    );
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['token'] = widget.accessToken
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename,
+        ),
+      );
+
+    try {
+      final streamedResponse = await req.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Signed document uploaded successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // Refresh proposal to show the updated signature
+        await _loadProposal();
+      } else {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _uploadSignedDocument() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(withData: true);
+      if (res == null || res.files.isEmpty) return;
+
+      final file = res.files.first;
+      final bytes = file.bytes;
+      if (bytes == null) {
+        throw Exception('Unable to read file bytes');
+      }
+
+      await _uploadSignedBytes(bytes: bytes, filename: file.name);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _scanSignedDocument() async {
+    try {
+      if (kIsWeb) {
+        final input = html.FileUploadInputElement();
+        input.accept = 'image/*,application/pdf';
+        input.setAttribute('capture', 'environment');
+        input.click();
+
+        await input.onChange.first;
+        final files = input.files;
+        if (files == null || files.isEmpty) return;
+
+        final f = files.first;
+        final reader = html.FileReader();
+        reader.readAsArrayBuffer(f);
+        await reader.onLoadEnd.first;
+
+        final result = reader.result;
+        if (result is! ByteBuffer) {
+          throw Exception('Unable to read captured file');
+        }
+
+        await _uploadSignedBytes(
+          bytes: Uint8List.view(result),
+          filename: f.name,
+        );
+        return;
+      }
+
+      final picker = ImagePicker();
+      final image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      final bytes = await image.readAsBytes();
+      await _uploadSignedBytes(bytes: bytes, filename: image.name);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Scan failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _startSession() async {
@@ -191,7 +447,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           'proposal_id': widget.proposalId,
         }),
       );
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
           _currentSessionId = data['session_id'];
@@ -205,13 +461,15 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   Future<void> _endSession() async {
     if (_currentSessionId != null) {
       try {
-        await http.post(
-          Uri.parse('$baseUrl/api/client/session/end'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'session_id': _currentSessionId,
-          }),
-        );
+        await http
+            .post(
+              Uri.parse('$baseUrl/api/client/session/end'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'session_id': _currentSessionId,
+              }),
+            )
+            .timeout(_networkTimeout);
       } catch (e) {
         print('Error ending session: $e');
       }
@@ -221,16 +479,18 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   Future<void> _logEvent(String eventType,
       {Map<String, dynamic>? metadata}) async {
     try {
-      await http.post(
-        Uri.parse('$baseUrl/api/client/activity'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'token': widget.accessToken,
-          'proposal_id': widget.proposalId,
-          'event_type': eventType,
-          'metadata': metadata ?? {},
-        }),
-      );
+      await http
+          .post(
+            Uri.parse('$baseUrl/api/client/activity'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'token': widget.accessToken,
+              'proposal_id': widget.proposalId,
+              'event_type': eventType,
+              'metadata': metadata ?? {},
+            }),
+          )
+          .timeout(_networkTimeout);
     } catch (e) {
       print('Error logging event: $e');
     }
@@ -243,10 +503,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     });
 
     try {
-      final response = await http.get(
-        Uri.parse(
-            '$baseUrl/api/client/proposals/${widget.proposalId}?token=${widget.accessToken}'),
-      );
+      final response = await http
+          .get(
+            Uri.parse(
+                '$baseUrl/api/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
+          )
+          .timeout(_networkTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -281,15 +543,13 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
                   ?.map((c) => Map<String, dynamic>.from(c))
                   .toList() ??
               [];
-          _activityLog = (data['activity'] as List?)
-                  ?.map((a) => Map<String, dynamic>.from(a))
-                  .toList() ??
-              [];
           _sections = parsedSections;
           _currentSectionIndex = 0;
           _sectionViewStart = _sections.isNotEmpty ? DateTime.now() : null;
           _isLoading = false;
         });
+
+        await _loadPdfPreview();
       } else {
         final errorBody = response.body;
         print('❌ Error loading proposal: ${response.statusCode}');
@@ -308,6 +568,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           });
         }
       }
+    } on TimeoutException {
+      setState(() {
+        _error =
+            'Request timed out. Confirm the backend is running on ${baseUrl.replaceAll("/api", "")} and retry.';
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() {
         _error = 'Error: $e';
@@ -469,8 +735,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           // Header
           _buildHeader(proposal, status),
 
+          _buildSignaturePanel(),
+
           // Action Buttons - Always show if proposal is not signed
-          if (canTakeAction) _buildActionBar(),
+          if (canTakeAction && !kIsWeb) _buildActionBar(),
 
           // Content
           Expanded(
@@ -537,19 +805,161 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           ),
           _buildStatusBadge(status),
           const SizedBox(width: 12),
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
-            onPressed: () {
-              _logEvent('download');
-              // TODO: Download as PDF
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('PDF download coming soon')),
-              );
-            },
-            tooltip: 'Download PDF',
+          if (_selectedTab == 0)
+            IconButton(
+              tooltip: 'Refresh Preview',
+              onPressed: _loadPdfPreview,
+              icon: const Icon(Icons.refresh, color: Colors.white),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSignaturePanel() {
+    final sig = _signatureData;
+    final status = (sig?['status'] ?? _signatureStatus ?? 'unknown').toString();
+    final signedAt = (sig?['signed_at'] ?? '').toString();
+    final signedUrl = (sig?['signed_document_url'] ?? '').toString();
+    final signingUrl = (sig?['signing_url'] ?? _signingUrl ?? '').toString();
+
+    if (signingUrl.trim().isNotEmpty &&
+        (_signingUrl == null || _signingUrl!.isEmpty)) {
+      _signingUrl = signingUrl;
+    }
+
+    String subtitle = status;
+    if (signedAt.trim().isNotEmpty) {
+      subtitle = '$status • $signedAt';
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
+      child: Row(
+        children: [
+          const Icon(Icons.verified_outlined,
+              size: 18, color: Color(0xFF2C3E50)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              subtitle,
+              style: TextStyle(
+                  color: Colors.grey[800], fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (signedUrl.trim().isNotEmpty)
+            TextButton.icon(
+              onPressed: () async {
+                if (kIsWeb) {
+                  web.window.open(signedUrl, '_blank');
+                  return;
+                }
+                await launchUrlString(signedUrl);
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('View'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingActionToolbar() {
+    final sig = _signatureData;
+    final signedUrl = (sig?['signed_document_url'] ?? '').toString();
+    final signingUrl = (sig?['signing_url'] ?? _signingUrl ?? '').toString();
+    final canSign = signingUrl.trim().isNotEmpty;
+
+    Widget _toolButton({
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback onPressed,
+      bool primary = false,
+    }) {
+      final bg = primary ? const Color(0xFF2D9CDB) : Colors.white;
+      final fg = primary ? Colors.white : const Color(0xFF2C3E50);
+      return Tooltip(
+        message: tooltip,
+        child: Material(
+          color: bg,
+          elevation: 2,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onPressed,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(icon, color: fg, size: 22),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _toolButton(
+          icon: Icons.picture_as_pdf,
+          tooltip: 'Export PDF',
+          onPressed: _exportPdf,
+        ),
+        const SizedBox(height: 10),
+        _toolButton(
+          icon: Icons.description,
+          tooltip: 'Export Word',
+          onPressed: _exportWord,
+        ),
+        const SizedBox(height: 10),
+        _toolButton(
+          icon: Icons.document_scanner,
+          tooltip: 'Scan (Phone Camera)',
+          onPressed: _scanSignedDocument,
+        ),
+        const SizedBox(height: 10),
+        _toolButton(
+          icon: Icons.upload_file,
+          tooltip: 'Upload Signed',
+          onPressed: _uploadSignedDocument,
+        ),
+        if (signedUrl.trim().isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _toolButton(
+            icon: Icons.open_in_new,
+            tooltip: 'View Signed',
+            onPressed: () {
+              if (kIsWeb) {
+                web.window.open(signedUrl, '_blank');
+                return;
+              }
+              launchUrlString(signedUrl);
+            },
+          ),
+        ],
+        if (canSign) ...[
+          const SizedBox(height: 10),
+          _toolButton(
+            icon: Icons.draw,
+            tooltip: 'Sign with DocuSign',
+            onPressed: _openSigningModal,
+            primary: true,
+          ),
+        ],
+      ],
     );
   }
 
@@ -814,50 +1224,20 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     }
   }
 
-  Widget _buildTabBar() {
-    return Container(
-      color: Colors.white,
-      child: Row(
-        children: [
-          _buildTab(0, 'Proposal Content', Icons.description),
-          _buildTab(1, 'Comments (${_comments.length})', Icons.comment),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTab(int index, String label, IconData icon) {
-    final isSelected = _selectedTab == index;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _selectedTab = index),
+  Widget _buildProposalContent(Map<String, dynamic> proposal) {
+    if (!kIsWeb) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color:
-                    isSelected ? const Color(0xFF3498DB) : Colors.transparent,
-                width: 3,
-              ),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isSelected ? const Color(0xFF3498DB) : Colors.grey,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  color: isSelected ? const Color(0xFF3498DB) : Colors.grey,
-                ),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -943,7 +1323,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               final right = Text(
                 'Section ${index + 1} of $total',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
                   color: Colors.grey[600],
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -1068,15 +1448,16 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               Icon(Icons.description_outlined,
                   size: 64, color: Colors.grey[400]),
               const SizedBox(height: 16),
-              Text(
-                'No content available',
-                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              OutlinedButton.icon(
+                onPressed: _exportPdf,
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('Export PDF'),
               ),
               const SizedBox(height: 8),
-              Text(
-                'The proposal content has not been added yet.',
-                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                textAlign: TextAlign.center,
+              OutlinedButton.icon(
+                onPressed: _exportWord,
+                icon: const Icon(Icons.description),
+                label: const Text('Export Word'),
               ),
             ],
           ),
@@ -1084,152 +1465,64 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       );
     }
 
-    // Try to parse as JSON
-    try {
-      if (content is String) {
-        if (content.trim().isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: Text(
-                'No content available',
-                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-              ),
-            ),
-          );
-        }
-        final decoded = jsonDecode(content);
-        return _buildContentSections(decoded);
-      } else if (content is Map || content is List) {
-        return _buildContentSections(_parseSectionsFromContent(content));
-      } else {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: SelectableText(
-            content.toString(),
-            style: const TextStyle(fontSize: 15, height: 1.8),
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error parsing content: $e');
-      return Padding(
-        padding: const EdgeInsets.all(24),
+    if (_isPdfLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_pdfError != null) {
+      return Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'Error parsing content',
-              style: TextStyle(fontSize: 16, color: Colors.red[600]),
-            ),
-            const SizedBox(height: 8),
-            SelectableText(
-              content.toString(),
-              style: const TextStyle(fontSize: 15, height: 1.8),
+            Text('Failed to load preview: $_pdfError'),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _loadPdfPreview,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
             ),
           ],
         ),
       );
     }
-  }
 
-  Widget _buildActivityTimeline() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
+    if (_pdfObjectUrl == null) {
+      return Center(
+        child: ElevatedButton.icon(
+          onPressed: _loadPdfPreview,
+          icon: const Icon(Icons.picture_as_pdf),
+          label: const Text('Load PDF Preview'),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Activity Timeline',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (_activityLog.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(40),
-                  child: Column(
-                    children: [
-                      Icon(Icons.timeline, size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No activity yet',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              ..._activityLog
-                  .map((activity) => _buildActivityItem(activity))
-                  .toList(),
-          ],
-        ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildActivityItem(Map<String, dynamic> activity) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(16),
+      child: Stack(
         children: [
           Container(
-            width: 40,
-            height: 40,
             decoration: BoxDecoration(
-              color: const Color(0xFF3498DB).withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.circle,
-              size: 12,
-              color: Color(0xFF3498DB),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity['action'] ?? '',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  activity['description'] ?? '',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(activity['timestamp']),
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox.expand(
+                child: HtmlElementView(viewType: _pdfViewType),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 14,
+            top: 20,
+            child: _buildFloatingActionToolbar(),
           ),
         ],
       ),
@@ -1689,6 +1982,8 @@ class _ApproveDialogState extends State<ApproveDialog> {
   final TextEditingController _commentsController = TextEditingController();
   bool _isSubmitting = false;
 
+  static const Duration _networkTimeout = Duration(seconds: 20);
+
   Future<void> _submit() async {
     if (_signerNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1705,18 +2000,29 @@ class _ApproveDialogState extends State<ApproveDialog> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'token': widget.accessToken,
-          'signer_name': _signerNameController.text.trim(),
-          'signer_title': _signerTitleController.text.trim(),
-          'comments': _commentsController.text.trim(),
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse(
+                '$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'token': widget.accessToken,
+              'signer_name': _signerNameController.text.trim(),
+              'signer_title': _signerTitleController.text.trim(),
+              'comments': _commentsController.text.trim(),
+            }),
+          )
+          .timeout(_networkTimeout);
+
+      print('✅ Client approve response: ${response.statusCode}');
+      final bodyText = response.body;
+      if (bodyText.isNotEmpty) {
+        final preview =
+            bodyText.length > 500 ? bodyText.substring(0, 500) : bodyText;
+        print('✅ Client approve body (preview): $preview');
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1740,8 +2046,34 @@ class _ApproveDialogState extends State<ApproveDialog> {
           }
         }
       } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['detail'] ?? 'Failed to approve');
+        String detail = 'Failed to approve';
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            detail = decoded['detail'].toString();
+          } else {
+            detail = response.body;
+          }
+        } catch (_) {
+          detail = response.body.isNotEmpty ? response.body : detail;
+        }
+
+        if (response.statusCode == 501) {
+          throw Exception(
+              'DocuSign disabled on server. Set ENABLE_DOCUSIGN=true. ($detail)');
+        }
+
+        throw Exception(detail);
+      }
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Approve timed out. Confirm backend is running on http://127.0.0.1:5000 and retry.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {

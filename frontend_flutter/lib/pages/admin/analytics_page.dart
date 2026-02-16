@@ -2599,12 +2599,212 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
+  String? _pipelineStageForStatus(String statusLower) {
+    final s = statusLower.trim();
+    if (s.isEmpty || s.contains('draft')) return 'Draft';
+    if (s.contains('signed') || s.contains('won')) return 'Signed';
+    if (s.contains('sent to client') || s.contains('released'))
+      return 'Released';
+    if (s.contains('review') ||
+        (s.contains('pending') && s.contains('ceo')) ||
+        s.contains('approved')) {
+      return 'In Review';
+    }
+    return null;
+  }
+
+  Map<String, int> _calculatePipelineCounts(List<dynamic> rawProposals) {
+    final counts = <String, int>{
+      'Draft': 0,
+      'In Review': 0,
+      'Released': 0,
+      'Signed': 0,
+    };
+
+    for (final proposal in rawProposals) {
+      Map<String, dynamic>? p;
+      if (proposal is Map<String, dynamic>) {
+        p = proposal;
+      } else if (proposal is Map) {
+        try {
+          p = proposal.cast<String, dynamic>();
+        } catch (_) {
+          p = null;
+        }
+      }
+      if (p == null) continue;
+
+      final statusLower = (p['status'] ?? '').toString().toLowerCase();
+      final stage = _pipelineStageForStatus(statusLower);
+      if (stage == null) continue;
+      counts[stage] = (counts[stage] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  Widget _buildProposalPipelineFunnel(Map<String, int> counts) {
+    final stages = const ['Draft', 'In Review', 'Released', 'Signed'];
+    final maxCount = counts.values.fold<int>(0, (m, v) => v > m ? v : m);
+    final safeMax = math.max(maxCount, 1);
+
+    Color stageColor(String stage) {
+      switch (stage) {
+        case 'Signed':
+          return PremiumTheme.success;
+        case 'Released':
+          return PremiumTheme.info;
+        case 'In Review':
+          return PremiumTheme.warning;
+        default:
+          return PremiumTheme.orange;
+      }
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
+          children: [
+            for (final stage in stages)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 110,
+                        child: Text(
+                          stage,
+                          overflow: TextOverflow.ellipsis,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            Container(
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: (counts[stage] ?? 0) / safeMax,
+                              child: Container(
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color:
+                                      stageColor(stage).withValues(alpha: 0.75),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 44,
+                        child: Text(
+                          (counts[stage] ?? 0).toString(),
+                          textAlign: TextAlign.right,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCompletionRateGauge(Map<String, dynamic>? data) {
+    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final total =
+        (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
+    final passed =
+        (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
+    final passRate =
+        (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
+    final ratio = total <= 0 ? 0.0 : (passed / total).clamp(0.0, 1.0);
+
+    return Center(
+      child: InkWell(
+        onTap: () => _showCompletionRatesDialog(data),
+        child: SizedBox(
+          width: 180,
+          height: 180,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 180,
+                height: 180,
+                child: CircularProgressIndicator(
+                  value: ratio,
+                  strokeWidth: 12,
+                  backgroundColor: Colors.white.withValues(alpha: 0.10),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    passRate >= 90
+                        ? PremiumTheme.success
+                        : passRate >= 60
+                            ? PremiumTheme.warning
+                            : PremiumTheme.error,
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$passRate%',
+                    style: PremiumTheme.displayMedium.copyWith(fontSize: 34),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$passed of $total passing',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: PremiumTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap to drill down',
+                    style: PremiumTheme.bodySmall.copyWith(
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
+    final pipelineCounts = _calculatePipelineCounts(filtered);
+    final pipelineTotal =
+        pipelineCounts.values.fold<int>(0, (sum, v) => sum + v);
+    final signedCount = pipelineCounts['Signed'] ?? 0;
     final userName = _getUserName(app.currentUser);
     final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : 'U';
     return Scaffold(

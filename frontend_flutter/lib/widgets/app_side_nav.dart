@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/asset_service.dart';
 import '../theme/premium_theme.dart';
+import '../config/app_constants.dart';
 
 class AppSideNav extends StatelessWidget {
   const AppSideNav({
@@ -41,7 +42,10 @@ class AppSideNav extends StatelessWidget {
     {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
     {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
     {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
-    {'label': 'Approved Proposals', 'icon': 'assets/images/Time Allocation_Approval_Blue.png'},
+    {
+      'label': 'Approved Proposals',
+      'icon': 'assets/images/Time Allocation_Approval_Blue.png'
+    },
     {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
   ];
 
@@ -97,13 +101,17 @@ class AppSideNav extends StatelessWidget {
                             padding: EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
                               'Navigation',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 12),
                             ),
                           ),
                         Padding(
-                          padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 0 : 8),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: isCollapsed ? 0 : 8),
                           child: Icon(
-                            isCollapsed ? Icons.keyboard_arrow_right : Icons.keyboard_arrow_left,
+                            isCollapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_left,
                             color: Colors.white,
                           ),
                         ),
@@ -142,6 +150,31 @@ class AppSideNav extends StatelessWidget {
                         color: const Color(0xFF2C3E50),
                       ),
                     _buildItem('Logout', 'assets/images/Logout_KhonoBuzz.png'),
+                    if (!isCollapsed) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1A1F2E),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: const Color(0xFF2C3E50), width: 1),
+                          ),
+                          child: Text(
+                            AppConstants.fullVersion,
+                            style: const TextStyle(
+                              color: Color(0xFF9CA3AF),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -250,6 +283,4 @@ class AppSideNav extends StatelessWidget {
       ),
     );
   }
-
 }
-

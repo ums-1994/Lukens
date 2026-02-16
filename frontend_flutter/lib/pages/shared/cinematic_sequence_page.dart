@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import '../../config/app_constants.dart';
 
 class CinematicSequencePage extends StatefulWidget {
   const CinematicSequencePage({super.key});
@@ -77,7 +78,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
     _frameController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         setState(() {
-          _currentFrameIndex = (_currentFrameIndex + 1) % _backgroundImages.length;
+          _currentFrameIndex =
+              (_currentFrameIndex + 1) % _backgroundImages.length;
         });
         _frameController.reset();
         _frameController.forward();
@@ -173,6 +175,30 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               ),
             ),
           ),
+
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: IgnorePointer(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFF333333), width: 1),
+                ),
+                child: Text(
+                  AppConstants.fullVersion,
+                  style: const TextStyle(
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -206,7 +232,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           animation: _parallaxController,
           builder: (context, child) {
             // Darkness ranges from 0.6 (darker) to 0.2 (lighter)
-            final darkness = 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
+            final darkness =
+                0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
               color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
@@ -224,8 +251,10 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           children: [
             // Triangle 1 - Top Left
             Positioned(
-              left: 120 + (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 + (math.cos(_parallaxController.value * 2 * math.pi) * 30),
+              left: 120 +
+                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
+              top: 180 +
+                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
@@ -237,8 +266,12 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
             // Triangle 2 - Top Right
             Positioned(
-              right: 140 + (math.sin(_parallaxController.value * 2 * math.pi + 1.5) * 50),
-              top: 220 + (math.cos(_parallaxController.value * 2 * math.pi + 1.5) * 35),
+              right: 140 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
+                      50),
+              top: 220 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
+                      35),
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
@@ -250,8 +283,10 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
             // Triangle 3 - Bottom Left
             Positioned(
-              left: 200 + (math.sin(_parallaxController.value * 2 * math.pi + 3) * 35),
-              bottom: 150 + (math.cos(_parallaxController.value * 2 * math.pi + 3) * 25),
+              left: 200 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 3) * 35),
+              bottom: 150 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 3) * 25),
               child: Transform.rotate(
                 angle: _parallaxController.value * 2 * math.pi * 0.6,
                 child: CustomPaint(
@@ -263,8 +298,10 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
             // Triangle 4 - Center Right
             Positioned(
-              right: 180 + (math.sin(_parallaxController.value * 2 * math.pi + 4) * 45),
-              top: 400 + (math.cos(_parallaxController.value * 2 * math.pi + 4) * 40),
+              right: 180 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 4) * 45),
+              top: 400 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 4) * 40),
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.7,
                 child: CustomPaint(
@@ -359,7 +396,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
             AnimatedBuilder(
               animation: _parallaxController,
               builder: (context, child) {
-                final glowIntensity = 0.6 + (math.sin(_parallaxController.value * 2 * math.pi) * 0.3);
+                final glowIntensity = 0.6 +
+                    (math.sin(_parallaxController.value * 2 * math.pi) * 0.3);
                 return Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(50),
@@ -514,4 +552,3 @@ class TrianglePainter extends CustomPainter {
   @override
   bool shouldRepaint(TrianglePainter oldDelegate) => false;
 }
-

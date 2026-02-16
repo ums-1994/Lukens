@@ -89,6 +89,84 @@ def search_users_for_mentions():
         return {'detail': str(e)}, 500
 
 
+@bp.get("/proposals/<int:proposal_id>/pdf/preview")
+@token_required
+def preview_proposal_pdf(username=None, proposal_id=None):
+    """Return the exact same PDF bytes that are sent to DocuSign (for in-app preview)."""
+    try:
+        from flask import send_file
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return [
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                ]
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+
+            current_user_id = current_user['id'] if isinstance(current_user, dict) else current_user[0]
+
+            prop_cols = _get_table_columns('proposals')
+            client_expr = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
+            owner_expr = 'owner_id' if 'owner_id' in prop_cols else ('user_id' if 'user_id' in prop_cols else None)
+            content_expr = 'content' if 'content' in prop_cols else None
+            client_email_expr = 'client_email' if 'client_email' in prop_cols else None
+
+            if not content_expr or not owner_expr:
+                return {'detail': 'Proposals schema missing required columns'}, 500
+
+            select_client = f"{client_expr} AS client_name" if client_expr else "NULL::text AS client_name"
+            select_client_email = f"{client_email_expr} AS client_email" if client_email_expr else "NULL::text AS client_email"
+
+            cursor.execute(
+                f"""
+                SELECT id, title, {content_expr} AS content, {select_client}, {select_client_email}
+                FROM proposals
+                WHERE id = %s AND {owner_expr} = %s
+                """,
+                (proposal_id, current_user_id),
+            )
+
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            pdf_content = generate_proposal_pdf(
+                proposal_id=proposal_id,
+                title=proposal.get('title') or f"Proposal {proposal_id}",
+                content=proposal.get('content', '') or '',
+                client_name=proposal.get('client_name'),
+                client_email=proposal.get('client_email'),
+            )
+
+            return send_file(
+                BytesIO(pdf_content),
+                mimetype='application/pdf',
+                as_attachment=False,
+                download_name=f"Proposal_{proposal_id}.pdf",
+            )
+
+    except Exception as e:
+        print(f"❌ Error previewing proposal PDF: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 @bp.get("/notifications")
 @token_required
 def get_notifications(username=None, user_id=None, email=None):
@@ -519,11 +597,23 @@ def send_for_signature(username=None, proposal_id=None, user_id=None, email=None
                     return {'detail': 'User not found'}, 404
                 current_user_id = current_user['id'] if isinstance(current_user, dict) else current_user[0]
 
+            prop_cols = _get_table_columns('proposals')
+            client_expr = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
+            owner_expr = 'owner_id' if 'owner_id' in prop_cols else ('user_id' if 'user_id' in prop_cols else None)
+            content_expr = 'content' if 'content' in prop_cols else None
+            client_email_expr = 'client_email' if 'client_email' in prop_cols else None
+
+            if not content_expr or not owner_expr:
+                return {'detail': 'Proposals schema missing required columns'}, 500
+
+            select_client = f"{client_expr} AS client_name" if client_expr else "NULL::text AS client_name"
+            select_client_email = f"{client_email_expr} AS client_email" if client_email_expr else "NULL::text AS client_email"
+
             cursor.execute(
-                """
-                SELECT id, title, content, client AS client_name, client_email, owner_id
-                FROM proposals 
-                WHERE id = %s AND owner_id = %s
+                f"""
+                SELECT id, title, {content_expr} AS content, {select_client}, {select_client_email}, {owner_expr} AS owner_id
+                FROM proposals
+                WHERE id = %s AND {owner_expr} = %s
                 """,
                 (proposal_id, current_user_id),
             )
@@ -623,7 +713,7 @@ def send_for_signature(username=None, proposal_id=None, user_id=None, email=None
         return {'detail': str(e)}, 500
 
 
-@bp.get("/api/proposals/<int:proposal_id>/signatures")
+@bp.get("/proposals/<int:proposal_id>/signatures")
 @token_required
 def get_proposal_signatures(username=None, proposal_id=None):
     """Get all signatures for a proposal"""
@@ -657,7 +747,6 @@ def get_proposal_signatures(username=None, proposal_id=None):
 
 
 @bp.get("/proposals/<int:proposal_id>/signed-document")
-@bp.get("/api/proposals/<int:proposal_id>/signed-document")
 @token_required
 def get_signed_document(username=None, proposal_id=None):
     """Get the signed document PDF from DocuSign for a signed proposal"""

@@ -18,11 +18,22 @@ from email.mime.multipart import MIMEMultipart
 import traceback
 from io import BytesIO
 
+backend_dir = Path(__file__).resolve().parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 import psycopg2
 import psycopg2.extras
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+
+# Word (.docx) generation
+try:
+    from docx import Document
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 
 # PDF Generation
 try:
@@ -93,6 +104,7 @@ CORS(
             "origins": _CORS_ALLOWED_ORIGINS,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+            "expose_headers": ["Content-Type", "Authorization"],
         }
     },
 )
@@ -1710,50 +1722,32 @@ def get_db():
     """Get PostgreSQL connection"""
     return _pg_conn()
 
-
 def hash_password(password):
-    """Hash a password using werkzeug"""
     return generate_password_hash(password)
 
-
 def verify_password(stored_hash, password):
-    """Verify a password against a stored hash"""
     return check_password_hash(stored_hash, password)
 
-
 def generate_token(username):
-    """Generate a new authentication token for a user"""
     token = secrets.token_urlsafe(32)
     valid_tokens[token] = {
         'username': username,
         'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(days=7),
+        'expires_at': datetime.now() + timedelta(days=7)
     }
     save_tokens()  # Persist to file
     print(f"[TOKEN] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
     print(f"[TOKEN] Total valid tokens: {len(valid_tokens)}")
     return token
 
-
 def verify_token(token):
-    """Verify a token and return the username if valid"""
-    global valid_tokens
     # Dev bypass for testing
     if token == 'dev-bypass-token':
         print("[DEV] Using dev-bypass-token for username: admin")
         return 'admin'
-
-    # First check in-memory tokens
+    
     if token not in valid_tokens:
-        # Reload from file to sync tokens across multiple workers/processes
-        try:
-            valid_tokens = load_tokens()
-            print(f"[TOKEN] Reloaded tokens from file, now have {len(valid_tokens)} tokens")
-        except Exception as e:
-            print(f"[WARN] Could not reload tokens from file: {e}")
-        if token not in valid_tokens:
-            return None
-
+        return None
     token_data = valid_tokens[token]
     if datetime.now() > token_data['expires_at']:
         del valid_tokens[token]
@@ -4604,26 +4598,76 @@ def get_collaboration_access():
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
+
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return {
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                }
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
+            inv_cols = _get_table_columns('collaboration_invitations')
+            proposals_cols = _get_table_columns('proposals')
+
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+            invited_email_col = _pick_first(
+                inv_cols,
+                ['invited_email', 'invitee_email', 'email', 'client_email', 'collaborator_email'],
+            )
+            permission_col = _pick_first(inv_cols, ['permission_level', 'permission', 'role'])
+            status_col = _pick_first(inv_cols, ['status'])
+            expires_col = _pick_first(inv_cols, ['expires_at', 'expires', 'token_expires_at'])
+            accessed_col = _pick_first(inv_cols, ['accessed_at', 'accepted_at', 'updated_at'])
+
+            owner_col = 'user_id' if 'user_id' in proposals_cols else ('owner_id' if 'owner_id' in proposals_cols else None)
+
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+            if not invited_email_col:
+                return {'detail': 'Collaboration invitations schema missing invited email column'}, 500
+            if not permission_col:
+                return {'detail': 'Collaboration invitations schema missing permission column'}, 500
+            if not status_col:
+                return {'detail': 'Collaboration invitations schema missing status column'}, 500
+
             # Get invitation details
-            cursor.execute("""
-                SELECT 
+            expires_select = f"ci.{expires_col} as expires_at" if expires_col else "NULL::timestamp as expires_at"
+            owner_id_select = f"p.{owner_col} as owner_id" if owner_col else "NULL::int as owner_id"
+            cursor.execute(
+                f"""
+                SELECT
                     ci.id,
                     ci.proposal_id,
-                    ci.invited_email,
-                    ci.permission_level,
-                    ci.status,
-                    ci.expires_at,
+                    ci.{invited_email_col} as invited_email,
+                    ci.{permission_col} as permission_level,
+                    ci.{status_col} as status,
+                    {expires_select},
                     p.title,
                     p.content,
-                    p.user_id,
+                    {owner_id_select},
                     u.email as owner_email,
                     u.full_name as owner_name
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
-                JOIN users u ON ci.invited_by = u.id
-                WHERE ci.access_token = %s
-            """, (token,))
+                LEFT JOIN users u ON {('p.' + owner_col) if owner_col else 'NULL'} = u.id
+                WHERE ci.{token_col} = %s
+                """,
+                (token,),
+            )
             
             invitation = cursor.fetchone()
             
@@ -4636,11 +4680,24 @@ def get_collaboration_access():
             
             # Update accessed_at timestamp on first access
             if invitation['status'] == 'pending':
-                cursor.execute("""
-                    UPDATE collaboration_invitations 
-                    SET status = 'accepted', accessed_at = NOW()
-                    WHERE id = %s
-                """, (invitation['id'],))
+                if accessed_col:
+                    cursor.execute(
+                        f"""
+                        UPDATE collaboration_invitations
+                        SET {status_col} = 'accepted', {accessed_col} = NOW()
+                        WHERE id = %s
+                        """,
+                        (invitation['id'],),
+                    )
+                else:
+                    cursor.execute(
+                        f"""
+                        UPDATE collaboration_invitations
+                        SET {status_col} = 'accepted'
+                        WHERE id = %s
+                        """,
+                        (invitation['id'],),
+                    )
                 conn.commit()
             
             # For edit/suggest permission, create/get guest user and generate auth token
@@ -4815,13 +4872,48 @@ def get_client_proposals():
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return [
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                ]
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
             
             # Get invitation details to find client email
-            cursor.execute("""
-                SELECT invited_email, expires_at
+            inv_cols = _get_table_columns('collaboration_invitations')
+            inv_email_col = _pick_first(inv_cols, ['invited_email', 'invitee_email', 'email', 'client_email'])
+            expires_col = _pick_first(inv_cols, ['expires_at'])
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+
+            if not inv_email_col:
+                return {'detail': 'Collaboration invitations schema missing email column'}, 500
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+
+            expires_select = f", {expires_col}" if expires_col else ", NULL::timestamp as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {inv_email_col} AS invited_email{expires_select}
                 FROM collaboration_invitations
-                WHERE access_token = %s
-            """, (token,))
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
             
             invitation = cursor.fetchone()
             if not invitation:
@@ -4834,12 +4926,23 @@ def get_client_proposals():
             client_email = invitation['invited_email']
             
             # Get all proposals for this client email
-            cursor.execute("""
-                SELECT p.id, p.title, p.status, p.created_at, p.updated_at, p.client, p.client_email
+            prop_cols = _get_table_columns('proposals')
+            client_col = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
+            client_select = f"p.{client_col}" if client_col else "NULL::text"
+            client_email_col = 'client_email' if 'client_email' in prop_cols else None
+
+            if not client_email_col:
+                return {'detail': 'Proposals schema missing client_email column'}, 500
+
+            cursor.execute(
+                f"""
+                SELECT p.id, p.title, p.status, p.created_at, p.updated_at, {client_select} AS client, p.{client_email_col} AS client_email
                 FROM proposals p
-                WHERE p.client_email = %s
+                WHERE p.{client_email_col} = %s
                 ORDER BY p.updated_at DESC
-            """, (client_email,))
+                """,
+                (client_email,),
+            )
             
             proposals = cursor.fetchall()
             
@@ -4863,13 +4966,48 @@ def get_client_proposal_details(proposal_id):
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return [
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                ]
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
             
             # Verify token and get client email
-            cursor.execute("""
-                SELECT invited_email, expires_at
+            inv_cols = _get_table_columns('collaboration_invitations')
+            inv_email_col = _pick_first(inv_cols, ['invited_email', 'invitee_email', 'email', 'client_email'])
+            expires_col = _pick_first(inv_cols, ['expires_at'])
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+
+            if not inv_email_col:
+                return {'detail': 'Collaboration invitations schema missing email column'}, 500
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+
+            expires_select = f", {expires_col}" if expires_col else ", NULL::timestamp as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {inv_email_col} AS invited_email{expires_select}
                 FROM collaboration_invitations
-                WHERE access_token = %s
-            """, (token,))
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
             
             invitation = cursor.fetchone()
             if not invitation:
@@ -4878,15 +5016,60 @@ def get_client_proposal_details(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
+            prop_cols = _get_table_columns('proposals')
+            client_col = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
+            client_select = f"p.{client_col}" if client_col else "NULL::text"
+            client_email_col = 'client_email' if 'client_email' in prop_cols else None
+            user_id_col = 'user_id' if 'user_id' in prop_cols else ('owner_id' if 'owner_id' in prop_cols else None)
+            user_id_select = f"p.{user_id_col}" if user_id_col else "NULL"
+
+            if not client_email_col:
+                return {'detail': 'Proposals schema missing client_email column'}, 500
+
+            def _get_column_data_type(table_name: str, column_name: str):
+                if not column_name:
+                    return None
+                cursor.execute(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = %s
+                      AND column_name = %s
+                    """,
+                    (table_name, column_name),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                if isinstance(row, dict):
+                    return row.get('data_type')
+                return row[0]
+
+            if user_id_col == 'owner_id':
+                join_clause = "LEFT JOIN users u ON u.id = p.owner_id"
+            elif user_id_col == 'user_id':
+                user_id_type = (_get_column_data_type('proposals', 'user_id') or '').lower()
+                if user_id_type in ('integer', 'bigint', 'smallint'):
+                    join_clause = "LEFT JOIN users u ON u.id = p.user_id"
+                else:
+                    # In some schemas proposals.user_id stores the owner's username.
+                    join_clause = "LEFT JOIN users u ON u.username = p.user_id"
+            else:
+                join_clause = "LEFT JOIN users u ON 1=0"
+
             # Get proposal details
-            cursor.execute("""
+            cursor.execute(
+                f"""
                 SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
-                       p.client, p.client_email, p.user_id,
+                       {client_select} AS client, p.{client_email_col} AS client_email, {user_id_select} AS user_id,
                        u.full_name as owner_name, u.email as owner_email
                 FROM proposals p
-                LEFT JOIN users u ON p.user_id = u.username
-                WHERE p.id = %s AND p.client_email = %s
-            """, (proposal_id, invitation['invited_email']))
+                {join_clause}
+                WHERE p.id = %s AND p.{client_email_col} = %s
+                """,
+                (proposal_id, invitation['invited_email']),
+            )
             
             proposal = cursor.fetchone()
             if not proposal:
@@ -4913,13 +5096,85 @@ def get_client_proposal_details(proposal_id):
                 },
                 {
                     'action': 'Sent to Client',
-                    'description': f'Proposal was sent to {proposal["client_name"]}',
+                    'description': f'Proposal was sent to {(proposal.get("client") or proposal.get("client_name") or "the client")}',
                     'timestamp': proposal['updated_at'].isoformat() if proposal['updated_at'] else None
                 }
             ]
+
+            signature = None
+            try:
+                sig_cols = _get_table_columns('proposal_signatures')
+                if 'id' in sig_cols and 'proposal_id' in sig_cols:
+                    signed_url_col = (
+                        'signed_document_url'
+                        if 'signed_document_url' in sig_cols
+                        else ('signed_pdf_url' if 'signed_pdf_url' in sig_cols else None)
+                    )
+                    envelope_col = 'envelope_id' if 'envelope_id' in sig_cols else None
+                    status_col = 'status' if 'status' in sig_cols else None
+                    signing_url_col = 'signing_url' if 'signing_url' in sig_cols else None
+                    created_col = 'created_at' if 'created_at' in sig_cols else None
+                    signed_at_col = (
+                        'signed_at'
+                        if 'signed_at' in sig_cols
+                        else ('completed_at' if 'completed_at' in sig_cols else None)
+                    )
+
+                    select_bits = [
+                        'id',
+                        'proposal_id',
+                    ]
+                    if signed_url_col:
+                        select_bits.append(f"{signed_url_col} as signed_document_url")
+                    else:
+                        select_bits.append("NULL::text as signed_document_url")
+                    if envelope_col:
+                        select_bits.append(f"{envelope_col} as envelope_id")
+                    else:
+                        select_bits.append("NULL::text as envelope_id")
+                    if status_col:
+                        select_bits.append(f"{status_col} as status")
+                    else:
+                        select_bits.append("NULL::text as status")
+                    if signing_url_col:
+                        select_bits.append(f"{signing_url_col} as signing_url")
+                    else:
+                        select_bits.append("NULL::text as signing_url")
+                    if signed_at_col:
+                        select_bits.append(f"{signed_at_col} as signed_at")
+                    else:
+                        select_bits.append("NULL::timestamp as signed_at")
+                    if created_col:
+                        select_bits.append(f"{created_col} as created_at")
+                    else:
+                        select_bits.append("NOW() as created_at")
+
+                    cursor.execute(
+                        f"""
+                        SELECT {', '.join(select_bits)}
+                        FROM proposal_signatures
+                        WHERE proposal_id = %s
+                        ORDER BY COALESCE({signed_at_col or created_col or 'id'}, id) DESC
+                        LIMIT 1
+                        """,
+                        (proposal_id,),
+                    )
+                    sig_row = cursor.fetchone()
+                    if sig_row:
+                        signature = {
+                            'status': sig_row.get('status') or 'unknown',
+                            'envelope_id': sig_row.get('envelope_id'),
+                            'signing_url': sig_row.get('signing_url'),
+                            'signed_document_url': sig_row.get('signed_document_url'),
+                            'signed_at': sig_row.get('signed_at').isoformat() if sig_row.get('signed_at') else None,
+                        }
+            except Exception:
+                # If signature table/columns differ, don't break the client view.
+                signature = None
             
             return {
                 'proposal': dict(proposal),
+                'signature': signature,
                 'comments': [dict(c) for c in comments],
                 'activity': activity
             }, 200
@@ -4936,55 +5191,102 @@ def add_client_comment(proposal_id):
         data = request.get_json()
         token = data.get('token')
         comment_text = data.get('comment_text')
-        
+
         if not token or not comment_text:
             return {'detail': 'Token and comment text required'}, 400
-        
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Verify token
-            cursor.execute("""
-                SELECT invited_email, expires_at
+
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return {
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                }
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
+            inv_cols = _get_table_columns('collaboration_invitations')
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+            invited_email_col = _pick_first(
+                inv_cols,
+                ['invited_email', 'invitee_email', 'email', 'client_email', 'collaborator_email'],
+            )
+            expires_col = _pick_first(inv_cols, ['expires_at', 'expires', 'token_expires_at'])
+
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+            if not invited_email_col:
+                return {'detail': 'Collaboration invitations schema missing email column'}, 500
+
+            expires_select = f"{expires_col} as expires_at" if expires_col else "NULL::timestamp as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {invited_email_col} as invited_email, {expires_select}
                 FROM collaboration_invitations
-                WHERE access_token = %s
-            """, (token,))
-            
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
+
             invitation = cursor.fetchone()
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
-            
+
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
-            
-            # Create or get guest user
+
             guest_email = invitation['invited_email']
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO users (username, email, password_hash, full_name, role)
                 VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
                 RETURNING id
-            """, (guest_email, guest_email, '', f'Client ({guest_email})', 'client'))
-            
+                """,
+                (guest_email, guest_email, '', f'Client ({guest_email})', 'client'),
+            )
+
             guest_user_id = cursor.fetchone()['id']
             conn.commit()
-            
-            # Add comment
-            cursor.execute("""
-                INSERT INTO document_comments 
+
+            cursor.execute(
+                """
+                INSERT INTO document_comments
                 (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id, created_at
-            """, (proposal_id, comment_text, guest_user_id, 
-                  data.get('section_index'), data.get('highlighted_text'), 'open'))
-            
+                """,
+                (
+                    proposal_id,
+                    comment_text,
+                    guest_user_id,
+                    data.get('section_index'),
+                    data.get('highlighted_text'),
+                    'open',
+                ),
+            )
+
             result = cursor.fetchone()
             conn.commit()
-            
+
             return {
                 'id': result['id'],
                 'message': 'Comment added successfully',
-                'created_at': result['created_at'].isoformat() if result['created_at'] else None
+                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
             }, 201
             
     except Exception as e:
@@ -4994,14 +5296,13 @@ def add_client_comment(proposal_id):
 
 @app.post("/legacy/api/client/proposals/<int:proposal_id>/approve")
 def client_approve_proposal(proposal_id):
-    """Client approves and signs proposal"""
+    """Client approves proposal - creates DocuSign envelope for signing"""
     try:
         data = request.get_json()
         token = data.get('token')
         signer_name = data.get('signer_name')
         signer_title = data.get('signer_title', '')
         comments = data.get('comments', '')
-        signature_date = data.get('signature_date')
         
         if not token or not signer_name:
             return {'detail': 'Token and signer name required'}, 400
@@ -5009,12 +5310,49 @@ def client_approve_proposal(proposal_id):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Verify token
-            cursor.execute("""
-                SELECT invited_email, expires_at
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return {
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                }
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
+            inv_cols = _get_table_columns('collaboration_invitations')
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+            invited_email_col = _pick_first(
+                inv_cols,
+                ['invited_email', 'invitee_email', 'email', 'client_email', 'collaborator_email'],
+            )
+            expires_col = _pick_first(inv_cols, ['expires_at', 'expires', 'token_expires_at'])
+
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+            if not invited_email_col:
+                return {'detail': 'Collaboration invitations schema missing email column'}, 500
+
+            expires_select = f"{expires_col} as expires_at" if expires_col else "NULL::timestamp as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {invited_email_col} as invited_email, {expires_select}
                 FROM collaboration_invitations
-                WHERE access_token = %s
-            """, (token,))
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
             
             invitation = cursor.fetchone()
             if not invitation:
@@ -5023,53 +5361,129 @@ def client_approve_proposal(proposal_id):
             if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
                 return {'detail': 'Access token has expired'}, 403
             
-            # Update proposal status
-            cursor.execute("""
-                UPDATE proposals 
-                SET status = 'Client Approved', updated_at = NOW()
-                WHERE id = %s AND client_email = %s
-                RETURNING id, title, client, user_id
-            """, (proposal_id, invitation['invited_email']))
-            
-            proposal = cursor.fetchone()
-            if not proposal:
-                return {'detail': 'Proposal not found or access denied'}, 404
-            
-            # Store signature information (you might want a separate table for this)
-            # For now, add as a comment
-            signature_info = f"""
-✓ APPROVED AND SIGNED
-Signer: {signer_name}
-{f"Title: {signer_title}" if signer_title else ""}
-Date: {signature_date or datetime.now().isoformat()}
-{f"Comments: {comments}" if comments else ""}
-            """
-            
-            # Get or create client user
-            cursor.execute("""
-                INSERT INTO users (username, email, password_hash, full_name, role)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-                RETURNING id
-            """, (invitation['invited_email'], invitation['invited_email'], '', signer_name, 'client'))
-            
-            client_user_id = cursor.fetchone()['id']
-            
-            # Add signature as comment
-            cursor.execute("""
-                INSERT INTO document_comments 
-                (proposal_id, comment_text, created_by, status)
-                VALUES (%s, %s, %s, %s)
-            """, (proposal_id, signature_info, client_user_id, 'resolved'))
-            
-            conn.commit()
-            
-            print(f"✅ Proposal {proposal_id} approved by client: {signer_name}")
-            
+            # Fetch proposal, ensure client has access
+            proposal, err_body, err_code = _client_fetch_proposal_for_email(
+                cursor,
+                proposal_id,
+                invitation['invited_email'],
+            )
+            if err_body:
+                return err_body, err_code
+
+            # Reuse latest active signing URL if exists
+            sig_cols = _get_table_columns('proposal_signatures')
+            sig_order_col = (
+                'sent_at'
+                if 'sent_at' in sig_cols
+                else ('created_at' if 'created_at' in sig_cols else ('updated_at' if 'updated_at' in sig_cols else 'id'))
+            )
+            cursor.execute(
+                f"""
+                SELECT envelope_id, signing_url, status
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY {sig_order_col} DESC
+                LIMIT 1
+                """,
+                (proposal_id,),
+            )
+            existing_signature = cursor.fetchone()
+            signing_url = None
+            envelope_id = None
+            if existing_signature and existing_signature.get('signing_url'):
+                status = (existing_signature.get('status') or '').lower()
+                if status not in ['completed', 'declined', 'voided']:
+                    signing_url = existing_signature.get('signing_url')
+                    envelope_id = existing_signature.get('envelope_id')
+
+            if not signing_url:
+                from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, get_frontend_url
+
+                pdf_bytes = generate_proposal_pdf(
+                    proposal_id=proposal_id,
+                    title=proposal.get('title') or f"Proposal {proposal_id}",
+                    content=proposal.get('content', '') or '',
+                    client_name=proposal.get('client_name') or signer_name,
+                    client_email=proposal.get('client_email') or invitation['invited_email'],
+                )
+
+                frontend_url = get_frontend_url()
+                return_url = f"{frontend_url}/#/collaborate?token={token}&signed=true"
+
+                envelope_result = create_docusign_envelope(
+                    proposal_id=proposal_id,
+                    pdf_bytes=pdf_bytes,
+                    signer_name=signer_name,
+                    signer_email=invitation['invited_email'],
+                    signer_title=signer_title,
+                    return_url=return_url,
+                )
+
+                signing_url = envelope_result.get('signing_url')
+                envelope_id = envelope_result.get('envelope_id')
+                if not signing_url or not envelope_id:
+                    raise Exception('Failed to create DocuSign signing URL')
+
+                cursor.execute(
+                    """
+                    INSERT INTO proposal_signatures
+                    (proposal_id, envelope_id, signer_name, signer_email, signer_title, signing_url, status, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
+                    """,
+                    (
+                        proposal_id,
+                        envelope_id,
+                        signer_name,
+                        invitation['invited_email'],
+                        signer_title,
+                        signing_url,
+                        'sent',
+                    ),
+                )
+
+                cursor.execute(
+                    """
+                    UPDATE proposals
+                    SET status = 'Sent for Signature', updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (proposal_id,),
+                )
+
+                # Store client comments, if any
+                if comments:
+                    cursor.execute(
+                        """
+                        INSERT INTO users (username, email, password_hash, full_name, role)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
+                        RETURNING id
+                        """,
+                        (
+                            invitation['invited_email'],
+                            invitation['invited_email'],
+                            '',
+                            signer_name,
+                            'client',
+                        ),
+                    )
+                    client_user_id = cursor.fetchone()['id']
+                    cursor.execute(
+                        """
+                        INSERT INTO document_comments (proposal_id, comment_text, created_by, status)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (proposal_id, comments, client_user_id, 'open'),
+                    )
+
+                conn.commit()
+
             return {
-                'message': 'Proposal approved successfully',
-                'proposal_id': proposal['id'],
-                'status': 'Client Approved'
+                'message': 'Proposal ready for signing',
+                'proposal_id': proposal_id,
+                'signing_url': signing_url,
+                'envelope_id': envelope_id,
+                'status': 'Sent for Signature',
             }, 200
             
     except Exception as e:
@@ -5090,14 +5504,51 @@ def client_reject_proposal(proposal_id):
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Verify token
-            cursor.execute("""
-                SELECT invited_email, expires_at
+
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return {
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                }
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
+            inv_cols = _get_table_columns('collaboration_invitations')
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+            invited_email_col = _pick_first(
+                inv_cols,
+                ['invited_email', 'invitee_email', 'email', 'client_email', 'collaborator_email'],
+            )
+            expires_col = _pick_first(inv_cols, ['expires_at', 'expires', 'token_expires_at'])
+
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+            if not invited_email_col:
+                return {'detail': 'Collaboration invitations schema missing email column'}, 500
+
+            expires_select = f"{expires_col} as expires_at" if expires_col else "NULL::timestamp as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {invited_email_col} as invited_email, {expires_select}
                 FROM collaboration_invitations
-                WHERE access_token = %s
-            """, (token,))
-            
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
+
             invitation = cursor.fetchone()
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
@@ -5954,8 +6405,203 @@ def get_proposal_signatures(username, proposal_id):
 def docusign_webhook():
     """Handle DocuSign webhook events"""
     try:
-        # Get event data
-        event_data = request.get_json()
+        def _safe_preview(value, max_len: int = 800):
+            try:
+                if value is None:
+                    return None
+                if isinstance(value, bytes):
+                    s = value.decode('utf-8', errors='replace')
+                else:
+                    s = str(value)
+                s = s.replace('\r', ' ').replace('\n', ' ')
+                if len(s) > max_len:
+                    return s[:max_len] + "..."
+                return s
+            except Exception:
+                return None
+
+        def _deep_find_key(obj, keys: set[str], *, max_depth: int = 10, _depth: int = 0):
+            if _depth > max_depth:
+                return None
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if isinstance(k, str) and k in keys:
+                        return v
+                    found = _deep_find_key(v, keys, max_depth=max_depth, _depth=_depth + 1)
+                    if found is not None:
+                        return found
+            elif isinstance(obj, list):
+                for item in obj:
+                    found = _deep_find_key(item, keys, max_depth=max_depth, _depth=_depth + 1)
+                    if found is not None:
+                        return found
+            return None
+
+        def _extract_event_from_json(payload: dict):
+            if not isinstance(payload, dict):
+                return None, None, payload
+
+            event = payload.get('event') or payload.get('Event')
+            envelope_id = (
+                payload.get('envelopeId')
+                or payload.get('envelope_id')
+                or payload.get('EnvelopeId')
+                or payload.get('EnvelopeID')
+            )
+            if not envelope_id:
+                envelope_id = _deep_find_key(
+                    payload,
+                    {
+                        'envelopeId',
+                        'envelope_id',
+                        'EnvelopeId',
+                        'EnvelopeID',
+                        'envelopeID',
+                    },
+                )
+
+            if not event:
+                status = payload.get('status') or payload.get('Status')
+                if status:
+                    event = str(status).strip().lower()
+
+            if envelope_id is not None:
+                envelope_id = str(envelope_id).strip()
+
+            return event, envelope_id, payload
+
+        def _extract_event_from_xml(xml_bytes: bytes):
+            if not xml_bytes:
+                return None, None, None
+            try:
+                import xml.etree.ElementTree as ET
+
+                root = ET.fromstring(xml_bytes)
+
+                def _find_text(tag_suffix: str):
+                    for el in root.iter():
+                        if isinstance(el.tag, str) and el.tag.lower().endswith(tag_suffix.lower()):
+                            if el.text and str(el.text).strip():
+                                return str(el.text).strip()
+                    return None
+
+                envelope_id = (
+                    _find_text('EnvelopeID')
+                    or _find_text('EnvelopeId')
+                    or _find_text('EnvelopeId')
+                )
+
+                status = (
+                    _find_text('Status')
+                    or _find_text('EnvelopeStatus')
+                    or _find_text('StatusCode')
+                )
+
+                event = None
+                if status:
+                    event = str(status).strip().lower()
+
+                return event, envelope_id, status
+            except Exception:
+                return None, None, None
+
+        def _find_envelope_id_in_text(text: str | bytes | None):
+            try:
+                if not text:
+                    return None
+                if isinstance(text, bytes):
+                    s = text.decode('utf-8', errors='ignore')
+                else:
+                    s = str(text)
+                # DocuSign envelope ids are GUIDs
+                m = re.search(r"(?i)<\s*EnvelopeID\s*>\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*<\s*/\s*EnvelopeID\s*>", s)
+                if m:
+                    return m.group(1).strip()
+                m = re.search(r"(?i)envelopeid\s*[:=]\s*\"?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\"?", s)
+                if m:
+                    return m.group(1).strip()
+                return None
+            except Exception:
+                return None
+
+        def _extract_xml_candidate_from_raw(raw_body: bytes | None):
+            if not raw_body:
+                return None
+            try:
+                body_text = raw_body.decode('utf-8', errors='ignore')
+            except Exception:
+                return None
+
+            # Multipart bodies: pull the first XML-like fragment.
+            lt = body_text.find('<')
+            gt = body_text.rfind('>')
+            if lt != -1 and gt != -1 and gt > lt:
+                candidate = body_text[lt:gt + 1].strip()
+                if candidate.startswith('<') and candidate.endswith('>') and len(candidate) >= 20:
+                    return candidate.encode('utf-8', errors='ignore')
+            return None
+
+        def _map_event_to_action(event: str | None):
+            if not event:
+                return None
+            e = str(event).strip().lower()
+            if e in {'envelope-completed', 'completed', 'complete', 'signed'}:
+                return 'completed'
+            if e in {'envelope-declined', 'declined', 'decline'}:
+                return 'declined'
+            if e in {'envelope-voided', 'voided', 'void'}:
+                return 'voided'
+            if e in {'recipient-sent', 'sent', 'delivered', 'processing', 'created'}:
+                return 'ignored'
+            return 'ignored'
+
+        # DocuSign Connect may send XML by default, or embed XML inside multipart/form fields.
+        event_data = request.get_json(silent=True)
+        event, envelope_id, parsed_payload = _extract_event_from_json(event_data)
+        xml_status = None
+
+        # Try form fields/files first (common Connect configurations)
+        if not envelope_id:
+            form_xml = None
+            try:
+                form_xml = request.form.get('xml') or request.form.get('XML')
+            except Exception:
+                form_xml = None
+            if form_xml:
+                event, envelope_id, xml_status = _extract_event_from_xml(form_xml.encode('utf-8', errors='ignore'))
+                parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            try:
+                if request.files:
+                    for f in request.files.values():
+                        try:
+                            data = f.read()
+                        except Exception:
+                            data = None
+                        if data:
+                            event, envelope_id, xml_status = _extract_event_from_xml(data)
+                            if envelope_id:
+                                parsed_payload = {'xml_status': xml_status}
+                                break
+            except Exception:
+                pass
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            event, envelope_id, xml_status = _extract_event_from_xml(raw_body)
+            parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            embedded_xml = _extract_xml_candidate_from_raw(raw_body)
+            if embedded_xml:
+                event, envelope_id, xml_status = _extract_event_from_xml(embedded_xml)
+                parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            envelope_id = _find_envelope_id_in_text(raw_body)
         
         # Validate HMAC signature (if configured)
         hmac_key = os.getenv('DOCUSIGN_WEBHOOK_HMAC_KEY')
@@ -5963,13 +6609,19 @@ def docusign_webhook():
             signature = request.headers.get('X-DocuSign-Signature-1')
             # TODO: Validate signature
         
-        event = event_data.get('event')
-        envelope_id = event_data.get('envelopeId')
-        
         if not envelope_id:
-            return {'detail': 'No envelope ID provided'}, 400
-        
-        print(f"📬 DocuSign webhook received: {event} for envelope {envelope_id}")
+            ct = request.headers.get('Content-Type')
+            raw_body = request.get_data(cache=False)
+            print("⚠️ DocuSign webhook: could not parse envelopeId")
+            print(f"   content-type={ct}")
+            print(f"   body_preview={_safe_preview(raw_body)}")
+            return {'message': 'Webhook received'}, 200
+
+        action = _map_event_to_action(event)
+        print(f"📬 DocuSign webhook received: {event} (action={action}) for envelope {envelope_id}")
+
+        if action in (None, 'ignored'):
+            return {'message': 'Webhook ignored'}, 200
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -5984,10 +6636,10 @@ def docusign_webhook():
             signature = cursor.fetchone()
             if not signature:
                 print(f"⚠️ Signature record not found for envelope {envelope_id}")
-                return {'message': 'Signature record not found'}, 404
-            
+                return {'message': 'Webhook processed'}, 200
+
             # Handle different events
-            if event == 'envelope-completed':
+            if action == 'completed':
                 # Signature completed
                 cursor.execute("""
                     UPDATE proposal_signatures 
@@ -6023,9 +6675,13 @@ def docusign_webhook():
                 
                 print(f"✅ Envelope {envelope_id} completed")
                 
-            elif event == 'envelope-declined':
+            elif action == 'declined':
                 # Signature declined
-                decline_reason = event_data.get('declineReason', 'No reason provided')
+                decline_reason = None
+                if isinstance(event_data, dict):
+                    decline_reason = event_data.get('declineReason')
+                if not decline_reason:
+                    decline_reason = 'No reason provided'
                 
                 cursor.execute("""
                     UPDATE proposal_signatures 
@@ -6049,7 +6705,7 @@ def docusign_webhook():
                 
                 print(f"⚠️ Envelope {envelope_id} declined")
                 
-            elif event == 'envelope-voided':
+            elif action == 'voided':
                 # Envelope voided
                 cursor.execute("""
                     UPDATE proposal_signatures 

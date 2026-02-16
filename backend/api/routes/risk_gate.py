@@ -361,7 +361,7 @@ def analyze(username=None):
                 "reasons": getattr(e, "reasons", []),
                 "sanitized_payload_hash": None,
             },
-        }, 400
+        }, 200
     except Exception as e:
         print(f"❌ Risk Gate analyze error: {e}")
         traceback.print_exc()
