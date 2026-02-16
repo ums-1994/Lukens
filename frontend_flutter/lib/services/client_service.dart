@@ -4,6 +4,7 @@ import 'api_service.dart';
 
 class ClientService {
   static String get baseUrl => ApiService.baseUrl;
+  static String get _clientsBase => '$baseUrl/clients';
 
   // Get headers with token
   static Map<String, String> _getHeaders(String? token) {
@@ -46,6 +47,83 @@ class ClientService {
     }
   }
 
+  /// Update a client (finance/admin)
+  static Future<Map<String, dynamic>?> updateClient({
+    required String token,
+    required int clientId,
+    String? companyName,
+    String? email,
+    String? contactPerson,
+    String? phone,
+    String? holdingInformation,
+    String? address,
+    String? clientContactEmail,
+    String? clientContactMobile,
+  }) async {
+    try {
+      String? clean(String? v) {
+        final t = v?.trim();
+        if (t == null || t.isEmpty) return null;
+        return t;
+      }
+
+      final cleanCompanyName = clean(companyName);
+      final cleanEmail = clean(email);
+      final cleanContactPerson = clean(contactPerson);
+      final cleanPhone = clean(phone);
+      final cleanHoldingInformation = clean(holdingInformation);
+      final cleanAddress = clean(address);
+      final cleanClientContactEmail = clean(clientContactEmail);
+      final cleanClientContactMobile = clean(clientContactMobile);
+
+      final response = await http.patch(
+        Uri.parse('$_clientsBase/$clientId'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          if (cleanCompanyName != null) 'company_name': cleanCompanyName,
+          if (cleanEmail != null) 'email': cleanEmail,
+          if (cleanContactPerson != null) 'contact_person': cleanContactPerson,
+          if (cleanPhone != null) 'phone': cleanPhone,
+          if (cleanHoldingInformation != null)
+            'holding_information': cleanHoldingInformation,
+          if (cleanAddress != null) 'address': cleanAddress,
+          if (cleanClientContactEmail != null)
+            'client_contact_email': cleanClientContactEmail,
+          if (cleanClientContactMobile != null)
+            'client_contact_mobile': cleanClientContactMobile,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      }
+
+      print('Error updating client: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error updating client: $e');
+      return null;
+    }
+  }
+
+  /// Delete a client (finance/admin)
+  static Future<bool> deleteClient({
+    required String token,
+    required int clientId,
+  }) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_clientsBase/$clientId'),
+        headers: _getHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error deleting client: $e');
+      return false;
+    }
+  }
   // ============================================================
   // CLIENT MANAGEMENT
   // ============================================================
