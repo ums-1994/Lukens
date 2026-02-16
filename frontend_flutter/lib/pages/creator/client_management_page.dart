@@ -1464,44 +1464,45 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     topRight: Radius.circular(20),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Expanded(
+                    const Expanded(
                         flex: 3,
                         child: Text('Company',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Contact',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Email',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Industry',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 1,
                         child: Text('Status',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    SizedBox(
-                        width: 80,
-                        child: Text('Actions',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
+                    if (_canManageInvitations())
+                      const SizedBox(
+                          width: 80,
+                          child: Text('Actions',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -1588,20 +1589,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
           ),
-          if (_canManageInvitations())
-            SizedBox(
-              width: 80,
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, size: 18),
-                    color: Colors.white,
-                    onPressed: () => _showClientMenu(client),
-                    tooltip: 'More Options',
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
@@ -1685,44 +1672,45 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     topRight: Radius.circular(20),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Expanded(
+                    const Expanded(
                         flex: 3,
                         child: Text('Email',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Company',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Sent Date',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Expires',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 1,
                         child: Text('Status',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    SizedBox(
-                        width: 80,
-                        child: Text('Actions',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
+                    if (_canManageInvitations())
+                      const SizedBox(
+                          width: 80,
+                          child: Text('Actions',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -1803,22 +1791,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 ),
                 textAlign: TextAlign.center,
               ),
-            ),
-          ),
-          SizedBox(
-            width: 80,
-            child: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.white, size: 18),
-              onSelected: (value) => _handleInvitationAction(value, invite),
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'resend', child: Text('Resend')),
-                if (!_isEmailVerified(invite))
-                  const PopupMenuItem(
-                      value: 'send_code',
-                      child: Text('Send Verification Code')),
-                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
             ),
           ),
         ],
