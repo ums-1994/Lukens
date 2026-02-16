@@ -676,13 +676,20 @@ def create_client(username=None):
                 # Serialize to JSON for compatibility with both json/jsonb and text columns
                 additional_info = json.dumps(additional_info_obj) if additional_info_obj else None
 
-            insert_fields = ['company_name', 'email', 'status', 'created_by']
-            insert_values = [company_name, email, 'active', user_id]
+            insert_fields = ['company_name', 'email']
+            insert_values = [company_name, email]
             update_set_parts = [
                 'company_name = EXCLUDED.company_name',
-                'status = EXCLUDED.status',
-                'updated_at = CURRENT_TIMESTAMP',
             ]
+
+            if 'status' in clients_columns:
+                insert_fields.append('status')
+                insert_values.append('active')
+                update_set_parts.append('status = EXCLUDED.status')
+
+            if 'created_by' in clients_columns:
+                insert_fields.append('created_by')
+                insert_values.append(user_id)
 
             if 'contact_person' in clients_columns:
                 insert_fields.insert(1, 'contact_person')
@@ -697,25 +704,26 @@ def create_client(username=None):
             if 'additional_info' in clients_columns:
                 insert_fields.append('additional_info')
                 insert_values.append(additional_info)
-                update_set_parts.insert(
-                    len(update_set_parts) - 1,
+                update_set_parts.append(
                     'additional_info = COALESCE(EXCLUDED.additional_info, clients.additional_info)'
                 )
 
-            returning_fields = [
-                'id',
-                'company_name',
-                'email',
-                'status',
-                'created_at',
-                'updated_at',
-            ]
+            if 'updated_at' in clients_columns:
+                update_set_parts.append('updated_at = CURRENT_TIMESTAMP')
+
+            returning_fields = ['id', 'company_name', 'email']
+            if 'status' in clients_columns:
+                returning_fields.append('status')
+            if 'created_at' in clients_columns:
+                returning_fields.append('created_at')
+            if 'updated_at' in clients_columns:
+                returning_fields.append('updated_at')
             if 'contact_person' in clients_columns:
                 returning_fields.insert(2, 'contact_person')
             if 'phone' in clients_columns:
                 returning_fields.insert(4, 'phone')
             if 'additional_info' in clients_columns:
-                returning_fields.insert(-3, 'additional_info')
+                returning_fields.insert(3, 'additional_info')
 
             cursor.execute(
                 f"""
