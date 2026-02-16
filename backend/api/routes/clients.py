@@ -541,6 +541,14 @@ def get_clients(username=None):
                 select_fields.append('budget_range')
             if 'timeline' in available_columns:
                 select_fields.append('timeline')
+            if 'holding_information' in available_columns:
+                select_fields.append('holding_information')
+            if 'address' in available_columns:
+                select_fields.append('address')
+            if 'client_contact_email' in available_columns:
+                select_fields.append('client_contact_email')
+            if 'client_contact_mobile' in available_columns:
+                select_fields.append('client_contact_mobile')
             if 'additional_info' in available_columns:
                 select_fields.append('additional_info')
             if 'status' in available_columns:
@@ -723,6 +731,32 @@ def create_client(username=None):
                 insert_values.insert(2, phone or None)
                 update_set_parts.insert(2, 'phone = EXCLUDED.phone')
 
+            if 'holding_information' in clients_columns:
+                insert_fields.append('holding_information')
+                insert_values.append(holding_information or None)
+                update_set_parts.append(
+                    'holding_information = EXCLUDED.holding_information'
+                )
+
+            if 'address' in clients_columns:
+                insert_fields.append('address')
+                insert_values.append(address or None)
+                update_set_parts.append('address = EXCLUDED.address')
+
+            if 'client_contact_email' in clients_columns:
+                insert_fields.append('client_contact_email')
+                insert_values.append(client_contact_email or None)
+                update_set_parts.append(
+                    'client_contact_email = EXCLUDED.client_contact_email'
+                )
+
+            if 'client_contact_mobile' in clients_columns:
+                insert_fields.append('client_contact_mobile')
+                insert_values.append(client_contact_mobile or None)
+                update_set_parts.append(
+                    'client_contact_mobile = EXCLUDED.client_contact_mobile'
+                )
+
             if 'additional_info' in clients_columns:
                 insert_fields.append('additional_info')
                 insert_values.append(additional_info)
@@ -750,6 +784,14 @@ def create_client(username=None):
                 returning_fields.insert(2, 'contact_person')
             if 'phone' in clients_columns:
                 returning_fields.insert(4, 'phone')
+            if 'holding_information' in clients_columns:
+                returning_fields.append('holding_information')
+            if 'address' in clients_columns:
+                returning_fields.append('address')
+            if 'client_contact_email' in clients_columns:
+                returning_fields.append('client_contact_email')
+            if 'client_contact_mobile' in clients_columns:
+                returning_fields.append('client_contact_mobile')
             if 'additional_info' in clients_columns:
                 returning_fields.insert(3, 'additional_info')
 
