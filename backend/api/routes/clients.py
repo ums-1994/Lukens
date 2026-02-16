@@ -893,66 +893,102 @@ def update_client(username=None, client_id=None):
             if not existing:
                 return jsonify({"error": "Client not found"}), 404
 
-            company_name = (data.get('company_name') or data.get('name') or existing.get('company_name') or existing.get('name') or '').strip()
-            email = (data.get('email') or existing.get('email') or '').strip()
-            contact_person = (data.get('contact_person') if 'contact_person' in data else existing.get('contact_person'))
-            phone = (data.get('phone') if 'phone' in data else existing.get('phone'))
-            holding_information = (data.get('holding_information') if 'holding_information' in data else existing.get('holding_information'))
-            address = (data.get('address') if 'address' in data else existing.get('address'))
-            client_contact_email = (data.get('client_contact_email') if 'client_contact_email' in data else existing.get('client_contact_email'))
-            client_contact_mobile = (data.get('client_contact_mobile') if 'client_contact_mobile' in data else existing.get('client_contact_mobile'))
+            # Partial update: only update fields present in request.
+            if ('company_name' in data or 'name' in data) and not (
+                (data.get('company_name') or data.get('name') or '').strip()
+            ):
+                return jsonify({"error": "Company name cannot be empty"}), 400
 
-            if not company_name or not email:
-                return jsonify({"error": "Company name and email are required"}), 400
+            if 'email' in data and not (data.get('email') or '').strip():
+                return jsonify({"error": "Email cannot be empty"}), 400
 
             update_set_parts = []
             update_values = []
 
-            if 'company_name' in clients_columns:
+            if 'company_name' in clients_columns and 'company_name' in data:
                 update_set_parts.append('company_name = %s')
-                update_values.append(company_name)
-            if 'name' in clients_columns:
+                update_values.append((data.get('company_name') or '').strip())
+            if 'name' in clients_columns and ('name' in data or 'company_name' in data):
                 update_set_parts.append('name = %s')
-                update_values.append(company_name)
-            if 'email' in clients_columns:
+                update_values.append((data.get('name') or data.get('company_name') or '').strip())
+            if 'email' in clients_columns and 'email' in data:
                 update_set_parts.append('email = %s')
-                update_values.append(email)
-            if 'contact_person' in clients_columns:
+                update_values.append((data.get('email') or '').strip())
+            if 'contact_person' in clients_columns and 'contact_person' in data:
                 update_set_parts.append('contact_person = %s')
-                update_values.append((contact_person or '').strip() or None)
-            if 'phone' in clients_columns:
+                update_values.append((data.get('contact_person') or '').strip() or None)
+            if 'phone' in clients_columns and 'phone' in data:
                 update_set_parts.append('phone = %s')
-                update_values.append((phone or '').strip() or None)
-            if 'holding_information' in clients_columns:
+                update_values.append((data.get('phone') or '').strip() or None)
+            if 'holding_information' in clients_columns and 'holding_information' in data:
                 update_set_parts.append('holding_information = %s')
-                update_values.append((holding_information or '').strip() or None)
-            if 'address' in clients_columns:
+                update_values.append((data.get('holding_information') or '').strip() or None)
+            if 'address' in clients_columns and 'address' in data:
                 update_set_parts.append('address = %s')
-                update_values.append((address or '').strip() or None)
-            if 'client_contact_email' in clients_columns:
+                update_values.append((data.get('address') or '').strip() or None)
+            if 'client_contact_email' in clients_columns and 'client_contact_email' in data:
                 update_set_parts.append('client_contact_email = %s')
-                update_values.append((client_contact_email or '').strip() or None)
-            if 'client_contact_mobile' in clients_columns:
+                update_values.append((data.get('client_contact_email') or '').strip() or None)
+            if 'client_contact_mobile' in clients_columns and 'client_contact_mobile' in data:
                 update_set_parts.append('client_contact_mobile = %s')
-                update_values.append((client_contact_mobile or '').strip() or None)
+                update_values.append((data.get('client_contact_mobile') or '').strip() or None)
 
-            if 'additional_info' in clients_columns:
-                additional_info_obj = {
-                    'holding_information': ((holding_information or '').strip() or None),
-                    'address': ((address or '').strip() or None),
-                    'client_contact_email': ((client_contact_email or '').strip() or None),
-                    'client_contact_mobile': ((client_contact_mobile or '').strip() or None),
-                }
-                additional_info_obj = {k: v for k, v in additional_info_obj.items() if v is not None}
-                additional_info = json.dumps(additional_info_obj) if additional_info_obj else None
+            if 'additional_info' in clients_columns and any(
+                k in data
+                for k in [
+                    'holding_information',
+                    'address',
+                    'client_contact_email',
+                    'client_contact_mobile',
+                ]
+            ):
+                existing_additional = existing.get('additional_info')
+                if isinstance(existing_additional, str):
+                    try:
+                        existing_additional = json.loads(existing_additional)
+                    except Exception:
+                        existing_additional = {}
+                if not isinstance(existing_additional, dict):
+                    existing_additional = {}
+
+                if 'holding_information' in data:
+                    v = (data.get('holding_information') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('holding_information', None)
+                    else:
+                        existing_additional['holding_information'] = v
+
+                if 'address' in data:
+                    v = (data.get('address') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('address', None)
+                    else:
+                        existing_additional['address'] = v
+
+                if 'client_contact_email' in data:
+                    v = (data.get('client_contact_email') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('client_contact_email', None)
+                    else:
+                        existing_additional['client_contact_email'] = v
+
+                if 'client_contact_mobile' in data:
+                    v = (data.get('client_contact_mobile') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('client_contact_mobile', None)
+                    else:
+                        existing_additional['client_contact_mobile'] = v
+
                 update_set_parts.append('additional_info = %s')
-                update_values.append(additional_info)
+                update_values.append(
+                    json.dumps(existing_additional) if existing_additional else None
+                )
 
             if 'updated_at' in clients_columns:
                 update_set_parts.append('updated_at = CURRENT_TIMESTAMP')
 
             if not update_set_parts:
-                return jsonify({"error": "No valid columns to update"}), 400
+                return jsonify({"error": "No valid fields provided to update"}), 400
 
             update_values.append(client_id)
 
@@ -1013,8 +1049,15 @@ def delete_client(username=None, client_id=None):
             if user_role not in allowed_roles and not is_finance_variant:
                 return jsonify({"error": "Insufficient permissions"}), 403
 
-            cursor.execute("DELETE FROM clients WHERE id = %s", (client_id,))
-            conn.commit()
+            try:
+                cursor.execute("DELETE FROM clients WHERE id = %s", (client_id,))
+                conn.commit()
+            except psycopg2.IntegrityError as ie:
+                conn.rollback()
+                return jsonify({
+                    "error": "Client cannot be deleted because it is referenced by other records",
+                    "detail": str(ie),
+                }), 409
 
             if cursor.rowcount == 0:
                 return jsonify({"error": "Client not found"}), 404

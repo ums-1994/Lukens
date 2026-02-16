@@ -74,21 +74,36 @@ class ClientService {
     String? clientContactMobile,
   }) async {
     try {
+      String? clean(String? v) {
+        final t = v?.trim();
+        if (t == null || t.isEmpty) return null;
+        return t;
+      }
+
+      final cleanCompanyName = clean(companyName);
+      final cleanEmail = clean(email);
+      final cleanContactPerson = clean(contactPerson);
+      final cleanPhone = clean(phone);
+      final cleanHoldingInformation = clean(holdingInformation);
+      final cleanAddress = clean(address);
+      final cleanClientContactEmail = clean(clientContactEmail);
+      final cleanClientContactMobile = clean(clientContactMobile);
+
       final response = await http.patch(
         Uri.parse('$_clientsBase/$clientId'),
         headers: _getHeaders(token),
         body: json.encode({
-          if (companyName != null) 'company_name': companyName,
-          if (email != null) 'email': email,
-          if (contactPerson != null) 'contact_person': contactPerson,
-          if (phone != null) 'phone': phone,
-          if (holdingInformation != null)
-            'holding_information': holdingInformation,
-          if (address != null) 'address': address,
-          if (clientContactEmail != null)
-            'client_contact_email': clientContactEmail,
-          if (clientContactMobile != null)
-            'client_contact_mobile': clientContactMobile,
+          if (cleanCompanyName != null) 'company_name': cleanCompanyName,
+          if (cleanEmail != null) 'email': cleanEmail,
+          if (cleanContactPerson != null) 'contact_person': cleanContactPerson,
+          if (cleanPhone != null) 'phone': cleanPhone,
+          if (cleanHoldingInformation != null)
+            'holding_information': cleanHoldingInformation,
+          if (cleanAddress != null) 'address': cleanAddress,
+          if (cleanClientContactEmail != null)
+            'client_contact_email': cleanClientContactEmail,
+          if (cleanClientContactMobile != null)
+            'client_contact_mobile': cleanClientContactMobile,
         }),
       );
 

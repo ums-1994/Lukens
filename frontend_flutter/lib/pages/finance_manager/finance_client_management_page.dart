@@ -22,6 +22,8 @@ class _FinanceClientManagementPageState
 
     final nameController = TextEditingController(
         text: (client['company_name'] ?? client['name'] ?? '').toString());
+    final emailController =
+        TextEditingController(text: (client['email'] ?? '').toString());
     final holdingController = TextEditingController(
         text: (client['holding_information'] ?? '').toString());
     final addressController =
@@ -29,8 +31,7 @@ class _FinanceClientManagementPageState
     final contactNameController = TextEditingController(
         text: (client['contact_person'] ?? '').toString());
     final contactEmailController = TextEditingController(
-        text: (client['client_contact_email'] ?? client['email'] ?? '')
-            .toString());
+        text: (client['client_contact_email'] ?? '').toString());
     final contactMobileController = TextEditingController(
         text: (client['client_contact_mobile'] ?? client['phone'] ?? '')
             .toString());
@@ -47,6 +48,11 @@ class _FinanceClientManagementPageState
                 TextField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Client Name'),
+                ),
+                TextField(
+                  controller: emailController,
+                  decoration: const InputDecoration(labelText: 'Client Email'),
+                  keyboardType: TextInputType.emailAddress,
                 ),
                 TextField(
                   controller: holdingController,
@@ -100,7 +106,7 @@ class _FinanceClientManagementPageState
         token: token,
         clientId: id is int ? id : int.tryParse(id.toString()) ?? 0,
         companyName: nameController.text.trim(),
-        email: contactEmailController.text.trim(),
+        email: emailController.text.trim(),
         contactPerson: contactNameController.text.trim(),
         phone: contactMobileController.text.trim(),
         holdingInformation: holdingController.text.trim(),
