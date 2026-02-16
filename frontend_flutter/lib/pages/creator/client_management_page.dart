@@ -1588,19 +1588,20 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
           ),
-          SizedBox(
-            width: 80,
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.more_vert, size: 18),
-                  color: Colors.white,
-                  onPressed: () => _showClientMenu(client),
-                  tooltip: 'More Options',
-                ),
-              ],
+          if (_canManageInvitations())
+            SizedBox(
+              width: 80,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.more_vert, size: 18),
+                    color: Colors.white,
+                    onPressed: () => _showClientMenu(client),
+                    tooltip: 'More Options',
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
