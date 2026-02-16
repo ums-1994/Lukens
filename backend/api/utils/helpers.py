@@ -5,6 +5,7 @@ import os
 import json
 import html
 import traceback
+import sys
 from datetime import datetime, timedelta
 import psycopg2.extras
 
@@ -23,8 +24,12 @@ try:
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
     from io import BytesIO
     PDF_AVAILABLE = True
-except ImportError:
-    pass
+except ImportError as e:
+    PDF_AVAILABLE = False
+    print(
+        "⚠️ ReportLab import failed (api.utils.helpers). "
+        f"Error: {e} | Python: {sys.executable}"
+    )
 
 try:
     from docusign_esign import (

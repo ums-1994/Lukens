@@ -10,6 +10,8 @@ class AppSideNav extends StatelessWidget {
     required this.onSelect,
     required this.onToggle,
     required this.isAdmin,
+    required this.isLightMode,
+    required this.onToggleThemeMode,
     this.extraItems = const [],
   });
 
@@ -18,10 +20,20 @@ class AppSideNav extends StatelessWidget {
   final ValueChanged<String> onSelect;
   final VoidCallback onToggle;
   final bool isAdmin;
+  final bool isLightMode;
+  final VoidCallback onToggleThemeMode;
   final List<Map<String, String>> extraItems;
 
   static const double collapsedWidth = 90.0;
   static const double expandedWidth = 250.0;
+
+  static const double _collapsedItemVerticalPadding = 6.0;
+  static const double _expandedItemVerticalPadding = 4.0;
+  static const double _expandedItemInternalVerticalPadding = 8.0;
+  static const double _expandedIconBoxSize = 44.0;
+  static const double _iconCircleSize = 36.0;
+  static const double _iconCirclePadding = 5.0;
+  static const double _labelFontSize = 12.0;
 
   static const List<Map<String, String>> _items = [
     {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
@@ -62,7 +74,7 @@ class AppSideNav extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               // Toggle button (always visible)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -70,7 +82,7 @@ class AppSideNav extends StatelessWidget {
                   onTap: onToggle,
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    height: 40,
+                    height: 36,
                     decoration: BoxDecoration(
                       color: const Color(0xFF2C3E50),
                       borderRadius: BorderRadius.circular(8),
@@ -101,7 +113,7 @@ class AppSideNav extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               // Main icons
               Expanded(
@@ -120,12 +132,12 @@ class AppSideNav extends StatelessWidget {
 
               // Bottom section - Logout
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Column(
                   children: [
                     if (!isCollapsed)
                       Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         height: 1,
                         color: const Color(0xFF2C3E50),
                       ),
@@ -148,7 +160,7 @@ class AppSideNav extends StatelessWidget {
     final bool active = label == currentLabel;
     if (isCollapsed) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: _collapsedItemVerticalPadding),
         child: InkWell(
           onTap: () => onSelect(label),
           borderRadius: BorderRadius.circular(30),
@@ -157,12 +169,12 @@ class AppSideNav extends StatelessWidget {
       );
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: _expandedItemVerticalPadding),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => onSelect(label),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: _expandedItemInternalVerticalPadding),
           decoration: BoxDecoration(
             color:
                 active ? PremiumTheme.purple.withValues(alpha: 0.25) : Colors.transparent,
@@ -177,8 +189,8 @@ class AppSideNav extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(
-                width: 54,
-                height: 54,
+                width: _expandedIconBoxSize,
+                height: _expandedIconBoxSize,
                 child: _buildWhiteCircleIcon(assetPath, active),
               ),
               const SizedBox(width: 12),
@@ -187,13 +199,13 @@ class AppSideNav extends StatelessWidget {
                   label,
                   style: TextStyle(
                     color: active ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
+                    fontSize: _labelFontSize,
                     fontWeight: active ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
               ),
               if (active)
-                const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+                const Icon(Icons.arrow_forward_ios, size: 10, color: Colors.white),
             ],
           ),
         ),
@@ -207,8 +219,8 @@ class AppSideNav extends StatelessWidget {
 
   Widget _buildWhiteCircleIcon(String assetPath, bool active) {
     return Container(
-      width: 40,
-      height: 40,
+      width: _iconCircleSize,
+      height: _iconCircleSize,
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
         shape: BoxShape.circle,
@@ -232,7 +244,7 @@ class AppSideNav extends StatelessWidget {
                 ),
               ],
       ),
-      padding: const EdgeInsets.all(6),
+      padding: const EdgeInsets.all(_iconCirclePadding),
       child: ClipOval(
         child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
       ),

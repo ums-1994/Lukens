@@ -1,0 +1,9 @@
+﻿flutter : Could not find an option named "--format".
+At line:1 char:1
++ flutter analyze --format=machine 2>&1 | Out-File -Encoding utf8 .\ana ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Could not find ...med "--format".:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+Run 'flutter -h' (or 'flutter <command> -h') for available flutter commands and options.

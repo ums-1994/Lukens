@@ -3587,6 +3587,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           isCollapsed: app.isSidebarCollapsed,
           currentLabel: app.currentNavLabel,
           isAdmin: isAdmin,
+          isLightMode: app.isLightMode,
+          onToggleThemeMode: app.toggleThemeMode,
           onToggle: app.toggleSidebar,
           onSelect: (label) {
             app.setCurrentNavLabel(label);

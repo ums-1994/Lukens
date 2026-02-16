@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:web/web.dart' as web;
 import 'services/auth_service.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
@@ -11,6 +13,10 @@ String get baseUrl {
 }
 
 class AppState extends ChangeNotifier {
+  AppState() {
+    _loadThemeMode();
+  }
+
   List<dynamic> templates = [];
   List<dynamic> contentBlocks = [];
   List<dynamic> proposals = [];
@@ -21,6 +27,44 @@ class AppState extends ChangeNotifier {
 
   bool isSidebarCollapsed = true;
   String currentNavLabel = 'Dashboard';
+
+  ThemeMode themeMode = ThemeMode.dark;
+
+  bool get isLightMode => themeMode == ThemeMode.light;
+
+  void toggleThemeMode() {
+    themeMode = isLightMode ? ThemeMode.dark : ThemeMode.light;
+    _persistThemeMode();
+    notifyListeners();
+  }
+
+  static const String _themeModeStorageKey = 'lukens_theme_mode';
+
+  void _loadThemeMode() {
+    if (!kIsWeb) return;
+    try {
+      final stored = web.window.localStorage.getItem(_themeModeStorageKey);
+      if (stored == 'light') {
+        themeMode = ThemeMode.light;
+      } else if (stored == 'dark') {
+        themeMode = ThemeMode.dark;
+      }
+    } catch (_) {
+      // Ignore storage errors
+    }
+  }
+
+  void _persistThemeMode() {
+    if (!kIsWeb) return;
+    try {
+      web.window.localStorage.setItem(
+        _themeModeStorageKey,
+        themeMode == ThemeMode.light ? 'light' : 'dark',
+      );
+    } catch (_) {
+      // Ignore storage errors
+    }
+  }
 
   void toggleSidebar() {
     isSidebarCollapsed = !isSidebarCollapsed;

@@ -2536,8 +2536,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     final total = (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
     final passed = (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
-    final passRate = (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
-    final ratio = total <= 0 ? 0.0 : (passed / total).clamp(0.0, 1.0);
+    final passRateRaw = totals['pass_rate'];
+    int passRate = 0;
+    if (passRateRaw is num) {
+      final v = passRateRaw.toDouble();
+      passRate = (v <= 1.0) ? (v * 100).round() : v.round();
+    }
+    final ratio = (passRate / 100.0).clamp(0.0, 1.0);
 
     return Center(
       child: InkWell(
@@ -2721,6 +2726,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                         isCollapsed: app.isSidebarCollapsed,
                         currentLabel: app.currentNavLabel,
                         isAdmin: isAdmin,
+                        isLightMode: app.isLightMode,
+                        onToggleThemeMode: app.toggleThemeMode,
                         onToggle: app.toggleSidebar,
                         onSelect: (label) {
                           app.setCurrentNavLabel(label);

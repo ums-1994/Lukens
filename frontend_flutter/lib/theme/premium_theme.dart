@@ -202,6 +202,19 @@ class GlassContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final bool isLight = brightness == Brightness.light;
+
+    final Widget content = isLight
+        ? IconTheme.merge(
+            data: const IconThemeData(color: Color(0xFF111827)),
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: Color(0xFF111827)),
+              child: child,
+            ),
+          )
+        : child;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
@@ -210,12 +223,35 @@ class GlassContainer extends StatelessWidget {
           width: width,
           height: height,
           padding: padding ?? const EdgeInsets.all(20),
-          decoration: PremiumTheme.glassCard(
-            borderRadius: borderRadius,
-            gradientStart: gradientStart,
-            gradientEnd: gradientEnd,
-          ),
-          child: child,
+          decoration: isLight
+              ? BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withValues(alpha: 0.75),
+                      Colors.white.withValues(alpha: 0.55),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(borderRadius),
+                  border: Border.all(
+                    color: const Color(0xFFE5E7EB).withValues(alpha: 0.9),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                )
+              : PremiumTheme.glassCard(
+                  borderRadius: borderRadius,
+                  gradientStart: gradientStart,
+                  gradientEnd: gradientEnd,
+                ),
+          child: content,
         ),
       ),
     );

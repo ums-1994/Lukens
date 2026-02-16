@@ -415,6 +415,18 @@ def completion_rates(username=None, user_id=None, email=None):
     cursor = conn.cursor()
 
     try:
+        pass_threshold_raw = request.args.get("pass_threshold")
+        pass_threshold = 60
+        if pass_threshold_raw is not None:
+            try:
+                pass_threshold = int(pass_threshold_raw)
+            except Exception:
+                pass
+        if pass_threshold < 0:
+            pass_threshold = 0
+        if pass_threshold > 100:
+            pass_threshold = 100
+
         start_date_raw = request.args.get("start_date")
         end_date_raw = request.args.get("end_date")
         start_date = _parse_date(start_date_raw)
@@ -707,7 +719,7 @@ def completion_rates(username=None, user_id=None, email=None):
                 sections = _extract_sections_from_content(content_raw)
 
             score, issues = _sections_readiness(sections)
-            ok = len(issues) == 0
+            ok = int(score) >= int(pass_threshold)
             if ok:
                 passed += 1
             else:
@@ -733,7 +745,7 @@ def completion_rates(username=None, user_id=None, email=None):
         if total > 0:
             pass_rate = int(round((passed / total) * 100))
 
-        low = [p for p in proposals if int(p.get("readiness_score") or 0) < 100]
+        low = [p for p in proposals if int(p.get("readiness_score") or 0) < int(pass_threshold)]
         low.sort(key=lambda p: (int(p.get("readiness_score") or 0), str(p.get("title") or "")))
 
         return jsonify(
@@ -748,6 +760,7 @@ def completion_rates(username=None, user_id=None, email=None):
                     "client": client_filter or None,
                     "scope": scope,
                     "department": department_filter or None,
+                    "pass_threshold": int(pass_threshold),
                 },
                 "totals": {
                     "total": total,

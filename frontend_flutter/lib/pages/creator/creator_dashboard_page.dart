@@ -336,6 +336,21 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
+  Widget _buildThemeToggleButton(AppState app) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: IconButton(
+        tooltip: app.isLightMode ? 'Switch to dark mode' : 'Switch to light mode',
+        icon: Icon(
+          app.isLightMode ? Icons.dark_mode : Icons.light_mode,
+          color: Colors.white,
+        ),
+        onPressed: app.toggleThemeMode,
+      ),
+    );
+  }
+
   void _showNotificationsSheet(AppState app) {
     showModalBottomSheet(
       context: context,
@@ -652,6 +667,8 @@ class _DashboardPageState extends State<DashboardPage>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildNotificationButton(app),
+                        const SizedBox(width: 10),
+                        _buildThemeToggleButton(app),
                         const SizedBox(width: 20),
                         ClipOval(
                           child: Image.asset(
@@ -746,6 +763,8 @@ class _DashboardPageState extends State<DashboardPage>
                         isCollapsed: app.isSidebarCollapsed,
                         currentLabel: app.currentNavLabel,
                         isAdmin: isAdmin,
+                        isLightMode: app.isLightMode,
+                        onToggleThemeMode: app.toggleThemeMode,
                         onToggle: app.toggleSidebar,
                         onSelect: (label) {
                           app.setCurrentNavLabel(label);

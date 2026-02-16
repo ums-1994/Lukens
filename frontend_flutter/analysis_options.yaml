@@ -1,0 +1,14 @@
+analyzer:
+  errors:
+    deprecated_member_use: ignore
+    unused_element: ignore
+    unused_field: ignore
+    unused_import: ignore
+    unused_local_variable: ignore
+    unnecessary_cast: ignore
+    unnecessary_null_comparison: ignore
+    unnecessary_null_in_if_null_operators: ignore
+
+linter:
+  rules:
+    avoid_print: false
