@@ -5,7 +5,7 @@ Extracted from app.py for better organization
 from flask import Blueprint, request, jsonify
 from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
-from api.utils.helpers import resolve_user_id, log_status_change
+from api.utils.helpers import resolve_user_id, log_status_change, create_notification
 from api.utils.email import send_email
 import json
 import psycopg2.extras
@@ -216,6 +216,24 @@ def create_proposal(username=None, user_id=None, email=None):
                 'content': row_dict.get('content', content),
                 'status': row_dict.get('status', status),
             }
+
+            try:
+                proposal_id = new_proposal.get('id')
+                proposal_title = new_proposal.get('title') or title
+                if proposal_id is not None and user_id is not None:
+                    create_notification(
+                        user_id=user_id,
+                        notification_type='proposal_created',
+                        title='Proposal Created',
+                        message=f"Your proposal '{proposal_title}' was created.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'proposal_id': proposal_id,
+                            'proposal_title': proposal_title,
+                        },
+                    )
+            except Exception as notif_err:
+                print(f"⚠️ Failed to create proposal_created notification: {notif_err}")
 
             if 'client' in row_dict:
                 new_proposal['client_name'] = row_dict.get('client') or ''
