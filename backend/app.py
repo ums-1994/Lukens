@@ -33,10 +33,13 @@ try:
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
     from reportlab.pdfgen import canvas
     PDF_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     PDF_AVAILABLE = False
     # ReportLab missing: warn user (emoji-friendly message)
-    print("⚠️ ReportLab not installed. PDF generation will be limited. Run: pip install reportlab")
+    print(
+        "⚠️ ReportLab import failed. PDF generation will be limited. "
+        f"Error: {e} | Python: {sys.executable}"
+    )
 
 # DocuSign SDK
 try:
@@ -139,6 +142,7 @@ from api.routes.shared import bp as shared_bp
 from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
+from api.routes.client import bp as client_bp
 from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
@@ -153,6 +157,7 @@ app.register_blueprint(shared_bp, url_prefix='/api')
 app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
+app.register_blueprint(client_bp)
 app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
@@ -4800,7 +4805,7 @@ def add_guest_comment():
 # CLIENT PORTAL ENDPOINTS (Token-based, no auth required)
 # ============================================================
 
-@app.get("/api/client/proposals")
+@app.get("/legacy/api/client/proposals")
 def get_client_proposals():
     """Get all proposals for a client using their access token"""
     try:
@@ -4848,7 +4853,7 @@ def get_client_proposals():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/client/proposals/<int:proposal_id>")
+@app.get("/legacy/api/client/proposals/<int:proposal_id>")
 def get_client_proposal_details(proposal_id):
     """Get detailed proposal information for client"""
     try:
@@ -4924,7 +4929,7 @@ def get_client_proposal_details(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/client/proposals/<int:proposal_id>/comment")
+@app.post("/legacy/api/client/proposals/<int:proposal_id>/comment")
 def add_client_comment(proposal_id):
     """Add a comment from client"""
     try:
@@ -4987,7 +4992,7 @@ def add_client_comment(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/client/proposals/<int:proposal_id>/approve")
+@app.post("/legacy/api/client/proposals/<int:proposal_id>/approve")
 def client_approve_proposal(proposal_id):
     """Client approves and signs proposal"""
     try:
@@ -5072,7 +5077,7 @@ Date: {signature_date or datetime.now().isoformat()}
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/client/proposals/<int:proposal_id>/reject")
+@app.post("/legacy/api/client/proposals/<int:proposal_id>/reject")
 def client_reject_proposal(proposal_id):
     """Client rejects proposal"""
     try:

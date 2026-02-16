@@ -80,31 +80,48 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => AppState()),
         ChangeNotifierProvider(create: (context) => RoleService()),
       ],
-      child: MaterialApp(
-        title: 'Lukens',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: Colors.blue,
-          textTheme: GoogleFonts.poppinsTextTheme(),
-          scaffoldBackgroundColor: Colors.transparent,
-        ),
-        builder: (context, child) {
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Image.asset(
-                  'assets/images/Global BG.jpg',
-                  fit: BoxFit.cover,
-                ),
-              ),
-              if (child != null) child,
-            ],
-          );
-        },
-        home: const AuthWrapper(),
-        onGenerateRoute: (settings) {
-          print('🔍 onGenerateRoute - Route name: ${settings.name}');
+      child: Consumer<AppState>(
+        builder: (context, app, _) {
+          return MaterialApp(
+            title: 'Lukens',
+            debugShowCheckedModeBanner: false,
+            themeMode: app.themeMode,
+            theme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.light,
+              colorSchemeSeed: Colors.blue,
+              textTheme: GoogleFonts.poppinsTextTheme(),
+              scaffoldBackgroundColor: Colors.transparent,
+            ),
+            darkTheme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.dark,
+              colorSchemeSeed: Colors.blue,
+              textTheme: GoogleFonts.poppinsTextTheme(),
+              scaffoldBackgroundColor: Colors.transparent,
+            ),
+            builder: (context, child) {
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/Global BG.jpg',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  if (app.isLightMode)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.white.withValues(alpha: 0.65),
+                      ),
+                    ),
+                  if (child != null) child,
+                ],
+              );
+            },
+            home: const AuthWrapper(),
+            onGenerateRoute: (settings) {
+              print('🔍 onGenerateRoute - Route name: ${settings.name}');
 
           // Handle collaboration routes with token
           if (settings.name == '/collaborate' ||
@@ -212,6 +229,26 @@ class MyApp extends StatelessWidget {
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
             String? token = uri.queryParameters['token'];
+
+            // Flutter web hash routing puts query params after '#', so also scan
+            // fragment/hash for token.
+            if (token == null || token.isEmpty) {
+              final hash = web.window.location.hash;
+              if (hash.contains('token=')) {
+                final tokenMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+                if (tokenMatch != null) {
+                  token = tokenMatch.group(1);
+                }
+              }
+            }
+
+            // Final fallback: scan full URL.
+            if (token == null || token.isEmpty) {
+              final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+              if (urlMatch != null) {
+                token = urlMatch.group(1);
+              }
+            }
 
             if (token != null && token.isNotEmpty) {
               print('✅ Token found for client proposals');
@@ -418,17 +455,13 @@ class MyApp extends StatelessWidget {
               body: Center(child: Text('Team: $id')),
             );
           },
-          '/workspace': (context) {
-            final args = ModalRoute.of(context)!.settings.arguments as Map?;
-            final name = args != null ? (args['workspaceName'] ?? '') : '';
-            return Scaffold(
-              appBar: AppBar(title: const Text('Workspace')),
-              body: Center(child: Text('Workspace: $name')),
-            );
-          },
+          '/workspace': (context) => const HomeShell(),
+        },
+          );
         },
       ),
     );
+
   }
 }
 
@@ -651,7 +684,24 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/client/proposals');
 
     if (isClientProposals) {
-      final token = uri.queryParameters['token'];
+      String? token = uri.queryParameters['token'];
+
+      if (token == null || token.isEmpty) {
+        if (hash.contains('token=')) {
+          final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+          if (hashMatch != null) {
+            token = hashMatch.group(1);
+          }
+        }
+      }
+
+      if (token == null || token.isEmpty) {
+        final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+        if (urlMatch != null) {
+          token = urlMatch.group(1);
+        }
+      }
+
       if (token != null && token.isNotEmpty) {
         print('✅ Detected client proposals URL - showing ClientDashboardHome');
         print('📍 Client token: ${token.substring(0, 10)}...');

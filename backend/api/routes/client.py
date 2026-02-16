@@ -233,7 +233,7 @@ def get_client_proposals():
             
             # Get invitation details to find client email
             cursor.execute("""
-                SELECT invited_email, expires_at
+                SELECT proposal_id, invited_email, expires_at
                 FROM collaboration_invitations
                 WHERE access_token = %s
             """, (token,))
@@ -247,6 +247,7 @@ def get_client_proposals():
                 return {'detail': 'Access token has expired'}, 403
             
             client_email = invitation['invited_email']
+            token_proposal_id = invitation.get('proposal_id')
             
             column_info = _get_proposal_column_info(cursor)
             client_name_expr = column_info['client_name_expr']
@@ -289,16 +290,21 @@ def get_client_proposals():
                     LIMIT 1
                 ) ps ON TRUE
                 LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id
-                WHERE (ci.invited_email = %s OR ci.access_token = %s)
+                WHERE (
+                    ci.invited_email = %s
+                    OR ci.access_token = %s
+                    OR (%s IS NOT NULL AND p.id = %s)
+                )
                 ORDER BY p.updated_at DESC
             """
 
-            cursor.execute(query, (client_email, token))
+            cursor.execute(query, (client_email, token, token_proposal_id, token_proposal_id))
             
             proposals = cursor.fetchall()
             
             return {
                 'client_email': client_email,
+                'token_proposal_id': token_proposal_id,
                 'proposals': [dict(p) for p in proposals]
             }, 200
             
@@ -320,7 +326,7 @@ def get_client_proposal_details(proposal_id):
             
             # Verify token and get client email
             cursor.execute("""
-                SELECT invited_email, expires_at
+                SELECT proposal_id, invited_email, expires_at
                 FROM collaboration_invitations
                 WHERE access_token = %s
             """, (token,))
