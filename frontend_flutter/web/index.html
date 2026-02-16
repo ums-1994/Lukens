@@ -6,7 +6,8 @@
   <base href="$FLUTTER_BASE_HREF">
   <title>Proposal & SOW Builder v2</title>
   <!-- App Configuration - Load before Flutter app -->
-  <script src="config.js"></script>
+  <!-- Cache-bust config to avoid stale API_URL in service worker / browser cache -->
+  <script src="config.js?v=2026-02-10-1"></script>
 </head>
 <body>
   <script src='flutter_bootstrap.js' async></script>

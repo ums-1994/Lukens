@@ -10,6 +10,23 @@ class ApiService {
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        // If the user explicitly overrides the API URL for local dev, honor it.
+        final explicitAppUrl = js.context['APP_API_URL'];
+        if (explicitAppUrl != null &&
+            explicitAppUrl.toString().trim().isNotEmpty) {
+          final url = explicitAppUrl.toString().replaceAll('"', '').trim();
+          print('🌐 ApiService: Using API URL from APP_API_URL: $url');
+          return url;
+        }
+
+        final explicitEnvUrl = js.context['REACT_APP_API_URL'];
+        if (explicitEnvUrl != null &&
+            explicitEnvUrl.toString().trim().isNotEmpty) {
+          final url = explicitEnvUrl.toString().replaceAll('"', '').trim();
+          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
+          return url;
+        }
+
         // Try to get from window.APP_CONFIG.API_URL
         final config = js.context['APP_CONFIG'];
         if (config != null) {
@@ -17,16 +34,20 @@ class ApiService {
           final apiUrl = configObj['API_URL'];
           if (apiUrl != null && apiUrl.toString().isNotEmpty) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
+            // Guard against stale cached config defaulting to localhost when backend is on Render.
+            final hostname = html.window.location.hostname;
+            final isLocalHost = hostname == 'localhost' || hostname == '127.0.0.1';
+            final isLocalApi = url.contains('127.0.0.1:5000') || url.contains('localhost:5000');
+            if (isLocalHost && isLocalApi) {
+              const renderUrl = 'https://lukens-wp8w.onrender.com';
+              print(
+                  '⚠️ ApiService: APP_CONFIG API_URL points to local backend ($url) while running on localhost. Falling back to Render: $renderUrl');
+              return renderUrl;
+            }
+
             print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
             return url;
           }
-        }
-        // Fallback: try window.REACT_APP_API_URL
-        final envUrl = js.context['REACT_APP_API_URL'];
-        if (envUrl != null && envUrl.toString().isNotEmpty) {
-          final url = envUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
-          return url;
         }
       } catch (e) {
         print('⚠️ ApiService: Could not read API URL from config: $e');
