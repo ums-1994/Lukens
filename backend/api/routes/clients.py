@@ -700,6 +700,13 @@ def create_client(username=None):
                 insert_values.append('active')
                 update_set_parts.append('status = EXCLUDED.status')
 
+            if 'token' in clients_columns:
+                token_value = secrets.token_urlsafe(32)
+                insert_fields.append('token')
+                insert_values.append(token_value)
+                # Preserve existing token if the client already exists
+                update_set_parts.append('token = COALESCE(clients.token, EXCLUDED.token)')
+
             if 'created_by' in clients_columns:
                 insert_fields.append('created_by')
                 insert_values.append(user_id)
@@ -729,6 +736,8 @@ def create_client(username=None):
                 returning_fields.insert(1, 'company_name')
             if 'name' in clients_columns:
                 returning_fields.insert(1, 'name')
+            if 'token' in clients_columns:
+                returning_fields.append('token')
             if 'status' in clients_columns:
                 returning_fields.append('status')
             if 'created_at' in clients_columns:
