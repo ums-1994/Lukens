@@ -358,9 +358,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           final currentName = _clientNameController.text.trim();
           if (currentName.isNotEmpty) {
             for (final c in _clients) {
-              final name = (c['company_name'] ?? c['name'] ?? '').toString();
+              final name = _extractClientName(c);
               if (name.trim().toLowerCase() == currentName.toLowerCase()) {
                 _selectedClientId = _tryParseClientId(c);
+
+                final email = _extractClientEmail(c).trim();
+                if (email.isNotEmpty &&
+                    _clientEmailController.text.trim().isEmpty) {
+                  _clientEmailController.text = email;
+                }
                 break;
               }
             }
@@ -380,9 +386,31 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return int.tryParse(raw?.toString() ?? '');
   }
 
+  String _extractClientName(Map<String, dynamic> client) {
+    return (client['company_name'] ??
+            client['companyName'] ??
+            client['name'] ??
+            client['client_name'] ??
+            client['clientName'] ??
+            '')
+        .toString();
+  }
+
+  String _extractClientEmail(Map<String, dynamic> client) {
+    return (client['email'] ??
+            client['email_address'] ??
+            client['client_email'] ??
+            client['clientEmail'] ??
+            client['client_contact_email'] ??
+            client['contact_email'] ??
+            client['contactEmail'] ??
+            '')
+        .toString();
+  }
+
   String _getClientDisplayName(Map<String, dynamic> client) {
-    final name = (client['company_name'] ?? client['name'] ?? '').toString();
-    final email = (client['email'] ?? '').toString();
+    final name = _extractClientName(client);
+    final email = _extractClientEmail(client);
     final cleanName = name.trim();
     if (cleanName.isNotEmpty) return cleanName;
     return email.trim().isNotEmpty ? email.trim() : 'Client';
@@ -408,9 +436,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     if (selected == null) return;
 
-    final name =
-        (selected['company_name'] ?? selected['name'] ?? '').toString();
-    final email = (selected['email'] ?? '').toString();
+    final name = _extractClientName(selected);
+    final email = _extractClientEmail(selected);
 
     setState(() {
       _selectedClientId = clientId;
