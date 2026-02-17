@@ -8,7 +8,8 @@ import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
-import '../creator/client_management_page.dart';
+import '../creator/blank_document_editor_page.dart';
+import 'finance_client_management_page.dart';
 
 /// Simplified Finance dashboard that uses real proposal data from `/api/proposals`.
 class FinanceDashboardPage extends StatefulWidget {
@@ -28,6 +29,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   bool _isMetricsLoading = false;
   String? _metricsError;
   Map<String, dynamic>? _financeMetrics;
+  bool _handledInitialOpen = false;
 
   @override
   void initState() {
@@ -136,6 +138,47 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         ],
       ),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_handledInitialOpen) return;
+    _handledInitialOpen = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! Map) return;
+
+    final dynamic openIdRaw = args['openProposalId'] ?? args['proposalId'];
+    final String? openProposalId =
+        openIdRaw?.toString().trim().isNotEmpty == true
+            ? openIdRaw.toString().trim()
+            : null;
+
+    if (openProposalId == null) return;
+
+    final Map<String, dynamic>? aiGeneratedSections =
+        (args['aiGeneratedSections'] is Map)
+            ? Map<String, dynamic>.from(args['aiGeneratedSections'] as Map)
+            : null;
+    final String? initialTitle = args['initialTitle']?.toString();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => BlankDocumentEditorPage(
+            proposalId: openProposalId,
+            proposalTitle: args['proposalTitle']?.toString(),
+            initialTitle: initialTitle,
+            aiGeneratedSections: aiGeneratedSections,
+            readOnly: false,
+          ),
+        ),
+      );
+    });
   }
 
   @override
@@ -591,6 +634,40 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Widget _buildSidebar() {
+    Widget navIcon({
+      required IconData icon,
+      required bool active,
+      required VoidCallback onTap,
+      String? tooltip,
+    }) {
+      final child = InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: active
+                ? PremiumTheme.teal.withOpacity(0.18)
+                : Colors.white.withOpacity(0.04),
+            border: Border.all(
+              color: active
+                  ? PremiumTheme.teal.withOpacity(0.9)
+                  : Colors.white.withOpacity(0.06),
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: active ? PremiumTheme.teal : Colors.white70,
+          ),
+        ),
+      );
+
+      if (tooltip == null) return child;
+      return Tooltip(message: tooltip, child: child);
+    }
+
     return Container(
       width: 90,
       decoration: BoxDecoration(
@@ -640,14 +717,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               () => setState(() => _currentTab = 'proposals'),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildTabButton(
-              'Client Management',
-              Icons.business,
-              _currentTab == 'clients',
-              () => setState(() => _currentTab = 'clients'),
-            ),
+          const SizedBox(height: 10),
+          navIcon(
+            icon: Icons.business,
+            active: _currentTab == 'clients',
+            tooltip: 'Client Management',
+            onTap: () => setState(() => _currentTab = 'clients'),
           ),
         ],
       ),
@@ -690,7 +765,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       ),
     );
   }
-
   Widget _buildSummaryRow({
     required int queueCount,
     required int rejectedCount,

@@ -524,7 +524,7 @@ class AppState extends ChangeNotifier {
       String proposalId, Map<String, dynamic> data) async {
     try {
       final r = await http.put(
-        Uri.parse("$baseUrl/proposals/$proposalId"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId"),
         headers: _headers,
         body: jsonEncode(data),
       );
@@ -637,7 +637,8 @@ class AppState extends ChangeNotifier {
           if (client != null && client.isNotEmpty) 'client': client,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
 
@@ -673,7 +674,8 @@ class AppState extends ChangeNotifier {
           if (client != null && client.isNotEmpty) 'client': client,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
           if (stage != null && stage.isNotEmpty) 'stage': stage,
         },
       );

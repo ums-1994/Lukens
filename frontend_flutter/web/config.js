@@ -13,13 +13,23 @@ window.APP_CONFIG = {
       console.log('🌐 Using APP_API_URL:', window.APP_API_URL);
       return window.APP_API_URL;
     }
+    // Optional local override: set window.USE_LOCAL_API=true (or "true") in index.html
+    // before this script loads.
+    const useLocalApi = window.USE_LOCAL_API === true || window.USE_LOCAL_API === 'true';
+
     const hostname = window.location && window.location.hostname
       ? window.location.hostname
       : '';
     const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-    const defaultUrl = isLocal
-      ? 'http://127.0.0.1:8000'
-      : 'https://lukens-wp8w.onrender.com';
+
+    // Default local points to the dev backend port we use elsewhere.
+    const localUrl = 'http://127.0.0.1:8000';
+    if (useLocalApi || isLocal) {
+      console.log('🌐 Using local API URL:', localUrl);
+      return localUrl;
+    }
+
+    const defaultUrl = 'https://lukens-wp8w.onrender.com';
     console.log('🌐 Using default API URL:', defaultUrl);
     return defaultUrl;
   })(),

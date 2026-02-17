@@ -21,6 +21,8 @@ import 'pages/admin/approver_dashboard_page.dart';
 import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
 import 'pages/finance_manager/finance_dashboard_v2.dart';
+import 'pages/finance_manager/finance_client_management_page.dart';
+import 'pages/finance_manager/finance_add_client_page.dart';
 import 'pages/finance_manager/finance_onboarding_page.dart';
 import 'pages/test_signature_page.dart';
 import 'pages/shared/login_page.dart';
@@ -427,6 +429,8 @@ class MyApp extends StatelessWidget {
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
           '/finance_dashboard': (context) => FinanceDashboardPage(),
           '/finance/onboarding': (context) => const FinanceOnboardingPage(),
+          '/finance/clients': (context) => const FinanceClientManagementPage(),
+          '/finance/clients/add': (context) => const FinanceAddClientPage(),
           '/approved_proposals': (context) => const ApprovedProposalsPage(),
           '/admin_approvals': (context) => const AdminApprovalsPage(),
           '/proposal_review': (context) {

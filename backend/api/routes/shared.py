@@ -175,6 +175,7 @@ def get_notifications(username=None, user_id=None, email=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            print(f"DEBUG: get_notifications called for user_id={user_id}, email={email}, username={username}")
             
             # Use the same simple lookup pattern as the user profile endpoint (which works)
             # Try email first (most reliable since it's unique and comes from Firebase)
@@ -237,10 +238,15 @@ def get_notifications(username=None, user_id=None, email=None):
                 print(f"❌ User lookup failed for username: {username}, email: {email}")
                 return {'detail': 'User not found'}, 404
             
-            print(f"✅ Using user_id: {user_id} for notifications query")
+            print(f"DEBUG: Final resolved user_id for query: {user_id}")
             
             # Get notifications
             # Handle case where user_id might be VARCHAR in some databases
+            # Check if table exists and log it
+            cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('notifications', 'notificationss')")
+            table_result = cursor.fetchall()
+            print(f"DEBUG: Found tables: {table_result}")
+
             cursor.execute("""
                 SELECT id, proposal_id, notification_type, title, message, 
                        metadata, is_read, created_at, read_at
@@ -251,6 +257,9 @@ def get_notifications(username=None, user_id=None, email=None):
             """, (str(user_id),))
 
             notifications = cursor.fetchall()
+            print(f"DEBUG: Query result count: {len(notifications)}")
+            if len(notifications) > 0:
+                print(f"DEBUG: First notification: {notifications[0]}")
 
             # Calculate unread count for the client badge / UX
             unread_count = 0

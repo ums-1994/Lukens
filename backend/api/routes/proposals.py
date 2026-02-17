@@ -305,6 +305,20 @@ def get_proposals(username=None, user_id=None, email=None):
             
             print(f"🔍 Looking for proposals for user {username} (user_id: {user_id}, email: {email})")
             
+            # Determine requester role (to support finance/admin behaviours)
+            requester_role = None
+            try:
+                if user_id:
+                    cursor.execute('SELECT role FROM users WHERE id = %s', (user_id,))
+                    role_row = cursor.fetchone()
+                    if role_row:
+                        requester_role = role_row[0]
+            except Exception:
+                requester_role = None
+
+            requester_role = (requester_role or '').strip().lower()
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+
             # Prefer the user_id provided by the Firebase-aware token_required decorator.
             # That decorator either looked up the existing user or auto-created them
             # and returns a trusted numeric user_id, even if this connection can't
@@ -357,7 +371,7 @@ def get_proposals(username=None, user_id=None, email=None):
                         retry_delay = min(retry_delay * 1.3, 1.0)
 
             user_id = resolved_user_id
-            if not user_id:
+            if not user_id and not is_finance:
                 print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
                 return jsonify([]), 200
             
@@ -381,8 +395,41 @@ def get_proposals(username=None, user_id=None, email=None):
             )
             col_types = {r[0]: r[1] for r in (cursor.fetchall() or [])}
             
-            # Build query dynamically based on available columns
-            if 'owner_id' in existing_columns:
+            # Finance users can see all proposals
+            if is_finance:
+                select_cols = ['id', 'title', 'content', 'status']
+                if 'owner_id' in existing_columns:
+                    select_cols.append('owner_id')
+                elif 'user_id' in existing_columns:
+                    select_cols.append('user_id')
+                if 'client' in existing_columns:
+                    select_cols.append('client')
+                elif 'client_name' in existing_columns:
+                    select_cols.append('client_name')
+                if 'client_email' in existing_columns:
+                    select_cols.append('client_email')
+                if 'budget' in existing_columns:
+                    select_cols.append('budget')
+                if 'timeline_days' in existing_columns:
+                    select_cols.append('timeline_days')
+                if 'created_at' in existing_columns:
+                    select_cols.append('created_at')
+                if 'updated_at' in existing_columns:
+                    select_cols.append('updated_at')
+                if 'template_key' in existing_columns:
+                    select_cols.append('template_key')
+                if 'sections' in existing_columns:
+                    select_cols.append('sections')
+                if 'pdf_url' in existing_columns:
+                    select_cols.append('pdf_url')
+
+                query = f'''SELECT {', '.join(select_cols)}
+                     FROM proposals
+                     ORDER BY created_at DESC'''
+                cursor.execute(query)
+
+            # Build query dynamically based on available columns for non-finance users
+            elif 'owner_id' in existing_columns:
                 select_cols = ['id', 'owner_id', 'title', 'content', 'status']
                 if 'client' in existing_columns:
                     select_cols.append('client')
@@ -654,13 +701,14 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             user_id = resolved_user_id
 
-            cursor.execute(
-                f"SELECT {owner_col} FROM proposals WHERE id = %s",
-                (proposal_id,),
-            )
-            proposal = cursor.fetchone()
-            if not proposal or str(proposal[0]) != str(user_id):
-                return jsonify({'detail': 'Proposal not found or access denied'}), 404
+            if not is_finance:
+                cursor.execute(
+                    f"SELECT {owner_col} FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+                proposal = cursor.fetchone()
+                if not proposal or str(proposal[0]) != str(user_id):
+                    return jsonify({'detail': 'Proposal not found or access denied'}), 404
             
             updates = ['updated_at = NOW()']
             params = []

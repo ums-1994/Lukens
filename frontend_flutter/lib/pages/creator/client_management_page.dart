@@ -45,6 +45,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return _isAdminUser();
   }
 
+  bool _canManageInvitations() {
+    return _isAdminUser();
+  }
+
   bool _isFinanceUser() {
     try {
       final user = AuthService.currentUser;
@@ -1436,11 +1440,23 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final company = client['company_name'] ?? 'N/A';
     final contact = client['contact_person'] ?? 'N/A';
     final email = client['email'] ?? 'N/A';
-    final industry = client['industry'] ?? 'N/A';
+    // Get holding information from various possible keys
+    final holdingInfo = client['holding_information'] ??
+        client['holdingInformation'] ??
+        client['holding'] ??
+        client['client_holding'] ??
+        client['industry']; // fallback to industry if holding is not found
+
+    final industry = (holdingInfo == null ||
+            holdingInfo.toString().trim().isEmpty ||
+            holdingInfo.toString().trim().toLowerCase() == 'n/a')
+        ? 'Holding'
+        : holdingInfo.toString();
     final status = client['status'] ?? 'active';
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       decoration: BoxDecoration(
         border: Border(
           bottom:
@@ -1786,11 +1802,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         if (success) _loadData();
         break;
     }
-  }
-
-  void _showClientDetails(Map<String, dynamic> client) {
-    // TODO: Show client details dialog with notes and proposals
-    _showSnackBar('Client details view coming soon!');
   }
 
   void _showClientMenu(Map<String, dynamic> client) {
