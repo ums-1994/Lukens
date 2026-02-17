@@ -94,7 +94,14 @@ def get_collaboration_access():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/collaborate/comment")
+@bp.route("/api/collaborate/comment", methods=['GET', 'POST', 'OPTIONS'])
+def handle_guest_comment():
+    """Handle guest collaborator comments - GET to fetch, POST to create"""
+    if request.method == 'GET':
+        return get_guest_comments()
+    elif request.method == 'POST':
+        return add_guest_comment()
+
 def add_guest_comment():
     """Add a comment as a guest collaborator (no auth required)"""
     try:
@@ -156,9 +163,51 @@ def add_guest_comment():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/comments/document/<int:proposal_id>")
+def get_guest_comments():
+    """Get comments for guest collaborators"""
+    try:
+        proposal_id = request.args.get('proposal_id', type=int)
+        if not proposal_id:
+            return {'detail': 'Proposal ID required'}, 400
+            
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT 
+                    dc.id, dc.proposal_id, dc.comment_text, dc.created_by, dc.created_at,
+                    dc.section_index, dc.highlighted_text, dc.status, dc.updated_at, 
+                    dc.resolved_by, dc.resolved_at,
+                    u.email as created_by_email,
+                    u.full_name as created_by_name,
+                    r.email as resolved_by_email,
+                    r.full_name as resolved_by_name
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                LEFT JOIN users r ON dc.resolved_by = r.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at ASC
+            """, (proposal_id,))
+            
+            comments = cursor.fetchall()
+            
+            return [dict(comment) for comment in comments], 200
+            
+    except Exception as e:
+        print(f"❌ Error getting guest comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.route("/api/comments/document/<int:proposal_id>", methods=['GET', 'POST', 'OPTIONS'])
 @token_required
-def create_comment(username=None, proposal_id=None):
+def handle_document_comments(username=None, proposal_id=None):
+    """Handle document comments - GET to fetch, POST to create"""
+    if request.method == 'GET':
+        return get_document_comments_logic(username, proposal_id)
+    elif request.method == 'POST':
+        return create_comment_logic(username, proposal_id)
+
+def create_comment_logic(username=None, proposal_id=None):
     """Create a new comment on a document with support for threading and block-level comments"""
     try:
         data = request.get_json()
@@ -265,9 +314,7 @@ def create_comment(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.get("/api/comments/document/<int:proposal_id>")
-@token_required
-def get_document_comments(username=None, proposal_id=None):
+def get_document_comments_logic(username=None, proposal_id=None):
     """Get all comments for a document with threaded structure"""
     try:
         section_id = request.args.get('section_id', type=int)

@@ -5,7 +5,7 @@ Extracted from app.py for better organization
 from flask import Blueprint, request, jsonify
 from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
-from api.utils.helpers import resolve_user_id
+from api.utils.helpers import resolve_user_id, log_proposal_audit_event
 from api.utils.email import send_email
 import json
 import psycopg2.extras
@@ -189,6 +189,29 @@ def create_proposal(username=None, user_id=None, email=None):
 
             conn.commit()
 
+            try:
+                actor_name = username
+                actor_email = email
+                if user_id:
+                    cursor.execute(
+                        "SELECT full_name, email, username FROM users WHERE id = %s",
+                        (user_id,),
+                    )
+                    urow = cursor.fetchone()
+                    if urow:
+                        actor_name = urow[0] or urow[2] or actor_name
+                        actor_email = urow[1] or actor_email
+                log_proposal_audit_event(
+                    new_proposal['id'],
+                    'created',
+                    actor_user_id=user_id,
+                    actor_name=actor_name,
+                    actor_email=actor_email,
+                    metadata={'status': new_proposal.get('status')},
+                )
+            except Exception:
+                pass
+
             new_proposal = {
                 'id': row_dict.get('id'),
                 'title': row_dict.get('title', title),
@@ -342,7 +365,8 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('pdf_url')
                 
                 query = f'''SELECT {', '.join(select_cols)}
-                     FROM proposals WHERE owner_id = %s
+                     FROM proposals 
+                     WHERE status IN ('Client Signed', 'Signed') OR owner_id = %s
                      ORDER BY created_at DESC'''
                 cursor.execute(query, (user_id,))
             elif 'user_id' in existing_columns:
@@ -567,6 +591,52 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             params.append(proposal_id)
             cursor.execute(f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s''', params)
             conn.commit()
+
+            try:
+                changed_fields = []
+                for k in ['title', 'content', 'sections', 'status', 'client_name', 'client', 'client_email', 'budget', 'timeline_days']:
+                    if k in data:
+                        changed_fields.append(k)
+
+                cursor.execute(
+                    """
+                    SELECT COALESCE(MAX(version_number), 0)
+                    FROM proposal_audit_events
+                    WHERE proposal_id = %s AND event_type = 'edited' AND version_number IS NOT NULL
+                    """,
+                    (proposal_id,),
+                )
+                max_ver_row = cursor.fetchone()
+                next_version = (max_ver_row[0] if max_ver_row and max_ver_row[0] is not None else 0) + 1
+
+                actor_name = username
+                actor_email = email
+                if user_id:
+                    cursor.execute(
+                        "SELECT full_name, email, username FROM users WHERE id = %s",
+                        (user_id,),
+                    )
+                    urow = cursor.fetchone()
+                    if urow:
+                        actor_name = urow[0] or urow[2] or actor_name
+                        actor_email = urow[1] or actor_email
+
+                section_id = None
+                if 'sections' in data:
+                    section_id = 'sections'
+
+                log_proposal_audit_event(
+                    proposal_id,
+                    'edited',
+                    actor_user_id=user_id,
+                    actor_name=actor_name,
+                    actor_email=actor_email,
+                    version_number=next_version,
+                    section_id=section_id,
+                    metadata={'fields': changed_fields},
+                )
+            except Exception:
+                pass
             
             print(f"✅ Proposal {proposal_id} updated successfully")
             return jsonify({'detail': 'Proposal updated'}), 200

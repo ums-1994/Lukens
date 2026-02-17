@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:html' as html;
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
@@ -25,6 +28,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   Map<String, dynamic>? _proposal;
   List<Map<String, dynamic>> _versions = [];
   List<Map<String, dynamic>> _comments = [];
+  List<Map<String, dynamic>> _auditTrail = [];
   bool _isLoading = true;
   String? _error;
   final TextEditingController _commentController = TextEditingController();
@@ -36,6 +40,58 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   void initState() {
     super.initState();
     _loadProposal();
+  }
+
+  String _auditLabel(String type) {
+    final t = type.toLowerCase().trim();
+    if (t == 'created') return 'Created';
+    if (t == 'edited') return 'Edited';
+    if (t == 'approved') return 'Approved';
+    if (t == 'rejected') return 'Rejected';
+    if (t == 'signed') return 'Signed';
+    if (t == 'physical_signed') return 'Signed (Upload)';
+    if (t == 'sent_back') return 'Sent Back';
+    return type;
+  }
+
+  Future<void> _loadAuditTrail(int proposalId, String token) async {
+    try {
+      final res = await http.get(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/audit-trail'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+      if (res.statusCode != 200) return;
+      final body = json.decode(res.body);
+      final events = (body is Map ? body['events'] : null);
+      if (events is! List) return;
+
+      final mapped = <Map<String, dynamic>>[];
+      for (final e in events) {
+        if (e is! Map) continue;
+        final eventType = (e['event_type'] ?? '').toString();
+        final actor = (e['actor'] is Map) ? (e['actor'] as Map) : const {};
+        final actorName = (actor['name'] ?? '').toString().trim();
+        final actorEmail = (actor['email'] ?? '').toString().trim();
+        final label = _auditLabel(eventType);
+        final who = [actorName, actorEmail].where((v) => v.trim().isNotEmpty).join(' · ');
+        mapped.add({
+          'action': label,
+          'description': who.isNotEmpty ? who : label,
+          'timestamp': e['timestamp'],
+          'raw': e,
+        });
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _auditTrail = mapped;
+      });
+    } catch (e) {
+      return;
+    }
   }
 
   @override
@@ -149,6 +205,9 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
       // Load comments
       await _loadComments(proposalId, token);
+
+      // Load audit trail
+      await _loadAuditTrail(proposalId, token);
 
       setState(() {
         _proposal = proposal;
@@ -324,6 +383,187 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       }
     } finally {
       setState(() => _isSubmittingComment = false);
+    }
+  }
+
+  Future<void> _completeProposal() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark as Done'),
+        content: Text(
+          'Are you sure you want to mark "${_proposal?['title'] ?? 'this proposal'}" as completed? '
+          'This will send a congratulations email to the client.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+            ),
+            child: const Text('Mark as Done'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final proposalId = widget.proposalId;
+    final token = AuthService.token;
+    if (token == null) {
+      _showError('Session expired. Please login again.');
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/complete'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Proposal marked as completed! Client notified.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } else {
+        String errorMessage = 'Failed to complete proposal';
+        try {
+          final contentType = response.headers['content-type'] ?? '';
+          if (contentType.contains('application/json')) {
+            final body = json.decode(response.body);
+            errorMessage = body['detail'] ?? errorMessage;
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to complete proposal: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectCompletion() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject with Comments'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Are you sure you want to reject "${_proposal?['title'] ?? 'this proposal'}"? '
+              'Please provide comments for the client.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Rejection comments',
+                border: OutlineInputBorder(),
+                hintText: 'Explain why the proposal is being rejected...',
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final comments = controller.text.trim();
+    final proposalId = widget.proposalId;
+    final token = AuthService.token;
+    if (token == null) {
+      _showError('Session expired. Please login again.');
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/reject_completion'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'comments': comments}),
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Proposal rejected. Client notified with comments.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } else {
+        String errorMessage = 'Failed to reject proposal';
+        try {
+          final contentType = response.headers['content-type'] ?? '';
+          if (contentType.contains('application/json')) {
+            final body = json.decode(response.body);
+            errorMessage = body['detail'] ?? errorMessage;
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to reject proposal: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -885,17 +1125,188 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     );
   }
 
+  Widget _buildSignedDocumentPreview() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.picture_as_pdf, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text(
+            'Signed Document Available',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'This proposal has been signed by the client',
+            style: TextStyle(color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () => _openSignedDocumentInNewTab(),
+            icon: const Icon(Icons.open_in_new),
+            label: const Text('View Signed Document'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PremiumTheme.teal,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openSignedDocumentInNewTab() async {
+    try {
+      final token = AuthService.token;
+      if (token == null) return;
+      
+      final proposalId = _proposal!['id'];
+      final url = '${ApiService.baseUrl}/api/proposals/$proposalId/signed-document?token=$token';
+      
+      // This force-opens the redirect in a new browser tab
+      if (await canLaunchUrlString(url)) {
+        await launchUrlString(
+          url, 
+          mode: LaunchMode.externalApplication, // CRITICAL for web
+        );
+      } else {
+        print('Could not launch URL: $url');
+      }
+    } catch (e) {
+      print('Error opening signed document: $e');
+    }
+  }
+
+  Future<String> _getSignedDocumentUrl() async {
+    try {
+      final token = AuthService.token;
+      if (token == null) return '';
+      
+      final proposalId = _proposal!['id'];
+      final response = await http.get(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/signed-document'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        // The response is the PDF bytes, we need to create a blob URL
+        final bytes = response.bodyBytes;
+        final blob = html.Blob([bytes], 'application/pdf');
+        return html.Url.createObjectUrlFromBlob(blob);
+      } else {
+        print('Failed to load signed document: ${response.statusCode}');
+        return '';
+      }
+    } catch (e) {
+      print('Error loading signed document: $e');
+      return '';
+    }
+  }
+
+  Widget _buildAuditTrailSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Audit Trail',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_auditTrail.isEmpty)
+            Text(
+              'No audit events yet',
+              style: TextStyle(color: Colors.grey[600]),
+            )
+          else
+            ..._auditTrail.map((e) {
+              final ts = (e['timestamp'] ?? '').toString();
+              String when = ts;
+              try {
+                final dt = DateTime.tryParse(ts);
+                if (dt != null) {
+                  when = DateFormat('MMM d, yyyy • h:mm a').format(dt.toLocal());
+                }
+              } catch (_) {}
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      margin: const EdgeInsets.only(top: 6),
+                      decoration: const BoxDecoration(
+                        color: PremiumTheme.teal,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            (e['action'] ?? '').toString(),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            (e['description'] ?? '').toString(),
+                            style: TextStyle(color: Colors.grey[700]),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            when,
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Check if this is a client-signed proposal that needs completion/rejection
+    final status = (_proposal?['status'] ?? '').toString().toLowerCase();
+    final isClientSigned = status == 'client signed' || status == 'signed';
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E27),
+      backgroundColor: PremiumTheme.darkBg2,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
         title: Text(
           'Review Proposal',
           style: PremiumTheme.titleMedium.copyWith(color: Colors.white),
@@ -937,29 +1348,57 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               },
               tooltip: 'Comments (${_comments.length})',
             ),
-            ElevatedButton.icon(
-              onPressed: _rejectProposal,
-              icon: const Icon(Icons.close, size: 18),
-              label: const Text('Reject'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            if (isClientSigned) ...[
+              // Show "Mark as Done" and "Reject with Comments" for client-signed proposals
+              ElevatedButton.icon(
+                onPressed: _completeProposal,
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Mark as Done'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _approveProposal,
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Approve'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: PremiumTheme.teal,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _rejectCompletion,
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Reject with Comments'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
               ),
-            ),
+            ] else ...[
+              // Show regular "Approve" and "Reject" for pending proposals
+              ElevatedButton.icon(
+                onPressed: _rejectProposal,
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Reject'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _approveProposal,
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Approve'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: PremiumTheme.teal,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+              ),
+            ],
             const SizedBox(width: 16),
           ],
         ],
@@ -1045,6 +1484,39 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                 ),
                                 const SizedBox(height: 24),
 
+                                // Signed document preview (for client-signed proposals)
+                                if (isClientSigned) ...[
+                                  GlassContainer(
+                                    borderRadius: 20,
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Signed Document',
+                                          style: PremiumTheme.bodyLarge.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Container(
+                                          width: double.infinity,
+                                          height: 600,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: _buildSignedDocumentPreview(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
+
                                 // Proposal content
                                 GlassContainer(
                                   borderRadius: 20,
@@ -1069,8 +1541,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                           borderRadius:
                                               BorderRadius.circular(12),
                                         ),
-                                        child:
-                                            _buildStructuredDocumentPreview(),
+                                        child: _buildStructuredDocumentPreview(),
                                       ),
                                     ],
                                   ),
@@ -1196,6 +1667,9 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                     ),
                                   const SizedBox(height: 24),
                                 ],
+
+                                // Audit Trail section
+                                _buildAuditTrailSection(),
 
                                 // Comments section
                                 GlassContainer(

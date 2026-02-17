@@ -16,6 +16,7 @@ from api.utils.auth import verify_token
 
 DEV_BYPASS_ENABLED = os.getenv('DEV_BYPASS_AUTH', 'false').lower() == 'true'
 DEV_DEFAULT_USERNAME = os.getenv('DEV_DEFAULT_USERNAME', 'admin')
+FORCE_LEGACY_AUTH = os.getenv('FORCE_LEGACY_AUTH', 'false').lower() == 'true'
 
 # Simple in-memory cache to avoid re-creating the same Firebase user
 # on every request when the database has eventual-consistency issues.
@@ -55,6 +56,14 @@ def token_required(f):
                 return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
             print('[ERROR] No token found in Authorization header')
             return {'detail': 'Token is missing'}, 401
+
+        if FORCE_LEGACY_AUTH:
+            username = verify_token(token)
+            if username:
+                print(f"[TOKEN] FORCE_LEGACY_AUTH enabled. Legacy token validated for user: {username}")
+                return f(username=username, *args, **kwargs)
+            print('[ERROR] FORCE_LEGACY_AUTH enabled but legacy validation failed')
+            return {'detail': 'Invalid or expired token'}, 401
 
         # Try Firebase token first only when it actually looks like a Firebase JWT.
         # Firebase ID tokens are JWTs with a 'kid' header.

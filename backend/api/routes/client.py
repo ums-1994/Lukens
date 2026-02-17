@@ -496,7 +496,14 @@ def get_client_proposal_details(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/client/proposals/<int:proposal_id>/comment")
+@bp.route("/client/proposals/<int:proposal_id>/comment", methods=['GET', 'POST', 'OPTIONS'])
+def handle_client_comment(proposal_id):
+    """Handle client comments - GET to fetch, POST to create"""
+    if request.method == 'GET':
+        return get_client_comments(proposal_id)
+    elif request.method == 'POST':
+        return add_client_comment(proposal_id)
+
 def add_client_comment(proposal_id):
     """Add a comment from client"""
     try:
@@ -556,6 +563,37 @@ def add_client_comment(proposal_id):
             
     except Exception as e:
         print(f"❌ Error adding client comment: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+def get_client_comments(proposal_id):
+    """Get all comments for a client proposal"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT 
+                    dc.id, dc.proposal_id, dc.comment_text, dc.created_by, dc.created_at,
+                    dc.section_index, dc.highlighted_text, dc.status, dc.updated_at, 
+                    dc.resolved_by, dc.resolved_at,
+                    u.email as created_by_email,
+                    u.full_name as created_by_name,
+                    r.email as resolved_by_email,
+                    r.full_name as resolved_by_name
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                LEFT JOIN users r ON dc.resolved_by = r.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at ASC
+            """, (proposal_id,))
+            
+            comments = cursor.fetchall()
+            
+            return [dict(comment) for comment in comments], 200
+            
+    except Exception as e:
+        print(f"❌ Error getting client comments: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

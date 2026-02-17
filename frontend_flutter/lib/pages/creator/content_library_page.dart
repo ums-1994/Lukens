@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -2275,6 +2275,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         type: FileType.custom,
         allowedExtensions: allowedExtensions,
         allowMultiple: false,
+        withData: true,
       );
 
       if (result != null && result.files.isNotEmpty) {
@@ -3042,6 +3043,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             'doc'
                           ],
                           allowMultiple: false,
+                          withData: true,
                         );
 
                         if (result != null) {
@@ -3050,9 +3052,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             selectedFileName = file.name;
                             // Read file content
                             try {
-                              if (file.path != null) {
-                                fileContent =
-                                    File(file.path!).readAsStringSync();
+                              final rawBytes = file.bytes;
+                              if (rawBytes != null && rawBytes.isNotEmpty) {
+                                fileContent = utf8.decode(rawBytes, allowMalformed: true);
+                              }
+                              if (fileContent != null && fileContent!.trim().isNotEmpty) {
                                 // Auto-fill label and key from filename
                                 labelCtrl.text = file.name
                                     .replaceAll(RegExp(r'\.[^.]+$'), '');

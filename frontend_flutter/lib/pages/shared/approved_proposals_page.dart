@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import '../../api.dart';
+import '../creator/blank_document_editor_page.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
@@ -96,10 +97,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       final approved = proposals
           .where((p) {
             final status = (p['status'] ?? '').toString().toLowerCase();
-            return status == 'signed' ||
-                status == 'client signed' ||
-                status == 'approved' ||
-                status == 'completed';
+            return status == 'completed';
           })
           .map((p) => p as Map<String, dynamic>)
           .toList();
@@ -816,13 +814,40 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
           final blob = html.Blob([response.bodyBytes], 'application/pdf');
           final url = html.Url.createObjectUrlFromBlob(blob);
 
-          // Open in new window
-          html.window.open(url, '_blank');
-
-          // Clean up URL after a delay (optional)
-          Future.delayed(const Duration(minutes: 1), () {
+          // Create fullscreen iframe with close button
+          final iframe = html.IFrameElement()
+            ..src = url
+            ..style.width = '100%'
+            ..style.height = '100vh'
+            ..style.border = 'none'
+            ..style.position = 'fixed'
+            ..style.top = '0'
+            ..style.left = '0'
+            ..style.zIndex = '9999'
+            ..style.backgroundColor = 'white';
+          
+          // Add close button
+          final closeBtn = html.ButtonElement()
+            ..text = '✕ Close'
+            ..style.position = 'fixed'
+            ..style.top = '10px'
+            ..style.right = '10px'
+            ..style.zIndex = '10000'
+            ..style.padding = '8px 16px'
+            ..style.backgroundColor = '#ff4444'
+            ..style.color = 'white'
+            ..style.border = 'none'
+            ..style.borderRadius = '4px'
+            ..style.cursor = 'pointer';
+          
+          closeBtn.onClick.listen((_) {
+            iframe.remove();
+            closeBtn.remove();
             html.Url.revokeObjectUrl(url);
           });
+          
+          html.document.body?.append(iframe);
+          html.document.body?.append(closeBtn);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -842,14 +867,15 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       }
     } else {
       // If not signed yet, open in read-only editor
-      Navigator.pushNamed(
+      Navigator.push(
         context,
-        '/compose',
-        arguments: {
-          'id': id,
-          'title': proposal['title'],
-          'readOnly': true,
-        },
+        MaterialPageRoute(
+          builder: (context) => BlankDocumentEditorPage(
+            proposalId: id,
+            proposalTitle: proposal['title']?.toString(),
+            readOnly: true,
+          ),
+        ),
       );
     }
   }

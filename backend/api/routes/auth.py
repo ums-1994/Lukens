@@ -21,18 +21,19 @@ from werkzeug.security import check_password_hash
 bp = Blueprint('auth', __name__)
 
 # Initialize Firebase on module load (with error handling to prevent import failures)
-try:
-    print("[AUTH] Initializing Firebase Admin SDK...")
-    result = initialize_firebase()
-    if result:
-        print("[AUTH] [OK] Firebase initialization succeeded")
-    else:
-        print("[AUTH] [WARNING] Firebase initialization returned None - check logs above")
-except Exception as e:
-    import traceback
-    print(f"[AUTH] [ERROR] Firebase initialization failed: {e}")
-    print(f"[AUTH] Stack trace: {traceback.format_exc()}")
-    print("[AUTH]    Firebase authentication features may not be available until Firebase is properly configured.")
+if os.getenv('FORCE_LEGACY_AUTH', 'false').lower() != 'true':
+    try:
+        print("[AUTH] Initializing Firebase Admin SDK...")
+        result = initialize_firebase()
+        if result:
+            print("[AUTH] [OK] Firebase initialization succeeded")
+        else:
+            print("[AUTH] [WARNING] Firebase initialization returned None - check logs above")
+    except Exception as e:
+        import traceback
+        print(f"[AUTH] [ERROR] Firebase initialization failed: {e}")
+        print(f"[AUTH] Stack trace: {traceback.format_exc()}")
+        print("[AUTH]    Firebase authentication features may not be available until Firebase is properly configured.")
 
 def generate_verification_token(user_id, email):
     """Generate a verification token for email verification and store in database"""

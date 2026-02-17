@@ -2,24 +2,42 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
+import 'dart:js' as js;
 
 class AuthService {
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
-    // Check if we're in production (not localhost)
     if (kIsWeb) {
-      final hostname = web.window.location.hostname;
-      final isProduction = hostname.contains('netlify.app') ||
-          hostname.contains('onrender.com') ||
-          !hostname.contains('localhost');
+      try {
+        final config = js.context['APP_CONFIG'];
+        if (config != null) {
+          final configObj = config as js.JsObject;
+          final apiUrl = configObj['API_URL'];
+          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+            final url = apiUrl.toString().replaceAll('"', '').trim();
+            print('🌐 AuthService: Using API URL from APP_CONFIG: $url');
+            return url;
+          }
+        }
+        final envUrl = js.context['REACT_APP_API_URL'];
+        if (envUrl != null && envUrl.toString().isNotEmpty) {
+          final url = envUrl.toString().replaceAll('"', '').trim();
+          print('🌐 AuthService: Using API URL from REACT_APP_API_URL: $url');
+          return url;
+        }
+      } catch (e) {
+        print('⚠️ AuthService: Could not read API URL from config: $e');
+      }
 
-      if (isProduction) {
-        print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
+      final hostname = web.window.location.hostname;
+      final isLocalhost = hostname == 'localhost' || hostname == '127.0.0.1';
+      if (isLocalhost) {
+        print('🌐 AuthService: Using local API URL: http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
     }
-    // Default to Render backend (production)
-    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
+
+    print('🌐 AuthService: Using production API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
   static String? _token;
@@ -120,7 +138,7 @@ class AuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/register'),
+        Uri.parse('$baseUrl/api/register'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'username': email, // Using email as username
@@ -152,7 +170,7 @@ class AuthService {
     try {
       // Use the new email-based login endpoint with JSON data
       final response = await http.post(
-        Uri.parse('$baseUrl/login-email'),
+        Uri.parse('$baseUrl/api/login-email'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'email': email,
@@ -191,7 +209,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> verifyEmail(String token) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+        Uri.parse('$baseUrl/api/verify-email'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': token}),
       );
@@ -213,7 +231,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> loginWithJwt(String jwtToken) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/khonobuzz/jwt-login'),
+        Uri.parse('$baseUrl/api/khonobuzz/jwt-login'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': jwtToken}),
       );
@@ -244,7 +262,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> resendVerification(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/resend-verification'),
+        Uri.parse('$baseUrl/api/resend-verification'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email}),
       );
@@ -266,7 +284,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> forgotPassword(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/forgot-password'),
+        Uri.parse('$baseUrl/api/forgot-password'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email}),
       );
@@ -290,7 +308,7 @@ class AuthService {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/user/profile'),
+        Uri.parse('$baseUrl/api/user/profile'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $_token',

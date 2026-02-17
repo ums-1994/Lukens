@@ -640,6 +640,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             subtitle: 'Client signed',
             icon: Icons.thumb_up_alt_outlined,
             gradient: PremiumTheme.tealGradient,
+            onTap: () {
+              Navigator.pushReplacementNamed(context, '/admin_approvals');
+            },
           ),
         ),
       ],

@@ -32,24 +32,16 @@ class ApiService {
         print('⚠️ ApiService: Could not read API URL from config: $e');
       }
     }
-    // Check if we're in production (not localhost)
     if (kIsWeb) {
       final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
-
-        if (isProduction) {
-          print(
-              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
+      final isLocalhost = hostname == 'localhost' || hostname == '127.0.0.1';
+      if (isLocalhost) {
+        print('🌐 ApiService: Using local API URL: http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
     }
-    // Default to Render backend (production)
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
+
+    print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
 

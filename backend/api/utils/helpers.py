@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import psycopg2.extras
 
 from api.utils.database import get_db_connection
-from api.utils.email import send_email
+from api.utils.email import send_email, get_logo_html
 
 # Import PDF and DocuSign utilities if available
 PDF_AVAILABLE = False
@@ -19,9 +19,10 @@ try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
     from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
     from io import BytesIO
     PDF_AVAILABLE = True
 except ImportError:
@@ -113,6 +114,47 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
             conn.commit()
     except Exception as e:
         print(f"⚠️ Failed to log activity: {e}")
+
+
+def log_proposal_audit_event(
+    proposal_id,
+    event_type,
+    actor_user_id=None,
+    actor_name=None,
+    actor_email=None,
+    version_number=None,
+    section_id=None,
+    metadata=None,
+):
+    try:
+        if not proposal_id or not event_type:
+            return
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO proposal_audit_events
+                    (proposal_id, event_type, actor_user_id, actor_name, actor_email, version_number, section_id, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    proposal_id,
+                    str(event_type),
+                    actor_user_id,
+                    actor_name,
+                    actor_email,
+                    version_number,
+                    section_id,
+                    json.dumps(metadata) if metadata else None,
+                ),
+            )
+            conn.commit()
+    except Exception as e:
+        try:
+            print(f"⚠️ Failed to write audit event: {e}")
+        except Exception:
+            pass
 
 
 def create_notification(
@@ -392,6 +434,8 @@ def generate_proposal_pdf(
     signer_name=None,
     signer_title=None,
     signed_date=None,
+    signed_document_url=None,
+    signature_placement=None,
 ):
     """Generate PDF from proposal content"""
     if not PDF_AVAILABLE:
@@ -659,13 +703,6 @@ def generate_proposal_pdf(
 
     doc_title = (title or "Business Proposal").strip() or "Business Proposal"
     elements.append(Paragraph(html.escape(doc_title), title_style))
-    meta_bits = [f"Proposal ID: {proposal_id}"]
-    if client_name:
-        meta_bits.append(f"Client: {client_name}")
-    if client_email:
-        meta_bits.append(f"Client Email: {client_email}")
-    meta_bits.append(f"Generated: {created_at.strftime('%Y-%m-%d %H:%M:%S')}")
-    elements.append(Paragraph(html.escape(" | ".join(meta_bits)), meta_style))
     elements.append(Spacer(1, 0.2 * inch))
 
     t_elements0 = time.perf_counter()
@@ -738,6 +775,50 @@ def generate_proposal_pdf(
     elements.append(Spacer(1, 0.3 * inch))
     elements.append(Paragraph("Please sign in the space below.", content_style))
     elements.append(Spacer(1, 0.35 * inch))
+
+    # If the client uploaded an in-app signature image (PNG/JPG), embed it here.
+    # This is separate from DocuSign anchor signing.
+    sig_url = (signed_document_url or '').strip() if isinstance(signed_document_url, str) else ''
+    if sig_url and not sig_url.lower().endswith('.pdf'):
+        try:
+            import urllib.request
+
+            req = urllib.request.Request(
+                sig_url,
+                headers={
+                    'User-Agent': 'ProposalHub/1.0',
+                },
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                img_bytes = resp.read()
+
+            if img_bytes:
+                # Keep it visually similar to a signature block.
+                # Use a fixed box and preserve aspect ratio.
+                max_w = 4.8 * inch
+                max_h = 1.4 * inch
+                img = Image(BytesIO(img_bytes))
+                img.hAlign = 'LEFT'
+
+                # Compute scale while preserving aspect ratio.
+                try:
+                    iw, ih = ImageReader(BytesIO(img_bytes)).getSize()
+                    if iw and ih:
+                        scale = min(max_w / float(iw), max_h / float(ih))
+                        img.drawWidth = float(iw) * scale
+                        img.drawHeight = float(ih) * scale
+                    else:
+                        img.drawWidth = max_w
+                        img.drawHeight = max_h
+                except Exception:
+                    img.drawWidth = max_w
+                    img.drawHeight = max_h
+
+                elements.append(img)
+                elements.append(Spacer(1, 0.25 * inch))
+        except Exception:
+            # Never fail PDF generation due to signature rendering.
+            pass
     elements.append(
         Paragraph(
             "/sig1/",
@@ -810,15 +891,9 @@ def generate_proposal_pdf(
             if client_name:
                 header_left = f"{header_left} - {str(client_name).strip()}"
             self.drawString(doc.leftMargin, header_y, header_left)
-            self.drawRightString(page_width - doc.rightMargin, header_y, generated_label)
+            self.drawRightString(page_width - doc.rightMargin, header_y, "")
 
-            footer_left = f"Proposal #{proposal_id}"
-            footer_center = client_email.strip() if isinstance(client_email, str) and client_email.strip() else ""
             footer_right = f"Page {page_num} of {total_pages}"
-
-            self.drawString(doc.leftMargin, footer_y, footer_left)
-            if footer_center:
-                self.drawCentredString(page_width / 2.0, footer_y, footer_center)
             self.drawRightString(page_width - doc.rightMargin, footer_y, footer_right)
             self.restoreState()
 
@@ -838,6 +913,112 @@ def generate_proposal_pdf(
         pass
     pdf_bytes = buffer.getvalue()
     buffer.close()
+
+    # Optional: stamp signature image at an explicit placement (Adobe-like).
+    # Placement values are normalized 0..1 with origin at TOP-LEFT.
+    try:
+        placement = signature_placement if isinstance(signature_placement, dict) else None
+        sig_url = (signed_document_url or '').strip() if isinstance(signed_document_url, str) else ''
+        if placement and sig_url and not sig_url.lower().endswith('.pdf'):
+            try:
+                from PyPDF2 import PdfReader, PdfWriter
+            except Exception:
+                PdfReader = None
+                PdfWriter = None
+
+            if PdfReader is not None and PdfWriter is not None:
+                # Resolve target page (defaults to last page).
+                page_index = placement.get('page')
+                try:
+                    page_index = int(page_index) if page_index is not None else None
+                except Exception:
+                    page_index = None
+
+                x = placement.get('x')
+                y = placement.get('y')
+                w = placement.get('w')
+                h = placement.get('h')
+                try:
+                    x = float(x) if x is not None else None
+                    y = float(y) if y is not None else None
+                    w = float(w) if w is not None else None
+                    h = float(h) if h is not None else None
+                except Exception:
+                    x = y = w = h = None
+
+                def _is_norm(v):
+                    return v is not None and 0.0 <= v <= 1.0
+
+                if _is_norm(x) and _is_norm(y) and _is_norm(w) and _is_norm(h):
+                    import urllib.request
+
+                    req = urllib.request.Request(
+                        sig_url,
+                        headers={'User-Agent': 'ProposalHub/1.0'},
+                    )
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        img_bytes = resp.read()
+
+                    if img_bytes:
+                        reader = PdfReader(BytesIO(pdf_bytes))
+                        total_pages = len(reader.pages)
+                        if total_pages > 0:
+                            if page_index is None or page_index == -1:
+                                target_idx = total_pages - 1
+                            else:
+                                target_idx = max(0, min(total_pages - 1, page_index))
+
+                            # Build a single-page overlay PDF.
+                            base_page = reader.pages[target_idx]
+                            page_w = float(base_page.mediabox.width)
+                            page_h = float(base_page.mediabox.height)
+
+                            overlay_buf = BytesIO()
+                            c = canvas.Canvas(overlay_buf, pagesize=(page_w, page_h))
+
+                            # Convert normalized TOP-LEFT coords to PDF points (BOTTOM-LEFT origin)
+                            x_pt = x * page_w
+                            w_pt = w * page_w
+                            h_pt = h * page_h
+                            y_pt = page_h - (y * page_h) - h_pt
+
+                            # Guard against weird sizes.
+                            if w_pt > 2 and h_pt > 2:
+                                try:
+                                    c.drawImage(
+                                        ImageReader(BytesIO(img_bytes)),
+                                        x_pt,
+                                        y_pt,
+                                        width=w_pt,
+                                        height=h_pt,
+                                        mask='auto',
+                                    )
+                                except Exception:
+                                    pass
+                            c.showPage()
+                            c.save()
+                            overlay_pdf = PdfReader(BytesIO(overlay_buf.getvalue()))
+
+                            # Merge.
+                            writer = PdfWriter()
+                            for i in range(total_pages):
+                                p = reader.pages[i]
+                                if i == target_idx:
+                                    try:
+                                        p.merge_page(overlay_pdf.pages[0])
+                                    except Exception:
+                                        try:
+                                            p.mergePage(overlay_pdf.pages[0])
+                                        except Exception:
+                                            pass
+                                writer.add_page(p)
+
+                            out = BytesIO()
+                            writer.write(out)
+                            pdf_bytes = out.getvalue()
+    except Exception:
+        pass
+
     return pdf_bytes
 
 

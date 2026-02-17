@@ -35,6 +35,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   // Admin approvals inbox state
   List<Map<String, dynamic>> _allProposals = [];
   List<Map<String, dynamic>> _pendingProposals = [];
+  List<Map<String, dynamic>> _pendingCompletionProposals = [];
   List<Map<String, dynamic>> _rejectedProposals = [];
   String _activeFilter = 'all'; // all, pending, approved, rejected
   String _searchQuery = '';
@@ -124,6 +125,30 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         }
       }
 
+      final pendingCompletionResponse = await http.get(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/pending_completion'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Request timed out');
+        },
+      );
+
+      final List<Map<String, dynamic>> pendingCompletionFromApi = [];
+      if (pendingCompletionResponse.statusCode == 200) {
+        final data = json.decode(pendingCompletionResponse.body);
+        final List<dynamic> items = data['proposals'] as List? ?? [];
+        for (final raw in items) {
+          if (raw is Map) {
+            pendingCompletionFromApi.add(Map<String, dynamic>.from(raw));
+          }
+        }
+      }
+
       // 2) Fetch general proposals for additional context (e.g. history)
       final proposals = await ApiService.getProposals(token).timeout(
         const Duration(seconds: 10),
@@ -135,6 +160,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       // 3) Combine and categorise proposals into All / Pending / Approved / Rejected
       final List<Map<String, dynamic>> all = [];
       final List<Map<String, dynamic>> pending = [];
+      final List<Map<String, dynamic>> pendingCompletion = [];
       final List<Map<String, dynamic>> approved = [];
       final List<Map<String, dynamic>> rejected = [];
       final Set<String> seenIds = {};
@@ -155,11 +181,12 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           pending.add(proposal);
         }
 
+        if (status == 'signed' || status == 'client signed') {
+          pendingCompletion.add(proposal);
+        }
+
         // Approved bucket (used both for tab and summary metrics)
-        if (status == 'signed' ||
-            status == 'client signed' ||
-            status == 'approved' ||
-            status == 'completed') {
+        if (status == 'approved' || status == 'completed') {
           approved.add(proposal);
         }
 
@@ -170,6 +197,10 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       }
 
       for (final proposal in pendingFromApi) {
+        addProposal(proposal);
+      }
+
+      for (final proposal in pendingCompletionFromApi) {
         addProposal(proposal);
       }
 
@@ -230,6 +261,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
       all.sort(compareByRecent);
       pending.sort(compareByRecent);
+      pendingCompletion.sort(compareByRecent);
       approved.sort(compareByRecent);
       rejected.sort(compareByRecent);
 
@@ -237,6 +269,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         setState(() {
           _allProposals = all;
           _pendingProposals = pending;
+          _pendingCompletionProposals = pendingCompletion;
           _approvedProposals = approved;
           _rejectedProposals = rejected;
           _totalApprovedValue = totalValue;
@@ -770,6 +803,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           _buildStatusTab(
               'Pending Approval', 'pending', _pendingProposals.length),
           const SizedBox(width: 8),
+          _buildStatusTab('Pending Completion', 'completion',
+              _pendingCompletionProposals.length),
+          const SizedBox(width: 8),
           _buildStatusTab('Approved', 'approved', _approvedProposals.length),
           const SizedBox(width: 8),
           _buildStatusTab('Rejected', 'rejected', _rejectedProposals.length),
@@ -839,6 +875,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     switch (_activeFilter) {
       case 'pending':
         source = _pendingProposals;
+        break;
+      case 'completion':
+        source = _pendingCompletionProposals;
         break;
       case 'approved':
         source = _approvedProposals;
@@ -1051,6 +1090,10 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     final owner =
         (proposal['owner_email'] ?? proposal['owner'] ?? '').toString().trim();
 
+    final lowerStatus = rawStatus.toLowerCase().trim();
+    final canMarkDone =
+        _activeFilter == 'completion' && (lowerStatus == 'signed' || lowerStatus == 'client signed');
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -1123,21 +1166,243 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             flex: 2,
             child: Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => _openReview(proposal),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF3498DB),
-                ),
-                child: const Text(
-                  'Review',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
+              child: canMarkDone
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          onPressed: () => _openReview(proposal),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF3498DB),
+                          ),
+                          child: const Text(
+                            'Review',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: () => _rejectCompletion(proposal),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: PremiumTheme.error.withOpacity(0.8)),
+                            foregroundColor: PremiumTheme.error,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                          ),
+                          child: const Text(
+                            'Reject',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () => _markDone(proposal),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2ECC71),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                          ),
+                          child: const Text(
+                            'Mark Done',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    )
+                  : TextButton(
+                      onPressed: () => _openReview(proposal),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF3498DB),
+                      ),
+                      child: const Text(
+                        'Review',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _rejectCompletion(Map<String, dynamic> proposal) async {
+    if (!mounted) return;
+
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final controller = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject Signed Proposal'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Add rejection comments for the client (optional). This will move the proposal to Rejected and notify the client by email.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'Comments',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: PremiumTheme.error),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      AuthService.restoreSessionFromStorage();
+      var token = AuthService.token;
+      if (token == null) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        token = AuthService.token;
+      }
+      if (token == null) {
+        throw Exception('Not authenticated');
+      }
+
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/reject_completion'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'comments': controller.text.trim()}),
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Proposal rejected'),
+              backgroundColor: PremiumTheme.error,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        await _loadData();
+        return;
+      }
+
+      try {
+        final data = json.decode(response.body);
+        throw Exception(data['detail'] ?? 'Failed to reject proposal');
+      } catch (_) {
+        throw Exception('Failed to reject proposal');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to reject proposal: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _markDone(Map<String, dynamic> proposal) async {
+    if (!mounted) return;
+
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark Proposal as Done'),
+        content: const Text(
+          'This will move the proposal to Completed and it will appear in Signed Proposals.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Mark Done'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      AuthService.restoreSessionFromStorage();
+      var token = AuthService.token;
+      if (token == null) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        token = AuthService.token;
+      }
+      if (token == null) {
+        throw Exception('Not authenticated');
+      }
+
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/complete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Proposal marked as completed'),
+              backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        await _loadData();
+      } else {
+        try {
+          final data = json.decode(response.body);
+          throw Exception(data['detail'] ?? 'Failed to mark done');
+        } catch (_) {
+          throw Exception('Failed to mark done');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to mark done: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   String _formatProposalDate(dynamic date) {
@@ -1505,10 +1770,39 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         if (response.statusCode == 200) {
           final blob = html.Blob([response.bodyBytes], 'application/pdf');
           final url = html.Url.createObjectUrlFromBlob(blob);
-          html.window.open(url, '_blank');
-          Future.delayed(const Duration(minutes: 1), () {
+          final iframe = html.IFrameElement()
+            ..src = url
+            ..style.width = '100%'
+            ..style.height = '100vh'
+            ..style.border = 'none'
+            ..style.position = 'fixed'
+            ..style.top = '0'
+            ..style.left = '0'
+            ..style.zIndex = '9999'
+            ..style.backgroundColor = 'white';
+          
+          // Add close button
+          final closeBtn = html.ButtonElement()
+            ..text = '✕ Close'
+            ..style.position = 'fixed'
+            ..style.top = '10px'
+            ..style.right = '10px'
+            ..style.zIndex = '10000'
+            ..style.padding = '8px 16px'
+            ..style.backgroundColor = '#ff4444'
+            ..style.color = 'white'
+            ..style.border = 'none'
+            ..style.borderRadius = '4px'
+            ..style.cursor = 'pointer';
+          
+          closeBtn.onClick.listen((_) {
+            iframe.remove();
+            closeBtn.remove();
             html.Url.revokeObjectUrl(url);
           });
+          
+          html.document.body?.append(iframe);
+          html.document.body?.append(closeBtn);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

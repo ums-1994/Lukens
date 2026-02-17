@@ -513,6 +513,34 @@ def init_pg_schema():
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_log_proposal 
                          ON activity_log(proposal_id, created_at DESC)''')
 
+        # Proposal audit events table
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_audit_events (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            event_type VARCHAR(60) NOT NULL,
+            actor_user_id INTEGER,
+            actor_name VARCHAR(255),
+            actor_email VARCHAR(255),
+            version_number INTEGER,
+            section_id VARCHAR(255),
+            metadata JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (actor_user_id) REFERENCES users(id)
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_audit_events_proposal
+               ON proposal_audit_events(proposal_id, created_at ASC, id ASC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_audit_events_type
+               ON proposal_audit_events(proposal_id, event_type, created_at ASC)'''
+        )
+
         # Notifications table
         cursor.execute('''CREATE TABLE IF NOT EXISTS notifications (
         id SERIAL PRIMARY KEY,

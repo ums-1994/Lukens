@@ -103,7 +103,58 @@ class MyApp extends StatelessWidget {
         },
         home: const AuthWrapper(),
         onGenerateRoute: (settings) {
-          print('🔍 onGenerateRoute - Route name: ${settings.name}');
+          final String currentUrl = web.window.location.href;
+          final String currentHash = web.window.location.hash;
+          Uri? hashUri;
+          if (currentHash.isNotEmpty) {
+            try {
+              final raw = currentHash.startsWith('#')
+                  ? currentHash.substring(1)
+                  : currentHash;
+              if (raw.isNotEmpty) {
+                hashUri = Uri.parse(raw);
+              }
+            } catch (_) {
+              hashUri = null;
+            }
+          }
+
+          final String? effectivePath =
+              (settings.name != null && settings.name!.isNotEmpty)
+                  ? settings.name
+                  : hashUri?.path;
+
+          // Handle hash-based client proposal links from emails:
+          // http://localhost:8080/#/client/proposals?token=...
+          if (effectivePath == '/client/proposals' ||
+              (effectivePath != null &&
+                  effectivePath.startsWith('/client/proposals'))) {
+            print('🔍 Client proposals route detected: $effectivePath');
+
+            String? token = hashUri?.queryParameters['token'];
+            if (token == null || token.isEmpty) {
+              try {
+                final uri = Uri.parse(currentUrl);
+                token = uri.queryParameters['token'];
+              } catch (_) {}
+            }
+            if (token == null || token.isEmpty) {
+              final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+              if (urlMatch != null) {
+                token = urlMatch.group(1);
+              }
+            }
+
+            if (token != null && token.isNotEmpty) {
+              print('✅ Token found for client proposals');
+              final validToken = token;
+              return MaterialPageRoute(
+                builder: (context) => ClientDashboardHome(initialToken: validToken),
+              );
+            }
+
+            print('❌ No token found in client proposals URL');
+          }
 
           // Handle collaboration routes with token
           if (settings.name == '/collaborate' ||
@@ -650,11 +701,26 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/client/proposals');
 
     if (isClientProposals) {
-      final token = uri.queryParameters['token'];
+      String? token = uri.queryParameters['token'];
+      if (token == null || token.isEmpty) {
+        if (hash.contains('token=')) {
+          final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+          if (hashMatch != null) {
+            token = hashMatch.group(1);
+          }
+        }
+      }
+      if (token == null || token.isEmpty) {
+        final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+        if (urlMatch != null) {
+          token = urlMatch.group(1);
+        }
+      }
+
       if (token != null && token.isNotEmpty) {
         print('✅ Detected client proposals URL - showing ClientDashboardHome');
         print('📍 Client token: ${token.substring(0, 10)}...');
-        return const ClientDashboardHome();
+        return ClientDashboardHome(initialToken: token);
       }
     }
 

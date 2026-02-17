@@ -10,6 +10,8 @@ import smtplib
 import difflib
 import inspect
 from datetime import datetime, timedelta
+import urllib.request
+import urllib.error
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse, parse_qs
@@ -18,6 +20,7 @@ from email.mime.multipart import MIMEMultipart
 import traceback
 from io import BytesIO
 import tempfile
+import math
 
 backend_dir = Path(__file__).resolve().parent
 if str(backend_dir) not in sys.path:
@@ -66,7 +69,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, make_response
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -76,6 +79,12 @@ from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 from api.utils.ai_safety import AISafetyError
+
+try:
+    from PyPDF2 import PdfReader, PdfWriter
+    PYPDF_AVAILABLE = True
+except Exception:
+    PYPDF_AVAILABLE = False
 
 # Load environment variables
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name('.env'), override=True)
@@ -88,17 +97,58 @@ CORS(
         r"/*": {
             "origins": [
                 "https://proposals2025.netlify.app",
+                "http://localhost:8080",
+                "http://127.0.0.1:8080",
                 r"^http://localhost(:\d+)?$",
                 r"^http://127\.0\.0\.1(:\d+)?$",
                 "http://localhost:5173",
                 "http://localhost:5000",
                 "http://localhost:8081",
             ],
-            "allow_headers": ["Content-Type", "Authorization"],
+            "allow_headers": [
+                "Content-Type",
+                "Authorization",
+                "Accept",
+                "Range",
+                "If-None-Match",
+                "If-Modified-Since",
+            ],
+            "expose_headers": [
+                "Content-Length",
+                "Content-Range",
+                "Accept-Ranges",
+                "ETag",
+                "Cache-Control",
+                "Content-Disposition",
+            ],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
         }
     },
 )
+
+
+@app.after_request
+def _dev_cors_fallback(resp):
+    # Flask-CORS should handle this, but ensure localhost dev always receives
+    # CORS headers even on error responses.
+    try:
+        origin = (request.headers.get('Origin') or '').strip()
+        if not origin:
+            return resp
+        if origin.startswith('http://localhost') or origin.startswith('http://127.0.0.1'):
+            resp.headers['Access-Control-Allow-Origin'] = origin
+            resp.headers['Vary'] = 'Origin'
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Headers'] = (
+                'Content-Type, Authorization, Accept, Range, If-None-Match, If-Modified-Since'
+            )
+            resp.headers['Access-Control-Expose-Headers'] = (
+                'Content-Length, Content-Range, Accept-Ranges, ETag, Cache-Control, Content-Disposition'
+            )
+            resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+        return resp
+    except Exception:
+        return resp
 
 @app.route("/", methods=["OPTIONS"])
 @app.route("/<path:remaining>", methods=["OPTIONS"])
@@ -128,10 +178,10 @@ app.register_blueprint(risk_gate_bp)
 
 # Expose upload and content library routes at root (no /api prefix) for frontend compatibility
 from api.routes.creator import upload_image, upload_template, get_content, create_content
-app.add_url_rule('/upload/image', view_func=upload_image, methods=['POST'])
-app.add_url_rule('/upload/template', view_func=upload_template, methods=['POST'])
-app.add_url_rule('/content', view_func=get_content, methods=['GET'])
-app.add_url_rule('/content', view_func=create_content, methods=['POST'])
+app.add_url_rule('/upload/image', endpoint='creator_upload_image', view_func=upload_image, methods=['POST'])
+app.add_url_rule('/upload/template', endpoint='creator_upload_template', view_func=upload_template, methods=['POST'])
+app.add_url_rule('/content', endpoint='creator_get_content', view_func=get_content, methods=['GET'])
+app.add_url_rule('/content', endpoint='creator_create_content', view_func=create_content, methods=['POST'])
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -485,6 +535,34 @@ def init_pg_schema():
         # Create index for faster activity queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_activity_log_proposal 
                          ON activity_log(proposal_id, created_at DESC)''')
+
+        # Proposal audit events table
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_audit_events (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            event_type VARCHAR(60) NOT NULL,
+            actor_user_id INTEGER,
+            actor_name VARCHAR(255),
+            actor_email VARCHAR(255),
+            version_number INTEGER,
+            section_id VARCHAR(255),
+            metadata JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+            FOREIGN KEY (actor_user_id) REFERENCES users(id)
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_audit_events_proposal
+               ON proposal_audit_events(proposal_id, created_at ASC, id ASC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_audit_events_type
+               ON proposal_audit_events(proposal_id, event_type, created_at ASC)'''
+        )
         
         # Notifications table
         cursor.execute('''CREATE TABLE IF NOT EXISTS notifications (
@@ -542,6 +620,18 @@ def init_pg_schema():
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
+
+        # Optional signature placement metadata (Adobe-like click-to-place).
+        # Normalized to the page (0..1) with origin at TOP-LEFT for x/y.
+        # These ALTERs are best-effort for existing DBs.
+        try:
+            cursor.execute("ALTER TABLE proposal_signatures ADD COLUMN IF NOT EXISTS sig_page INTEGER")
+            cursor.execute("ALTER TABLE proposal_signatures ADD COLUMN IF NOT EXISTS sig_x DOUBLE PRECISION")
+            cursor.execute("ALTER TABLE proposal_signatures ADD COLUMN IF NOT EXISTS sig_y DOUBLE PRECISION")
+            cursor.execute("ALTER TABLE proposal_signatures ADD COLUMN IF NOT EXISTS sig_w DOUBLE PRECISION")
+            cursor.execute("ALTER TABLE proposal_signatures ADD COLUMN IF NOT EXISTS sig_h DOUBLE PRECISION")
+        except Exception:
+            pass
         
         # Create index for faster signature queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_signatures 
@@ -645,6 +735,46 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
     except Exception as e:
         print(f"⚠️ Failed to log activity: {e}")
         # Don't raise - activity logging should not break main functionality
+
+
+def log_proposal_audit_event(
+    proposal_id,
+    event_type,
+    actor_user_id=None,
+    actor_name=None,
+    actor_email=None,
+    version_number=None,
+    section_id=None,
+    metadata=None,
+):
+    try:
+        if not proposal_id or not event_type:
+            return
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO proposal_audit_events
+                    (proposal_id, event_type, actor_user_id, actor_name, actor_email, version_number, section_id, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    proposal_id,
+                    str(event_type),
+                    actor_user_id,
+                    actor_name,
+                    actor_email,
+                    version_number,
+                    section_id,
+                    json.dumps(metadata) if metadata else None,
+                ),
+            )
+            conn.commit()
+    except Exception as e:
+        try:
+            print(f"⚠️ Failed to write audit event: {e}")
+        except Exception:
+            pass
 
 # ============================================================================
 # NOTIFICATION HELPER
@@ -1318,6 +1448,47 @@ def send_password_reset_email(email, reset_token):
     
     return send_email(email, subject, html_content)
 
+
+def _get_latest_signature_row(cursor, proposal_id):
+    try:
+        cursor.execute(
+            """
+            SELECT signer_name, signer_title, signer_email, status, signed_at, signed_document_url, created_at
+            FROM proposal_signatures
+            WHERE proposal_id = %s
+            ORDER BY COALESCE(signed_at, created_at) DESC, id DESC
+            LIMIT 1
+            """,
+            (proposal_id,),
+        )
+        sig_row = cursor.fetchone() or None
+        print(f"🔍 Signature row for proposal {proposal_id}: {sig_row}")
+        return sig_row
+    except Exception as e:
+        print(f"❌ Error fetching signature row: {e}")
+        return None
+
+
+def _get_client_email_for_proposal(cursor, proposal_id, sig_row=None):
+    try:
+        cursor.execute('SELECT client_email FROM proposals WHERE id = %s', (proposal_id,))
+        row = cursor.fetchone()
+        if row:
+            try:
+                ce = row.get('client_email') if isinstance(row, dict) else row[0]
+            except Exception:
+                ce = None
+            if ce and str(ce).strip():
+                return str(ce).strip()
+    except Exception:
+        pass
+
+    if isinstance(sig_row, dict):
+        se = sig_row.get('signer_email')
+        if se and str(se).strip():
+            return str(se).strip()
+    return None
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -1364,6 +1535,165 @@ def admin_required(f):
         return f(username=username, *args, **kwargs)
     return decorated
 
+
+def _fetch_audit_trail(cursor, proposal_id: int):
+    def _select_rows():
+        cursor.execute(
+            """
+            SELECT id, proposal_id, event_type, actor_user_id, actor_name, actor_email,
+                   version_number, section_id, metadata, created_at
+            FROM proposal_audit_events
+            WHERE proposal_id = %s
+            ORDER BY created_at ASC, id ASC
+            """,
+            (proposal_id,),
+        )
+        return cursor.fetchall() or []
+
+    rows = _select_rows()
+
+    # Backfill for legacy proposals (created before audit events existed).
+    if not rows:
+        try:
+            cursor.execute(
+                """
+                SELECT p.created_at, p.owner_id, u.full_name, u.email
+                FROM proposals p
+                LEFT JOIN users u ON u.id = p.owner_id
+                WHERE p.id = %s
+                """,
+                (proposal_id,),
+            )
+            meta = cursor.fetchone()
+            if meta:
+                created_at = meta[0] if not isinstance(meta, dict) else meta.get('created_at')
+                owner_id = meta[1] if not isinstance(meta, dict) else meta.get('owner_id')
+                owner_name = meta[2] if not isinstance(meta, dict) else meta.get('full_name')
+                owner_email = meta[3] if not isinstance(meta, dict) else meta.get('email')
+
+                cursor.execute(
+                    """
+                    INSERT INTO proposal_audit_events
+                        (proposal_id, event_type, actor_user_id, actor_name, actor_email, metadata, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        proposal_id,
+                        'created',
+                        owner_id,
+                        owner_name,
+                        owner_email,
+                        json.dumps({'backfilled': True}),
+                        created_at,
+                    ),
+                )
+                rows = _select_rows()
+        except Exception:
+            # Never break audit trail retrieval due to backfill problems.
+            pass
+
+    out = []
+    for r in rows:
+        try:
+            if isinstance(r, dict):
+                row = r
+            else:
+                # fallback (shouldn't happen often)
+                row = {
+                    'id': r[0],
+                    'proposal_id': r[1],
+                    'event_type': r[2],
+                    'actor_user_id': r[3],
+                    'actor_name': r[4],
+                    'actor_email': r[5],
+                    'version_number': r[6],
+                    'section_id': r[7],
+                    'metadata': r[8],
+                    'created_at': r[9],
+                }
+            created_at = row.get('created_at')
+            out.append(
+                {
+                    'id': row.get('id'),
+                    'proposal_id': row.get('proposal_id'),
+                    'event_type': row.get('event_type'),
+                    'actor': {
+                        'user_id': row.get('actor_user_id'),
+                        'name': row.get('actor_name'),
+                        'email': row.get('actor_email'),
+                    },
+                    'version_number': row.get('version_number'),
+                    'section_id': row.get('section_id'),
+                    'metadata': row.get('metadata'),
+                    'timestamp': created_at.isoformat() if hasattr(created_at, 'isoformat') and created_at else None,
+                }
+            )
+        except Exception:
+            continue
+    return out
+
+
+@app.get('/api/proposals/<int:proposal_id>/audit-trail')
+@token_required
+def get_internal_audit_trail(username=None, proposal_id=None):
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                "SELECT id, email, full_name, username FROM users WHERE username = %s",
+                (username,),
+            )
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+
+            # Minimal access control: require proposal exist.
+            # (Existing codebase has multiple ownership schema variants; we avoid breaking).
+            cursor.execute('SELECT id FROM proposals WHERE id = %s', (proposal_id,))
+            exists = cursor.fetchone()
+            if not exists:
+                return {'detail': 'Proposal not found'}, 404
+
+            events = _fetch_audit_trail(cursor, proposal_id)
+            return {'proposal_id': proposal_id, 'events': events}, 200
+    except Exception as e:
+        print(f"❌ Error fetching internal audit trail: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.get('/api/client/proposals/<int:proposal_id>/audit-trail')
+def get_client_audit_trail(proposal_id):
+    try:
+        token = request.args.get('token')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            invitation, err_body, err_code = _client_get_invitation_by_token(cursor, token)
+            if err_body:
+                return err_body, err_code
+
+            proposal, err_body, err_code = _client_fetch_proposal_for_email(
+                cursor,
+                proposal_id,
+                invitation['invited_email'],
+            )
+            if err_body:
+                return err_body, err_code
+
+            events = _fetch_audit_trail(cursor, proposal_id)
+            return {
+                'proposal_id': proposal_id,
+                'title': proposal.get('title'),
+                'events': events,
+            }, 200
+    except Exception as e:
+        print(f"❌ Error fetching client audit trail: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 # Authentication endpoints
 
 @app.post("/register")
@@ -1406,6 +1736,309 @@ def register():
         return {'detail': 'Registration successful. You can now login.', 'email': email}, 200
     except Exception as e:
         print(f'Registration error: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post('/api/client/proposals/<int:proposal_id>/upload-annotated')
+def client_upload_annotated_pdf(proposal_id):
+    try:
+        if not PDF_AVAILABLE:
+            return {'detail': 'PDF generation unavailable'}, 503
+        if not PYPDF_AVAILABLE:
+            return {'detail': 'PDF merge unavailable (PyPDF2 not installed)'}, 503
+
+        payload = request.get_json(silent=True) or {}
+        token = (payload.get('token') or '').strip()
+        if not token:
+            return {'detail': 'Access token required'}, 400
+
+        annotations = payload.get('annotations')
+        if not isinstance(annotations, list):
+            return {'detail': 'annotations must be an array'}, 400
+
+        signer_name = (payload.get('signer_name') or '').strip()
+        signer_title = (payload.get('signer_title') or '').strip()
+        
+        print(f"🔍 Client uploading annotated PDF for proposal {proposal_id}")
+        print(f"📝 Annotations received: {len(annotations)} items")
+        print(f"✍️  Signer name: '{signer_name}', title: '{signer_title}'")
+        if annotations:
+            print(f"📄 Sample annotation: {annotations[0] if annotations else 'None'}")
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            invitation, err_body, err_code = _client_get_invitation_by_token(cursor, token)
+            if err_body:
+                return err_body, err_code
+
+            proposal, err_body, err_code = _client_fetch_proposal_for_email(
+                cursor,
+                proposal_id,
+                invitation['invited_email'],
+            )
+            if err_body:
+                return err_body, err_code
+
+            base_pdf = generate_proposal_pdf(
+                proposal_id=proposal_id,
+                title=proposal.get('title') or f"Proposal {proposal_id}",
+                content=proposal.get('content', '') or '',
+                client_name=signer_name or None,
+                client_email=invitation.get('invited_email'),
+            )
+
+        reader = PdfReader(BytesIO(base_pdf))
+        writer = PdfWriter()
+
+        def _parse_color(raw: str):
+            try:
+                s = (raw or '').strip()
+                if not s:
+                    return (0, 0, 0)
+                if s.startswith('#') and len(s) == 7:
+                    r = int(s[1:3], 16) / 255.0
+                    g = int(s[3:5], 16) / 255.0
+                    b = int(s[5:7], 16) / 255.0
+                    return (r, g, b)
+            except Exception:
+                pass
+            return (0, 0, 0)
+
+        def _safe_float(v, default=0.0):
+            try:
+                if v is None:
+                    return default
+                return float(v)
+            except Exception:
+                return default
+
+        def _clamp01(v):
+            try:
+                if v < 0:
+                    return 0.0
+                if v > 1:
+                    return 1.0
+                return float(v)
+            except Exception:
+                return 0.0
+
+        def _items_for_page(page_num: int):
+            out = []
+            for a in annotations:
+                try:
+                    if not isinstance(a, dict):
+                        continue
+                    if int(a.get('page') or 0) == int(page_num):
+                        out.append(a)
+                except Exception:
+                    continue
+            return out
+
+        print(f"🔍 Processing {len(annotations)} annotations for signed PDF")
+        if annotations:
+            print(f"📝 Sample annotation: {annotations[0] if annotations else 'None'}")
+
+        for idx, page in enumerate(reader.pages):
+            page_num = idx + 1
+            w = float(page.mediabox.width)
+            h = float(page.mediabox.height)
+
+            overlay_buf = BytesIO()
+            c = canvas.Canvas(overlay_buf, pagesize=(w, h))
+
+            for item in _items_for_page(page_num):
+                t = (item.get('type') or '').strip().lower()
+                print(f"📄 Processing {t} annotation on page {page_num}")
+                x = _clamp01(_safe_float(item.get('x'), 0.0))
+                y = _clamp01(_safe_float(item.get('y'), 0.0))
+                ww = _clamp01(_safe_float(item.get('w'), 0.0))
+                hh = _clamp01(_safe_float(item.get('h'), 0.0))
+
+                x_pt = x * w
+                y_top_pt = y * h
+                box_w = ww * w
+                box_h = hh * h
+                y_pt = h - y_top_pt - box_h
+
+                if t == 'text':
+                    txt = (item.get('text') or '').strip()
+                    if not txt:
+                        continue
+                    c.setFillColorRGB(0, 0, 0)
+                    font_size = 12
+                    try:
+                        if box_h > 0:
+                            font_size = max(10, min(18, int(box_h * 0.65)))
+                    except Exception:
+                        font_size = 12
+                    c.setFont('Helvetica', font_size)
+                    c.drawString(x_pt + 2, y_pt + max(2, (box_h - font_size) * 0.35), txt)
+
+                elif t == 'signature':
+                    src = (item.get('src') or item.get('data') or '').strip()
+                    if not src:
+                        continue
+                    img_bytes = None
+                    try:
+                        if src.startswith('data:'):
+                            b64 = src.split(',', 1)[1]
+                            img_bytes = base64.b64decode(b64)
+                    except Exception:
+                        img_bytes = None
+                    if not img_bytes:
+                        continue
+                    try:
+                        c.drawImage(ImageReader(BytesIO(img_bytes)), x_pt, y_pt, width=box_w or (w * 0.22), height=box_h or (h * 0.08), mask='auto', preserveAspectRatio=True, anchor='sw')
+                    except Exception:
+                        pass
+
+                elif t == 'draw':
+                    strokes = item.get('strokes')
+                    if not isinstance(strokes, list):
+                        continue
+                    for s in strokes:
+                        try:
+                            if not isinstance(s, dict):
+                                continue
+                            pts = s.get('points')
+                            if not isinstance(pts, list) or len(pts) < 2:
+                                continue
+                            r, g, b = _parse_color(s.get('color'))
+                            c.setStrokeColorRGB(r, g, b)
+                            lw = _safe_float(s.get('width'), 2.0)
+                            lw = max(0.5, min(10.0, lw))
+                            c.setLineWidth(lw)
+                            path = c.beginPath()
+                            first = True
+                            for p in pts:
+                                if not isinstance(p, dict):
+                                    continue
+                                px = _clamp01(_safe_float(p.get('x'), 0.0)) * w
+                                py = h - (_clamp01(_safe_float(p.get('y'), 0.0)) * h)
+                                if first:
+                                    path.moveTo(px, py)
+                                    first = False
+                                else:
+                                    path.lineTo(px, py)
+                            c.drawPath(path, stroke=1, fill=0)
+                        except Exception:
+                            continue
+
+            c.showPage()
+            c.save()
+            overlay_buf.seek(0)
+
+            overlay_reader = PdfReader(overlay_buf)
+            overlay_page = overlay_reader.pages[0]
+            try:
+                page.merge_page(overlay_page)
+            except Exception:
+                try:
+                    page.mergePage(overlay_page)
+                except Exception:
+                    pass
+
+            writer.add_page(page)
+
+        out_buf = BytesIO()
+        writer.write(out_buf)
+        out_buf.seek(0)
+        out_bytes = out_buf.getvalue()
+        if not out_bytes.startswith(b'%PDF'):
+            return {'detail': 'Failed to generate annotated PDF'}, 500
+
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp.write(out_bytes)
+            tmp_path = tmp.name
+        try:
+            upload_result = cloudinary.uploader.upload(
+                tmp_path,
+                resource_type='raw',
+                folder='proposal_builder/signed_in_app',
+                access_mode='public',
+                format='pdf',
+            )
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+        signed_url = upload_result.get('secure_url') or upload_result.get('url')
+        if not signed_url:
+            return {'detail': 'Upload failed (no URL returned)'}, 502
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            invitation, err_body, err_code = _client_get_invitation_by_token(cursor, token)
+            if err_body:
+                return err_body, err_code
+
+            cursor.execute(
+                """
+                INSERT INTO proposal_signatures (proposal_id, envelope_id, signer_name, signer_email, signer_title, status, signed_document_url, signed_at, created_by)
+                VALUES (%s, NULL, %s, %s, %s, %s, %s, NOW(), NULL)
+                """,
+                (
+                    proposal_id,
+                    (signer_name or invitation['invited_email']),
+                    invitation['invited_email'],
+                    (signer_title or None),
+                    'in_app_signed',
+                    signed_url,
+                ),
+            )
+
+            # Mark proposal as client-signed so it appears in the admin completion inbox.
+            try:
+                cursor.execute(
+                    """
+                    UPDATE proposals
+                    SET status = %s,
+                        client_email = COALESCE(NULLIF(client_email, ''), %s),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    ('Client Signed', invitation['invited_email'], proposal_id),
+                )
+                print(f"✅ Updated proposal {proposal_id} status to 'Client Signed' (physical signed)")
+            except Exception:
+                # Best-effort; signature record is the source of truth.
+                pass
+            conn.commit()
+
+        try:
+            log_activity(
+                proposal_id,
+                None,
+                'client_in_app_signed',
+                f"Client signed in app ({(signer_name or invitation['invited_email'])})",
+                {'signed_document_url': signed_url},
+            )
+        except Exception:
+            pass
+
+        try:
+            log_proposal_audit_event(
+                proposal_id,
+                'signed',
+                actor_user_id=None,
+                actor_name=(signer_name or invitation['invited_email']),
+                actor_email=invitation['invited_email'],
+                metadata={'signed_document_url': signed_url, 'method': 'in_app'},
+            )
+        except Exception:
+            pass
+
+        return {
+            'message': 'Annotated PDF uploaded',
+            'signed_document_url': signed_url,
+            'proposal_id': proposal_id,
+        }, 200
+
+    except Exception as e:
+        print(f"❌ Error uploading annotated PDF: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
@@ -1657,6 +2290,8 @@ def login():
         token = generate_token(username)
         return {'access_token': token, 'token_type': 'bearer'}, 200
     except Exception as e:
+        print(f'Login error: {e}')
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/login-email")
@@ -1749,6 +2384,8 @@ def get_current_user(username):
         
         return {'detail': 'User not found'}, 404
     except Exception as e:
+        print(f'Get current user error: {e}')
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.get("/user/profile")
@@ -1777,19 +2414,29 @@ def get_user_profile(username):
             }
         return {'detail': 'User not found'}, 404
     except Exception as e:
+        print(f'Get user profile error: {e}')
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 # Content library endpoints
 
 @app.get("/api/content", endpoint="legacy_get_content_api")
 @app.get("/content", endpoint="legacy_get_content")
-@token_required
-def legacy_get_content(username):
+def legacy_get_content(username=None):
     try:
+        category = request.args.get('category', None)
         conn = _pg_conn()
         cursor = conn.cursor()
-        cursor.execute('''SELECT id, key, label, content, category, is_folder, parent_id, public_id
-                       FROM content WHERE is_deleted = false ORDER BY created_at DESC''')
+
+        query = '''SELECT id, key, label, content, category, is_folder, parent_id, public_id
+                   FROM content WHERE is_deleted = false'''
+        params = []
+        if category:
+            query += ' AND category = %s'
+            params.append(category)
+        query += ' ORDER BY created_at DESC'
+
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         release_pg_conn(conn)
         content = []
@@ -1806,6 +2453,8 @@ def legacy_get_content(username):
             })
         return {'content': content}, 200
     except Exception as e:
+        print(f"❌ Error getting content: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/api/content", endpoint="legacy_create_content_api")
@@ -2443,8 +3092,10 @@ def track_client_view(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+@app.get("/api/proposals/pending_approval")
 @app.get("/proposals/pending_approval")
 @token_required
+@admin_required
 def get_pending_approvals(username):
     try:
         conn = _pg_conn()
@@ -2465,7 +3116,7 @@ def get_pending_approvals(username):
                 'status': row[4],
                 'created_at': row[5].isoformat() if row[5] else None
             })
-            return {'proposals': proposals}, 200
+        return {'proposals': proposals}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -2495,6 +3146,8 @@ def get_my_proposals(username):
             })
             return {'proposals': proposals}, 200
     except Exception as e:
+        print(f"❌ Error getting pending approvals: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @app.post("/proposals/<int:proposal_id>/sign")
@@ -2628,6 +3281,354 @@ def client_sign_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
+
+@app.post('/api/proposals/<int:proposal_id>/complete')
+@token_required
+@admin_required
+def complete_signed_proposal(username, proposal_id):
+    """Admin-only: mark a client-signed proposal as completed.
+
+    This is the final step after the client signature. It ensures a signature exists
+    (name/title/date) and then moves the proposal to status=completed so it appears
+    in the Signed Proposals dashboards.
+    """
+    try:
+        print(f"🔧 Completing proposal {proposal_id} by user {username}")
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Basic existence + status guard.
+            cursor.execute('SELECT id, status FROM proposals WHERE id = %s', (proposal_id,))
+            prop = cursor.fetchone()
+            if not prop:
+                print(f"❌ Proposal {proposal_id} not found")
+                return {'detail': 'Proposal not found'}, 404
+
+            current_status = (prop.get('status') or '').lower().strip()
+            print(f"📋 Current status: '{current_status}'")
+            
+            if current_status not in ('signed', 'client signed'):
+                print(f"❌ Invalid status for completion: '{current_status}'")
+                return {
+                    'detail': 'Cannot complete proposal: expected status Signed/Client Signed',
+                    'status': prop.get('status'),
+                }, 400
+
+            # Require a signature record with signed_at, or a physical signed upload.
+            sig_row = None
+            try:
+                cursor.execute(
+                    """
+                    SELECT signer_name, signer_title, signer_email, status, signed_at, created_by
+                    FROM proposal_signatures
+                    WHERE proposal_id = %s
+                    ORDER BY COALESCE(signed_at, NOW()) DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (proposal_id,),
+                )
+                sig_row = cursor.fetchone() or None
+                print(f"🔍 Signature record found: {sig_row}")
+            except Exception as e:
+                print(f"❌ Error fetching signature record: {e}")
+                sig_row = None
+
+            if not sig_row:
+                print(f"❌ No signature record found for proposal {proposal_id}")
+                return {'detail': 'Cannot complete proposal: no signature record found'}, 400
+
+            sig_status = (sig_row.get('status') or '').lower().strip() if isinstance(sig_row, dict) else ''
+            signed_at = sig_row.get('signed_at') if isinstance(sig_row, dict) else None
+            print(f"📝 Signature status: '{sig_status}', signed_at: {signed_at}")
+            
+            if signed_at is None and sig_status not in ('physical_signed', 'signed', 'in_app_signed'):
+                print(f"❌ Signature not ready - signed_at is None and status is '{sig_status}'")
+                return {
+                    'detail': 'Cannot complete proposal: proposal is not signed yet',
+                }, 400
+
+            # Update proposal status.
+            cursor.execute(
+                """
+                UPDATE proposals
+                SET status = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                ('completed', proposal_id),
+            )
+            conn.commit()
+
+            # Audit trail.
+            try:
+                cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+                u = cursor.fetchone() or None
+                actor_id = (u.get('id') if isinstance(u, dict) else None) if u else None
+                actor_name = (u.get('full_name') if isinstance(u, dict) else None) if u else None
+                actor_email = (u.get('email') if isinstance(u, dict) else None) if u else None
+            except Exception:
+                actor_id = None
+                actor_name = None
+                actor_email = None
+
+            try:
+                log_proposal_audit_event(
+                    proposal_id,
+                    'completed',
+                    actor_user_id=actor_id,
+                    actor_name=actor_name or username,
+                    actor_email=actor_email,
+                    metadata={
+                        'signature': {
+                            'signer_name': sig_row.get('signer_name') if isinstance(sig_row, dict) else None,
+                            'signer_title': sig_row.get('signer_title') if isinstance(sig_row, dict) else None,
+                            'signer_email': sig_row.get('signer_email') if isinstance(sig_row, dict) else None,
+                            'signed_at': signed_at.isoformat() if hasattr(signed_at, 'isoformat') and signed_at else None,
+                            'status': sig_row.get('status') if isinstance(sig_row, dict) else None,
+                        }
+                    },
+                )
+            except Exception:
+                pass
+
+            # Email client.
+            try:
+                client_email = _get_client_email_for_proposal(cursor, proposal_id, sig_row=sig_row)
+                if client_email:
+                    title = None
+                    try:
+                        cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
+                        r = cursor.fetchone()
+                        if r:
+                            title = (r.get('title') if isinstance(r, dict) else r[0])
+                    except Exception:
+                        title = None
+
+                    subject = f"Proposal Approved: {title or f'Proposal {proposal_id}'}"
+                    html_content = f"""
+                    <html>
+                      <body style=\"font-family: Arial, sans-serif;\">
+                        <h2>Congratulations! Your Proposal Has Been Approved</h2>
+                        <p>Dear Client,</p>
+                        <p>Thank you for your proposal. We are pleased to inform you that it has been reviewed and <strong>approved</strong>.</p>
+                        <p>We look forward to working with you and will be in touch shortly with next steps.</p>
+                        <p><strong>Proposal:</strong> {title or f'Proposal {proposal_id}'}</p>
+                        <p>Best regards,<br>The Team</p>
+                      </body>
+                    </html>
+                    """
+                    send_email(client_email, subject, html_content)
+            except Exception:
+                pass
+
+            return {
+                'detail': 'Proposal marked as completed',
+                'proposal_id': proposal_id,
+                'status': 'completed',
+            }, 200
+    except Exception as e:
+        print(f"❌ Error completing proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@app.post('/api/proposals/<int:proposal_id>/reject_completion')
+@token_required
+@admin_required
+def reject_signed_proposal_completion(username, proposal_id):
+    """Admin-only: reject a client-signed proposal during final completion review.
+
+    Stores comments in the audit trail only (no DB schema changes).
+    Sends a rejection email to the client.
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        comments = (data.get('comments') or '').strip()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute('SELECT id, status, title FROM proposals WHERE id = %s', (proposal_id,))
+            prop = cursor.fetchone()
+            if not prop:
+                return {'detail': 'Proposal not found'}, 404
+
+            current_status = (prop.get('status') or '').lower().strip()
+            if current_status not in ('signed', 'client signed'):
+                return {
+                    'detail': 'Cannot reject proposal: expected status Signed/Client Signed',
+                    'status': prop.get('status'),
+                }, 400
+
+            # Mark rejected.
+            cursor.execute(
+                """
+                UPDATE proposals
+                SET status = %s, updated_at = NOW()
+                WHERE id = %s
+                """,
+                ('rejected', proposal_id),
+            )
+            conn.commit()
+
+            # Actor lookup.
+            try:
+                cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+                u = cursor.fetchone() or None
+                actor_id = (u.get('id') if isinstance(u, dict) else None) if u else None
+                actor_name = (u.get('full_name') if isinstance(u, dict) else None) if u else None
+                actor_email = (u.get('email') if isinstance(u, dict) else None) if u else None
+            except Exception:
+                actor_id = None
+                actor_name = None
+                actor_email = None
+
+            sig_row = _get_latest_signature_row(cursor, proposal_id)
+
+            # Audit.
+            try:
+                log_proposal_audit_event(
+                    proposal_id,
+                    'completion_rejected',
+                    actor_user_id=actor_id,
+                    actor_name=actor_name or username,
+                    actor_email=actor_email,
+                    metadata={
+                        'comments': comments,
+                        'signature': {
+                            'signer_name': sig_row.get('signer_name') if isinstance(sig_row, dict) else None,
+                            'signer_title': sig_row.get('signer_title') if isinstance(sig_row, dict) else None,
+                            'signer_email': sig_row.get('signer_email') if isinstance(sig_row, dict) else None,
+                            'signed_at': (sig_row.get('signed_at').isoformat() if isinstance(sig_row, dict) and sig_row.get('signed_at') else None),
+                            'status': sig_row.get('status') if isinstance(sig_row, dict) else None,
+                        },
+                    },
+                )
+            except Exception:
+                pass
+
+            # Email client.
+            try:
+                client_email = _get_client_email_for_proposal(cursor, proposal_id, sig_row=sig_row)
+                if client_email:
+                    title = (prop.get('title') or f'Proposal {proposal_id}')
+                    subject = f"Proposal Rejected: {title}"
+                    safe_comments = comments if comments else 'No comments provided.'
+                    html_content = f"""
+                    <html>
+                      <body style=\"font-family: Arial, sans-serif;\">
+                        <h2>Proposal Rejected</h2>
+                        <p>Dear Client,</p>
+                        <p>Thank you for your proposal. After careful review, we are unable to approve it at this time.</p>
+                        <p><strong>Proposal:</strong> {title}</p>
+                        <p><strong>Reason for rejection:</strong></p>
+                        <p style=\"white-space: pre-wrap;\">{safe_comments}</p>
+                        <p>You are welcome to revise and resubmit your proposal, or contact us to discuss further.</p>
+                        <p>Best regards,<br>The Team</p>
+                      </body>
+                    </html>
+                    """
+                    send_email(client_email, subject, html_content)
+            except Exception:
+                pass
+
+            return {
+                'detail': 'Proposal rejected',
+                'proposal_id': proposal_id,
+                'status': 'rejected',
+            }, 200
+    except Exception as e:
+        print(f"❌ Error rejecting completion proposal: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+
+
+@app.get('/api/proposals/pending_completion')
+@app.get('/proposals/pending_completion')
+@token_required
+@admin_required
+def get_pending_completion(username):
+    """Admin-only: proposals that are client-signed and awaiting final completion."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Schema-aware column selection.
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            cols = [r['column_name'] for r in (cursor.fetchall() or []) if r and r.get('column_name')]
+            client_col = 'client' if 'client' in cols else ('client_name' if 'client_name' in cols else None)
+            owner_col = 'owner_id' if 'owner_id' in cols else ('user_id' if 'user_id' in cols else None)
+            print(f"📋 Detected columns: client_col={client_col}, owner_col={owner_col}, cols={cols}")
+
+            select_bits = ['id', 'title', 'status', 'created_at', 'updated_at']
+            select_bits.append(client_col if client_col else "NULL::text as client")
+            select_bits.append(owner_col if owner_col else "NULL::text as owner_id")
+
+            # Ensure consistent field aliases for frontend.
+            select_clause = []
+            for bit in select_bits:
+                if bit == client_col and client_col:
+                    select_clause.append(f"{client_col} as client")
+                elif bit == owner_col and owner_col:
+                    select_clause.append(f"{owner_col} as owner_id")
+                else:
+                    select_clause.append(bit)
+
+            query = f"""
+                SELECT {', '.join(select_clause)}
+                FROM proposals
+                WHERE (
+                    LOWER(COALESCE(status, '')) IN ('signed', 'client signed')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM proposal_signatures ps
+                        WHERE ps.proposal_id = proposals.id
+                          AND LOWER(COALESCE(ps.status, '')) IN (
+                            'signed',
+                            'completed',
+                            'in_app_signed',
+                            'physical_signed'
+                          )
+                    )
+                )
+                  AND LOWER(COALESCE(status, '')) NOT IN ('completed', 'rejected', 'declined', 'lost')
+                ORDER BY COALESCE(updated_at, created_at) DESC
+            """
+            print(f"🔍 Running pending_completion query:\n{query}")
+            cursor.execute(query)
+            rows = cursor.fetchall() or []
+            print(f"📊 Returned {len(rows)} rows")
+            if rows:
+                sample = dict(rows[0])
+                print(f"🔎 Sample row keys: {list(sample.keys())}")
+                print(f"🔎 Sample row values: {sample}")
+
+            proposals = []
+            for row in rows:
+                proposals.append({
+                    'id': row.get('id'),
+                    'title': row.get('title'),
+                    'client': row.get('client'),
+                    'owner_id': row.get('owner_id'),
+                    'status': row.get('status'),
+                    'created_at': row.get('created_at').isoformat() if row.get('created_at') else None,
+                    'updated_at': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+                })
+
+            return {'proposals': proposals}, 200
+    except Exception as e:
+        print(f"❌ Error in pending_completion: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @app.post("/upload/image")
 @token_required
 def upload_image(username):
@@ -2693,8 +3694,15 @@ def get_client_dashboard_stats(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/comments/document/<int:proposal_id>")
+@app.route("/api/comments/document/<int:proposal_id>", methods=['GET', 'POST', 'OPTIONS'])
 @token_required
+def handle_document_comments(username, proposal_id):
+    """Handle document comments - GET to fetch, POST to create"""
+    if request.method == 'GET':
+        return get_document_comments(username, proposal_id)
+    elif request.method == 'POST':
+        return create_comment(username, proposal_id)
+
 def create_comment(username, proposal_id):
     """Create a new comment on a document"""
     try:
@@ -2774,8 +3782,46 @@ def create_comment(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.route("/api/comments/proposal/<int:proposal_id>", methods=['GET', 'OPTIONS'])
-def get_proposal_comments(proposal_id):
+def get_document_comments(username, proposal_id):
+    """Get all comments for a document"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT 
+                    dc.id, dc.proposal_id, dc.comment_text, dc.created_by, dc.created_at,
+                    dc.section_index, dc.highlighted_text, dc.status, dc.updated_at, 
+                    dc.resolved_by, dc.resolved_at,
+                    u.email as created_by_email,
+                    u.full_name as created_by_name,
+                    r.email as resolved_by_email,
+                    r.full_name as resolved_by_name
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                LEFT JOIN users r ON dc.resolved_by = r.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at ASC
+            """, (proposal_id,))
+            
+            comments = cursor.fetchall()
+            
+            return [dict(comment) for comment in comments], 200
+            
+    except Exception as e:
+        print(f"❌ Error getting comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@app.route("/api/comments/proposal/<int:proposal_id>", methods=['GET', 'POST', 'OPTIONS'])
+def handle_proposal_comments(proposal_id):
+    """Handle proposal comments - GET to fetch, POST to create"""
+    if request.method == 'GET':
+        return get_proposal_comments_logic(proposal_id)
+    elif request.method == 'POST':
+        return create_proposal_comment_logic(proposal_id)
+
+def get_proposal_comments_logic(proposal_id):
     """Get all comments for a proposal"""
     try:
         with _pg_conn() as conn:
@@ -2819,6 +3865,46 @@ def get_proposal_comments(proposal_id):
                         "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
                     })
                 return comments
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def create_proposal_comment_logic(proposal_id):
+    """Create a new comment on a proposal"""
+    try:
+        data = request.get_json()
+        comment_text = data.get('comment_text')
+        section_index = data.get('section_index')
+        highlighted_text = data.get('highlighted_text')
+        
+        if not comment_text:
+            raise HTTPException(status_code=400, detail='Comment text is required')
+        
+        with _pg_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # Get user from token (simplified - you may need to adjust based on your auth)
+                token = request.headers.get('Authorization', '').replace('Bearer ', '')
+                # For now, we'll use a placeholder user_id - you may need to implement proper token validation
+                user_id = 1  # Placeholder - replace with actual user extraction
+                
+                cur.execute("""
+                    INSERT INTO document_comments 
+                    (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id, created_at
+                """, (proposal_id, comment_text, user_id, 
+                      section_index, highlighted_text, 'open'))
+                
+                result = cur.fetchone()
+                conn.commit()
+                
+                return {
+                    'id': result['id'],
+                    'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+                    'message': 'Comment created successfully'
+                }, 201
+                
     except HTTPException:
         raise
     except Exception as e:
@@ -4180,13 +5266,15 @@ def client_export_proposal_pdf(proposal_id):
             signer_name = None
             signer_title = None
             signed_at = None
+            signed_document_url = None
+            sig_placement = None
             try:
                 cursor.execute(
                     """
-                    SELECT signer_name, signer_title, signed_at, created_at
+                    SELECT signer_name, signer_title, signed_at, signed_document_url, sig_page, sig_x, sig_y, sig_w, sig_h, created_at
                     FROM proposal_signatures
                     WHERE proposal_id = %s
-                    ORDER BY COALESCE(signed_at, created_at, NOW()) DESC
+                    ORDER BY COALESCE(signed_at, created_at) DESC, id DESC
                     LIMIT 1
                     """,
                     (proposal_id,),
@@ -4196,30 +5284,53 @@ def client_export_proposal_pdf(proposal_id):
                     signer_name = (sig_row.get('signer_name') if isinstance(sig_row, dict) else None)
                     signer_title = (sig_row.get('signer_title') if isinstance(sig_row, dict) else None)
                     signed_at = (sig_row.get('signed_at') if isinstance(sig_row, dict) else None)
+                    signed_document_url = (sig_row.get('signed_document_url') if isinstance(sig_row, dict) else None)
+                    try:
+                        sig_placement = {
+                            'page': sig_row.get('sig_page') if isinstance(sig_row, dict) else None,
+                            'x': sig_row.get('sig_x') if isinstance(sig_row, dict) else None,
+                            'y': sig_row.get('sig_y') if isinstance(sig_row, dict) else None,
+                            'w': sig_row.get('sig_w') if isinstance(sig_row, dict) else None,
+                            'h': sig_row.get('sig_h') if isinstance(sig_row, dict) else None,
+                        }
+                    except Exception:
+                        sig_placement = None
             except Exception:
                 signer_name = None
                 signer_title = None
                 signed_at = None
+                signed_document_url = None
+                sig_placement = None
             # IMPORTANT: Do NOT hash the entire proposal content here. For large JSON payloads,
             # that can take minutes and defeats caching.
             # We rely on proposals.updated_at being updated whenever content changes.
             content_len = len(str(proposal_content))
             sig_label = ''
             try:
-                sig_label = f"{(signer_name or '').strip()}|{(signer_title or '').strip()}|{signed_at.isoformat() if hasattr(signed_at, 'isoformat') else str(signed_at or '')}"
+                sig_url = (signed_document_url or '').strip()
+                sig_place = ''
+                try:
+                    if isinstance(sig_placement, dict):
+                        sig_place = f"{sig_placement.get('page')}|{sig_placement.get('x')}|{sig_placement.get('y')}|{sig_placement.get('w')}|{sig_placement.get('h')}"
+                except Exception:
+                    sig_place = ''
+                sig_label = f"{(signer_name or '').strip()}|{(signer_title or '').strip()}|{signed_at.isoformat() if hasattr(signed_at, 'isoformat') else str(signed_at or '')}|{sig_url}|{sig_place}"
             except Exception:
                 sig_label = ''
-            cache_key_material = f"{proposal_id}|{updated_label}|{content_len}|{sig_label}".encode('utf-8')
+            # NOTE: Bump this value whenever the PDF generation/layout logic changes.
+            # This prevents serving stale PDFs from proposal_pdf_cache after layout updates
+            # (e.g. header/footer changes).
+            pdf_gen_version = 4
+            cache_key_material = f"{proposal_id}|{updated_label}|{content_len}|{sig_label}|v{pdf_gen_version}".encode('utf-8')
             etag = hashlib.sha256(cache_key_material).hexdigest()
 
             t0 = time.perf_counter()
 
             inm = (request.headers.get('If-None-Match') or '').strip('"')
-            if not download and inm and inm == etag:
-                resp = make_response('', 304)
-                resp.headers['ETag'] = f'"{etag}"'
-                resp.headers['Cache-Control'] = 'private, max-age=300'
-                return resp
+            cache_bust = (request.args.get('cb') or '').strip()
+            # NOTE: We intentionally do not return 304 for this endpoint.
+            # pdf.js (and some browsers) can end up with an empty-body response
+            # during cache revalidation, resulting in a blank viewer.
 
             # Best-effort server-side cache table.
             # Using BYTEA keeps this self-contained (no extra storage service).
@@ -4271,6 +5382,7 @@ def client_export_proposal_pdf(proposal_id):
                     mimetype='application/pdf',
                     as_attachment=download,
                     download_name=f"Proposal_{proposal_id}.pdf",
+                    conditional=False,
                 )
                 if download:
                     resp.headers['Cache-Control'] = 'no-store'
@@ -4294,6 +5406,8 @@ def client_export_proposal_pdf(proposal_id):
                 signer_name=signer_name,
                 signer_title=signer_title,
                 signed_date=signed_at,
+                signed_document_url=signed_document_url,
+                signature_placement=sig_placement,
             )
 
             print(f"[PDF] generated proposal_id={proposal_id} bytes={len(pdf_bytes) if pdf_bytes else 0} ms={(time.perf_counter()-gen0)*1000:.0f}")
@@ -4306,6 +5420,7 @@ def client_export_proposal_pdf(proposal_id):
                 mimetype='application/pdf',
                 as_attachment=download,
                 download_name=f"Proposal_{proposal_id}.pdf",
+                conditional=False,
             )
 
             # Persist cache (best-effort).
@@ -4391,6 +5506,45 @@ def client_upload_signed_physical(proposal_id):
         signer_name = (request.form.get('signer_name') or '').strip()
         signer_title = (request.form.get('signer_title') or '').strip()
         signed_date_raw = (request.form.get('signed_date') or '').strip()
+
+        # Optional placement metadata (normalized to page 0..1, origin top-left)
+        def _parse_float(name: str):
+            raw = (request.form.get(name) or '').strip()
+            if not raw:
+                return None
+            try:
+                return float(raw)
+            except Exception:
+                return None
+
+        sig_page = None
+        try:
+            raw_page = (request.form.get('sig_page') or '').strip()
+            sig_page = int(raw_page) if raw_page else None
+        except Exception:
+            sig_page = None
+        sig_x = _parse_float('sig_x')
+        sig_y = _parse_float('sig_y')
+        sig_w = _parse_float('sig_w')
+        sig_h = _parse_float('sig_h')
+
+        # Clamp to sane ranges
+        def _clamp01(v):
+            if v is None:
+                return None
+            try:
+                if v < 0:
+                    return 0.0
+                if v > 1:
+                    return 1.0
+                return float(v)
+            except Exception:
+                return None
+
+        sig_x = _clamp01(sig_x)
+        sig_y = _clamp01(sig_y)
+        sig_w = _clamp01(sig_w)
+        sig_h = _clamp01(sig_h)
         signed_at = None
         if signed_date_raw:
             try:
@@ -4435,8 +5589,8 @@ def client_upload_signed_physical(proposal_id):
 
             cursor.execute(
                 """
-                INSERT INTO proposal_signatures (proposal_id, envelope_id, signer_name, signer_email, signer_title, status, signed_document_url, signed_at, created_by)
-                VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, NULL)
+                INSERT INTO proposal_signatures (proposal_id, envelope_id, signer_name, signer_email, signer_title, status, signed_document_url, signed_at, sig_page, sig_x, sig_y, sig_w, sig_h, created_by)
+                VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
                 """,
                 (
                     proposal_id,
@@ -4446,8 +5600,29 @@ def client_upload_signed_physical(proposal_id):
                     'physical_signed',
                     signed_url,
                     signed_at,
+                    sig_page,
+                    sig_x,
+                    sig_y,
+                    sig_w,
+                    sig_h,
                 ),
             )
+
+            # Mark proposal as client-signed so it appears in the admin completion inbox.
+            try:
+                cursor.execute(
+                    """
+                    UPDATE proposals
+                    SET status = %s,
+                        client_email = COALESCE(NULLIF(client_email, ''), %s),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    ('Client Signed', invitation['invited_email'], proposal_id),
+                )
+                print(f"✅ Updated proposal {proposal_id} status to 'Client Signed' (physical signed)")
+            except Exception:
+                pass
             conn.commit()
 
             try:
@@ -4461,6 +5636,24 @@ def client_upload_signed_physical(proposal_id):
                         'signer_name': signer_name,
                         'signer_title': signer_title,
                         'signed_date': signed_date_raw,
+                    },
+                )
+            except Exception:
+                pass
+
+            try:
+                log_proposal_audit_event(
+                    proposal_id,
+                    'physical_signed',
+                    actor_user_id=None,
+                    actor_name=(signer_name or invitation['invited_email']),
+                    actor_email=invitation['invited_email'],
+                    metadata={
+                        'signed_document_url': signed_url,
+                        'signer_name': signer_name,
+                        'signer_title': signer_title,
+                        'signed_date': signed_date_raw,
+                        'method': 'upload',
                     },
                 )
             except Exception:
@@ -4838,7 +6031,7 @@ def get_client_proposal_details(proposal_id):
                         SELECT {', '.join(select_bits)}
                         FROM proposal_signatures
                         WHERE proposal_id = %s
-                        ORDER BY COALESCE({signed_at_col or created_col or 'id'}, id) DESC
+                        ORDER BY COALESCE({signed_at_col or created_col or 'created_at'}, {created_col or signed_at_col or 'created_at'}) DESC, id DESC
                         LIMIT 1
                         """,
                         (proposal_id,),
@@ -5233,625 +6426,16 @@ def client_get_signing_url(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.post("/api/client/proposals/<int:proposal_id>/reject")
-def client_reject_proposal(proposal_id):
-    """Client rejects proposal"""
-    try:
-        data = request.get_json()
-        token = data.get('token')
-        reason = data.get('reason')
-        
-        if not token or not reason:
-            return {'detail': 'Token and reason required'}, 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-            def _get_table_columns(table_name: str):
-                cursor.execute(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = %s
-                    """,
-                    (table_name,),
-                )
-                cols = cursor.fetchall() or []
-                return {
-                    (c['column_name'] if isinstance(c, dict) else c[0])
-                    for c in cols
-                }
-
-            def _pick_first(existing, candidates):
-                for c in candidates:
-                    if c in existing:
-                        return c
-                return None
-
-            inv_cols = _get_table_columns('collaboration_invitations')
-            token_col = _pick_first(inv_cols, ['access_token', 'token'])
-            invited_email_col = _pick_first(
-                inv_cols,
-                ['invited_email', 'invitee_email', 'email', 'client_email', 'collaborator_email'],
-            )
-            expires_col = _pick_first(inv_cols, ['expires_at', 'expires', 'token_expires_at'])
-
-            if not token_col:
-                return {'detail': 'Collaboration invitations schema missing token column'}, 500
-            if not invited_email_col:
-                return {'detail': 'Collaboration invitations schema missing email column'}, 500
-
-            expires_select = f"{expires_col} as expires_at" if expires_col else "NULL::timestamp as expires_at"
-            cursor.execute(
-                f"""
-                SELECT {invited_email_col} as invited_email, {expires_select}
-                FROM collaboration_invitations
-                WHERE {token_col} = %s
-                """,
-                (token,),
-            )
-
-            invitation = cursor.fetchone()
-            if not invitation:
-                return {'detail': 'Invalid access token'}, 404
-            
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
-                return {'detail': 'Access token has expired'}, 403
-            
-            # Update proposal status
-            cursor.execute("""
-                UPDATE proposals 
-                SET status = 'Client Declined', updated_at = NOW()
-                WHERE id = %s AND client_email = %s
-                RETURNING id, title
-            """, (proposal_id, invitation['invited_email']))
-            
-            proposal = cursor.fetchone()
-            if not proposal:
-                return {'detail': 'Proposal not found or access denied'}, 404
-            
-            # Add rejection reason as comment
-            rejection_info = f"✗ REJECTED\nReason: {reason}"
-            
-            cursor.execute("""
-                INSERT INTO users (username, email, password_hash, full_name, role)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-                RETURNING id
-            """, (invitation['invited_email'], invitation['invited_email'], '', f'Client ({invitation["invited_email"]})', 'client'))
-            
-            client_user_id = cursor.fetchone()['id']
-            
-            cursor.execute("""
-                INSERT INTO document_comments 
-                (proposal_id, comment_text, created_by, status)
-                VALUES (%s, %s, %s, %s)
-            """, (proposal_id, rejection_info, client_user_id, 'open'))
-            
-            conn.commit()
-            
-            print(f"⚠️ Proposal {proposal_id} rejected by client")
-            
-            return {
-                'message': 'Proposal rejected',
-                'proposal_id': proposal['id'],
-                'status': 'Client Declined'
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error rejecting proposal: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-# ============================================================================
-# COLLABORATION ADVANCED ENDPOINTS - Suggest Mode & Section Locking
-# ============================================================================
-
-@app.post("/legacy/proposals/<int:proposal_id>/suggestions")
+@app.get("/api/proposals/<int:proposal_id>/audit")
 @token_required
-def create_suggestion(username, proposal_id):
-    """Create a suggested change (for reviewers with suggest permission)"""
-    try:
-        data = request.get_json()
-        section_id = data.get('section_id')
-        suggestion_text = data.get('suggestion_text')
-        original_text = data.get('original_text', '')
-        
-        if not suggestion_text:
-            return {'detail': 'Suggestion text is required'}, 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Verify user has access to this proposal
-            cursor.execute("""
-                SELECT ci.permission_level
-                FROM collaboration_invitations ci
-                WHERE ci.proposal_id = %s 
-                AND ci.invited_email = %s
-                AND ci.status = 'accepted'
-            """, (proposal_id, current_user['email']))
-            
-            invitation = cursor.fetchone()
-            if not invitation or invitation['permission_level'] not in ['suggest', 'edit']:
-                return {'detail': 'Insufficient permissions'}, 403
-            
-            # Create suggestion
-            cursor.execute("""
-                INSERT INTO suggested_changes 
-                (proposal_id, section_id, suggested_by, suggestion_text, original_text, status)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, created_at
-            """, (proposal_id, section_id, current_user['id'], suggestion_text, original_text, 'pending'))
-            
-            result = cursor.fetchone()
-            conn.commit()
-            
-            # Log activity
-            log_activity(
-                proposal_id,
-                current_user['id'],
-                'suggestion_created',
-                f"{current_user.get('full_name', current_user['email'])} suggested a change{' to ' + section_id if section_id else ''}",
-                {'suggestion_id': result['id'], 'section_id': section_id}
-            )
-            
-            # Notify proposal owner and collaborators
-            notify_proposal_collaborators(
-                proposal_id,
-                'suggestion_created',
-                'New Suggestion',
-                f"{current_user.get('full_name', current_user['email'])} suggested a change{' to ' + section_id if section_id else ''}",
-                exclude_user_id=current_user['id'],
-                metadata={'suggestion_id': result['id'], 'section_id': section_id}
-            )
-            
-            print(f"✅ Suggestion created by {current_user['email']} for proposal {proposal_id}")
-            
-            return {
-                'id': result['id'],
-                'created_at': result['created_at'].isoformat() if result['created_at'] else None,
-                'message': 'Suggestion created successfully'
-            }, 201
-            
-    except Exception as e:
-        print(f"❌ Error creating suggestion: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.get("/legacy/proposals/<int:proposal_id>/suggestions")
-@token_required
-def get_suggestions(username, proposal_id):
-    """Get all suggestions for a proposal"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details (not strictly needed here but for consistency)
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            cursor.execute("""
-                SELECT sc.*, 
-                       u.full_name as suggested_by_name,
-                       u.email as suggested_by_email,
-                       r.full_name as resolved_by_name
-                FROM suggested_changes sc
-                LEFT JOIN users u ON sc.suggested_by = u.id
-                LEFT JOIN users r ON sc.resolved_by = r.id
-                WHERE sc.proposal_id = %s
-                ORDER BY sc.created_at DESC
-            """, (proposal_id,))
-            
-            suggestions = cursor.fetchall()
-            
-            return {
-                'suggestions': [dict(s) for s in suggestions]
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error getting suggestions: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.post("/api/proposals/<int:proposal_id>/suggestions/<int:suggestion_id>/resolve")
-@token_required
-def resolve_suggestion(username, proposal_id, suggestion_id):
-    """Accept or reject a suggestion (proposal owner only)"""
-    try:
-        data = request.get_json()
-        action = data.get('action')  # 'accept' or 'reject'
-        
-        if action not in ['accept', 'reject']:
-            return {'detail': 'Action must be accept or reject'}, 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Verify user owns the proposal
-            cursor.execute("""
-                SELECT user_id FROM proposals WHERE id = %s
-            """, (proposal_id,))
-            
-            proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
-                return {'detail': 'Only proposal owner can resolve suggestions'}, 403
-            
-            # Update suggestion
-            cursor.execute("""
-                UPDATE suggested_changes
-                SET status = %s,
-                    resolved_at = NOW(),
-                    resolved_by = %s,
-                    resolution_action = %s
-                WHERE id = %s AND proposal_id = %s
-                RETURNING id
-            """, ('accepted' if action == 'accept' else 'rejected', 
-                  current_user['id'], action, suggestion_id, proposal_id))
-            
-            result = cursor.fetchone()
-            if not result:
-                return {'detail': 'Suggestion not found'}, 404
-            
-            conn.commit()
-            
-            # Log activity
-            log_activity(
-                proposal_id,
-                current_user['id'],
-                f'suggestion_{action}ed',
-                f"{current_user.get('full_name', current_user['email'])} {action}ed a suggestion",
-                {'suggestion_id': suggestion_id, 'action': action}
-            )
-            
-            # Notify the suggestion creator
-            cursor.execute("SELECT suggested_by FROM suggested_changes WHERE id = %s", (suggestion_id,))
-            suggestion_creator = cursor.fetchone()
-            if suggestion_creator and suggestion_creator['suggested_by'] != current_user['id']:
-                create_notification(
-                    suggestion_creator['suggested_by'],
-                    f'suggestion_{action}ed',
-                    f'Suggestion {action.title()}ed',
-                    f"Your suggestion was {action}ed by {current_user.get('full_name', current_user['email'])}",
-                    proposal_id,
-                    {'suggestion_id': suggestion_id, 'action': action}
-                )
-            
-            print(f"✅ Suggestion {suggestion_id} {action}ed by {current_user['email']}")
-            
-            return {
-                'message': f'Suggestion {action}ed successfully',
-                'suggestion_id': suggestion_id,
-                'action': action
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error resolving suggestion: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.post("/api/proposals/<int:proposal_id>/sections/<section_id>/lock")
-@token_required
-def lock_section(username, proposal_id, section_id):
-    """Lock a section for editing (soft lock)"""
+def get_proposal_audit(proposal_id):
+    """Get proposal audit trail"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Get user details
-            cursor.execute('SELECT id, full_name FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Check if section is already locked
-            cursor.execute("""
-                SELECT locked_by, expires_at, u.full_name
-                FROM section_locks sl
-                LEFT JOIN users u ON sl.locked_by = u.id
-                WHERE proposal_id = %s AND section_id = %s
-                AND (expires_at IS NULL OR expires_at > NOW())
-            """, (proposal_id, section_id))
-            
-            existing_lock = cursor.fetchone()
-            if existing_lock and existing_lock['locked_by'] != current_user['id']:
-                return {
-                    'locked': True,
-                    'locked_by': existing_lock['full_name'],
-                    'message': f"Section is being edited by {existing_lock['full_name']}"
-                }, 409
-            
-            # Create or update lock (expires in 5 minutes)
-            expires_at = datetime.now() + timedelta(minutes=5)
-            cursor.execute("""
-                INSERT INTO section_locks (proposal_id, section_id, locked_by, expires_at)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (proposal_id, section_id) 
-                DO UPDATE SET locked_by = %s, locked_at = NOW(), expires_at = %s
-                RETURNING id
-            """, (proposal_id, section_id, current_user['id'], expires_at,
-                  current_user['id'], expires_at))
-            
-            conn.commit()
-            
-            return {
-                'locked': True,
-                'locked_by': current_user['full_name'],
-                'expires_at': expires_at.isoformat()
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error locking section: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.post("/api/proposals/<int:proposal_id>/sections/<section_id>/unlock")
-@token_required
-def unlock_section(username, proposal_id, section_id):
-    """Unlock a section"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            cursor.execute("""
-                DELETE FROM section_locks
-                WHERE proposal_id = %s AND section_id = %s AND locked_by = %s
-                RETURNING id
-            """, (proposal_id, section_id, current_user['id']))
-            
-            result = cursor.fetchone()
-            conn.commit()
-            
-            if result:
-                return {'message': 'Section unlocked'}, 200
-            else:
-                return {'message': 'No lock found or not owned by you'}, 404
-            
-    except Exception as e:
-        print(f"❌ Error unlocking section: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.get("/legacy/proposals/<int:proposal_id>/sections/locks")
-@token_required
-def get_section_locks(username, proposal_id):
-    """Get all active section locks for a proposal"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            cursor.execute("""
-                SELECT sl.section_id, sl.locked_by, sl.locked_at, sl.expires_at,
-                       u.full_name as locked_by_name, u.email as locked_by_email
-                FROM section_locks sl
-                LEFT JOIN users u ON sl.locked_by = u.id
-                WHERE sl.proposal_id = %s
-                AND (sl.expires_at IS NULL OR sl.expires_at > NOW())
-            """, (proposal_id,))
-            
-            locks = cursor.fetchall()
-            
-            return {
-                'locks': [dict(lock) for lock in locks]
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error getting section locks: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.get("/legacy/notifications")
-@token_required
-def get_notifications(username):
-    """Get all notifications for current user"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Get user's notifications
-            cursor.execute("""
-                SELECT n.*, p.title as proposal_title
-                FROM notifications n
-                LEFT JOIN proposals p ON n.proposal_id = p.id
-                WHERE n.user_id = %s
-                ORDER BY n.created_at DESC
-                LIMIT 50
-            """, (current_user['id'],))
-            
-            notifications = cursor.fetchall()
-            
-            # Get unread count
-            cursor.execute("""
-                SELECT COUNT(*) as unread_count
-                FROM notifications
-                WHERE user_id = %s AND is_read = FALSE
-            """, (current_user['id'],))
-            
-            unread_count = cursor.fetchone()['unread_count']
-            
-            return {
-                'notifications': [dict(n) for n in notifications],
-                'unread_count': unread_count
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error getting notifications: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.post("/legacy/notifications/<int:notification_id>/mark-read")
-@token_required
-def mark_notification_read(username, notification_id):
-    """Mark a notification as read"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            cursor.execute("""
-                UPDATE notifications
-                SET is_read = TRUE, read_at = NOW()
-                WHERE id = %s AND user_id = %s
-            """, (notification_id, current_user['id']))
-            
-            conn.commit()
-            
-            return {'message': 'Notification marked as read'}, 200
-            
-    except Exception as e:
-        print(f"❌ Error marking notification as read: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.post("/legacy/notifications/mark-all-read")
-@token_required
-def mark_all_notifications_read(username):
-    """Mark all notifications as read for current user"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            cursor.execute("""
-                UPDATE notifications
-                SET is_read = TRUE, read_at = NOW()
-                WHERE user_id = %s AND is_read = FALSE
-            """, (current_user['id'],))
-            
-            conn.commit()
-            
-            return {'message': 'All notifications marked as read'}, 200
-            
-    except Exception as e:
-        print(f"❌ Error marking all notifications as read: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.get("/api/mentions")
-@token_required
-def get_user_mentions(username):
-    """Get all mentions for current user"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Get mentions with comment details
-            cursor.execute("""
-                SELECT cm.*, 
-                       dc.comment_text, dc.proposal_id, dc.section_index,
-                       u.full_name as mentioned_by_name, u.email as mentioned_by_email,
-                       p.title as proposal_title
-                FROM comment_mentions cm
-                JOIN document_comments dc ON cm.comment_id = dc.id
-                JOIN users u ON cm.mentioned_by_user_id = u.id
-                LEFT JOIN proposals p ON dc.proposal_id = p.id
-                WHERE cm.mentioned_user_id = %s
-                ORDER BY cm.created_at DESC
-                LIMIT 50
-            """, (current_user['id'],))
-            
-            mentions = cursor.fetchall()
-            
-            # Get unread count
-            cursor.execute("""
-                SELECT COUNT(*) as unread_count
-                FROM comment_mentions
-                WHERE mentioned_user_id = %s AND is_read = FALSE
-            """, (current_user['id'],))
-            
-            unread_count = cursor.fetchone()['unread_count']
-            
-            return {
-                'mentions': [dict(m) for m in mentions],
-                'unread_count': unread_count
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error getting mentions: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.post("/api/mentions/<int:mention_id>/mark-read")
-@token_required
-def mark_mention_read(username, mention_id):
-    """Mark a mention as read"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            cursor.execute("""
-                UPDATE comment_mentions
-                SET is_read = TRUE
-                WHERE id = %s AND mentioned_user_id = %s
-            """, (mention_id, current_user['id']))
-            
-            conn.commit()
-            
-            return {'message': 'Mention marked as read'}, 200
-            
-    except Exception as e:
-        print(f"❌ Error marking mention as read: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.get("/legacy/proposals/<int:proposal_id>/activity")
-@token_required
-def get_activity_timeline(username, proposal_id):
-    """Get comprehensive activity timeline for a proposal"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id FROM users WHERE username = %s', (request.username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
@@ -5862,284 +6446,74 @@ def get_activity_timeline(username, proposal_id):
                 LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
                 WHERE p.id = %s 
                 AND (p.user_id = %s OR ci.invited_email = %s)
-            """, (proposal_id, username, current_user['email']))
+            """, (proposal_id, request.username, current_user['email']))
             
             if not cursor.fetchone():
                 return {'detail': 'Proposal not found or access denied'}, 404
             
-            # Get all activities from activity_log table
+            # Get all audit events from audit_log table
             cursor.execute("""
                 SELECT al.*, u.full_name as user_name, u.email as user_email
-                FROM activity_log al
+                FROM audit_log al
                 LEFT JOIN users u ON al.user_id = u.id
                 WHERE al.proposal_id = %s
                 ORDER BY al.created_at DESC
                 LIMIT 100
             """, (proposal_id,))
             
-            activities = cursor.fetchall()
+            audit_events = cursor.fetchall()
             
             return {
-                'activities': [dict(activity) for activity in activities]
+                'audit_events': [dict(event) for event in audit_events]
             }, 200
             
     except Exception as e:
-        print(f"❌ Error getting activity timeline: {e}")
+        print(f"❌ Error getting proposal audit: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/legacy/proposals/<int:proposal_id>/versions/compare")
-@token_required
-def compare_proposal_versions(username, proposal_id):
-    """Compare two versions of a proposal and return diff"""
+@app.get("/api/client/proposals/<int:proposal_id>/audit")
+def client_get_proposal_audit(proposal_id):
+    """Get proposal audit trail (for clients)"""
     try:
-        version1 = request.args.get('version1', type=int)
-        version2 = request.args.get('version2', type=int)
-        
-        if not version1 or not version2:
-            return {'detail': 'Both version1 and version2 parameters are required'}, 400
-        
+        data = request.get_json(silent=True) or {}
+        token = data.get('token')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id, email FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Verify user has access to this proposal
+            invitation, err_body, err_code = _client_get_invitation_by_token(cursor, token)
+            if err_body:
+                return err_body, err_code
+
+            # Verify client has access to this proposal
             cursor.execute("""
                 SELECT p.id FROM proposals p
-                LEFT JOIN collaboration_invitations ci ON p.id = ci.proposal_id
-                WHERE p.id = %s 
-                AND (p.user_id = %s OR ci.invited_email = %s)
-            """, (proposal_id, username, current_user['email']))
+                WHERE p.id = %s AND p.client_email = %s
+            """, (proposal_id, invitation['invited_email']))
             
             if not cursor.fetchone():
                 return {'detail': 'Proposal not found or access denied'}, 404
             
-            # Get both versions
+            # Get all audit events from audit_log table
             cursor.execute("""
-                SELECT id, version_number, content, created_at, created_by,
-                       u.full_name as created_by_name
-                FROM proposal_versions pv
-                LEFT JOIN users u ON pv.created_by = u.id
-                WHERE proposal_id = %s AND version_number IN (%s, %s)
-                ORDER BY version_number
-            """, (proposal_id, version1, version2))
-            
-            versions = cursor.fetchall()
-            
-            if len(versions) != 2:
-                return {'detail': 'One or both versions not found'}, 404
-            
-            # Parse JSON content
-            v1_content = json.loads(versions[0]['content']) if isinstance(versions[0]['content'], str) else versions[0]['content']
-            v2_content = json.loads(versions[1]['content']) if isinstance(versions[1]['content'], str) else versions[1]['content']
-            
-            # Convert to text for comparison
-            v1_text = json.dumps(v1_content, indent=2, sort_keys=True)
-            v2_text = json.dumps(v2_content, indent=2, sort_keys=True)
-            
-            # Generate diff using difflib
-            diff = difflib.unified_diff(
-                v1_text.splitlines(keepends=True),
-                v2_text.splitlines(keepends=True),
-                fromfile=f'Version {version1}',
-                tofile=f'Version {version2}',
-                lineterm=''
-            )
-            
-            # Generate HTML diff for better visualization
-            html_diff = difflib.HtmlDiff()
-            html_diff_output = html_diff.make_table(
-                v1_text.splitlines(),
-                v2_text.splitlines(),
-                fromdesc=f'Version {version1} ({versions[0]["created_at"]})',
-                todesc=f'Version {version2} ({versions[1]["created_at"]})',
-                context=True,
-                numlines=3
-            )
-            
-            # Calculate statistics
-            changes = {
-                'additions': 0,
-                'deletions': 0,
-                'modifications': 0
-            }
-            
-            for line in difflib.unified_diff(v1_text.splitlines(), v2_text.splitlines(), lineterm=''):
-                if line.startswith('+') and not line.startswith('+++'):
-                    changes['additions'] += 1
-                elif line.startswith('-') and not line.startswith('---'):
-                    changes['deletions'] += 1
-            
-            return {
-                'version1': {
-                    'version_number': versions[0]['version_number'],
-                    'created_at': versions[0]['created_at'].isoformat() if versions[0]['created_at'] else None,
-                    'created_by': versions[0]['created_by_name']
-                },
-                'version2': {
-                    'version_number': versions[1]['version_number'],
-                    'created_at': versions[1]['created_at'].isoformat() if versions[1]['created_at'] else None,
-                    'created_by': versions[1]['created_by_name']
-                },
-                'diff': '\n'.join(diff),
-                'html_diff': html_diff_output,
-                'changes': changes
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error comparing versions: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-# ============================================================================
-# DOCUSIGN E-SIGNATURE ENDPOINTS
-# ============================================================================
-
-@app.post("/legacy/proposals/<int:proposal_id>/docusign/send")
-@token_required
-def send_for_signature(username, proposal_id):
-    """Send proposal for DocuSign signature (embedded signing)"""
-    try:
-        if not DOCUSIGN_AVAILABLE:
-            return {'detail': 'DocuSign integration not available. Please install docusign-esign package.'}, 503
-        
-        data = request.get_json()
-        signer_name = data.get('signer_name')
-        signer_email = data.get('signer_email')
-        signer_title = data.get('signer_title', '')
-        return_url = data.get('return_url', 'http://localhost:8081')
-        
-        if not signer_name or not signer_email:
-            return {'detail': 'Signer name and email are required'}, 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Verify user owns the proposal
-            cursor.execute("""
-                SELECT id, title, content FROM proposals 
-                WHERE id = %s AND user_id = %s
-            """, (proposal_id, username))
-            
-            proposal = cursor.fetchone()
-            if not proposal:
-                return {'detail': 'Proposal not found or access denied'}, 404
-            
-            # Generate PDF from proposal content
-            pdf_content = generate_proposal_pdf(
-                proposal_id=proposal_id,
-                title=proposal['title'],
-                content=proposal.get('content', ''),
-                client_name=proposal.get('client_name'),
-                client_email=proposal.get('client_email')
-            )
-            
-            # Create DocuSign envelope
-            envelope_result = create_docusign_envelope(
-                proposal_id=proposal_id,
-                pdf_bytes=pdf_content,
-                signer_name=signer_name,
-                signer_email=signer_email,
-                signer_title=signer_title,
-                return_url=return_url
-            )
-            
-            # Store signature record
-            cursor.execute("""
-                INSERT INTO proposal_signatures 
-                (proposal_id, envelope_id, signer_name, signer_email, signer_title, 
-                 signing_url, status, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id, sent_at
-            """, (proposal_id, envelope_result['envelope_id'], signer_name, signer_email, 
-                  signer_title, envelope_result['signing_url'], 'sent', current_user['id']))
-            
-            signature_record = cursor.fetchone()
-            conn.commit()
-            
-            # Log activity
-            log_activity(
-                proposal_id,
-                current_user['id'],
-                'signature_requested',
-                f"Proposal sent to {signer_name} for signature",
-                {'envelope_id': envelope_result['envelope_id'], 'signer_email': signer_email}
-            )
-            
-            # Update proposal status
-            cursor.execute("""
-                UPDATE proposals 
-                SET status = 'Sent for Signature', updated_at = NOW()
-                WHERE id = %s
-            """, (proposal_id,))
-            conn.commit()
-            
-            print(f"✅ Proposal {proposal_id} sent for signature to {signer_email}")
-            
-            return {
-                'envelope_id': envelope_result['envelope_id'],
-                'signing_url': envelope_result['signing_url'],
-                'signature_id': signature_record['id'],
-                'sent_at': signature_record['sent_at'].isoformat() if signature_record['sent_at'] else None,
-                'message': 'Envelope created successfully'
-            }, 200
-            
-    except Exception as e:
-        print(f"❌ Error sending for signature: {e}")
-        traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@app.get("/legacy/proposals/<int:proposal_id>/signatures")
-@token_required
-def get_proposal_signatures(username, proposal_id):
-    """Get all signatures for a proposal"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Get user details
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            current_user = cursor.fetchone()
-            if not current_user:
-                return {'detail': 'User not found'}, 404
-            
-            # Verify access
-            cursor.execute("""
-                SELECT id FROM proposals 
-                WHERE id = %s AND user_id = %s
-            """, (proposal_id, username))
-            
-            if not cursor.fetchone():
-                return {'detail': 'Proposal not found or access denied'}, 404
-            
-            # Get signatures
-            cursor.execute("""
-                SELECT ps.*, u.full_name as created_by_name
-                FROM proposal_signatures ps
-                LEFT JOIN users u ON ps.created_by = u.id
-                WHERE ps.proposal_id = %s
-                ORDER BY ps.sent_at DESC
+                SELECT al.*, u.full_name as user_name, u.email as user_email
+                FROM audit_log al
+                LEFT JOIN users u ON al.user_id = u.id
+                WHERE al.proposal_id = %s
+                ORDER BY al.created_at DESC
+                LIMIT 100
             """, (proposal_id,))
             
-            signatures = cursor.fetchall()
+            audit_events = cursor.fetchall()
             
             return {
-                'signatures': [dict(sig) for sig in signatures]
+                'audit_events': [dict(event) for event in audit_events]
             }, 200
             
     except Exception as e:
-        print(f"❌ Error getting signatures: {e}")
+        print(f"❌ Error getting proposal audit: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
@@ -6333,6 +6707,22 @@ def docusign_webhook():
                     {'envelope_id': envelope_id, 'signed_document_url': signed_document_url},
                 )
 
+                try:
+                    log_proposal_audit_event(
+                        proposal_id,
+                        'signed',
+                        actor_user_id=None,
+                        actor_name='DocuSign',
+                        actor_email=signer_email,
+                        metadata={
+                            'envelope_id': envelope_id,
+                            'signed_document_url': signed_document_url,
+                            'method': 'docusign',
+                        },
+                    )
+                except Exception:
+                    pass
+
                 # Notify creator + collaborators (email + in-app)
                 try:
                     cursor.execute(
@@ -6462,6 +6852,22 @@ def docusign_webhook():
                     f"Signature declined by {signer_email}: {decline_reason}",
                     {'envelope_id': envelope_id},
                 )
+
+                try:
+                    log_proposal_audit_event(
+                        proposal_id,
+                        'sent_back',
+                        actor_user_id=None,
+                        actor_name=signer_email or 'Client',
+                        actor_email=signer_email,
+                        metadata={
+                            'envelope_id': envelope_id,
+                            'reason': decline_reason,
+                            'method': 'docusign',
+                        },
+                    )
+                except Exception:
+                    pass
                 conn.commit()
                 return {'message': 'Webhook processed successfully'}, 200
 

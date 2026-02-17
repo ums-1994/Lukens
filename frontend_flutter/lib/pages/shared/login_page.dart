@@ -94,6 +94,67 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       final email = _emailController.text.trim();
       final password = _passwordController.text;
 
+      final apiBase = AuthService.baseUrl;
+      final isLocalApi = apiBase.contains('127.0.0.1') ||
+          apiBase.contains('localhost') ||
+          apiBase.startsWith('http://192.168.') ||
+          apiBase.startsWith('http://10.') ||
+          apiBase.startsWith('http://172.');
+
+      if (isLocalApi) {
+        print('🧪 Local API detected ($apiBase). Using legacy DB login (skipping Firebase).');
+
+        final result = await AuthService.login(email: email, password: password);
+        final token = result?['token']?.toString();
+        final userProfile = result?['user'] as Map<String, dynamic>?;
+
+        if (token == null || token.isEmpty || userProfile == null) {
+          throw Exception('Login response missing token or user profile');
+        }
+
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+
+        final appState = context.read<AppState>();
+        appState.authToken = token;
+        appState.currentUser = userProfile;
+        AuthService.setUserData(userProfile, token);
+
+        final roleService = context.read<RoleService>();
+        await roleService.initializeRoleFromUser(userProfile);
+        await appState.init();
+
+        final rawRole = userProfile['role']?.toString() ?? '';
+        final userRole = rawRole.toLowerCase().trim();
+
+        String dashboardRoute;
+        final isAdmin = userRole == 'admin' || userRole == 'ceo';
+        final isFinance = userRole == 'finance' ||
+            userRole == 'finance manager' ||
+            userRole == 'financial manager' ||
+            userRole == 'finance_manager' ||
+            userRole == 'financial_manager';
+        final isManager =
+            userRole == 'manager' || userRole == 'creator' || userRole == 'user';
+
+        if (isAdmin) {
+          dashboardRoute = '/approver_dashboard';
+        } else if (isFinance) {
+          dashboardRoute = '/finance_dashboard';
+        } else if (isManager) {
+          dashboardRoute = '/creator_dashboard';
+        } else {
+          dashboardRoute = '/creator_dashboard';
+        }
+
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          dashboardRoute,
+          (route) => false,
+        );
+        return;
+      }
+
       // Step 1: Sign in with Firebase
       print('🔥 Signing in with Firebase...');
       final firebaseCredential =

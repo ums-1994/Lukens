@@ -10,9 +10,17 @@ import psycopg2.extras
 from datetime import datetime, timedelta
 
 from api.utils.database import get_db_connection
-from api.utils.decorators import token_required
-from api.utils.email import send_email, get_logo_html
-from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification
+from api.utils.decorators import token_required, admin_required
+from api.utils.database import get_db_connection
+from api.utils.helpers import (
+    generate_proposal_pdf,
+    create_docusign_envelope,
+    get_logo_html,
+    create_notification,
+    log_activity,
+    log_proposal_audit_event,
+)
+from api.utils.email import send_email
 
 bp = Blueprint('approver', __name__)
 
@@ -353,6 +361,18 @@ def approve_proposal(username=None, proposal_id=None):
             if status_row:
                 new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
+
+                try:
+                    log_proposal_audit_event(
+                        proposal_id,
+                        'approved',
+                        actor_user_id=approver_user_id,
+                        actor_name=approver_name,
+                        actor_email=(approver_user.get('email') if approver_user else None),
+                        metadata={'comments': comments} if comments else None,
+                    )
+                except Exception:
+                    pass
 
                 # Notify proposal creator about approval
                 try:
@@ -754,6 +774,29 @@ def reject_proposal(username=None, proposal_id=None):
                 (proposal_id,)
             )
             conn.commit()
+
+            try:
+                cursor.execute(
+                    "SELECT id, username, email, full_name FROM users WHERE username = %s",
+                    (username,),
+                )
+                approver_user = cursor.fetchone()
+                approver_user_id = approver_user['id'] if approver_user else None
+                approver_name = (
+                    approver_user.get('full_name')
+                    or approver_user.get('username')
+                    or username
+                ) if approver_user else (username or 'Approver')
+                log_proposal_audit_event(
+                    proposal_id,
+                    'rejected',
+                    actor_user_id=approver_user_id,
+                    actor_name=approver_name,
+                    actor_email=(approver_user.get('email') if approver_user else None),
+                    metadata={'comments': comments} if comments else None,
+                )
+            except Exception:
+                pass
 
             # Notify proposal creator about rejection
             try:
