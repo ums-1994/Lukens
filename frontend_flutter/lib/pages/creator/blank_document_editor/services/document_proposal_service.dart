@@ -8,6 +8,33 @@ import '../../../../document_editor/models/document_table.dart';
 
 /// Service for handling document proposal API operations
 class DocumentProposalService {
+  static double? _extractBudgetFromSerializedContent(String serializedContent) {
+    try {
+      final decoded = jsonDecode(serializedContent);
+      if (decoded is! Map) return null;
+      final sections = decoded['sections'];
+      if (sections is! List) return null;
+
+      final RegExp amountRe = RegExp(r'(?i)(?:r\s*)?([0-9][0-9,]*(?:\.[0-9]+)?)');
+
+      for (final s in sections) {
+        if (s is! Map) continue;
+        final title = (s['title'] ?? '').toString().toLowerCase();
+        if (!(title.contains('budget') || title.contains('pricing'))) continue;
+
+        final content = (s['content'] ?? '').toString();
+        final match = amountRe.firstMatch(content);
+        if (match == null) continue;
+        final raw = (match.group(1) ?? '').replaceAll(',', '');
+        final val = double.tryParse(raw);
+        if (val != null) return val;
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
   /// Load proposal from database
   static Future<Map<String, dynamic>?> loadProposalFromDatabase(
     int proposalId,
@@ -311,6 +338,8 @@ class DocumentProposalService {
     int? existingProposalId,
   }) async {
     try {
+      final budget = _extractBudgetFromSerializedContent(content);
+
       if (existingProposalId == null) {
         // Create new proposal
         print('📝 Creating new proposal...');
@@ -318,6 +347,7 @@ class DocumentProposalService {
           token: token,
           title: title,
           content: content,
+          budget: budget,
           clientName: clientName,
           clientEmail: clientEmail,
           status: status ?? 'draft',
@@ -333,6 +363,7 @@ class DocumentProposalService {
           id: existingProposalId,
           title: title,
           content: content,
+          budget: budget,
           clientName: clientName,
           clientEmail: clientEmail,
           status: status ?? 'draft',

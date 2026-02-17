@@ -2495,6 +2495,34 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return json.encode(documentData);
   }
 
+  double? _extractBudgetFromSerializedContent(String serializedContent) {
+    try {
+      final decoded = jsonDecode(serializedContent);
+      if (decoded is! Map) return null;
+      final sections = decoded['sections'];
+      if (sections is! List) return null;
+
+      final RegExp amountRe =
+          RegExp(r'(?i)(?:r\s*)?([0-9][0-9,]*(?:\.[0-9]+)?)');
+
+      for (final s in sections) {
+        if (s is! Map) continue;
+        final title = (s['title'] ?? '').toString().toLowerCase();
+        if (!(title.contains('budget') || title.contains('pricing'))) continue;
+
+        final content = (s['content'] ?? '').toString();
+        final match = amountRe.firstMatch(content);
+        if (match == null) continue;
+        final raw = (match.group(1) ?? '').replaceAll(',', '');
+        final val = double.tryParse(raw);
+        if (val != null) return val;
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
   Future<void> _autoSaveDocument() async {
     if (!_hasUnsavedChanges) return;
 
@@ -2615,6 +2643,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ? 'Untitled Document'
         : _titleController.text;
     final content = _serializeDocumentContent();
+    final budget = _extractBudgetFromSerializedContent(content);
 
     try {
       if (_savedProposalId == null) {
@@ -2624,6 +2653,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           token: token,
           title: title,
           content: content,
+          budget: budget,
           clientName: _clientNameController.text.trim().isEmpty
               ? null
               : _clientNameController.text.trim(),
@@ -2663,6 +2693,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           id: _savedProposalId!,
           title: title,
           content: content,
+          budget: budget,
           clientName: _clientNameController.text.trim().isEmpty
               ? null
               : _clientNameController.text.trim(),
