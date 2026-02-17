@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'package:provider/provider.dart';

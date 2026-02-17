@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:js' as js;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
