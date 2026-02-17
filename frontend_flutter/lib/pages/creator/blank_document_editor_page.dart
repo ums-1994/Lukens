@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
+import '../../services/role_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
@@ -259,6 +260,83 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       await _loadClients();
     } catch (e) {
       print('❌ Error initializing auth: $e');
+    }
+  }
+
+  Future<void> _submitForApprovalFinance() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Please save the document before submitting for approval'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit for Approval'),
+        content: const Text(
+          'This will move the proposal to Pending Approval so Admin can review it.\n\nDo you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pending Approval',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pending Approval';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Submitted for admin approval'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/finance_dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to submit for approval: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -2156,6 +2234,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'pending ceo approval':
+      case 'pending approval':
         return const Color(0xFFF39C12); // Orange
       case 'sent to client':
         return const Color(0xFF3498DB); // Blue
@@ -2171,6 +2250,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   IconData _getStatusIcon(String status) {
     switch (status.toLowerCase()) {
       case 'pending ceo approval':
+      case 'pending approval':
         return Icons.pending;
       case 'sent to client':
         return Icons.send;
@@ -2186,12 +2266,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _getStatusLabel(String status) {
     switch (status.toLowerCase()) {
       case 'pending ceo approval':
+      case 'pending approval':
         return 'Pending Approval';
       case 'sent to client':
         return 'Sent to Client';
       case 'approved':
         return 'Approved';
-      case 'rejected':
+      case 'signed':
         return 'Rejected';
       default:
         return status;
@@ -4231,6 +4312,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildTopHeader() {
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -4513,9 +4596,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Send for Approval button
           if (_proposalStatus == null || _proposalStatus == 'draft')
             ElevatedButton.icon(
-              onPressed: _sendForApproval,
+              onPressed:
+                  isFinanceRole ? _submitForApprovalFinance : _sendForApproval,
               icon: const Icon(Icons.send, size: 16),
-              label: const Text('Send for Approval'),
+              label: Text(
+                  isFinanceRole ? 'Submit for Approval' : 'Send for Approval'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2ECC71),
                 foregroundColor: Colors.white,

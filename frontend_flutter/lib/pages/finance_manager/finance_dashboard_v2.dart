@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
+import '../creator/blank_document_editor_page.dart';
 import 'finance_client_management_page.dart';
 
 /// Simplified Finance dashboard that uses real proposal data from `/api/proposals`.
@@ -23,10 +24,53 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   final ScrollController _scrollController = ScrollController();
   String _currentTab = 'proposals'; // 'proposals' or 'clients'
 
+  bool _handledInitialOpen = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_handledInitialOpen) return;
+    _handledInitialOpen = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! Map) return;
+
+    final dynamic openIdRaw = args['openProposalId'] ?? args['proposalId'];
+    final String? openProposalId =
+        openIdRaw?.toString().trim().isNotEmpty == true
+            ? openIdRaw.toString().trim()
+            : null;
+
+    if (openProposalId == null) return;
+
+    final Map<String, dynamic>? aiGeneratedSections =
+        (args['aiGeneratedSections'] is Map)
+            ? Map<String, dynamic>.from(args['aiGeneratedSections'] as Map)
+            : null;
+    final String? initialTitle = args['initialTitle']?.toString();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => BlankDocumentEditorPage(
+            proposalId: openProposalId,
+            proposalTitle: args['proposalTitle']?.toString(),
+            initialTitle: initialTitle,
+            aiGeneratedSections: aiGeneratedSections,
+            readOnly: false,
+          ),
+        ),
+      );
+    });
   }
 
   @override

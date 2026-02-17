@@ -871,15 +871,13 @@ class _ProposalWizardPageState extends State<ProposalWizard>
               ? _formData['proposalTitle'].toString()
               : _formData['opportunityName'];
 
-      // Navigate to enhanced compose page
+      // Finance-first: route newly created proposals to Finance for pricing/tables
       Navigator.pushReplacementNamed(
         context,
-        '/enhanced-compose',
+        '/finance_dashboard',
         arguments: {
-          'proposalId': proposalId,
+          'openProposalId': proposalId,
           'proposalTitle': proposalTitle,
-          'templateType': _formData['templateType'],
-          'selectedModules': _formData['selectedModules'],
           'initialData': initialData,
         },
       );

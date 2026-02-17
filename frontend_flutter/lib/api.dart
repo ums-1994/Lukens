@@ -492,7 +492,7 @@ class AppState extends ChangeNotifier {
       String proposalId, Map<String, dynamic> data) async {
     try {
       final r = await http.put(
-        Uri.parse("$baseUrl/proposals/$proposalId"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId"),
         headers: _headers,
         body: jsonEncode(data),
       );
@@ -508,7 +508,7 @@ class AppState extends ChangeNotifier {
   Future<void> updateProposalStatus(String proposalId, String status) async {
     try {
       final r = await http.patch(
-        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/status"),
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
@@ -589,7 +589,8 @@ class AppState extends ChangeNotifier {
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
 
@@ -623,7 +624,8 @@ class AppState extends ChangeNotifier {
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
           if (stage != null && stage.isNotEmpty) 'stage': stage,
         },
       );
