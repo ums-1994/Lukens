@@ -570,6 +570,217 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getCompletionRatesAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/completion-rates").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty) 'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching completion rates analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getProposalPipelineAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    String? stage,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/proposal-pipeline").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty) 'department': department,
+          if (stage != null && stage.isNotEmpty) 'stage': stage,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching proposal pipeline analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getClientEngagementAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/client-engagement").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching client engagement analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getCollaborationLoadAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri =
+          Uri.parse("$baseUrl/api/analytics/collaboration-load").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching collaboration load analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getRiskGateProposals({
+    required String riskStatus,
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    int? limit,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/risk-gate/proposals").replace(
+        queryParameters: {
+          'risk_status': riskStatus,
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (limit != null) 'limit': limit.toString(),
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching risk gate proposals: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getRiskGateSummary({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/risk-gate/summary").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching risk gate summary: $e');
+    }
+    return null;
+  }
+
   Future<void> updateSections(Map<String, dynamic> updates) async {
     if (currentProposal == null) return;
     final id = currentProposal!["id"];
@@ -884,6 +1095,40 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       print('Error fetching proposal analytics: $e');
+    }
+    return null;
+  }
+
+  // Cycle Time Analytics
+  Future<Map<String, dynamic>?> getCycleTimeAnalytics({
+    String? startDate,
+    String? endDate,
+    String? status,
+    String? owner,
+    String? proposalType,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/cycle-time").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (status != null && status.isNotEmpty) 'status': status,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching cycle time analytics: $e');
     }
     return null;
   }

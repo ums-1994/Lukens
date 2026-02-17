@@ -1,11 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
+import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
@@ -30,6 +31,8 @@ class _DashboardPageState extends State<DashboardPage>
   // AI Risk Gate mock data
   List<Map<String, dynamic>> _riskItems = [];
 
+  Timer? _notificationsTimer;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +54,21 @@ class _DashboardPageState extends State<DashboardPage>
       }
       await _refreshData();
       await _loadRiskData(app);
+
+      _notificationsTimer?.cancel();
+      _notificationsTimer = Timer.periodic(
+        const Duration(seconds: 20),
+        (_) async {
+          if (!mounted) return;
+          final app = context.read<AppState>();
+          if (app.authToken == null && AuthService.token != null) {
+            app.authToken = AuthService.token;
+            app.currentUser = AuthService.currentUser;
+          }
+          if (app.authToken == null) return;
+          await app.fetchNotifications();
+        },
+      );
     });
   }
 
@@ -170,23 +188,43 @@ class _DashboardPageState extends State<DashboardPage>
   Future<Map<String, dynamic>?> _fetchProposalRisks(
       String token, String proposalId) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai/analyze-risks'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({'proposal_id': proposalId}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data as Map<String, dynamic>;
-      } else {
-        print(
-            'Risk analysis failed: ${response.statusCode} - ${response.body}');
+      final proposalIdInt = int.tryParse(proposalId);
+      if (proposalIdInt == null) {
         return null;
       }
+
+      final raw = await ApiService.analyzeRisks(
+        token: token,
+        proposalId: proposalIdInt,
+      );
+      if (raw == null) return null;
+
+      final String status = (raw['status'] ?? '').toString().toUpperCase();
+      final int riskScore = (raw['risk_score'] is num)
+          ? (raw['risk_score'] as num).toInt()
+          : int.tryParse((raw['risk_score'] ?? 0).toString()) ?? 0;
+      final issues = raw['issues'] as List<dynamic>? ?? [];
+
+      String overallRiskLevel;
+      if (status == 'BLOCK') {
+        overallRiskLevel = 'high';
+      } else if (status == 'REVIEW') {
+        overallRiskLevel = 'medium';
+      } else if (status == 'PASS') {
+        overallRiskLevel = 'low';
+      } else if (riskScore >= 80) {
+        overallRiskLevel = 'high';
+      } else if (riskScore >= 40) {
+        overallRiskLevel = 'medium';
+      } else {
+        overallRiskLevel = 'low';
+      }
+
+      return {
+        'risk_score': riskScore,
+        'issues': issues,
+        'overall_risk_level': overallRiskLevel,
+      };
     } catch (e) {
       print('Error fetching proposal risks: $e');
       return null;
@@ -255,6 +293,7 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   void dispose() {
+    _notificationsTimer?.cancel();
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();

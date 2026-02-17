@@ -6,7 +6,7 @@ import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
-import '../creator/client_management_page.dart';
+import 'finance_client_management_page.dart';
 
 /// Simplified Finance dashboard that uses real proposal data from `/api/proposals`.
 class FinanceDashboardPage extends StatefulWidget {
@@ -189,42 +189,38 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
-                      child: CustomScrollbar(
-                        controller: _scrollController,
-                        child: RefreshIndicator(
-                          onRefresh: _loadData,
-                          color: PremiumTheme.teal,
-                          child: SingleChildScrollView(
-                            controller: _scrollController,
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _buildTabSelector(),
-                                const SizedBox(height: 16),
-                                if (_currentTab == 'proposals') ...[
-                                  _buildSummaryRow(
-                                    totalCount: totalCount,
-                                    pendingCount: pendingCount,
-                                    approvedCount: approvedCount,
-                                    totalAmount: totalAmount,
+                      child: _currentTab == 'proposals'
+                          ? CustomScrollbar(
+                              controller: _scrollController,
+                              child: RefreshIndicator(
+                                onRefresh: _loadData,
+                                color: PremiumTheme.teal,
+                                child: SingleChildScrollView(
+                                  controller: _scrollController,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _buildSummaryRow(
+                                        totalCount: totalCount,
+                                        pendingCount: pendingCount,
+                                        approvedCount: approvedCount,
+                                        totalAmount: totalAmount,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _buildFilters(),
+                                      const SizedBox(height: 16),
+                                      _buildTable(proposals),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
+                                    ],
                                   ),
-                                  const SizedBox(height: 16),
-                                  _buildFilters(),
-                                  const SizedBox(height: 16),
-                                  _buildTable(proposals),
-                                ] else ...[
-                                  Expanded(
-                                    child: ClientManagementPage(),
-                                  ),
-                                ],
-                                const SizedBox(height: 24),
-                                const Footer(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                                ),
+                              ),
+                            )
+                          : const FinanceClientManagementPage(),
                     ),
                   ),
                 ],
@@ -340,6 +336,40 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Widget _buildSidebar() {
+    Widget navIcon({
+      required IconData icon,
+      required bool active,
+      required VoidCallback onTap,
+      String? tooltip,
+    }) {
+      final child = InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: active
+                ? PremiumTheme.teal.withOpacity(0.18)
+                : Colors.white.withOpacity(0.04),
+            border: Border.all(
+              color: active
+                  ? PremiumTheme.teal.withOpacity(0.9)
+                  : Colors.white.withOpacity(0.06),
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: active ? PremiumTheme.teal : Colors.white70,
+          ),
+        ),
+      );
+
+      if (tooltip == null) return child;
+      return Tooltip(message: tooltip, child: child);
+    }
+
     return Container(
       width: 90,
       decoration: BoxDecoration(
@@ -361,81 +391,20 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          Icon(Icons.account_balance, color: Colors.white),
-          const SizedBox(height: 8),
-          Icon(Icons.receipt_long, color: Colors.white70),
-          const SizedBox(height: 8),
-          Icon(Icons.trending_up, color: Colors.white70),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabSelector() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: PremiumTheme.darkBg2.withOpacity(0.85),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildTabButton(
-              'Proposals',
-              Icons.description,
-              _currentTab == 'proposals',
-              () => setState(() => _currentTab = 'proposals'),
-            ),
+          navIcon(
+            icon: Icons.description,
+            active: _currentTab == 'proposals',
+            tooltip: 'Proposals',
+            onTap: () => setState(() => _currentTab = 'proposals'),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildTabButton(
-              'Client Management',
-              Icons.business,
-              _currentTab == 'clients',
-              () => setState(() => _currentTab = 'clients'),
-            ),
+          const SizedBox(height: 10),
+          navIcon(
+            icon: Icons.business,
+            active: _currentTab == 'clients',
+            tooltip: 'Client Management',
+            onTap: () => setState(() => _currentTab = 'clients'),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton(
-      String label, IconData icon, bool isActive, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: isActive
-              ? PremiumTheme.teal.withOpacity(0.2)
-              : Colors.transparent,
-          border:
-              isActive ? Border.all(color: PremiumTheme.teal, width: 1) : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: isActive ? PremiumTheme.teal : Colors.white70,
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: PremiumTheme.bodyMedium.copyWith(
-                color: isActive ? PremiumTheme.teal : Colors.white70,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

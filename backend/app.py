@@ -109,6 +109,8 @@ from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
 from api.routes.approver import bp as approver_bp
+from api.routes.cycle_time import bp as cycle_time_bp
+from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
@@ -119,6 +121,8 @@ app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
+app.register_blueprint(cycle_time_bp, url_prefix='/api')
+app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
@@ -255,7 +259,28 @@ def _pg_conn():
 def release_pg_conn(conn):
     try:
         if conn:
-            get_pg_pool().putconn(conn)
+            try:
+                import psycopg2.extensions as ext
+                tx_status = conn.get_transaction_status()
+                if tx_status in (
+                    ext.TRANSACTION_STATUS_INTRANS,
+                    ext.TRANSACTION_STATUS_INERROR,
+                ):
+                    conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.autocommit = False
+            except Exception:
+                pass
+            try:
+                get_pg_pool().putconn(conn)
+            except psycopg2.pool.PoolError:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return
     except Exception as e:
         print(f"[WARN] Error releasing PostgreSQL connection: {e}")
 
@@ -5714,8 +5739,203 @@ def get_proposal_signatures(username, proposal_id):
 def docusign_webhook():
     """Handle DocuSign webhook events"""
     try:
-        # Get event data
-        event_data = request.get_json()
+        def _safe_preview(value, max_len: int = 800):
+            try:
+                if value is None:
+                    return None
+                if isinstance(value, bytes):
+                    s = value.decode('utf-8', errors='replace')
+                else:
+                    s = str(value)
+                s = s.replace('\r', ' ').replace('\n', ' ')
+                if len(s) > max_len:
+                    return s[:max_len] + "..."
+                return s
+            except Exception:
+                return None
+
+        def _deep_find_key(obj, keys: set[str], *, max_depth: int = 10, _depth: int = 0):
+            if _depth > max_depth:
+                return None
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if isinstance(k, str) and k in keys:
+                        return v
+                    found = _deep_find_key(v, keys, max_depth=max_depth, _depth=_depth + 1)
+                    if found is not None:
+                        return found
+            elif isinstance(obj, list):
+                for item in obj:
+                    found = _deep_find_key(item, keys, max_depth=max_depth, _depth=_depth + 1)
+                    if found is not None:
+                        return found
+            return None
+
+        def _extract_event_from_json(payload: dict):
+            if not isinstance(payload, dict):
+                return None, None, payload
+
+            event = payload.get('event') or payload.get('Event')
+            envelope_id = (
+                payload.get('envelopeId')
+                or payload.get('envelope_id')
+                or payload.get('EnvelopeId')
+                or payload.get('EnvelopeID')
+            )
+            if not envelope_id:
+                envelope_id = _deep_find_key(
+                    payload,
+                    {
+                        'envelopeId',
+                        'envelope_id',
+                        'EnvelopeId',
+                        'EnvelopeID',
+                        'envelopeID',
+                    },
+                )
+
+            if not event:
+                status = payload.get('status') or payload.get('Status')
+                if status:
+                    event = str(status).strip().lower()
+
+            if envelope_id is not None:
+                envelope_id = str(envelope_id).strip()
+
+            return event, envelope_id, payload
+
+        def _extract_event_from_xml(xml_bytes: bytes):
+            if not xml_bytes:
+                return None, None, None
+            try:
+                import xml.etree.ElementTree as ET
+
+                root = ET.fromstring(xml_bytes)
+
+                def _find_text(tag_suffix: str):
+                    for el in root.iter():
+                        if isinstance(el.tag, str) and el.tag.lower().endswith(tag_suffix.lower()):
+                            if el.text and str(el.text).strip():
+                                return str(el.text).strip()
+                    return None
+
+                envelope_id = (
+                    _find_text('EnvelopeID')
+                    or _find_text('EnvelopeId')
+                    or _find_text('EnvelopeId')
+                )
+
+                status = (
+                    _find_text('Status')
+                    or _find_text('EnvelopeStatus')
+                    or _find_text('StatusCode')
+                )
+
+                event = None
+                if status:
+                    event = str(status).strip().lower()
+
+                return event, envelope_id, status
+            except Exception:
+                return None, None, None
+
+        def _find_envelope_id_in_text(text: str | bytes | None):
+            try:
+                if not text:
+                    return None
+                if isinstance(text, bytes):
+                    s = text.decode('utf-8', errors='ignore')
+                else:
+                    s = str(text)
+                # DocuSign envelope ids are GUIDs
+                m = re.search(r"(?i)<\s*EnvelopeID\s*>\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*<\s*/\s*EnvelopeID\s*>", s)
+                if m:
+                    return m.group(1).strip()
+                m = re.search(r"(?i)envelopeid\s*[:=]\s*\"?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\"?", s)
+                if m:
+                    return m.group(1).strip()
+                return None
+            except Exception:
+                return None
+
+        def _extract_xml_candidate_from_raw(raw_body: bytes | None):
+            if not raw_body:
+                return None
+            try:
+                body_text = raw_body.decode('utf-8', errors='ignore')
+            except Exception:
+                return None
+
+            # Multipart bodies: pull the first XML-like fragment.
+            lt = body_text.find('<')
+            gt = body_text.rfind('>')
+            if lt != -1 and gt != -1 and gt > lt:
+                candidate = body_text[lt:gt + 1].strip()
+                if candidate.startswith('<') and candidate.endswith('>') and len(candidate) >= 20:
+                    return candidate.encode('utf-8', errors='ignore')
+            return None
+
+        def _map_event_to_action(event: str | None):
+            if not event:
+                return None
+            e = str(event).strip().lower()
+            if e in {'envelope-completed', 'completed', 'complete', 'signed'}:
+                return 'completed'
+            if e in {'envelope-declined', 'declined', 'decline'}:
+                return 'declined'
+            if e in {'envelope-voided', 'voided', 'void'}:
+                return 'voided'
+            if e in {'recipient-sent', 'sent', 'delivered', 'processing', 'created'}:
+                return 'ignored'
+            return 'ignored'
+
+        # DocuSign Connect may send XML by default, or embed XML inside multipart/form fields.
+        event_data = request.get_json(silent=True)
+        event, envelope_id, parsed_payload = _extract_event_from_json(event_data)
+        xml_status = None
+
+        # Try form fields/files first (common Connect configurations)
+        if not envelope_id:
+            form_xml = None
+            try:
+                form_xml = request.form.get('xml') or request.form.get('XML')
+            except Exception:
+                form_xml = None
+            if form_xml:
+                event, envelope_id, xml_status = _extract_event_from_xml(form_xml.encode('utf-8', errors='ignore'))
+                parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            try:
+                if request.files:
+                    for f in request.files.values():
+                        try:
+                            data = f.read()
+                        except Exception:
+                            data = None
+                        if data:
+                            event, envelope_id, xml_status = _extract_event_from_xml(data)
+                            if envelope_id:
+                                parsed_payload = {'xml_status': xml_status}
+                                break
+            except Exception:
+                pass
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            event, envelope_id, xml_status = _extract_event_from_xml(raw_body)
+            parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            embedded_xml = _extract_xml_candidate_from_raw(raw_body)
+            if embedded_xml:
+                event, envelope_id, xml_status = _extract_event_from_xml(embedded_xml)
+                parsed_payload = {'xml_status': xml_status}
+
+        if not envelope_id:
+            raw_body = request.get_data(cache=False)
+            envelope_id = _find_envelope_id_in_text(raw_body)
         
         # Validate HMAC signature (if configured)
         hmac_key = os.getenv('DOCUSIGN_WEBHOOK_HMAC_KEY')
@@ -5723,13 +5943,19 @@ def docusign_webhook():
             signature = request.headers.get('X-DocuSign-Signature-1')
             # TODO: Validate signature
         
-        event = event_data.get('event')
-        envelope_id = event_data.get('envelopeId')
-        
         if not envelope_id:
-            return {'detail': 'No envelope ID provided'}, 400
-        
-        print(f"📬 DocuSign webhook received: {event} for envelope {envelope_id}")
+            ct = request.headers.get('Content-Type')
+            raw_body = request.get_data(cache=False)
+            print("⚠️ DocuSign webhook: could not parse envelopeId")
+            print(f"   content-type={ct}")
+            print(f"   body_preview={_safe_preview(raw_body)}")
+            return {'message': 'Webhook received'}, 200
+
+        action = _map_event_to_action(event)
+        print(f"📬 DocuSign webhook received: {event} (action={action}) for envelope {envelope_id}")
+
+        if action in (None, 'ignored'):
+            return {'message': 'Webhook ignored'}, 200
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -5744,10 +5970,10 @@ def docusign_webhook():
             signature = cursor.fetchone()
             if not signature:
                 print(f"⚠️ Signature record not found for envelope {envelope_id}")
-                return {'message': 'Signature record not found'}, 404
-            
+                return {'message': 'Webhook processed'}, 200
+
             # Handle different events
-            if event == 'envelope-completed':
+            if action == 'completed':
                 # Signature completed
                 cursor.execute("""
                     UPDATE proposal_signatures 
@@ -5771,9 +5997,13 @@ def docusign_webhook():
                 
                 print(f"✅ Envelope {envelope_id} completed")
                 
-            elif event == 'envelope-declined':
+            elif action == 'declined':
                 # Signature declined
-                decline_reason = event_data.get('declineReason', 'No reason provided')
+                decline_reason = None
+                if isinstance(event_data, dict):
+                    decline_reason = event_data.get('declineReason')
+                if not decline_reason:
+                    decline_reason = 'No reason provided'
                 
                 cursor.execute("""
                     UPDATE proposal_signatures 
@@ -5797,7 +6027,7 @@ def docusign_webhook():
                 
                 print(f"⚠️ Envelope {envelope_id} declined")
                 
-            elif event == 'envelope-voided':
+            elif action == 'voided':
                 # Envelope voided
                 cursor.execute("""
                     UPDATE proposal_signatures 

@@ -1040,6 +1040,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
                 print(
                     '🔐 Signing URL: ${_signingUrl?.substring(0, _signingUrl!.length > 80 ? 80 : _signingUrl!.length)}...');
 
+                _logEvent('sign', metadata: {'action': 'sign_button_clicked'});
+
                 if (_signingUrl == null || _signingUrl!.isEmpty) {
                   print('⚠️ No signing URL available');
                   _openSigningModal();

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
-from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification
+from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification, resolve_user_id
 
 bp = Blueprint('approver', __name__)
 
@@ -357,8 +357,11 @@ def approve_proposal(username=None, proposal_id=None):
                 # Notify proposal creator about approval
                 try:
                     if creator:
+                        creator_id = resolve_user_id(cursor, creator)
+                        if not creator_id:
+                            raise RuntimeError(f"Could not resolve proposal creator identifier: {creator}")
                         create_notification(
-                            user_id=creator,
+                            user_id=creator_id,
                             notification_type='proposal_approved',
                             title='Proposal Approved',
                             message=f"Your proposal '{display_title}' for {client_name or 'Client'} has been approved by {approver_name}.",
@@ -507,18 +510,30 @@ def approve_proposal(username=None, proposal_id=None):
                                 return_url=return_url,
                             )
 
-                            signing_url = envelope_result['signing_url']
-                            envelope_id = envelope_result['envelope_id']
+                            if not isinstance(envelope_result, dict):
+                                raise Exception(f"Unexpected DocuSign response type: {type(envelope_result).__name__}")
+
+                            if envelope_result.get('disabled'):
+                                raise Exception(envelope_result.get('detail') or 'DocuSign is disabled on this server')
+
+                            signing_url = envelope_result.get('signing_url')
+                            envelope_id = envelope_result.get('envelope_id')
                             envelope_status = envelope_result.get('envelope_status', {})
                             
                             print(f"✅ DocuSign envelope created successfully!")
                             print(f"   Envelope ID: {envelope_id}")
-                            print(f"   Signing URL: {signing_url[:50]}...")
+                            if signing_url:
+                                print(f"   Signing URL: {signing_url[:50]}...")
+                            else:
+                                print("⚠️  WARNING: DocuSign did not return a signing URL")
                             print(f"   Envelope Status: {envelope_status.get('status', 'unknown')}")
                             
                             # Verify envelope was actually created
                             if not envelope_id:
                                 raise Exception("DocuSign envelope creation returned no envelope ID")
+
+                            if not signing_url:
+                                raise Exception("DocuSign recipient view returned no URL")
                             
                             # Check envelope status
                             if envelope_status.get('status', '').lower() != 'sent':
@@ -675,20 +690,24 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"[EMAIL] ❌ Failed to send proposal email to {effective_client_email}")
                             print(f"   Check SENDGRID_* or SMTP_* env vars and logs above for details")
                             return {
-                                'detail': 'Proposal approved but email failed to send (secure link not delivered). Fix email configuration and retry.',
-                                'error': 'email_send_failed',
+                                'detail': 'Proposal approved but email failed to send (secure link not delivered). Fix email configuration and retry, or manually share client_link.',
+                                'warning': 'email_send_failed',
                                 'proposal_id': proposal_id,
                                 'client_email': effective_client_email,
-                            }, 502
+                                'client_link': client_link,
+                                'email_sent': False,
+                            }, 200
                     except Exception as email_error:
                         print(f"[EMAIL] Error sending proposal email: {email_error}")
                         traceback.print_exc()
                         return {
-                            'detail': 'Proposal approved but email failed to send due to server error. Check email configuration and retry.',
-                            'error': 'email_send_exception',
+                            'detail': 'Proposal approved but email failed to send due to server error. Check email configuration and retry, or manually share client_link.',
+                            'warning': 'email_send_exception',
                             'proposal_id': proposal_id,
                             'client_email': effective_client_email,
-                        }, 502
+                            'client_link': client_link,
+                            'email_sent': False,
+                        }, 200
                 
                 return {
                     'detail': 'Proposal approved and sent to client',

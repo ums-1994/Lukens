@@ -4,6 +4,7 @@ import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
+import '../../config/app_constants.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -293,6 +294,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 vertical: 40,
               ),
               child: _buildLoginCard(isMobile),
+            ),
+          ),
+
+          // Version overlay at bottom
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF333333), width: 1),
+              ),
+              child: Text(
+                AppConstants.fullVersion,
+                style: const TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         ],

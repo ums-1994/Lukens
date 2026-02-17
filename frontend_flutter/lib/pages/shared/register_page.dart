@@ -4,6 +4,7 @@ import '../../services/firebase_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
+import '../../config/app_constants.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -270,9 +271,13 @@ class _RegisterPageState extends State<RegisterPage>
 
         if (userProfile != null) {
           // Normalize roles for comparison (handle space vs underscore differences)
-          final backendRole = (userProfile['role']?.toString() ?? '').toLowerCase().trim().replaceAll(' ', '_');
-          final requestedRoleNormalized = role.toLowerCase().trim().replaceAll(' ', '_');
-          
+          final backendRole = (userProfile['role']?.toString() ?? '')
+              .toLowerCase()
+              .trim()
+              .replaceAll(' ', '_');
+          final requestedRoleNormalized =
+              role.toLowerCase().trim().replaceAll(' ', '_');
+
           // Update role in backend if needed
           if (backendRole != requestedRoleNormalized) {
             // Role might need to be updated in backend
@@ -411,6 +416,28 @@ class _RegisterPageState extends State<RegisterPage>
                 vertical: 40,
               ),
               child: _buildRegistrationCard(isMobile),
+            ),
+          ),
+
+          // Version overlay at bottom
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF333333), width: 1),
+              ),
+              child: Text(
+                AppConstants.fullVersion,
+                style: const TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         ],
