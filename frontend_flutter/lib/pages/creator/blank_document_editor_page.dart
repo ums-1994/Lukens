@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
@@ -52,6 +53,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _titleController;
   late TextEditingController _clientNameController;
   late TextEditingController _clientEmailController;
+  List<Map<String, dynamic>> _clients = [];
+  bool _isLoadingClients = false;
+  int? _selectedClientId;
   bool _isSaving = false;
   DateTime? _lastSaved;
   List<DocumentSection> _sections = [];
@@ -250,9 +254,93 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       // Load images from content library
       _loadLibraryImages();
+
+      // Load clients for dropdown
+      await _loadClients();
     } catch (e) {
       print('❌ Error initializing auth: $e');
     }
+  }
+
+  Future<void> _loadClients() async {
+    if (_isLoadingClients) return;
+
+    setState(() => _isLoadingClients = true);
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final clients = await ClientService.getClients(token);
+      if (!mounted) return;
+
+      setState(() {
+        _clients = List<Map<String, dynamic>>.from(clients);
+
+        if (_selectedClientId == null) {
+          final currentName = _clientNameController.text.trim();
+          if (currentName.isNotEmpty) {
+            for (final c in _clients) {
+              final name = (c['company_name'] ?? c['name'] ?? '').toString();
+              if (name.trim().toLowerCase() == currentName.toLowerCase()) {
+                _selectedClientId = _tryParseClientId(c);
+                break;
+              }
+            }
+          }
+        }
+      });
+    } catch (e) {
+      print('❌ Error loading clients: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingClients = false);
+    }
+  }
+
+  int? _tryParseClientId(Map<String, dynamic> client) {
+    final raw = client['id'] ?? client['client_id'] ?? client['clientId'];
+    if (raw is int) return raw;
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  String _getClientDisplayName(Map<String, dynamic> client) {
+    final name = (client['company_name'] ?? client['name'] ?? '').toString();
+    final email = (client['email'] ?? '').toString();
+    final cleanName = name.trim();
+    if (cleanName.isNotEmpty) return cleanName;
+    return email.trim().isNotEmpty ? email.trim() : 'Client';
+  }
+
+  void _onClientSelected(int? clientId) {
+    if (clientId == null) {
+      setState(() {
+        _selectedClientId = null;
+      });
+      _onContentChanged();
+      return;
+    }
+
+    Map<String, dynamic>? selected;
+    for (final c in _clients) {
+      final id = _tryParseClientId(c);
+      if (id == clientId) {
+        selected = c;
+        break;
+      }
+    }
+
+    if (selected == null) return;
+
+    final name =
+        (selected['company_name'] ?? selected['name'] ?? '').toString();
+    final email = (selected['email'] ?? '').toString();
+
+    setState(() {
+      _selectedClientId = clientId;
+      _clientNameController.text = name;
+      _clientEmailController.text = email;
+    });
+
+    _onContentChanged();
   }
 
   Future<String?> _promptForChangeDescription() async {
@@ -4370,28 +4458,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Collaboration / Share button
-          OutlinedButton.icon(
-            onPressed: () => _showCollaborationDialog(),
-            icon: Icon(
-              _isCollaborating ? Icons.people : Icons.person_add,
-              size: 16,
-            ),
-            label: Text(_isCollaborating
-                ? 'Collaborators (${_collaborators.length})'
-                : 'Share'),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: _isCollaborating ? Colors.green : Colors.grey,
-              ),
-              foregroundColor: _isCollaborating ? Colors.green : Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
           // Comments button
           OutlinedButton.icon(
             onPressed: () {
@@ -4416,62 +4482,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          // More Actions menu (Share, Archive, etc.)
-          if (_savedProposalId != null)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 20),
-              onSelected: (value) async {
-                switch (value) {
-                  case 'share':
-                    _showCollaborationDialog();
-                    break;
-                  case 'archive':
-                    await _archiveProposal();
-                    break;
-                  case 'restore':
-                    await _restoreProposal();
-                    break;
-                }
-              },
-              itemBuilder: (context) {
-                final isArchived = _proposalStatus?.toLowerCase() == 'archived';
-                return [
-                  const PopupMenuItem(
-                    value: 'share',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person_add_alt_1_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Share / Collaborate'),
-                      ],
-                    ),
-                  ),
-                  if (!isArchived)
-                    const PopupMenuItem(
-                      value: 'archive',
-                      child: Row(
-                        children: [
-                          Icon(Icons.archive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Archive Proposal'),
-                        ],
-                      ),
-                    )
-                  else
-                    const PopupMenuItem(
-                      value: 'restore',
-                      child: Row(
-                        children: [
-                          Icon(Icons.unarchive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Restore Proposal'),
-                        ],
-                      ),
-                    ),
-                ];
-              },
-            ),
           const SizedBox(width: 12),
           // Status Badge
           if (_proposalStatus != null && _proposalStatus != 'draft')
@@ -6177,6 +6187,40 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<int?>(
+          value: _selectedClientId,
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('Select client'),
+            ),
+            ..._clients.map((c) {
+              final id = _tryParseClientId(c);
+              if (id == null) {
+                return null;
+              }
+              return DropdownMenuItem<int?>(
+                value: id,
+                child: Text(
+                  _getClientDisplayName(c),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }).whereType<DropdownMenuItem<int?>>(),
+          ],
+          onChanged: _isLoadingClients ? null : _onClientSelected,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Client',
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         ),
         const SizedBox(height: 20),
