@@ -381,7 +381,7 @@ def firebase_auth():
     Creates or updates user in database based on Firebase user
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if data is None:
             return {'detail': 'Invalid JSON or missing Content-Type header'}, 400
         
