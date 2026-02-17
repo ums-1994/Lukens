@@ -161,6 +161,7 @@ def create_notification(
 
             resolved_user_id = resolve_user_id(cursor, user_id)
             if not resolved_user_id:
+                print(f"⚠️ [NOTIFICATIONS] Could not resolve user identifier: {user_id}")
                 return
 
             # Determine which notifications table/columns exist
@@ -172,10 +173,16 @@ def create_notification(
             """)
             table_rows = cursor.fetchall()
             if not table_rows:
+                print("⚠️ [NOTIFICATIONS] No notifications table found; skipping create_notification")
                 return
 
             table_names = {row['table_name'] for row in table_rows}
             table_name = 'notifications' if 'notifications' in table_names else table_rows[0]['table_name']
+
+            print(
+                f"✅ [NOTIFICATIONS] Creating notification for user_id={resolved_user_id} "
+                f"type={notification_type} table={table_name} proposal_id={proposal_id}"
+            )
 
             cursor.execute("""
                 SELECT column_name 
@@ -216,6 +223,12 @@ def create_notification(
                 values,
             )
             notification_row = cursor.fetchone()
+
+            try:
+                if notification_row and notification_row.get('id') is not None:
+                    print(f"✅ [NOTIFICATIONS] Inserted notification id={notification_row.get('id')}")
+            except Exception:
+                pass
 
             if send_email_flag:
                 cursor.execute(
