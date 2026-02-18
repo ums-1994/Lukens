@@ -36,6 +36,7 @@ import 'pages/shared/collaboration_router.dart';
 import 'pages/client/client_onboarding_page.dart';
 import 'pages/client/client_dashboard_home.dart';
 import 'pages/admin/analytics_page.dart';
+import 'pages/finance_manager/finance_analytics.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
@@ -390,7 +391,7 @@ class MyApp extends StatelessWidget {
           },
           '/approvals': (context) => const ApproverDashboardPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
-          '/finance_dashboard': (context) => FinanceDashboardPage(),
+          '/finance_dashboard': (context) => const FinanceDashboardV2Page(),
           '/finance/onboarding': (context) => const FinanceOnboardingPage(),
           '/finance/clients': (context) => const FinanceClientManagementPage(),
           '/finance/clients/add': (context) => const FinanceAddClientPage(),
@@ -410,7 +411,13 @@ class MyApp extends StatelessWidget {
           '/collaboration': (context) =>
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
-          '/analytics': (context) => const AnalyticsPage(),
+          '/analytics': (context) {
+            final role = context.watch<RoleService>();
+            if (role.isFinance()) {
+              return const FinanceAnalyticsPage();
+            }
+            return const AnalyticsPage();
+          },
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
           '/test-signature': (context) => const TestSignaturePage(),

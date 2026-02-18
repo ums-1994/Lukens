@@ -13,19 +13,36 @@ import '../creator/blank_document_editor_page.dart';
 import 'finance_client_management_page.dart';
 
 /// Simplified Finance dashboard that uses real proposal data from `/api/proposals`.
-class FinanceDashboardPage extends StatefulWidget {
-  const FinanceDashboardPage({Key? key}) : super(key: key);
+class FinanceDashboardV2Page extends StatefulWidget {
+  const FinanceDashboardV2Page({Key? key}) : super(key: key);
 
   @override
-  State<FinanceDashboardPage> createState() => _FinanceDashboardPageState();
+  State<FinanceDashboardV2Page> createState() => _FinanceDashboardPageState();
 }
 
-class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
+class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   bool _isLoading = false;
   String _statusFilter = 'all'; // all, pending, approved, other
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _currentTab = 'dashboard'; // dashboard, proposals, clients
+  bool _isSidebarCollapsed = false;
+
+  String _financePipelineBucket(String rawStatus) {
+    final s = rawStatus.toLowerCase();
+    if (_isPricingInProgressStatus(s)) return 'In Pricing';
+    if (s.contains('pending review') || s.contains('pending approval')) {
+      return 'Pending Review';
+    }
+    if (s.contains('changes requested') || s.contains('needs changes')) {
+      return 'Changes Requested';
+    }
+    if (s.contains('released') || s.contains('sent to client')) {
+      return 'Released';
+    }
+    if (s.contains('signed') || s.contains('approved')) return 'Signed';
+    return '';
+  }
 
   bool _handledInitialOpen = false;
 
@@ -119,51 +136,94 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     }
   }
 
-  List<Map<String, dynamic>> _getFilteredProposals(AppState app) {
+  List<Map<String, dynamic>> _getFilteredProposals(
+    AppState app, {
+    bool ignoreStatusFilter = false,
+  }) {
     final query = _searchController.text.toLowerCase().trim();
     final List<Map<String, dynamic>> result = [];
 
+    DateTime? parseDate(dynamic value) {
+      if (value == null) return null;
+      if (value is DateTime) return value;
+      final s = value.toString().trim();
+      if (s.isEmpty) return null;
+      try {
+        return DateTime.parse(s);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final List<Map<String, dynamic>> normalized = [];
     for (final raw in app.proposals) {
       if (raw is! Map) continue;
-      final Map<String, dynamic> p = raw is Map<String, dynamic>
+      final p = raw is Map<String, dynamic>
           ? raw
           : raw.map((k, v) => MapEntry(k.toString(), v));
+      normalized.add(p);
+    }
+
+    normalized.sort((a, b) {
+      final ad = parseDate(a['created_at'] ?? a['createdAt']);
+      final bd = parseDate(b['created_at'] ?? b['createdAt']);
+      if (ad == null && bd == null) return 0;
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      return bd.compareTo(ad);
+    });
+
+    final recent = normalized.take(25).toList();
+
+    for (final p in recent) {
+      final statusLower = (p['status'] ?? '').toString().trim().toLowerCase();
+      if (statusLower == 'draft') continue;
+
+      final bucket = _financePipelineBucket(statusLower);
+      if (bucket.isEmpty) continue;
 
       final title = (p['title'] ?? '').toString().toLowerCase();
       final client =
-          (p['client_name'] ?? p['client'] ?? '').toString().toLowerCase();
-      final status = (p['status'] ?? '').toString().toLowerCase();
+          (p['client'] ?? p['client_name'] ?? '').toString().toLowerCase();
+      final status = statusLower;
 
       if (query.isNotEmpty &&
           !(title.contains(query) || client.contains(query))) {
         continue;
       }
 
-      switch (_statusFilter) {
-        case 'pending':
-          if (!_isPricingInProgressStatus(status)) {
-            continue;
-          }
-          break;
-        case 'approved':
-          if (!(status.contains('approved') ||
-              status.contains('signed') ||
-              status.contains('released'))) {
-            continue;
-          }
-          break;
-        case 'other':
-          if (status.contains('pending') ||
-              status.contains('review') ||
-              status.contains('approved') ||
-              status.contains('signed') ||
-              status.contains('released')) {
-            continue;
-          }
-          break;
-        case 'all':
-        default:
-          break;
+      final isPendingReview = status.contains('pending review') ||
+          status.contains('pending approval');
+      final isReleased =
+          status.contains('released') || status.contains('sent to client');
+      final isSigned = status.contains('signed') || status.contains('approved');
+
+      if (!ignoreStatusFilter) {
+        switch (_statusFilter) {
+          case 'pending_review':
+            if (!isPendingReview) {
+              continue;
+            }
+            break;
+          case 'in_pricing':
+            if (!_isPricingInProgressStatus(status)) {
+              continue;
+            }
+            break;
+          case 'released':
+            if (!isReleased) {
+              continue;
+            }
+            break;
+          case 'signed':
+            if (!isSigned) {
+              continue;
+            }
+            break;
+          case 'all':
+          default:
+            break;
+        }
       }
 
       result.add(p);
@@ -240,7 +300,11 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final proposals = _getFilteredProposals(app);
+    final dashboardProposals =
+        _getFilteredProposals(app, ignoreStatusFilter: true);
+    final proposalsTabProposals = _getFilteredProposals(app);
+    final proposals =
+        _currentTab == 'dashboard' ? dashboardProposals : proposalsTabProposals;
 
     final pricingCount = proposals
         .where(
@@ -308,6 +372,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                                         _buildDashboardTitle(),
                                         const SizedBox(height: 16),
                                         _buildSummaryRow(
+                                          proposals: dashboardProposals,
                                           pendingCount: pricingCount,
                                           approvedCount: approvedCount,
                                           sentToClientCount: sentToClientCount,
@@ -321,16 +386,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                                         const SizedBox(height: 24),
                                         const Footer(),
                                       ] else ...[
-                                        _buildSummaryRow(
-                                          pendingCount: pricingCount,
-                                          approvedCount: approvedCount,
-                                          sentToClientCount: sentToClientCount,
-                                          totalAmount: totalAmount,
-                                        ),
-                                        const SizedBox(height: 16),
                                         _buildFilters(),
                                         const SizedBox(height: 16),
-                                        _buildTable(proposals),
+                                        _buildTable(proposalsTabProposals),
                                         const SizedBox(height: 24),
                                         const Footer(),
                                       ],
@@ -447,52 +505,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
   Widget _buildPipelineChart() {
     final app = context.read<AppState>();
-    final proposals = app.proposals
-        .whereType<Map>()
-        .map((raw) => raw is Map<String, dynamic>
-            ? raw
-            : raw.map((k, v) => MapEntry(k.toString(), v)))
-        .toList();
-
-    DateTime? parseDate(dynamic value) {
-      if (value == null) return null;
-      if (value is DateTime) return value;
-      final s = value.toString().trim();
-      if (s.isEmpty) return null;
-      try {
-        return DateTime.parse(s);
-      } catch (_) {
-        return null;
-      }
-    }
-
-    proposals.sort((a, b) {
-      final ad = parseDate(a['created_at'] ?? a['createdAt']);
-      final bd = parseDate(b['created_at'] ?? b['createdAt']);
-      if (ad == null && bd == null) return 0;
-      if (ad == null) return 1;
-      if (bd == null) return -1;
-      return bd.compareTo(ad);
-    });
-
-    final recent = proposals.take(25).toList();
-
-    String bucketForStatus(String raw) {
-      final s = raw.toLowerCase();
-      if (_isPricingInProgressStatus(s)) return 'In Pricing';
-      if (s.contains('pending approval') || s.contains('pending review')) {
-        return 'Pending Review';
-      }
-      if (s.contains('changes requested') || s.contains('needs changes')) {
-        return 'Changes Requested';
-      }
-      if (s.contains('released') || s.contains('sent to client')) {
-        return 'Released';
-      }
-      if (s.contains('signed')) return 'Signed';
-      if (s.contains('approved')) return 'Signed';
-      return '';
-    }
+    final proposals = _getFilteredProposals(app, ignoreStatusFilter: true);
 
     int inPricing = 0;
     int pendingReview = 0;
@@ -500,8 +513,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     int released = 0;
     int signed = 0;
 
-    for (final p in recent) {
-      final bucket = bucketForStatus((p['status'] ?? '').toString());
+    for (final p in proposals) {
+      final bucket = _financePipelineBucket((p['status'] ?? '').toString());
       switch (bucket) {
         case 'In Pricing':
           inPricing += 1;
@@ -970,52 +983,92 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       int? badge,
     }) {
       final color = active ? PremiumTheme.teal : Colors.white70;
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            color: active
-                ? PremiumTheme.teal.withOpacity(0.14)
-                : Colors.transparent,
-            border: Border.all(
-              color: active
-                  ? PremiumTheme.teal.withOpacity(0.6)
-                  : Colors.white.withOpacity(0.06),
+      return Tooltip(
+        message: label,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: _isSidebarCollapsed ? 10 : 14,
+              vertical: 12,
             ),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: PremiumTheme.bodyMedium.copyWith(
-                    color: Colors.white,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: active
+                  ? PremiumTheme.teal.withOpacity(0.14)
+                  : Colors.transparent,
+              border: Border.all(
+                color: active
+                    ? PremiumTheme.teal.withOpacity(0.6)
+                    : Colors.white.withOpacity(0.06),
               ),
-              if (badge != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    badge.toString(),
-                    style: PremiumTheme.labelMedium.copyWith(
-                      color: Colors.white,
+            ),
+            child: Row(
+              mainAxisAlignment: _isSidebarCollapsed
+                  ? MainAxisAlignment.center
+                  : MainAxisAlignment.start,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(icon, size: 18, color: color),
+                    if (badge != null && _isSidebarCollapsed)
+                      Positioned(
+                        right: -6,
+                        top: -6,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.12),
+                            ),
+                          ),
+                          child: Text(
+                            badge > 99 ? '99+' : badge.toString(),
+                            style: PremiumTheme.labelMedium.copyWith(
+                              color: Colors.white,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                if (!_isSidebarCollapsed) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ),
-            ],
+                  if (badge != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        badge.toString(),
+                        style: PremiumTheme.labelMedium.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ],
+            ),
           ),
         ),
       );
@@ -1028,8 +1081,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             _isPricingInProgressStatus((p['status'] ?? '').toString()))
         .length;
 
-    return Container(
-      width: 240,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: _isSidebarCollapsed ? 76 : 240,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -1047,7 +1101,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+        padding: EdgeInsets.fromLTRB(_isSidebarCollapsed ? 10 : 16, 18,
+            _isSidebarCollapsed ? 10 : 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1069,22 +1124,43 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                     size: 18,
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Finance Portal',
-                        style: PremiumTheme.bodyLarge
-                            .copyWith(color: Colors.white),
-                      ),
-                      Text(
-                        'Navigation',
-                        style: PremiumTheme.labelMedium
-                            .copyWith(color: Colors.white60),
-                      ),
-                    ],
+                if (!_isSidebarCollapsed) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Finance Portal',
+                          style: PremiumTheme.bodyLarge
+                              .copyWith(color: Colors.white),
+                        ),
+                        Text(
+                          'Navigation',
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  const Spacer(),
+                ],
+                IconButton(
+                  tooltip: _isSidebarCollapsed
+                      ? 'Expand sidebar'
+                      : 'Collapse sidebar',
+                  onPressed: () {
+                    setState(() {
+                      _isSidebarCollapsed = !_isSidebarCollapsed;
+                    });
+                  },
+                  icon: Icon(
+                    _isSidebarCollapsed
+                        ? Icons.keyboard_double_arrow_right
+                        : Icons.keyboard_double_arrow_left,
+                    color: Colors.white70,
+                    size: 20,
                   ),
                 ),
               ],
@@ -1134,6 +1210,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                 border: Border.all(color: Colors.white.withOpacity(0.06)),
               ),
               child: Row(
+                mainAxisAlignment: _isSidebarCollapsed
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
                 children: [
                   Container(
                     width: 34,
@@ -1144,19 +1223,21 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                     ),
                     child: const Icon(Icons.person, color: Colors.white70),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      (app.currentUser?['full_name'] ??
-                              app.currentUser?['first_name'] ??
-                              app.currentUser?['email'] ??
-                              'Finance User')
-                          .toString(),
-                      style:
-                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-                      overflow: TextOverflow.ellipsis,
+                  if (!_isSidebarCollapsed) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        (app.currentUser?['full_name'] ??
+                                app.currentUser?['first_name'] ??
+                                app.currentUser?['email'] ??
+                                'Finance User')
+                            .toString(),
+                        style: PremiumTheme.bodyMedium
+                            .copyWith(color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
+                  ],
                   IconButton(
                     tooltip: 'Logout',
                     onPressed: () {
@@ -1176,6 +1257,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Widget _buildSummaryRow({
+    required List<Map<String, dynamic>> proposals,
     required int pendingCount,
     required int approvedCount,
     required int sentToClientCount,
@@ -1185,16 +1267,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final isNarrow = width < 900;
-        final app = context.read<AppState>();
-        final appProposals = app.proposals
-            .whereType<Map>()
-            .map((raw) => raw is Map<String, dynamic>
-                ? raw
-                : raw.map((k, v) => MapEntry(k.toString(), v)))
-            .toList();
-
-        final avgCycle = _computeAvgCycleTimeDays(appProposals);
-        final proposalsCount = appProposals.length;
+        final avgCycle = _computeAvgCycleTimeDays(proposals);
+        final proposalsCount = proposals.length;
 
         final denom = (approvedCount + pendingCount);
         final approvalRate = denom <= 0 ? 0.0 : (approvedCount / denom);
@@ -1571,11 +1645,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                 ),
               ),
               items: const [
-                DropdownMenuItem(value: 'all', child: Text('All statuses')),
-                DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                DropdownMenuItem(value: 'all', child: Text('All Statuses')),
                 DropdownMenuItem(
-                    value: 'approved', child: Text('Approved / Signed')),
-                DropdownMenuItem(value: 'other', child: Text('Other')),
+                    value: 'pending_review', child: Text('Pending Review')),
+                DropdownMenuItem(
+                    value: 'in_pricing', child: Text('In Pricing')),
+                DropdownMenuItem(value: 'released', child: Text('Released')),
+                DropdownMenuItem(value: 'signed', child: Text('Signed')),
               ],
               onChanged: (v) => setState(() => _statusFilter = v ?? 'all'),
             ),

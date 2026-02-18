@@ -406,6 +406,7 @@ def get_proposals(username=None, user_id=None, email=None):
 
                 query = f'''SELECT {', '.join(select_cols)}
                      FROM proposals
+                     WHERE LOWER(COALESCE(status, '')) <> 'draft'
                      ORDER BY created_at DESC'''
                 cursor.execute(query)
 
