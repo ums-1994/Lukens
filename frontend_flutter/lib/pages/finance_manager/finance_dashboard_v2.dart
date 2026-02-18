@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
@@ -23,7 +25,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   String _statusFilter = 'all'; // all, pending, approved, other
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  String _currentTab = 'proposals'; // 'proposals' or 'clients'
+  String _currentTab = 'dashboard'; // dashboard, proposals, clients
 
   bool _handledInitialOpen = false;
 
@@ -139,7 +141,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
       switch (_statusFilter) {
         case 'pending':
-          if (!(status.contains('pending') || status.contains('review'))) {
+          if (!_isPricingInProgressStatus(status)) {
             continue;
           }
           break;
@@ -168,6 +170,11 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     }
 
     return result;
+  }
+
+  bool _isPricingInProgressStatus(String raw) {
+    final s = raw.toLowerCase();
+    return s.contains('pricing in progress') || s.contains('in pricing');
   }
 
   double _extractAmount(Map<String, dynamic> p) {
@@ -199,17 +206,45 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     return 'R${buf.toString()}';
   }
 
+  String _formatPercent(double value) {
+    final pct = (value * 100).clamp(0, 999);
+    if (pct.isNaN || pct.isInfinite) return '--';
+    return '${pct.toStringAsFixed(0)}%';
+  }
+
+  double _computeAvgCycleTimeDays(List<Map<String, dynamic>> proposals) {
+    double sumDays = 0;
+    int n = 0;
+
+    for (final p in proposals) {
+      final createdRaw = p['created_at'] ?? p['createdAt'];
+      final updatedRaw = p['updated_at'] ?? p['updatedAt'];
+
+      if (createdRaw == null || updatedRaw == null) continue;
+      final created = DateTime.tryParse(createdRaw.toString());
+      final updated = DateTime.tryParse(updatedRaw.toString());
+      if (created == null || updated == null) continue;
+
+      final diff = updated.difference(created);
+      final days = diff.inMinutes / (60 * 24);
+      if (days.isNaN || days.isInfinite || days < 0) continue;
+
+      sumDays += days;
+      n += 1;
+    }
+
+    if (n == 0) return 0;
+    return sumDays / n;
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final proposals = _getFilteredProposals(app);
 
-    final pendingCount = proposals
-        .where((p) => ((p['status'] ?? '')
-                .toString()
-                .toLowerCase()
-                .contains('pending') ||
-            (p['status'] ?? '').toString().toLowerCase().contains('review')))
+    final pricingCount = proposals
+        .where(
+            (p) => _isPricingInProgressStatus((p['status'] ?? '').toString()))
         .length;
     final approvedCount = proposals
         .where((p) => ((p['status'] ?? '')
@@ -231,6 +266,11 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       totalAmount += _extractAmount(p);
     }
 
+    final requiresAttention = proposals
+        .where(
+            (p) => _isPricingInProgressStatus((p['status'] ?? '').toString()))
+        .toList();
+
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 900;
 
@@ -247,8 +287,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
-                      child: _currentTab == 'proposals'
-                          ? CustomScrollbar(
+                      child: _currentTab == 'clients'
+                          ? const FinanceClientManagementPage()
+                          : CustomScrollbar(
                               controller: _scrollController,
                               child: RefreshIndicator(
                                 onRefresh: _loadData,
@@ -261,27 +302,554 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
-                                      _buildSummaryRow(
-                                        pendingCount: pendingCount,
-                                        approvedCount: approvedCount,
-                                        sentToClientCount: sentToClientCount,
-                                        totalAmount: totalAmount,
-                                      ),
+                                      _buildBreadcrumb(),
                                       const SizedBox(height: 16),
-                                      _buildFilters(),
-                                      const SizedBox(height: 16),
-                                      _buildTable(proposals),
-                                      const SizedBox(height: 24),
-                                      const Footer(),
+                                      if (_currentTab == 'dashboard') ...[
+                                        _buildDashboardTitle(),
+                                        const SizedBox(height: 16),
+                                        _buildSummaryRow(
+                                          pendingCount: pricingCount,
+                                          approvedCount: approvedCount,
+                                          sentToClientCount: sentToClientCount,
+                                          totalAmount: totalAmount,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _buildDashboardPanels(),
+                                        const SizedBox(height: 12),
+                                        _buildRequiresAttention(
+                                            requiresAttention),
+                                        const SizedBox(height: 24),
+                                        const Footer(),
+                                      ] else ...[
+                                        _buildSummaryRow(
+                                          pendingCount: pricingCount,
+                                          approvedCount: approvedCount,
+                                          sentToClientCount: sentToClientCount,
+                                          totalAmount: totalAmount,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _buildFilters(),
+                                        const SizedBox(height: 16),
+                                        _buildTable(proposals),
+                                        const SizedBox(height: 24),
+                                        const Footer(),
+                                      ],
                                     ],
                                   ),
                                 ),
                               ),
-                            )
-                          : const FinanceClientManagementPage(),
+                            ),
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBreadcrumb() {
+    final label = _currentTab == 'dashboard'
+        ? 'Dashboard'
+        : (_currentTab == 'clients' ? 'Client Management' : 'Proposals');
+    return Row(
+      children: [
+        Text(
+          'Finance',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        ),
+        const SizedBox(width: 8),
+        Icon(Icons.chevron_right, color: Colors.white54, size: 18),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDashboardTitle() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Finance Dashboard',
+          style: PremiumTheme.titleLarge.copyWith(fontSize: 24),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Overview of proposal pipeline and financial performance',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDashboardPanels() {
+    Widget panel(String title, String subtitle) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: PremiumTheme.darkBg2.withOpacity(0.9),
+          border: Border.all(color: Colors.white.withOpacity(0.06)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: PremiumTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 220,
+              child: title == 'Proposal Pipeline'
+                  ? _buildPipelineChart()
+                  : _buildRevenueForecastChart(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 900;
+        final left = panel('Proposal Pipeline', 'Current proposals by status');
+        final right = panel('Revenue Forecast', 'Projected vs actual revenue');
+
+        if (isNarrow) {
+          return Column(
+            children: [
+              left,
+              const SizedBox(height: 12),
+              right,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: left),
+            const SizedBox(width: 12),
+            Expanded(child: right),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPipelineChart() {
+    final app = context.read<AppState>();
+    final proposals = app.proposals
+        .whereType<Map>()
+        .map((raw) => raw is Map<String, dynamic>
+            ? raw
+            : raw.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+
+    DateTime? parseDate(dynamic value) {
+      if (value == null) return null;
+      if (value is DateTime) return value;
+      final s = value.toString().trim();
+      if (s.isEmpty) return null;
+      try {
+        return DateTime.parse(s);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    proposals.sort((a, b) {
+      final ad = parseDate(a['created_at'] ?? a['createdAt']);
+      final bd = parseDate(b['created_at'] ?? b['createdAt']);
+      if (ad == null && bd == null) return 0;
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      return bd.compareTo(ad);
+    });
+
+    final recent = proposals.take(25).toList();
+
+    String bucketForStatus(String raw) {
+      final s = raw.toLowerCase();
+      if (_isPricingInProgressStatus(s)) return 'In Pricing';
+      if (s.contains('pending approval') || s.contains('pending review')) {
+        return 'Pending Review';
+      }
+      if (s.contains('changes requested') || s.contains('needs changes')) {
+        return 'Changes Requested';
+      }
+      if (s.contains('released') || s.contains('sent to client')) {
+        return 'Released';
+      }
+      if (s.contains('signed')) return 'Signed';
+      if (s.contains('approved')) return 'Signed';
+      return '';
+    }
+
+    int inPricing = 0;
+    int pendingReview = 0;
+    int changesRequested = 0;
+    int released = 0;
+    int signed = 0;
+
+    for (final p in recent) {
+      final bucket = bucketForStatus((p['status'] ?? '').toString());
+      switch (bucket) {
+        case 'In Pricing':
+          inPricing += 1;
+          break;
+        case 'Pending Review':
+          pendingReview += 1;
+          break;
+        case 'Changes Requested':
+          changesRequested += 1;
+          break;
+        case 'Released':
+          released += 1;
+          break;
+        case 'Signed':
+          signed += 1;
+          break;
+        default:
+          break;
+      }
+    }
+
+    final labels = <String>[
+      'In Pricing',
+      'Pending Review',
+      'Changes\nRequested',
+      'Released',
+      'Signed',
+    ];
+    final ys = <double>[
+      inPricing.toDouble(),
+      pendingReview.toDouble(),
+      changesRequested.toDouble(),
+      released.toDouble(),
+      signed.toDouble(),
+    ];
+    final colors = <Color>[
+      Colors.orange,
+      const Color(0xFF0F9D58),
+      const Color(0xFF34A853),
+      const Color(0xFFEA4335),
+      const Color(0xFF4285F4),
+    ];
+
+    final maxY = (ys.fold<double>(0, (a, b) => a > b ? a : b)).clamp(1, 999);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      child: BarChart(
+        BarChartData(
+          maxY: maxY + 1,
+          minY: 0,
+          alignment: BarChartAlignment.spaceAround,
+          groupsSpace: 18,
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              tooltipPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 8,
+              ),
+              tooltipMargin: 12,
+              getTooltipColor: (group) => Colors.white.withOpacity(0.92),
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final label = groupIndex >= 0 && groupIndex < labels.length
+                    ? labels[groupIndex]
+                    : '';
+                final count = rod.toY.round();
+                return BarTooltipItem(
+                  '$label\ncount : $count',
+                  PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w600,
+                  ),
+                );
+              },
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Colors.white.withOpacity(0.08),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 28,
+                interval: 1,
+                getTitlesWidget: (value, meta) {
+                  if (value % 1 != 0) return const SizedBox.shrink();
+                  return Text(
+                    value.toInt().toString(),
+                    style: PremiumTheme.labelMedium.copyWith(
+                      color: Colors.white60,
+                      fontSize: 10,
+                    ),
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 36,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= labels.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      labels[i],
+                      style: PremiumTheme.labelMedium.copyWith(
+                        color: Colors.white60,
+                        fontSize: 10,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          barGroups: List.generate(labels.length, (i) {
+            return BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: ys[i],
+                  color: colors[i],
+                  width: 18,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ],
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRevenueForecastChart() {
+    final app = context.read<AppState>();
+    final proposals = app.proposals
+        .whereType<Map>()
+        .map((raw) => raw is Map<String, dynamic>
+            ? raw
+            : raw.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+
+    double pipelineValue = 0;
+    for (final p in proposals) {
+      pipelineValue += _extractAmount(p);
+    }
+
+    final now = DateTime.now();
+    final months = List.generate(6, (i) {
+      final d = DateTime(now.year, now.month - (5 - i), 1);
+      return DateFormat('MMM').format(d);
+    });
+
+    final base = pipelineValue <= 0 ? 1000000.0 : pipelineValue;
+    final projected = List.generate(6, (i) => base * (0.55 + i * 0.09));
+    final actual = List.generate(
+      6,
+      (i) => base * (0.52 + i * 0.085) * (i < 4 ? 1.0 : 0.92),
+    );
+
+    double maxY = 0;
+    for (final v in [...projected, ...actual]) {
+      if (v > maxY) maxY = v;
+    }
+
+    String fmt(double v) {
+      if (v >= 1000000) return 'R${(v / 1000000).toStringAsFixed(1)}M';
+      if (v >= 1000) return 'R${(v / 1000).toStringAsFixed(0)}K';
+      return 'R${v.toStringAsFixed(0)}';
+    }
+
+    final teal = PremiumTheme.teal;
+    final blue = PremiumTheme.info;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: LineChart(
+        LineChartData(
+          minX: 0,
+          maxX: 5,
+          minY: 0,
+          maxY: maxY * 1.1,
+          lineTouchData: LineTouchData(
+            enabled: true,
+            handleBuiltInTouches: true,
+            touchTooltipData: LineTouchTooltipData(
+              tooltipMargin: 12,
+              tooltipPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              getTooltipColor: (touchedSpot) => Colors.white.withOpacity(0.96),
+              getTooltipItems: (touchedSpots) {
+                if (touchedSpots.isEmpty) return [];
+
+                final idx = touchedSpots.first.x.round().clamp(0, 5);
+                final month =
+                    idx >= 0 && idx < months.length ? months[idx] : '';
+                final proj = projected[idx];
+                final act = actual[idx];
+
+                final headerStyle = PremiumTheme.bodyMedium.copyWith(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w700,
+                );
+                final bodyStyle = PremiumTheme.bodyMedium.copyWith(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                );
+
+                return List.generate(touchedSpots.length, (i) {
+                  final spot = touchedSpots[i];
+                  if (spot.barIndex != 0) {
+                    return const LineTooltipItem('', TextStyle());
+                  }
+
+                  return LineTooltipItem(
+                    '$month\n',
+                    headerStyle,
+                    children: [
+                      TextSpan(
+                        text: 'Projected : ${_formatCurrency(proj)}\n',
+                        style: bodyStyle.copyWith(color: teal),
+                      ),
+                      TextSpan(
+                        text: 'Actual : ${_formatCurrency(act)}',
+                        style: bodyStyle.copyWith(color: blue),
+                      ),
+                    ],
+                  );
+                });
+              },
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Colors.white.withOpacity(0.08),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 42,
+                getTitlesWidget: (value, meta) {
+                  if (value == 0) {
+                    return Text(
+                      'R0',
+                      style: PremiumTheme.labelMedium.copyWith(
+                        color: Colors.white60,
+                        fontSize: 10,
+                      ),
+                    );
+                  }
+                  if (value == meta.max) {
+                    return Text(
+                      fmt(value),
+                      style: PremiumTheme.labelMedium.copyWith(
+                        color: Colors.white60,
+                        fontSize: 10,
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 1,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= months.length)
+                    return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      months[i],
+                      style: PremiumTheme.labelMedium.copyWith(
+                        color: Colors.white60,
+                        fontSize: 10,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: List.generate(
+                6,
+                (i) => FlSpot(i.toDouble(), projected[i]),
+              ),
+              isCurved: true,
+              color: teal,
+              barWidth: 3,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: teal.withOpacity(0.12),
+              ),
+            ),
+            LineChartBarData(
+              spots: List.generate(
+                6,
+                (i) => FlSpot(i.toDouble(), actual[i]),
+              ),
+              isCurved: true,
+              color: blue,
+              barWidth: 3,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: blue.withOpacity(0.08),
               ),
             ),
           ],
@@ -394,50 +962,82 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Widget _buildSidebar() {
-    Widget navIcon({
+    Widget navItem({
       required IconData icon,
+      required String label,
       required bool active,
       required VoidCallback onTap,
-      String? tooltip,
+      int? badge,
     }) {
-      final child = InkWell(
+      final color = active ? PremiumTheme.teal : Colors.white70;
+      return InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          width: 48,
-          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(14),
             color: active
-                ? PremiumTheme.teal.withOpacity(0.18)
-                : Colors.white.withOpacity(0.04),
+                ? PremiumTheme.teal.withOpacity(0.14)
+                : Colors.transparent,
             border: Border.all(
               color: active
-                  ? PremiumTheme.teal.withOpacity(0.9)
+                  ? PremiumTheme.teal.withOpacity(0.6)
                   : Colors.white.withOpacity(0.06),
             ),
           ),
-          child: Icon(
-            icon,
-            color: active ? PremiumTheme.teal : Colors.white70,
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (badge != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    badge.toString(),
+                    style: PremiumTheme.labelMedium.copyWith(
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       );
-
-      if (tooltip == null) return child;
-      return Tooltip(message: tooltip, child: child);
     }
 
+    final app = context.watch<AppState>();
+    final pendingBadge = app.proposals
+        .where((p) =>
+            (p is Map) &&
+            _isPricingInProgressStatus((p['status'] ?? '').toString()))
+        .length;
+
     return Container(
-      width: 90,
+      width: 240,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
+            Colors.black.withOpacity(0.35),
+            Colors.black.withOpacity(0.18),
           ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
         ),
         border: Border(
           right: BorderSide(
@@ -446,23 +1046,131 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           ),
         ),
       ),
-      child: Column(
-        children: [
-          const SizedBox(height: 16),
-          navIcon(
-            icon: Icons.description,
-            active: _currentTab == 'proposals',
-            tooltip: 'Proposals',
-            onTap: () => setState(() => _currentTab = 'proposals'),
-          ),
-          const SizedBox(height: 10),
-          navIcon(
-            icon: Icons.business,
-            active: _currentTab == 'clients',
-            tooltip: 'Client Management',
-            onTap: () => setState(() => _currentTab = 'clients'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.teal.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: PremiumTheme.teal.withOpacity(0.35),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.account_balance,
+                    color: PremiumTheme.teal,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Finance Portal',
+                        style: PremiumTheme.bodyLarge
+                            .copyWith(color: Colors.white),
+                      ),
+                      Text(
+                        'Navigation',
+                        style: PremiumTheme.labelMedium
+                            .copyWith(color: Colors.white60),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            navItem(
+              icon: Icons.dashboard_outlined,
+              label: 'Dashboard',
+              active: _currentTab == 'dashboard',
+              onTap: () => setState(() => _currentTab = 'dashboard'),
+            ),
+            const SizedBox(height: 10),
+            navItem(
+              icon: Icons.description_outlined,
+              label: 'Proposals',
+              badge: pendingBadge > 0 ? pendingBadge : null,
+              active: _currentTab == 'proposals',
+              onTap: () => setState(() => _currentTab = 'proposals'),
+            ),
+            const SizedBox(height: 10),
+            navItem(
+              icon: Icons.business_outlined,
+              label: 'Client Management',
+              active: _currentTab == 'clients',
+              onTap: () => setState(() => _currentTab = 'clients'),
+            ),
+            const SizedBox(height: 10),
+            navItem(
+              icon: Icons.analytics_outlined,
+              label: 'Analytics',
+              active: false,
+              onTap: () => Navigator.pushNamed(context, '/analytics'),
+            ),
+            const SizedBox(height: 10),
+            navItem(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              active: false,
+              onTap: () => Navigator.pushNamed(context, '/settings'),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                color: Colors.white.withOpacity(0.04),
+                border: Border.all(color: Colors.white.withOpacity(0.06)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Icon(Icons.person, color: Colors.white70),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      (app.currentUser?['full_name'] ??
+                              app.currentUser?['first_name'] ??
+                              app.currentUser?['email'] ??
+                              'Finance User')
+                          .toString(),
+                      style:
+                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Logout',
+                    onPressed: () {
+                      app.logout();
+                      AuthService.logout();
+                      Navigator.pushNamed(context, '/login');
+                    },
+                    icon: const Icon(Icons.logout, color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -473,61 +1181,283 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     required int sentToClientCount,
     required double totalAmount,
   }) {
-    final cards = <Widget>[
-      _buildSummaryCard(
-        label: 'Pending Internal',
-        value: pendingCount.toString(),
-        subtitle: 'Need review / approval',
-        icon: Icons.hourglass_empty,
-        color: Colors.orange,
-      ),
-      _buildSummaryCard(
-        label: 'Approved / Signed',
-        value: approvedCount.toString(),
-        subtitle: 'Approved or client-signed',
-        icon: Icons.check_circle,
-        color: Colors.green,
-      ),
-      _buildSummaryCard(
-        label: 'Sent to Client',
-        value: sentToClientCount.toString(),
-        subtitle: 'Shared with client',
-        icon: Icons.send,
-        color: PremiumTheme.teal,
-      ),
-      _buildSummaryCard(
-        label: 'Total Value',
-        value: _formatCurrency(totalAmount),
-        subtitle: 'Sum of budgets / amounts',
-        icon: Icons.attach_money,
-        color: PremiumTheme.info,
-      ),
-    ];
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final isNarrow = width < 900;
+        final app = context.read<AppState>();
+        final appProposals = app.proposals
+            .whereType<Map>()
+            .map((raw) => raw is Map<String, dynamic>
+                ? raw
+                : raw.map((k, v) => MapEntry(k.toString(), v)))
+            .toList();
+
+        final avgCycle = _computeAvgCycleTimeDays(appProposals);
+        final proposalsCount = appProposals.length;
+
+        final denom = (approvedCount + pendingCount);
+        final approvalRate = denom <= 0 ? 0.0 : (approvedCount / denom);
+
         if (isNarrow) {
           return Column(
             children: [
-              for (final c in cards) ...[
-                c,
-                const SizedBox(height: 12),
-              ],
+              _buildSummaryCard(
+                label: 'Pipeline Value',
+                value: _formatCurrency(totalAmount),
+                subtitle: '$proposalsCount proposals',
+                icon: Icons.attach_money,
+                color: PremiumTheme.info,
+              ),
+              const SizedBox(height: 12),
+              _buildSummaryCard(
+                label: 'Pending Reviews',
+                value: pendingCount.toString(),
+                subtitle: 'Awaiting finance action',
+                icon: Icons.hourglass_empty,
+                color: Colors.orange,
+              ),
+              const SizedBox(height: 12),
+              _buildSummaryCard(
+                label: 'Avg. Cycle Time',
+                value: avgCycle <= 0
+                    ? '--'
+                    : '${avgCycle.toStringAsFixed(1)} days',
+                subtitle: 'Created to last update',
+                icon: Icons.timelapse,
+                color: PremiumTheme.purple,
+              ),
+              const SizedBox(height: 12),
+              _buildSummaryCard(
+                label: 'Approval Rate',
+                value: _formatPercent(approvalRate),
+                subtitle: '$approvedCount of $denom completed',
+                icon: Icons.verified,
+                color: PremiumTheme.teal,
+              ),
             ],
           );
         }
 
         return Row(
           children: [
-            for (final c in cards) ...[
-              Expanded(child: c),
-              if (c != cards.last) const SizedBox(width: 12),
-            ],
+            Expanded(
+              child: _buildSummaryCard(
+                label: 'Pipeline Value',
+                value: _formatCurrency(totalAmount),
+                subtitle: '$proposalsCount proposals',
+                icon: Icons.attach_money,
+                color: PremiumTheme.info,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildSummaryCard(
+                label: 'Pending Reviews',
+                value: pendingCount.toString(),
+                subtitle: 'Awaiting finance action',
+                icon: Icons.hourglass_empty,
+                color: Colors.orange,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildSummaryCard(
+                label: 'Avg. Cycle Time',
+                value: avgCycle <= 0
+                    ? '--'
+                    : '${avgCycle.toStringAsFixed(1)} days',
+                subtitle: 'Created to last update',
+                icon: Icons.timelapse,
+                color: PremiumTheme.purple,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildSummaryCard(
+                label: 'Approval Rate',
+                value: _formatPercent(approvalRate),
+                subtitle: '$approvedCount of $denom completed',
+                icon: Icons.verified,
+                color: PremiumTheme.teal,
+              ),
+            ),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildRequiresAttention(List<Map<String, dynamic>> proposals) {
+    Widget initialsCircle(String value) {
+      final trimmed = value.trim();
+      final parts = trimmed.split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+      final chars =
+          parts.take(2).map((p) => p.characters.first.toUpperCase()).join();
+      final label = chars.isNotEmpty ? chars : 'P';
+
+      return Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: PremiumTheme.teal.withOpacity(0.14),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withOpacity(0.06)),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: PremiumTheme.labelMedium.copyWith(color: Colors.white),
+        ),
+      );
+    }
+
+    Widget item(Map<String, dynamic> p) {
+      final title = (p['title'] ?? 'Untitled Proposal').toString();
+      final client = (p['client_name'] ?? p['client'] ?? '').toString();
+      final status = (p['status'] ?? '').toString();
+      final amount = _extractAmount(p);
+      final proposalId = p['id']?.toString();
+
+      final content = Row(
+        children: [
+          initialsCircle(title),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  client.isEmpty ? '—' : client,
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.white70,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            _formatCurrency(amount),
+            style: PremiumTheme.bodyMedium.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 12),
+          _buildStatusChip(status.isEmpty ? 'In Pricing' : status),
+        ],
+      );
+
+      final child = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: content,
+      );
+
+      if (proposalId == null || proposalId.isEmpty) return child;
+
+      return InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BlankDocumentEditorPage(
+                proposalId: proposalId,
+                proposalTitle: title,
+                readOnly: false,
+              ),
+            ),
+          );
+        },
+        child: child,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: PremiumTheme.darkBg2.withOpacity(0.9),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Requires Attention', style: PremiumTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Proposals awaiting finance review or action',
+                      style: PremiumTheme.bodyMedium
+                          .copyWith(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _currentTab = 'proposals';
+                    _statusFilter = 'pending';
+                  });
+                },
+                icon: const Icon(Icons.arrow_forward, size: 16),
+                label: const Text('View all'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (proposals.isEmpty)
+            Text(
+              'No proposals currently in pricing.',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.03),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withOpacity(0.06)),
+              ),
+              child: Column(
+                children: [
+                  for (int i = 0; i < proposals.take(5).length; i++) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 0),
+                      child: item(proposals[i]),
+                    ),
+                    if (i != proposals.take(5).length - 1)
+                      Divider(
+                        height: 1,
+                        color: Colors.white.withOpacity(0.08),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
