@@ -799,26 +799,109 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
 
 @bp.delete("/proposals/<int:proposal_id>")
 @token_required
-def delete_proposal(username, proposal_id):
+def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
     """Delete a proposal"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Verify ownership
-            user_id = resolve_user_id(cursor, username)
-            if not user_id:
-                return jsonify({'detail': f"User '{username}' not found"}), 400
-            
-            cursor.execute("SELECT owner_id FROM proposals WHERE id = %s", (proposal_id,))
-            proposal = cursor.fetchone()
-            if not proposal or proposal[0] != user_id:
+
+            # Detect proposals ownership column based on actual schema
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            proposal_columns = [row[0] for row in cursor.fetchall()]
+            owner_col = 'owner_id' if 'owner_id' in proposal_columns else (
+                'user_id' if 'user_id' in proposal_columns else None
+            )
+            if not owner_col:
+                return jsonify({'detail': 'Proposals table is missing owner column'}), 500
+
+            # Resolve requester id (prefer token_required-provided numeric id)
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                resolved_user_id = resolve_user_id(cursor, username or email)
+            if not resolved_user_id:
+                return jsonify({'detail': f"User '{username or email}' not found"}), 400
+
+            # Determine requester role for admin delete capability
+            requester_role = None
+            try:
+                cursor.execute('SELECT role FROM users WHERE id = %s', (resolved_user_id,))
+                role_row = cursor.fetchone()
+                if role_row:
+                    requester_role = role_row[0]
+            except Exception:
+                requester_role = None
+            requester_role = (requester_role or '').strip().lower()
+            is_admin = requester_role in ['admin', 'ceo']
+
+            # Verify proposal exists and ownership (unless admin)
+            cursor.execute(
+                f"SELECT {owner_col} FROM proposals WHERE id = %s",
+                (proposal_id,),
+            )
+            proposal_row = cursor.fetchone()
+            if not proposal_row:
+                return jsonify({'detail': 'Proposal not found'}), 404
+
+            proposal_owner_id = proposal_row[0]
+            if not is_admin and str(proposal_owner_id) != str(resolved_user_id):
                 return jsonify({'detail': 'Proposal not found or access denied'}), 404
-            
+
+            # Best-effort cleanup of dependent rows for schemas without ON DELETE CASCADE.
+            # Only run DELETEs for tables that actually exist.
+            cursor.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                """
+            )
+            existing_tables = {row[0] for row in cursor.fetchall()}
+
+            dependent_tables = [
+                'approvals',
+                'client_dashboard_tokens',
+                'proposal_feedback',
+                'proposal_client_activity',
+                'proposal_client_session',
+                'proposal_versions',
+                'proposal_signatures',
+                'document_comments',
+                'section_locks',
+                'suggested_changes',
+                'collaboration_invitations',
+                'collaborators',
+                'client_proposals',
+                'activity_log',
+                'notifications',
+            ]
+            for table in dependent_tables:
+                if table in existing_tables:
+                    try:
+                        cursor.execute(
+                            f"DELETE FROM {table} WHERE proposal_id = %s",
+                            (proposal_id,),
+                        )
+                    except Exception:
+                        # Ignore cleanup errors to allow the main delete to surface a useful error
+                        pass
+
             cursor.execute('DELETE FROM proposals WHERE id = %s', (proposal_id,))
             conn.commit()
             return jsonify({'detail': 'Proposal deleted'}), 200
+    except psycopg2.IntegrityError as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'detail': 'Cannot delete proposal due to related records', 'error': str(e)}), 409
     except Exception as e:
+        traceback.print_exc()
         return jsonify({'detail': str(e)}), 500
 
 
