@@ -318,46 +318,40 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                             padding: const EdgeInsets.all(24),
                             child: LayoutBuilder(
                               builder: (context, constraints) {
-                                return Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    _buildDashboardWelcome(),
-                                    const SizedBox(height: 24),
-                                    _buildSummaryCardsRow(),
-                                    const SizedBox(height: 16),
-                                    _buildSecondaryCardsRow(),
-                                    const SizedBox(height: 24),
-                                    Expanded(
-                                      child: CustomScrollbar(
-                                        controller: _scrollController,
-                                        child: SingleChildScrollView(
-                                          controller: _scrollController,
-                                          physics:
-                                              const AlwaysScrollableScrollPhysics(),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              _buildSection(
-                                                'Proposals Awaiting Your Approval',
-                                                _isLoading
-                                                    ? const Center(
-                                                        child:
-                                                            CircularProgressIndicator())
-                                                    : _buildPendingApprovalsList(),
-                                              ),
-                                              const SizedBox(height: 24),
-                                              _buildSection(
-                                                'Recent Proposals',
-                                                _buildRecentProposalsTable(),
-                                              ),
-                                            ],
-                                          ),
+                                // Avoid bottom overflows on shorter viewports by
+                                // making the entire dashboard panel scrollable.
+                                return CustomScrollbar(
+                                  controller: _scrollController,
+                                  child: SingleChildScrollView(
+                                    controller: _scrollController,
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        _buildDashboardWelcome(),
+                                        const SizedBox(height: 24),
+                                        _buildSummaryCardsRow(),
+                                        const SizedBox(height: 16),
+                                        _buildSecondaryCardsRow(),
+                                        const SizedBox(height: 24),
+                                        _buildSection(
+                                          'Proposals Awaiting Your Approval',
+                                          _isLoading
+                                              ? const Center(
+                                                  child:
+                                                      CircularProgressIndicator())
+                                              : _buildPendingApprovalsList(),
                                         ),
-                                      ),
+                                        const SizedBox(height: 24),
+                                        _buildSection(
+                                          'Recent Proposals',
+                                          _buildRecentProposalsTable(),
+                                        ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 );
                               },
                             ),

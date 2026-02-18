@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import '../../config/app_constants.dart';
 
 class CinematicSequencePage extends StatefulWidget {
   const CinematicSequencePage({super.key});
@@ -152,46 +153,55 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     },
                   ),
                 ),
-                const SizedBox(height: 24), // Space after logo
-                // SCROLLABLE CONTENT SECTION
-                Expanded(
-                  // Takes remaining space
-                  child: SingleChildScrollView(
-                    // Scrollable area
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Landing page content that scrolls
-                        _buildAnimatedHeadline(isMobile),
-                        SizedBox(height: isMobile ? 24 : 40),
-                        _buildSubheading(isMobile),
-                        SizedBox(
-                            height: isMobile
-                                ? 20
-                                : 32), // Reduced spacing for better 100% zoom
-                        _buildCTAButtons(isMobile),
-                        SizedBox(
-                            height: isMobile
-                                ? 30
-                                : 40), // Reduced bottom spacing for better 100% zoom
-                        // Red Discs image (45% of logo size)
-                        Center(
-                          child: Image.asset(
-                            'assets/images/Red_Discs.png',
-                            width: 72,
-                            height: 72,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const SizedBox.shrink();
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: size.height - (isMobile ? 80 : 120),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Animated headline
+                      _buildAnimatedHeadline(isMobile),
+
+                      SizedBox(height: isMobile ? 24 : 40),
+
+                      // Subheading
+                      _buildSubheading(isMobile),
+
+                      SizedBox(height: isMobile ? 40 : 56),
+
+                      // CTA buttons
+                      _buildCTAButtons(isMobile),
+                    ],
                   ),
                 ),
-              ],
+              ),
+            ),
+          ),
+
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: IgnorePointer(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFF333333), width: 1),
+                ),
+                child: Text(
+                  AppConstants.fullVersion,
+                  style: const TextStyle(
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -237,6 +247,83 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildFloatingShapes() {
+    return AnimatedBuilder(
+      animation: _parallaxController,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            // Triangle 1 - Top Left
+            Positioned(
+              left: 120 +
+                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
+              top: 180 +
+                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
+              child: Transform.rotate(
+                angle: _parallaxController.value * 2 * math.pi,
+                child: CustomPaint(
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  size: const Size(70, 70),
+                ),
+              ),
+            ),
+
+            // Triangle 2 - Top Right
+            Positioned(
+              right: 140 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
+                      50),
+              top: 220 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
+                      35),
+              child: Transform.rotate(
+                angle: -_parallaxController.value * 2 * math.pi * 0.8,
+                child: CustomPaint(
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                  size: const Size(90, 90),
+                ),
+              ),
+            ),
+
+            // Triangle 3 - Bottom Left
+            Positioned(
+              left: 200 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 3) * 35),
+              bottom: 150 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 3) * 25),
+              child: Transform.rotate(
+                angle: _parallaxController.value * 2 * math.pi * 0.6,
+                child: CustomPaint(
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.03)),
+                  size: const Size(60, 60),
+                ),
+              ),
+            ),
+
+            // Triangle 4 - Center Right
+            Positioned(
+              right: 180 +
+                  (math.sin(_parallaxController.value * 2 * math.pi + 4) * 45),
+              top: 400 +
+                  (math.cos(_parallaxController.value * 2 * math.pi + 4) * 40),
+              child: Transform.rotate(
+                angle: -_parallaxController.value * 2 * math.pi * 0.7,
+                child: CustomPaint(
+                  painter:
+                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                  size: const Size(80, 80),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -335,8 +422,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFFE9293A)
-                            .withValues(alpha: glowIntensity),
+                        color:
+                            const Color(0xFFE9293A).withOpacity(glowIntensity),
                         blurRadius: 24,
                         spreadRadius: 4,
                       ),

@@ -4,6 +4,7 @@ import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
+import '../../config/app_constants.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -31,6 +32,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   ];
 
   int _currentFrameIndex = 0;
+  bool _framesPrecached = false;
 
   @override
   void initState() {
@@ -51,13 +53,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    _precacheFrames();
     _cycleBackgrounds();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // `precacheImage` depends on inherited widgets (e.g. MediaQuery), so it must
+    // not be called from `initState`.
+    if (_framesPrecached) return;
+    _framesPrecached = true;
+    _precacheFrames();
   }
 
   Future<void> _precacheFrames() async {
     for (final imagePath in _backgroundImages) {
-      await precacheImage(AssetImage(imagePath), context);
+      try {
+        await precacheImage(AssetImage(imagePath), context);
+      } catch (e) {
+        // Non-fatal: page can still render if precache fails.
+        // ignore: avoid_print
+        print('⚠️ Failed to precache image "$imagePath": $e');
+      }
     }
   }
 
@@ -318,6 +335,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   ),
                 ),
               ],
+            ),
+          ),
+
+          // Version overlay at bottom
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF333333), width: 1),
+              ),
+              child: Text(
+                AppConstants.fullVersion,
+                style: const TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
+import 'dart:async';
 import 'client_proposal_viewer.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
@@ -97,15 +98,30 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     });
 
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/client/proposals?token=$_accessToken'),
-      );
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/client/proposals?token=$_accessToken'),
+          )
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () {
+              throw TimeoutException('Request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map) {
+          throw Exception('Unexpected response format');
+        }
+        final data = Map<String, dynamic>.from(decoded);
+        final proposalsRaw = data['proposals'];
+        if (proposalsRaw is! List) {
+          throw Exception('Invalid token response (missing proposals)');
+        }
         setState(() {
           _clientEmail = data['client_email'];
-          _proposals = (data['proposals'] as List)
+          _proposals = proposalsRaw
               .map((p) => Map<String, dynamic>.from(p))
               .toList();
 
@@ -136,31 +152,57 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           _isLoading = false;
         });
       } else {
-        final error = jsonDecode(response.body);
+        Map<String, dynamic>? error;
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map) {
+            error = Map<String, dynamic>.from(decoded);
+          }
+        } catch (_) {}
         setState(() {
-          _error = error['detail'] ?? 'Failed to load proposals';
+          _error = error?['detail'] ??
+              'Failed to load proposals (HTTP ${response.statusCode})';
           _isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        _error = 'Error: $e';
+        _error = e is TimeoutException
+            ? 'This link timed out. Please retry or ask the sender to resend it.'
+            : 'Error: $e';
         _isLoading = false;
       });
     }
   }
 
   void _openProposal(Map<String, dynamic> proposal) {
+    final rawId = proposal['id'];
+    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
+      print(
+          '[ClientDashboardHome] Cannot open proposal: invalid id=$rawId tokenPresent=${_accessToken != null && _accessToken!.isNotEmpty}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open proposal (missing proposal id).'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    print('[ClientDashboardHome] Opening proposal in app: id=$proposalId');
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ClientProposalViewer(
-          proposalId: proposal['id'],
+          proposalId: proposalId,
           accessToken: _accessToken!,
         ),
       ),
     ).then((_) {
-      // Reload proposals when returning
       _loadClientProposals();
     });
   }
@@ -402,11 +444,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   style: PremiumTheme.titleMedium,
                 ),
                 const Spacer(),
-                Text(
-                  '${_proposals.length} ${_proposals.length == 1 ? 'proposal' : 'proposals'}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
+                Flexible(
+                  child: Text(
+                    '${_proposals.length} ${_proposals.length == 1 ? 'proposal' : 'proposals'}',
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.white70,
+                    ),
                   ),
                 ),
               ],
@@ -576,12 +622,17 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 6),
-          Text(
-            status,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              status,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

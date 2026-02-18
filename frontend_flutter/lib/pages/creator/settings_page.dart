@@ -217,11 +217,12 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ],
       ),
-      child: Row(
-        children: [
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+
           // Search Bar
-          Container(
-            width: 300,
+          final searchBar = Container(
             height: 40,
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
@@ -244,12 +245,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ),
-          ),
-
-          const Spacer(),
+          );
 
           // User Actions
-          Row(
+          final userActions = Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
                 onPressed: () {},
@@ -278,8 +278,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ],
-          ),
-        ],
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                searchBar,
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: userActions),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              SizedBox(width: 300, child: searchBar),
+              const Spacer(),
+              userActions,
+            ],
+          );
+        },
       ),
     );
   }
@@ -429,18 +448,19 @@ class _SettingsPageState extends State<SettingsPage> {
             decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
             ),
-            child: Row(
-              children: [
-                Text(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 720;
+                final title = Text(
                   _getSettingsTitle(),
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF1E293B),
                   ),
-                ),
-                const Spacer(),
-                ElevatedButton.icon(
+                );
+                final saveButton = ElevatedButton.icon(
                   onPressed: _isLoading ? null : _saveSettings,
                   icon: const Icon(Icons.save, size: 16),
                   label: const Text('Save Changes'),
@@ -455,8 +475,27 @@ class _SettingsPageState extends State<SettingsPage> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                ),
-              ],
+                );
+
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      title,
+                      const SizedBox(height: 12),
+                      Align(alignment: Alignment.centerRight, child: saveButton),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: title),
+                    const SizedBox(width: 12),
+                    saveButton,
+                  ],
+                );
+              },
             ),
           ),
 

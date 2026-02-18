@@ -2678,7 +2678,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
 
               // Save to backend database
               // If we're inside a folder, set parent_id to link the file to the folder
-              await app.createContentWithCloudinary(
+              final created = await app.createContentWithCloudinary(
                 fileKey,
                 fileName,
                 cloudinaryUrl,
@@ -2686,6 +2686,19 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 selectedCategory,
                 parentId: currentFolderId,
               );
+
+              if (!created) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'Upload succeeded but saving to content library failed. Please sign in again and retry.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+                return;
+              }
 
               // Force UI refresh
               if (mounted) {
@@ -4087,6 +4100,76 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     } catch (e) {
       return false;
     }
+  }
+
+  void _navigateToPage(BuildContext context, String label) {
+    final isAdmin = _isAdminUser();
+
+    switch (label) {
+      case 'Dashboard':
+        if (isAdmin) {
+          Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        } else {
+          Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        }
+        break;
+      case 'My Proposals':
+        Navigator.pushNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        // Already on content library
+        break;
+      case 'Client Management':
+        Navigator.pushNamed(context, '/client_management');
+        break;
+      case 'Approved Proposals':
+        Navigator.pushNamed(context, '/approved_proposals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        _handleLogout(context);
+        break;
+    }
+  }
+
+  void _handleLogout(BuildContext context) {
+    // Show confirmation dialog
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                // Perform logout
+                final app = context.read<AppState>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _addImageUrl(BuildContext context, AppState app) {

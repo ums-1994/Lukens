@@ -27,6 +27,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalTitle;
   final String? initialTitle;
   final Map<String, dynamic>? aiGeneratedSections;
+  final String? initialCoverImageUrl;
   final bool readOnly; // For approver view-only mode
   final bool
       isCollaborator; // For collaborator mode - hide navigation, show only editor
@@ -38,6 +39,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.proposalTitle,
     this.initialTitle,
     this.aiGeneratedSections,
+    this.initialCoverImageUrl,
     this.readOnly = false, // Default to editable
     this.isCollaborator = false, // Default to false
     this.requireVersionDescription = false,
@@ -177,8 +179,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
       final initialSection = DocumentSection(
-        title: 'Untitled Section',
+        title: widget.initialCoverImageUrl != null ? '' : 'Untitled Section',
         content: '',
+        backgroundImageUrl: widget.initialCoverImageUrl,
+        sectionType: widget.initialCoverImageUrl != null ? 'cover' : 'content',
+        isCoverPage: widget.initialCoverImageUrl != null,
       );
       _sections.add(initialSection);
 
@@ -199,6 +204,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Get auth token and load existing data if editing
     _initializeAuth();
+  }
+
+  bool _isTruthy(dynamic value) {
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1' || v == 't' || v == 'yes';
+    }
+    return false;
   }
 
   Future<void> _initializeAuth() async {
@@ -412,23 +427,36 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         _proposalData = Map<String, dynamic>.from(proposal);
       });
 
+      // Always set basic fields even if content is missing or not JSON
+      setState(() {
+        _proposalStatus = proposal['status'] ?? 'draft';
+        _clientNameController.text = (proposal['client_name'] ?? '').toString();
+        _clientEmailController.text =
+            (proposal['client_email'] ?? '').toString();
+        _titleController.text =
+            (proposal['title'] ?? 'Untitled Document').toString();
+      });
+
       // Parse the content JSON
       if (proposal['content'] != null) {
         try {
-          final contentData = json.decode(proposal['content']);
+          final dynamic rawContent = proposal['content'];
+          final dynamic contentData = rawContent is String
+              ? json.decode(rawContent)
+              : (rawContent is Map
+                  ? Map<String, dynamic>.from(rawContent)
+                  : null);
+
+          if (contentData == null) {
+            throw Exception('Unsupported content format');
+          }
 
           setState(() {
             // Set title
-            _titleController.text = contentData['title'] ??
-                proposal['title'] ??
-                'Untitled Document';
-
-            // Load proposal status
-            _proposalStatus = proposal['status'] ?? 'draft';
-
-            // Load client information
-            _clientNameController.text = proposal['client_name'] ?? '';
-            _clientEmailController.text = proposal['client_email'] ?? '';
+            _titleController.text = (contentData['title'] ??
+                    proposal['title'] ??
+                    'Untitled Document')
+                .toString();
 
             // Clear existing sections
             for (var section in _sections) {
@@ -443,17 +471,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             final List<dynamic> savedSections = contentData['sections'] ?? [];
             if (savedSections.isNotEmpty) {
               for (var sectionData in savedSections) {
+                final String sectionTypeRaw =
+                    (sectionData['sectionType'] ?? 'content').toString();
+                final String sectionTypeNormalized =
+                    sectionTypeRaw.trim().toLowerCase();
+                final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
+                    sectionTypeNormalized == 'cover';
                 final newSection = DocumentSection(
-                  title: sectionData['title'] ?? 'Untitled Section',
+                  title: (sectionData['title'] ??
+                          (isCover ? '' : 'Untitled Section'))
+                      .toString(),
                   content: sectionData['content'] ?? '',
                   backgroundColor: sectionData['backgroundColor'] != null
                       ? Color(sectionData['backgroundColor'] as int)
                       : Colors.white,
                   backgroundImageUrl:
                       sectionData['backgroundImageUrl'] as String?,
-                  sectionType:
-                      sectionData['sectionType'] as String? ?? 'content',
-                  isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+                  sectionType: sectionTypeRaw,
+                  isCoverPage: isCover,
                   inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
                           ?.map((img) =>
                               InlineImage.fromJson(img as Map<String, dynamic>))
@@ -520,6 +555,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
+
+          // Fallback: treat content as plain text so editor is never blank
+          final String fallbackText = proposal['content']?.toString() ?? '';
+          setState(() {
+            for (var section in _sections) {
+              section.controller.dispose();
+              section.titleController.dispose();
+              section.contentFocus.dispose();
+              section.titleFocus.dispose();
+            }
+            _sections.clear();
+
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: fallbackText,
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
+        }
+      } else {
+        // If backend returned no content, ensure we still have an editable section
+        if (_sections.isEmpty) {
+          setState(() {
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: '',
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
         }
       }
     } catch (e) {
@@ -882,7 +954,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickHeaderLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
@@ -907,7 +983,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _pickFooterLogo() async {
     final selectedModule = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
     );
 
     if (selectedModule == null) return;
@@ -1097,7 +1177,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        textOnly: true,
+        dialogTitle: 'Insert Text Block',
+      ),
     ).then((selectedModule) {
       if (selectedModule != null && _selectedSectionIndex < _sections.length) {
         // Insert the selected library content into the current section
@@ -2568,15 +2651,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
     for (var sectionData in savedSections) {
+      final String sectionTypeRaw =
+          (sectionData['sectionType'] ?? 'content').toString();
+      final String sectionTypeNormalized = sectionTypeRaw.trim().toLowerCase();
+      final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
+          sectionTypeNormalized == 'cover';
       final newSection = DocumentSection(
-        title: sectionData['title'] ?? 'Untitled Section',
+        title: (sectionData['title'] ?? (isCover ? '' : 'Untitled Section'))
+            .toString(),
         content: sectionData['content'] ?? '',
         backgroundColor: sectionData['backgroundColor'] != null
             ? Color(sectionData['backgroundColor'] as int)
             : Colors.white,
         backgroundImageUrl: sectionData['backgroundImageUrl'] as String?,
-        sectionType: sectionData['sectionType'] as String? ?? 'content',
-        isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+        sectionType: sectionTypeRaw,
+        isCoverPage: isCover,
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
             ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
             .toList(),
@@ -4061,413 +4150,455 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      child: Row(
-        children: [
-          // Title and badge
-          Expanded(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // When the sidebar opens/closes the available width changes; keep this
+          // header responsive to avoid RenderFlex overflows.
+          final isNarrow = constraints.maxWidth < 1100;
+
+          final titleAndBadge = Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey[300]!, width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.edit,
+                          size: 16, color: Color(0xFF00BCD4)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _titleController,
+                          enabled: !widget
+                              .readOnly, // Disable editing in read-only mode
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: widget.readOnly
+                                ? '' // No hint in read-only mode
+                                : 'Click to edit document title...',
+                            hintStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w400,
+                              color: Color(0xFFBDC3C7),
+                            ),
+                            border: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // View Only badge (show in read-only mode)
+              if (widget.readOnly) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF39C12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.visibility, size: 12, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text(
+                        'View Only',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          );
+
+          final actions = SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
+                // Price
+                Row(
+                  children: [
+                    Text(
+                      '${_getCurrencySymbol()} ',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 80,
+                      child: TextField(
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (value) {
+                          // Price value input - ready for future use
+                          setState(() {});
+                        },
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '0.00',
+                          hintStyle: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[400],
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide:
+                                BorderSide(color: Colors.grey[300]!, width: 1),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF00BCD4),
+                              width: 1,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                // Save status with version info
+                GestureDetector(
+                  onTap: _showVersionHistory,
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.grey[50],
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.grey[300]!, width: 1),
+                      color: _isSaving
+                          ? Colors.blue.withOpacity(0.1)
+                          : (_hasUnsavedChanges
+                              ? Colors.orange.withOpacity(0.1)
+                              : Colors.green.withOpacity(0.1)),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: _isSaving
+                            ? Colors.blue
+                            : (_hasUnsavedChanges ? Colors.orange : Colors.green),
+                        width: 1,
+                      ),
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.edit,
-                            size: 16, color: Color(0xFF00BCD4)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _titleController,
-                            enabled: !widget
-                                .readOnly, // Disable editing in read-only mode
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
+                        if (_isSaving)
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.blue),
                             ),
-                            decoration: InputDecoration(
-                              hintText: widget.readOnly
-                                  ? '' // No hint in read-only mode
-                                  : 'Click to edit document title...',
-                              hintStyle: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFFBDC3C7),
-                              ),
-                              border: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              contentPadding: EdgeInsets.zero,
-                              isDense: true,
-                            ),
+                          )
+                        else
+                          Icon(
+                            _hasUnsavedChanges
+                                ? Icons.pending
+                                : Icons.check_circle,
+                            size: 14,
+                            color: _hasUnsavedChanges
+                                ? Colors.orange
+                                : Colors.green,
+                          ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _isSaving
+                              ? 'Saving...'
+                              : (_hasUnsavedChanges
+                                  ? 'Unsaved changes'
+                                  : (_lastSaved == null ? 'Not Saved' : 'Saved')),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _isSaving
+                                ? Colors.blue[800]
+                                : (_hasUnsavedChanges
+                                    ? Colors.orange[800]
+                                    : Colors.green[800]),
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                // View Only badge (show in read-only mode)
-                if (widget.readOnly) ...[
-                  const SizedBox(width: 8),
+                const SizedBox(width: 12),
+                // Version history button
+                OutlinedButton.icon(
+                  onPressed: _showVersionHistory,
+                  icon: const Icon(Icons.history, size: 16),
+                  label: Text('v$_currentVersionNumber'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF00BCD4)),
+                    foregroundColor: const Color(0xFF00BCD4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Save and Close button
+                ElevatedButton.icon(
+                  onPressed: _saveAndClose,
+                  icon: const Icon(Icons.save, size: 16),
+                  label: const Text('Save and Close'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00BCD4),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Collaboration / Share button
+                OutlinedButton.icon(
+                  onPressed: () => _showCollaborationDialog(),
+                  icon: Icon(
+                    _isCollaborating ? Icons.people : Icons.person_add,
+                    size: 16,
+                  ),
+                  label: Text(_isCollaborating
+                      ? 'Collaborators (${_collaborators.length})'
+                      : 'Share'),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: _isCollaborating ? Colors.green : Colors.grey,
+                    ),
+                    foregroundColor:
+                        _isCollaborating ? Colors.green : Colors.black87,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Comments button
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _showCommentsPanel = !_showCommentsPanel;
+                    });
+
+                    // Load comments when panel is opened
+                    if (_showCommentsPanel && _savedProposalId != null) {
+                      _loadCommentsFromDatabase(_savedProposalId!);
+                    }
+                  },
+                  icon: const Icon(Icons.comment, size: 16),
+                  label: Text(
+                      'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF00BCD4)),
+                    foregroundColor: const Color(0xFF00BCD4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // More Actions menu (Share, Archive, etc.)
+                if (_savedProposalId != null)
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, size: 20),
+                    onSelected: (value) async {
+                      switch (value) {
+                        case 'share':
+                          _showCollaborationDialog();
+                          break;
+                        case 'archive':
+                          await _archiveProposal();
+                          break;
+                        case 'restore':
+                          await _restoreProposal();
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) {
+                      final isArchived =
+                          _proposalStatus?.toLowerCase() == 'archived';
+                      return [
+                        const PopupMenuItem(
+                          value: 'share',
+                          child: Row(
+                            children: [
+                              Icon(Icons.person_add_alt_1_outlined, size: 18),
+                              SizedBox(width: 8),
+                              Text('Share / Collaborate'),
+                            ],
+                          ),
+                        ),
+                        if (!isArchived)
+                          const PopupMenuItem(
+                            value: 'archive',
+                            child: Row(
+                              children: [
+                                Icon(Icons.archive_outlined, size: 18),
+                                SizedBox(width: 8),
+                                Text('Archive Proposal'),
+                              ],
+                            ),
+                          )
+                        else
+                          const PopupMenuItem(
+                            value: 'restore',
+                            child: Row(
+                              children: [
+                                Icon(Icons.unarchive_outlined, size: 18),
+                                SizedBox(width: 8),
+                                Text('Restore Proposal'),
+                              ],
+                            ),
+                          ),
+                      ];
+                    },
+                  ),
+                const SizedBox(width: 12),
+                // Status Badge
+                if (_proposalStatus != null && _proposalStatus != 'draft')
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF39C12),
-                      borderRadius: BorderRadius.circular(20),
+                      color: _getStatusColor(_proposalStatus!),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.visibility, size: 12, color: Colors.white),
-                        SizedBox(width: 4),
+                      children: [
+                        Icon(_getStatusIcon(_proposalStatus!),
+                            size: 14, color: Colors.white),
+                        const SizedBox(width: 6),
                         Text(
-                          'View Only',
-                          style: TextStyle(
+                          _getStatusLabel(_proposalStatus!),
+                          style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
+                if (_proposalStatus != null && _proposalStatus != 'draft')
+                  const SizedBox(width: 12),
+                // Send for Approval button
+                if (_proposalStatus == null || _proposalStatus == 'draft')
+                  ElevatedButton.icon(
+                    onPressed: _sendForApproval,
+                    icon: const Icon(Icons.send, size: 16),
+                    label: const Text('Send for Approval'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2ECC71),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                if (_proposalStatus == null || _proposalStatus == 'draft')
+                  const SizedBox(width: 12),
+                // Action buttons
+                OutlinedButton.icon(
+                  onPressed: _showPreview,
+                  icon: const Icon(Icons.visibility, size: 16),
+                  label: const Text('Preview'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.grey),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // User initials
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00BCD4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _getUserInitials(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
-          ),
-          const SizedBox(width: 24),
-          // Price
-          Row(
-            children: [
-              Text(
-                '${_getCurrencySymbol()} ',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-              SizedBox(
-                width: 80,
-                child: TextField(
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    // Price value input - ready for future use
-                    setState(() {});
-                  },
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide:
-                          BorderSide(color: Colors.grey[300]!, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF00BCD4),
-                        width: 1,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          // Save status with version info
-          GestureDetector(
-            onTap: _showVersionHistory,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isSaving
-                    ? Colors.blue.withOpacity(0.1)
-                    : (_hasUnsavedChanges
-                        ? Colors.orange.withOpacity(0.1)
-                        : Colors.green.withOpacity(0.1)),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: _isSaving
-                      ? Colors.blue
-                      : (_hasUnsavedChanges ? Colors.orange : Colors.green),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_isSaving)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                      ),
-                    )
-                  else
-                    Icon(
-                      _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
-                      size: 14,
-                      color: _hasUnsavedChanges ? Colors.orange : Colors.green,
-                    ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _isSaving
-                        ? 'Saving...'
-                        : (_hasUnsavedChanges
-                            ? 'Unsaved changes'
-                            : (_lastSaved == null ? 'Not Saved' : 'Saved')),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _isSaving
-                          ? Colors.blue[800]
-                          : (_hasUnsavedChanges
-                              ? Colors.orange[800]
-                              : Colors.green[800]),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Version history button
-          OutlinedButton.icon(
-            onPressed: _showVersionHistory,
-            icon: const Icon(Icons.history, size: 16),
-            label: Text('v$_currentVersionNumber'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF00BCD4)),
-              foregroundColor: const Color(0xFF00BCD4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Save and Close button
-          ElevatedButton.icon(
-            onPressed: _saveAndClose,
-            icon: const Icon(Icons.save, size: 16),
-            label: const Text('Save and Close'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00BCD4),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Collaboration / Share button
-          OutlinedButton.icon(
-            onPressed: () => _showCollaborationDialog(),
-            icon: Icon(
-              _isCollaborating ? Icons.people : Icons.person_add,
-              size: 16,
-            ),
-            label: Text(_isCollaborating
-                ? 'Collaborators (${_collaborators.length})'
-                : 'Share'),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: _isCollaborating ? Colors.green : Colors.grey,
-              ),
-              foregroundColor: _isCollaborating ? Colors.green : Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Comments button
-          OutlinedButton.icon(
-            onPressed: () {
-              setState(() {
-                _showCommentsPanel = !_showCommentsPanel;
-              });
+          );
 
-              // Load comments when panel is opened
-              if (_showCommentsPanel && _savedProposalId != null) {
-                _loadCommentsFromDatabase(_savedProposalId!);
-              }
-            },
-            icon: const Icon(Icons.comment, size: 16),
-            label: Text(
-                'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF00BCD4)),
-              foregroundColor: const Color(0xFF00BCD4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // More Actions menu (Share, Archive, etc.)
-          if (_savedProposalId != null)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 20),
-              onSelected: (value) async {
-                switch (value) {
-                  case 'share':
-                    _showCollaborationDialog();
-                    break;
-                  case 'archive':
-                    await _archiveProposal();
-                    break;
-                  case 'restore':
-                    await _restoreProposal();
-                    break;
-                }
-              },
-              itemBuilder: (context) {
-                final isArchived = _proposalStatus?.toLowerCase() == 'archived';
-                return [
-                  const PopupMenuItem(
-                    value: 'share',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person_add_alt_1_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Share / Collaborate'),
-                      ],
-                    ),
-                  ),
-                  if (!isArchived)
-                    const PopupMenuItem(
-                      value: 'archive',
-                      child: Row(
-                        children: [
-                          Icon(Icons.archive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Archive Proposal'),
-                        ],
-                      ),
-                    )
-                  else
-                    const PopupMenuItem(
-                      value: 'restore',
-                      child: Row(
-                        children: [
-                          Icon(Icons.unarchive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Restore Proposal'),
-                        ],
-                      ),
-                    ),
-                ];
-              },
-            ),
-          const SizedBox(width: 12),
-          // Status Badge
-          if (_proposalStatus != null && _proposalStatus != 'draft')
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _getStatusColor(_proposalStatus!),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_getStatusIcon(_proposalStatus!),
-                      size: 14, color: Colors.white),
-                  const SizedBox(width: 6),
-                  Text(
-                    _getStatusLabel(_proposalStatus!),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (_proposalStatus != null && _proposalStatus != 'draft')
-            const SizedBox(width: 12),
-          // Send for Approval button
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            ElevatedButton.icon(
-              onPressed: _sendForApproval,
-              icon: const Icon(Icons.send, size: 16),
-              label: const Text('Send for Approval'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2ECC71),
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            const SizedBox(width: 12),
-          // Action buttons
-          OutlinedButton.icon(
-            onPressed: _showPreview,
-            icon: const Icon(Icons.visibility, size: 16),
-            label: const Text('Preview'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.grey),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // User initials
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text(
-                _getUserInitials(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
-        ],
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titleAndBadge,
+                const SizedBox(height: 12),
+                actions,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: titleAndBadge),
+              const SizedBox(width: 24),
+              Flexible(child: actions),
+            ],
+          );
+        },
       ),
     );
   }
@@ -4796,11 +4927,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.length,
       (index) {
         final section = _sections[index];
-        final rawTitle = _titleController.text.trim();
-        final displayTitle = rawTitle.isEmpty || rawTitle == 'Untitled Document'
-            ? null
-            : rawTitle;
         final headerLogoWidget = _buildHeaderLogoWidget();
+        final isCover = section.isCoverPage ||
+            section.sectionType.trim().toLowerCase() == 'cover';
         return Container(
           width: pageWidth,
           height: pageHeight,
@@ -4813,10 +4942,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ? DecorationImage(
                     image: NetworkImage(section.backgroundImageUrl!),
                     fit: BoxFit.cover,
-                    opacity: 0.7, // Background image visibility
+                    opacity: isCover ? 1.0 : 0.7, // Full-bleed cover image
                   )
                 : null,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius:
+                isCover ? BorderRadius.zero : BorderRadius.circular(4),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.15),
@@ -4830,39 +4960,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ],
           ),
-          child: Column(
-            children: [
-              DocumentHeader(
-                title: displayTitle,
-                subtitle: null,
-                leading:
-                    _headerLogoPosition == 'left' ? headerLogoWidget : null,
-                center:
-                    _headerLogoPosition == 'center' ? headerLogoWidget : null,
-                trailing:
-                    _headerLogoPosition == 'right' ? headerLogoWidget : null,
-                backgroundImageUrl: _headerBackgroundImageUrl,
-                onTap: _pickHeaderLogo,
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 60,
-                      vertical: 24,
+          child: isCover
+              ? const SizedBox.expand()
+              : Column(
+                  children: [
+                    DocumentHeader(
+                      title: null,
+                      subtitle: null,
+                      leading: _headerLogoPosition == 'left'
+                          ? headerLogoWidget
+                          : null,
+                      center: _headerLogoPosition == 'center'
+                          ? headerLogoWidget
+                          : null,
+                      trailing: _headerLogoPosition == 'right'
+                          ? headerLogoWidget
+                          : null,
+                      backgroundImageUrl: _headerBackgroundImageUrl,
+                      onTap: _pickHeaderLogo,
                     ),
-                    child: _buildSectionContent(index),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 60,
+                            vertical: 24,
+                          ),
+                          child: _buildSectionContent(index),
+                        ),
+                      ),
+                    ),
+                    _buildDraggableFooter(
+                      pageNumber: index + 1,
+                      totalPages: _sections.length,
+                      showDivider: true,
+                      enableDragging: true,
+                    ),
+                  ],
                 ),
-              ),
-              _buildDraggableFooter(
-                pageNumber: index + 1,
-                totalPages: _sections.length,
-                showDivider: true,
-                enableDragging: true,
-              ),
-            ],
-          ),
         );
       },
     );
@@ -6316,9 +6451,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       builder: (BuildContext context) {
         return Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: SizedBox(
-            width: 400,
-            child: Padding(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 400,
+              // Prevent bottom overflow on shorter viewports by allowing scroll.
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -8577,13 +8716,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               // Match A4 layout used in _buildA4Pages
                               const double pageWidth = 900;
                               const double pageHeight = 1273;
-
-                              final rawTitle = _titleController.text.trim();
-                              final displayTitle = rawTitle.isEmpty ||
-                                      rawTitle == 'Untitled Document'
-                                  ? null
-                                  : rawTitle;
                               final headerLogoWidget = _buildHeaderLogoWidget();
+                              final isCover = section.isCoverPage ||
+                                  section.sectionType.trim().toLowerCase() ==
+                                      'cover';
 
                               return Container(
                                 width: pageWidth,
@@ -8598,10 +8734,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                           image: NetworkImage(
                                               section.backgroundImageUrl!),
                                           fit: BoxFit.cover,
-                                          opacity: 0.7,
+                                          opacity: isCover ? 1.0 : 0.7,
                                         )
                                       : null,
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: isCover
+                                      ? BorderRadius.zero
+                                      : BorderRadius.circular(4),
                                   boxShadow: [
                                     BoxShadow(
                                       color:
@@ -8611,84 +8749,97 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                     ),
                                   ],
                                 ),
-                                child: Column(
-                                  children: [
-                                    DocumentHeader(
-                                      title: displayTitle,
-                                      subtitle: null,
-                                      leading: _headerLogoPosition == 'left'
-                                          ? headerLogoWidget
-                                          : null,
-                                      center: _headerLogoPosition == 'center'
-                                          ? headerLogoWidget
-                                          : null,
-                                      trailing: _headerLogoPosition == 'right'
-                                          ? headerLogoWidget
-                                          : null,
-                                      backgroundImageUrl:
-                                          _headerBackgroundImageUrl,
-                                      showDivider: false,
-                                    ),
-                                    Expanded(
-                                      child: SingleChildScrollView(
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 60,
-                                            vertical: 24,
+                                child: isCover
+                                    ? const SizedBox.expand()
+                                    : Column(
+                                        children: [
+                                          DocumentHeader(
+                                            title: null,
+                                            subtitle: null,
+                                            leading:
+                                                _headerLogoPosition == 'left'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            center:
+                                                _headerLogoPosition == 'center'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            trailing:
+                                                _headerLogoPosition == 'right'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            backgroundImageUrl:
+                                                _headerBackgroundImageUrl,
+                                            showDivider: false,
                                           ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              // Section title
-                                              Text(
-                                                section.titleController.text
-                                                        .isEmpty
-                                                    ? 'Untitled Section'
-                                                    : section
-                                                        .titleController.text,
-                                                style: const TextStyle(
-                                                  fontSize: 24,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Color(0xFF1A3A52),
+                                          Expanded(
+                                            child: SingleChildScrollView(
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 60,
+                                                  vertical: 24,
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    // Section title
+                                                    Text(
+                                                      section.titleController
+                                                              .text.isEmpty
+                                                          ? 'Untitled Section'
+                                                          : section
+                                                              .titleController
+                                                              .text,
+                                                      style: const TextStyle(
+                                                        fontSize: 24,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color:
+                                                            Color(0xFF1A3A52),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 24),
+                                                    // Section content
+                                                    Text(
+                                                      section.controller.text
+                                                              .isEmpty
+                                                          ? '(No content in this section)'
+                                                          : section
+                                                              .controller.text,
+                                                      style: const TextStyle(
+                                                        fontSize: 14,
+                                                        color:
+                                                            Color(0xFF1A1A1A),
+                                                        height: 1.8,
+                                                        letterSpacing: 0.2,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 20),
+                                                    if (section
+                                                        .tables.isNotEmpty) ...[
+                                                      ...section.tables
+                                                          .map((table) =>
+                                                              _buildReadOnlyTable(
+                                                                  table))
+                                                          .toList(),
+                                                      const SizedBox(
+                                                          height: 12),
+                                                    ],
+                                                  ],
                                                 ),
                                               ),
-                                              const SizedBox(height: 24),
-                                              // Section content
-                                              Text(
-                                                section.controller.text.isEmpty
-                                                    ? '(No content in this section)'
-                                                    : section.controller.text,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  color: Color(0xFF1A1A1A),
-                                                  height: 1.8,
-                                                  letterSpacing: 0.2,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 20),
-                                              if (section
-                                                  .tables.isNotEmpty) ...[
-                                                ...section.tables
-                                                    .map((table) =>
-                                                        _buildReadOnlyTable(
-                                                            table))
-                                                    .toList(),
-                                                const SizedBox(height: 12),
-                                              ],
-                                            ],
+                                            ),
                                           ),
-                                        ),
+                                          _buildDraggableFooter(
+                                            pageNumber: index + 1,
+                                            totalPages: _sections.length,
+                                            showDivider: false,
+                                            enableDragging: false,
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                    _buildDraggableFooter(
-                                      pageNumber: index + 1,
-                                      totalPages: _sections.length,
-                                      showDivider: false,
-                                      enableDragging: false,
-                                    ),
-                                  ],
-                                ),
                               );
                             }).toList(),
                           ],

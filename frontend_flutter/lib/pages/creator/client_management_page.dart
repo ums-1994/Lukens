@@ -40,6 +40,186 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncRoute());
   }
 
+  bool _isFinanceUser() {
+    try {
+      final user = AuthService.currentUser;
+      final role = (user?['role']?.toString() ?? '').toLowerCase().trim();
+      return role == 'finance' ||
+          role == 'finance manager' ||
+          role == 'financial manager' ||
+          role == 'finance_manager' ||
+          role == 'financial_manager';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  void _showAddClientDialog() {
+    final companyController = TextEditingController();
+    final emailController = TextEditingController();
+    final contactController = TextEditingController();
+    final phoneController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              width: 520,
+              padding: const EdgeInsets.all(32),
+              decoration: PremiumTheme.glassCard(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: PremiumTheme.tealGradient,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.person_add_alt_1,
+                            color: Colors.white, size: 24),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Text(
+                          'Add Client',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildTextField(
+                    controller: companyController,
+                    label: 'Company Name',
+                    icon: Icons.business,
+                    hint: 'Acme Inc.',
+                  ),
+                  const SizedBox(height: 16),
+                  _buildTextField(
+                    controller: emailController,
+                    label: 'Client Email',
+                    icon: Icons.email,
+                    hint: 'client@company.com',
+                  ),
+                  const SizedBox(height: 16),
+                  _buildTextField(
+                    controller: contactController,
+                    label: 'Contact Person (Optional)',
+                    icon: Icons.person,
+                    hint: 'Jane Doe',
+                  ),
+                  const SizedBox(height: 16),
+                  _buildTextField(
+                    controller: phoneController,
+                    label: 'Phone (Optional)',
+                    icon: Icons.phone,
+                    hint: '+27 ...',
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Color(0xFFB0BEC5)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: () async {
+                          final company = companyController.text.trim();
+                          final email = emailController.text.trim();
+                          if (company.isEmpty || email.isEmpty) {
+                            _showSnackBar(
+                                'Please enter company name and client email');
+                            return;
+                          }
+
+                          Navigator.pop(ctx);
+                          setState(() => _loading = true);
+                          try {
+                            final token = AuthService.token;
+                            if (token == null) {
+                              _showSnackBar(
+                                  'Authentication error: Please log in again');
+                              return;
+                            }
+
+                            final result = await ClientService.createClient(
+                              token: token,
+                              companyName: company,
+                              email: email,
+                              contactPerson:
+                                  contactController.text.trim().isNotEmpty
+                                      ? contactController.text.trim()
+                                      : null,
+                              phone: phoneController.text.trim().isNotEmpty
+                                  ? phoneController.text.trim()
+                                  : null,
+                            );
+
+                            if (result != null && result['success'] == true) {
+                              _showSnackBar('Client added successfully',
+                                  isSuccess: true);
+                              await _loadData();
+                            } else {
+                              _showSnackBar(
+                                  'Failed to add client - check console for details');
+                            }
+                          } catch (e) {
+                            _showSnackBar('Error: $e');
+                          } finally {
+                            if (mounted) setState(() => _loading = false);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: PremiumTheme.teal,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 32, vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.save, size: 18),
+                            SizedBox(width: 8),
+                            Text('Save Client',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -1026,63 +1206,85 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   Widget _buildHeader() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.all(32),
-        decoration: PremiumTheme.glassCard(
-          gradientStart: PremiumTheme.cyan,
-          gradientEnd: PremiumTheme.teal,
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(Icons.people, color: Colors.white, size: 32),
-            ),
-            const SizedBox(width: 20),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Client Management',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Manage your clients and track onboarding progress',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFFE0F7FA),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ElevatedButton.icon(
-              onPressed: _showInviteDialog,
-              icon: const Icon(Icons.person_add, size: 20),
-              label: const Text('Invite Client',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: PremiumTheme.teal,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          decoration: PremiumTheme.glassCard(
+            gradientStart: PremiumTheme.cyan,
+            gradientEnd: PremiumTheme.teal,
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                elevation: 0,
+                child: const Icon(Icons.people, color: Colors.white, size: 32),
               ),
-            ),
-          ],
+              const SizedBox(width: 20),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Client Management',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Manage your clients and track onboarding progress',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFFE0F7FA),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_isFinanceUser()) ...[
+                ElevatedButton.icon(
+                  onPressed: _showAddClientDialog,
+                  icon: const Icon(Icons.add, size: 20),
+                  label: const Text('Add Client',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: PremiumTheme.teal,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              ElevatedButton.icon(
+                onPressed: _showInviteDialog,
+                icon: const Icon(Icons.person_add, size: 20),
+                label: const Text('Invite Client',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: PremiumTheme.teal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

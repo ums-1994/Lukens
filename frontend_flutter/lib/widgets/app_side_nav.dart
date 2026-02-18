@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/asset_service.dart';
+import '../theme/premium_theme.dart';
+import '../config/app_constants.dart';
 
 class AppSideNav extends StatefulWidget {
   const AppSideNav({
@@ -53,68 +55,75 @@ class _AppSideNavState extends State<AppSideNav> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmall = screenWidth < 768;
-    final effectiveCollapsed = isSmall ? true : widget.isCollapsed;
-
-    return Container(
-      width: effectiveCollapsed ? AppSideNav.collapsedWidth : AppSideNav.expandedWidth,
-      decoration: BoxDecoration(
-        color: AppSideNav.backgroundColor.withValues(alpha: 0.95),
-        border: Border(
-          right: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1),  // 10% white border
-            width: 1,
+    return GestureDetector(
+      onTap: () {
+        if (isCollapsed) onToggle();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: isCollapsed ? collapsedWidth : expandedWidth,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.black.withOpacity(0.3),
+              Colors.black.withOpacity(0.2),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          border: Border(
+            right: BorderSide(
+              color: PremiumTheme.glassWhiteBorder,
+              width: 1,
+            ),
           ),
         ),
-      ),
-      child: Column(
-        children: [
-          // Header Section
-          SizedBox(
-            height: AppSideNav.headerHeight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: InkWell(
-                onTap: () {
-                  if (!isSmall) {
-                    widget.onToggle();
-                  }
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppSideNav.hoverColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: effectiveCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!effectiveCollapsed)
-                        const Text(
-                          'Navigation',
-                          style: TextStyle(
-                            color: AppSideNav.textSecondary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              // Toggle button (always visible)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: InkWell(
+                  onTap: onToggle,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2C3E50),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: isCollapsed
+                          ? MainAxisAlignment.center
+                          : MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (!isCollapsed)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'Navigation',
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: isCollapsed ? 0 : 8),
+                          child: Icon(
+                            isCollapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_left,
+                            color: Colors.white,
                           ),
                         ),
-                      Icon(
-                        effectiveCollapsed
-                            ? Icons.keyboard_arrow_right
-                            : Icons.keyboard_arrow_left,
-                        color: AppSideNav.textPrimary,
-                        size: 20,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
 
           const SizedBox(height: 8),
 
@@ -135,28 +144,50 @@ class _AppSideNavState extends State<AppSideNav> {
             ),
           ),
 
-          const SizedBox(height: 12),
-
-          // Logout Section
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Column(
-              children: [
-                if (!effectiveCollapsed)
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    height: 1,
-                    color: Colors.white.withValues(alpha: 0.1),
-                  ),
-                _buildNavItem(
-                  label: 'Logout',
-                  assetPath: 'assets/images/Logout_KhonoBuzz.png',
-                  effectiveCollapsed: effectiveCollapsed,
+              // Bottom section - Logout
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  children: [
+                    if (!isCollapsed)
+                      Container(
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        height: 1,
+                        color: const Color(0xFF2C3E50),
+                      ),
+                    _buildItem('Logout', 'assets/images/Logout_KhonoBuzz.png'),
+                    if (!isCollapsed) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1A1F2E),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: const Color(0xFF2C3E50), width: 1),
+                          ),
+                          child: Text(
+                            AppConstants.fullVersion,
+                            style: const TextStyle(
+                              color: Color(0xFF9CA3AF),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -177,85 +208,50 @@ class _AppSideNavState extends State<AppSideNav> {
             ? const EdgeInsets.symmetric(vertical: 8)
             : const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: InkWell(
-          onTap: () => widget.onSelect(label),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            height: AppSideNav.itemHeight,
-            decoration: BoxDecoration(
-              // 📱 Expanded State (280px width)
-              color: effectiveCollapsed
-                  ? Colors.transparent  // All items transparent when collapsed
-                  : isActive
-                      ? AppSideNav.activeColor  // Red-orange background for active
-                      : isHovering
-                          ? AppSideNav.hoverColor  // Light blue-gray for hover
-                          : Colors.transparent,  // Transparent for inactive
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: effectiveCollapsed
-                  ? null
-                  : isActive
-                      ? [
-                          BoxShadow(
-                            color: AppSideNav.activeColor.withValues(alpha: 0.21), // 21% shadow
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : isHovering
-                          ? [
-                              BoxShadow(
-                                color: AppSideNav.hoverColor.withValues(alpha: 0.21), // 21% shadow
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-            ),
-            child: Row(
-              children: [
-                // Icon Container
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: effectiveCollapsed
-                        ? Colors.transparent
-                        : isActive
-                            ? AppSideNav.activeColor.withValues(alpha: 0.1)
-                            : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: _buildIcon(assetPath, isActive, effectiveCollapsed),
+          onTap: () => onSelect(label),
+          borderRadius: BorderRadius.circular(30),
+          child: _buildCollapsedIcon(assetPath, active),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => onSelect(label),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            // Keep row background transparent so the sidebar color is stable
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            // Use a subtle red border to indicate the active item
+            border: active
+                ? Border.all(color: const Color(0xFFE74C3C), width: 1)
+                : null,
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 54,
+                height: 54,
+                child: _buildWhiteCircleIcon(assetPath, active),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: active ? Colors.white : const Color(0xFFECF0F1),
+                    fontSize: 14,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
-                
-                // Text and arrow (only when expanded)
-                if (!effectiveCollapsed) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        color: isActive
-                            ? AppSideNav.textPrimary
-                            : AppSideNav.textSecondary,
-                        fontSize: 14,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  
-                  // Arrow indicator for active items
-                  if (isActive)
-                    const Icon(
-                      Icons.arrow_forward_ios,
-                      size: 12,
-                      color: AppSideNav.textPrimary,
-                    ),
-                ],
-              ],
-            ),
+              ),
+              if (active)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
+            ],
           ),
         ),
       ),
@@ -272,12 +268,5 @@ class _AppSideNavState extends State<AppSideNav> {
         fit: BoxFit.contain,
       ),
     );
-  }
-
-  bool _shouldHideItemForAdmin(String label) {
-    if (!widget.isAdmin) return false;
-    if (label == 'My Proposals') return true;
-    if (label == 'Analytics (My Pipeline)') return true;
-    return false;
   }
 }

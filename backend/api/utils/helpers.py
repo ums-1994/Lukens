@@ -19,8 +19,10 @@ try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
     from io import BytesIO
     PDF_AVAILABLE = True
 except ImportError:
@@ -167,6 +169,8 @@ def create_notification(
 
             if 'notification_type' in column_names:
                 add_column('notification_type', notification_type)
+            if 'type' in column_names:
+                add_column('type', notification_type)
             if 'title' in column_names:
                 add_column('title', title)
             if 'message' in column_names:
@@ -382,150 +386,565 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
         print(f"⚠️ Failed to process mentions: {e}")
 
 
-def generate_proposal_pdf(proposal_id, title, content, client_name=None, client_email=None):
+def generate_proposal_pdf(
+    proposal_id,
+    title,
+    content,
+    client_name=None,
+    client_email=None,
+    signer_name=None,
+    signer_title=None,
+    signed_date=None,
+):
     """Generate PDF from proposal content"""
     if not PDF_AVAILABLE:
         raise Exception("ReportLab not installed. PDF generation unavailable.")
-    
-    opportunity_id = None
-    engagement_stage = None
-    engagement_opened_at = None
-    owner_name = None
+    created_at = datetime.now()
 
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT p.opportunity_id, p.engagement_stage, p.engagement_opened_at, u.full_name
-                FROM proposals p
-                LEFT JOIN users u ON p.user_id = u.id
-                WHERE p.id = %s
-                """,
-                (proposal_id,),
+    import time
+    _t_start = time.perf_counter()
+
+    def _coerce_to_structured(value):
+        if value is None:
+            return {"sections": []}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, (list, tuple)):
+            return {"sections": list(value)}
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return {"sections": []}
+
+            # Guardrail: very large JSON strings can take a long time to parse and/or
+            # generate enormous PDF layout work. For the client preview, fail fast.
+            # (Download/export can still be used for full fidelity.)
+            if len(raw) > 500_000 and raw[:1] in ('{', '['):
+                return {
+                    "text": "[Content too large to render in preview. Please use Export PDF/Word.]",
+                    "sections": [],
+                }
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+                if isinstance(parsed, list):
+                    return {"sections": parsed}
+            except Exception:
+                pass
+            return {"text": raw, "sections": []}
+        return {"text": str(value), "sections": []}
+
+    def _normalize_sections(structured):
+        if not isinstance(structured, dict):
+            return []
+
+        candidates = []
+        for key in ("sections", "moduleContents", "modules", "content", "proposal"):
+            if key in structured:
+                candidates.append(structured.get(key))
+
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                items = []
+                for k, v in candidate.items():
+                    items.append({"title": str(k), "body": v})
+                if items:
+                    return items
+            if isinstance(candidate, list):
+                return candidate
+
+        if structured.get("text"):
+            return [{"title": "Proposal", "body": structured.get("text")}]
+
+        return []
+
+    def _find_cover_image_url(structured):
+        try:
+            if not isinstance(structured, dict):
+                return None
+
+            for key in (
+                'coverImageUrl',
+                'cover_image_url',
+                'coverUrl',
+                'cover_url',
+                'backgroundImageUrl',
+            ):
+                v = structured.get(key)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+
+            for section in _normalize_sections(structured) or []:
+                if not isinstance(section, dict):
+                    continue
+
+                is_cover = section.get('isCoverPage') or section.get('cover') or section.get('is_cover')
+                if is_cover:
+                    v = (
+                        section.get('backgroundImageUrl')
+                        or section.get('coverImageUrl')
+                        or section.get('coverUrl')
+                    )
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+
+                v = section.get('backgroundImageUrl')
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        except Exception:
+            return None
+        return None
+
+    def _fetch_cover_bytes(url: str):
+        if not url or not isinstance(url, str):
+            return None
+        url = url.strip()
+        if not (url.startswith('http://') or url.startswith('https://')):
+            return None
+        try:
+            import urllib.request
+
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                return resp.read()
+        except Exception:
+            return None
+
+    def _get_meta_dict(structured):
+        if not isinstance(structured, dict):
+            return {}
+        meta = structured.get('metadata')
+        if isinstance(meta, dict):
+            return meta
+        return {}
+
+    def _extract_logo_config(metadata: dict):
+        if not isinstance(metadata, dict):
+            return None, None, None, None
+        header_logo_url = metadata.get('headerLogoUrl') or metadata.get('header_logo_url')
+        footer_logo_url = metadata.get('footerLogoUrl') or metadata.get('footer_logo_url')
+        header_pos = (metadata.get('headerLogoPosition') or 'right')
+        footer_pos = (metadata.get('footerLogoPosition') or 'left')
+
+        if isinstance(header_logo_url, str):
+            header_logo_url = header_logo_url.strip()
+        else:
+            header_logo_url = None
+        if isinstance(footer_logo_url, str):
+            footer_logo_url = footer_logo_url.strip()
+        else:
+            footer_logo_url = None
+
+        header_pos = str(header_pos).strip().lower()
+        footer_pos = str(footer_pos).strip().lower()
+        if header_pos not in ('left', 'center', 'right'):
+            header_pos = 'right'
+        if footer_pos not in ('left', 'center', 'right'):
+            footer_pos = 'left'
+
+        return header_logo_url, footer_logo_url, header_pos, footer_pos
+
+    _SKIP_KEYS = {
+        'backgroundColor',
+        'backgroundImageUrl',
+        'inlineImages',
+        'images',
+        'tables',
+        'metadata',
+        'styles',
+        'style',
+        'layout',
+        'sectionType',
+        'isCoverPage',
+        'id',
+        'key',
+        'uuid',
+        'created_at',
+        'updated_at',
+        'createdAt',
+        'updatedAt',
+        'source',
+    }
+
+    _PREFERRED_TEXT_KEYS = (
+        'body',
+        'content',
+        'text',
+        'description',
+        'summary',
+        'value',
+    )
+
+    def _extract_text(value, *, depth: int = 0, max_depth: int = 6):
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            s = value
+            # Drop pathological strings (base64, long hashes, etc.) that can hang layout.
+            if len(s) > 5000:
+                ws = sum(1 for ch in s if ch.isspace())
+                if ws / max(len(s), 1) < 0.01:
+                    return ""
+                s = s[:20000]
+            return s
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+        if depth >= max_depth:
+            return ""
+
+        if isinstance(value, dict):
+            # Fast path: common text fields
+            for k in _PREFERRED_TEXT_KEYS:
+                v = value.get(k)
+                if isinstance(v, str) and v.strip():
+                    return _extract_text(v, depth=depth + 1, max_depth=max_depth)
+
+            # Otherwise, recursively collect text from non-noisy keys.
+            parts = []
+            for k, v in value.items():
+                if k in _SKIP_KEYS or k in ('sections', 'subsections'):
+                    continue
+                extracted = _extract_text(v, depth=depth + 1, max_depth=max_depth)
+                if extracted.strip():
+                    parts.append(extracted.strip())
+                if len(parts) >= 10:
+                    break
+            return "\n\n".join(parts)
+
+        if isinstance(value, (list, tuple)):
+            parts = []
+            for item in value[:25]:
+                extracted = _extract_text(item, depth=depth + 1, max_depth=max_depth)
+                if extracted.strip():
+                    parts.append(extracted.strip())
+                if len(parts) >= 25:
+                    break
+            return "\n\n".join(parts)
+
+        # Unknown types: avoid expensive serialization
+        return ""
+
+    def _as_paragraph_text(value):
+        text = _extract_text(value).strip()
+        if not text:
+            return ""
+
+        # Safety limit: prevent massive documents from taking minutes to lay out.
+        # Keep enough to be useful while ensuring the preview loads quickly.
+        max_chars = 120_000
+        if len(text) > max_chars:
+            text = text[:max_chars].rstrip() + "\n\n[Content truncated for preview]"
+        return text
+
+    def _render_body(elements, body, style_normal, style_bullet):
+        text = _as_paragraph_text(body).strip()
+        if not text:
+            return
+
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+        max_blocks = 400
+        blocks_rendered = 0
+        for block in [b.strip() for b in text.split("\n\n") if b.strip()]:
+            blocks_rendered += 1
+            if blocks_rendered > max_blocks:
+                elements.append(Paragraph("[Content truncated for preview]", style_normal))
+                elements.append(Spacer(1, 0.15 * inch))
+                break
+            lines = [ln.rstrip() for ln in block.split("\n")]
+            bullet_like = all(
+                (ln.lstrip().startswith(("- ", "* ", "• ")) for ln in lines if ln.strip())
             )
-            row = cursor.fetchone()
-            if row:
-                opportunity_id, engagement_stage, engagement_opened_at, owner_name = row
-    except Exception as e:
-        print(f"⚠️ Failed to load engagement metadata for proposal {proposal_id}: {e}")
+            if bullet_like and len(lines) > 1:
+                # Cap bullet lines per block to avoid pathological layouts.
+                if len(lines) > 100:
+                    lines = lines[:100]
+                for ln in lines:
+                    cleaned = ln.lstrip()
+                    cleaned = cleaned[2:] if cleaned[:2] in ("- ", "* ") else cleaned
+                    cleaned = cleaned[1:].lstrip() if cleaned.startswith("•") else cleaned
+                    if cleaned.strip():
+                        elements.append(
+                            Paragraph(f"• {html.escape(cleaned.strip())}", style_bullet)
+                        )
+                elements.append(Spacer(1, 0.15 * inch))
+            else:
+                elements.append(Paragraph(html.escape(block), style_normal))
+                elements.append(Spacer(1, 0.15 * inch))
 
-    from reportlab.lib.pagesizes import letter, A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
-    from io import BytesIO
-    
+    t_parse0 = time.perf_counter()
+    structured = _coerce_to_structured(content)
+    sections = _normalize_sections(structured)
+    t_parse_ms = (time.perf_counter() - t_parse0) * 1000.0
+
+    cover_url = _find_cover_image_url(structured)
+    cover_bytes = _fetch_cover_bytes(cover_url) if cover_url else None
+
+    metadata = _get_meta_dict(structured)
+    header_logo_url, footer_logo_url, header_logo_pos, footer_logo_pos = _extract_logo_config(metadata)
+    header_logo_bytes = _fetch_cover_bytes(header_logo_url) if header_logo_url else None
+    footer_logo_bytes = _fetch_cover_bytes(footer_logo_url) if footer_logo_url else None
+
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.75*inch, bottomMargin=0.75*inch)
-    
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=0.85 * inch,
+        rightMargin=0.85 * inch,
+        topMargin=1.05 * inch,
+        bottomMargin=1.0 * inch,
+        title=title or "Proposal",
+        author="ProposalHub",
+    )
+
     styles = getSampleStyleSheet()
     elements = []
-    
-    # Title
+
     title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        textColor='#2C3E50',
-        spaceAfter=16,
-        alignment=TA_CENTER
+        "CustomTitle",
+        parent=styles["Heading1"],
+        fontSize=26,
+        leading=30,
+        textColor="#2C3E50",
+        spaceAfter=22,
+        alignment=TA_CENTER,
     )
-    elements.append(Paragraph(html.escape(title or 'Untitled Proposal'), title_style))
-    elements.append(Spacer(1, 0.2*inch))
-
     meta_style = ParagraphStyle(
-        'Metadata',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor='#7F8C8D',
+        "Meta",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=12,
+        textColor="#666666",
+        alignment=TA_CENTER,
+        spaceAfter=10,
+    )
+    heading_style = ParagraphStyle(
+        "SectionHeading",
+        parent=styles["Heading2"],
+        fontSize=16,
+        leading=20,
+        textColor="#2C3E50",
+        spaceBefore=14,
+        spaceAfter=8,
+        keepWithNext=True,
+    )
+    subheading_style = ParagraphStyle(
+        "SubHeading",
+        parent=styles["Heading3"],
+        fontSize=12.5,
+        leading=16,
+        textColor="#2C3E50",
+        spaceBefore=10,
         spaceAfter=4,
+        keepWithNext=True,
+    )
+    content_style = ParagraphStyle(
+        "Body",
+        parent=styles["Normal"],
+        fontSize=11,
+        leading=16,
         alignment=TA_LEFT,
+        spaceAfter=6,
     )
 
-    meta_lines = []
-    if client_name or client_email:
-        if client_name and client_email:
-            meta_lines.append(f"Prepared for: {client_name} <{client_email}>")
-        elif client_name:
-            meta_lines.append(f"Prepared for: {client_name}")
-        else:
-            meta_lines.append(f"Prepared for: {client_email}")
+    bullet_style = ParagraphStyle(
+        "Bullet",
+        parent=content_style,
+        leftIndent=12,
+        firstLineIndent=0,
+        spaceAfter=2,
+    )
 
-    meta_parts = []
-    if opportunity_id:
-        meta_parts.append(f"Opp {opportunity_id}")
-    if engagement_stage:
-        meta_parts.append(f"Stage: {engagement_stage}")
-    if owner_name:
-        meta_parts.append(f"Owner: {owner_name}")
-    if engagement_opened_at:
-        try:
-            if isinstance(engagement_opened_at, datetime):
-                opened_str = engagement_opened_at.strftime('%Y-%m-%d')
+    if cover_bytes:
+        elements.append(Spacer(1, 0.01 * inch))
+        elements.append(PageBreak())
+
+    t_elements0 = time.perf_counter()
+
+    # Hard cap number of sections rendered in preview.
+    # Prevents huge proposals from generating thousands of Flowables.
+    max_sections = 80
+    if sections:
+        for idx, section in enumerate(sections[:max_sections]):
+            if isinstance(section, dict):
+                section_title = (
+                    section.get("title")
+                    or section.get("name")
+                    or section.get("label")
+                    or section.get("id")
+                    or "Section"
+                )
+                body = None
+                if "body" in section:
+                    body = section.get("body")
+                elif "content" in section:
+                    body = section.get("content")
+                elif "text" in section:
+                    body = section.get("text")
+
+                # Some builders store nested content.
+                if isinstance(body, dict):
+                    body = body.get("content") or body.get("text") or body
+
+                if body is None:
+                    body = section
             else:
-                opened_str = str(engagement_opened_at)
-            meta_parts.append(f"Opened: {opened_str}")
+                section_title = "Section"
+                body = section
+
+            section_title = str(section_title).replace("_", " ").strip() or "Section"
+            numbered_title = f"{idx + 1}. {section_title}".strip()
+            elements.append(Paragraph(html.escape(numbered_title), heading_style))
+
+            # Optional: render subsection blocks if the body is structured.
+            if isinstance(body, dict) and isinstance(body.get('subsections'), list):
+                for sub_idx, sub in enumerate(body.get('subsections') or []):
+                    if not isinstance(sub, dict):
+                        continue
+                    sub_title = (sub.get('title') or sub.get('name') or '').strip()
+                    sub_body = sub.get('body') if 'body' in sub else (sub.get('content') if 'content' in sub else sub.get('text'))
+                    if sub_title:
+                        elements.append(
+                            Paragraph(
+                                html.escape(f"{idx + 1}.{sub_idx + 1} {sub_title}"),
+                                subheading_style,
+                            )
+                        )
+                    _render_body(elements, sub_body, content_style, bullet_style)
+            else:
+                _render_body(elements, body, content_style, bullet_style)
+
+            elements.append(Spacer(1, 0.15 * inch))
+        if len(sections) > max_sections:
+            elements.append(Paragraph("[Additional sections omitted for preview]", content_style))
+    elif structured.get("text"):
+        _render_body(elements, structured.get("text"), content_style, bullet_style)
+    else:
+        elements.append(Paragraph("No content available.", content_style))
+
+    t_elements_ms = (time.perf_counter() - t_elements0) * 1000.0
+
+    elements.append(PageBreak())
+    elements.append(Paragraph("Signature", heading_style))
+    elements.append(Spacer(1, 0.3 * inch))
+    elements.append(Paragraph("Please sign in the space below.", content_style))
+    elements.append(Spacer(1, 0.35 * inch))
+    elements.append(
+        Paragraph(
+            "/sig1/",
+            ParagraphStyle(
+                "SigAnchor",
+                parent=styles["Normal"],
+                fontSize=1,
+                leading=1,
+            ),
+        )
+    )
+    elements.append(Spacer(1, 0.6 * inch))
+    elements.append(Paragraph("Name: ________________________________", content_style))
+    elements.append(Spacer(1, 0.15 * inch))
+    elements.append(Paragraph("Title: _________________________________", content_style))
+    elements.append(Spacer(1, 0.15 * inch))
+    elements.append(Paragraph("Date: _________________________________", content_style))
+
+    has_cover_page = bool(cover_bytes)
+    header_title = (title or "Proposal").strip() or "Proposal"
+
+    def _pos_x(pos: str, *, left_x: float, right_x: float, width: float):
+        if pos == 'left':
+            return left_x
+        if pos == 'center':
+            return (left_x + right_x) / 2.0 - (width / 2.0)
+        return right_x - width
+
+    def _draw_logo(c, _doc, *, img_bytes, y: float, height: float, pos: str):
+        if not img_bytes:
+            return
+        try:
+            page_width, _ = _doc.pagesize
+            img = ImageReader(BytesIO(img_bytes))
+            iw, ih = img.getSize()
+            if not iw or not ih:
+                return
+            width = height * (float(iw) / float(ih))
+            left_x = doc.leftMargin
+            right_x = page_width - doc.rightMargin
+            x = _pos_x(pos, left_x=left_x, right_x=right_x, width=width)
+            c.drawImage(img, x, y, width=width, height=height, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            return
+
+    def _draw_cover_page(c, _doc):
+        if not cover_bytes:
+            return
+        try:
+            page_width, page_height = _doc.pagesize
+            img = ImageReader(BytesIO(cover_bytes))
+            c.saveState()
+            c.drawImage(img, 0, 0, width=page_width, height=page_height, preserveAspectRatio=True, anchor='c')
+            c.restoreState()
         except Exception:
             pass
 
-    if meta_parts:
-        meta_lines.append("\u2022 ".join(meta_parts))
+    class _NumberedCanvas(canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._saved_page_states = []
 
-    for line in meta_lines:
-        elements.append(Paragraph(html.escape(line), meta_style))
-    if meta_lines:
-        elements.append(Spacer(1, 0.2*inch))
-    
-    # Content
-    content_style = ParagraphStyle(
-        'CustomContent',
-        parent=styles['Normal'],
-        fontSize=11,
-        leading=14,
-        alignment=TA_LEFT,
-        spaceAfter=12
+        def showPage(self):
+            self._saved_page_states.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total_pages = len(self._saved_page_states)
+            for state in self._saved_page_states:
+                self.__dict__.update(state)
+                self._draw_header_footer(total_pages)
+                super().showPage()
+            super().save()
+
+        def _draw_header_footer(self, total_pages: int):
+            page_width, page_height = doc.pagesize
+            page_num = self.getPageNumber()
+            if has_cover_page and page_num == 1:
+                return
+            self.saveState()
+            self.setFont("Helvetica", 8)
+            self.setFillColorRGB(0.25, 0.25, 0.25)
+
+            header_y = page_height - (0.75 * inch)
+            footer_y = 0.75 * inch
+
+            self.setStrokeColorRGB(0.85, 0.85, 0.85)
+            self.setLineWidth(0.5)
+            self.line(doc.leftMargin, header_y - 8, page_width - doc.rightMargin, header_y - 8)
+            self.line(doc.leftMargin, footer_y + 8, page_width - doc.rightMargin, footer_y + 8)
+
+            _draw_logo(self, doc, img_bytes=header_logo_bytes, y=header_y - 6, height=0.28 * inch, pos=header_logo_pos)
+            self.drawString(doc.leftMargin, header_y, header_title)
+
+            _draw_logo(self, doc, img_bytes=footer_logo_bytes, y=footer_y - 3, height=0.22 * inch, pos=footer_logo_pos)
+            footer_right = f"Page {page_num} of {total_pages}"
+            self.drawRightString(page_width - doc.rightMargin, footer_y, footer_right)
+            self.restoreState()
+
+    t_build0 = time.perf_counter()
+    doc.build(
+        elements,
+        canvasmaker=_NumberedCanvas,
+        onFirstPage=_draw_cover_page,
     )
-    
-    # Simple content parsing - split by paragraphs
-    if content:
-        for para in content.split('\n\n'):
-            if para.strip():
-                elements.append(Paragraph(html.escape(para.strip()), content_style))
-                elements.append(Spacer(1, 0.2*inch))
-    
-    # Signature placeholder
-    sig_style = ParagraphStyle(
-        'Signature',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor='#666666',
-        spaceBefore=0.5*inch
-    )
-    
-    elements.append(Paragraph("[SIGNATURE PLACEHOLDER: /sig1/]", sig_style))
-    elements.append(Spacer(1, 0.5*inch))
-    
-    # Footer
-    footer_style = ParagraphStyle(
-        'Footer',
-        parent=styles['Normal'],
-        fontSize=8,
-        textColor='#666666',
-        alignment=TA_CENTER
-    )
-    footer_text = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    if opportunity_id:
-        footer_text += f" | Opp {opportunity_id}"
-    if engagement_stage:
-        footer_text += f" | Stage: {engagement_stage}"
-    elements.append(Paragraph(footer_text, footer_style))
-    
-    doc.build(elements)
+    t_build_ms = (time.perf_counter() - t_build0) * 1000.0
+
+    total_ms = (time.perf_counter() - _t_start) * 1000.0
+    try:
+        print(
+            f"[PDF_GEN] proposal_id={proposal_id} parse_ms={t_parse_ms:.0f} elements_ms={t_elements_ms:.0f} build_ms={t_build_ms:.0f} total_ms={total_ms:.0f} sections={len(sections) if isinstance(sections, list) else 0}"
+        )
+    except Exception:
+        pass
     pdf_bytes = buffer.getvalue()
     buffer.close()
-    
     return pdf_bytes
 
 
@@ -534,6 +953,13 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
     Create DocuSign envelope with redirect signing (works on HTTP)
     Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
     """
+    if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+        return {
+            'disabled': True,
+            'reason': 'docusign_disabled',
+            'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+        }
+
     # Re-check DocuSign availability in case import failed at module load
     try:
         from docusign_esign import (

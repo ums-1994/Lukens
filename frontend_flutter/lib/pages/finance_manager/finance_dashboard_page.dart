@@ -891,6 +891,327 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     );
   }
 
+  // NOTE: Duplicate/unfinished dashboard implementation below was causing a
+  // duplicate `build()` method error and many undefined references.
+  // It’s commented out to keep this page compiling; remove if not needed.
+  /*
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final size = MediaQuery.of(context).size;
+    final isMobile = size.width < 900;
+    final isDesktop = size.width >= 1100;
+
+    final filteredPending = _filtered(_pendingProposals);
+    final filteredApproved = _filtered(_approvedProposals);
+    final filteredRejected = _filtered(_rejectedProposals);
+
+    final pendingSum = _sumAmount(filteredPending);
+    final approvedSum = _sumAmount(filteredApproved);
+    final rejectedSum = _sumAmount(filteredRejected);
+    final avgDeal = _avgAmount(_filtered(_allProposals));
+
+    final totalDecided = filteredApproved.length + filteredRejected.length;
+    final approvalRate = totalDecided == 0
+        ? 0.0
+        : (filteredApproved.length / totalDecided).clamp(0.0, 1.0);
+
+    final userRole = 'Finance';
+    final userName = app.currentUser?['full_name'] ?? 'Finance User';
+
+    return Scaffold(
+      body: Container(
+        color: Colors.transparent,
+        child: Column(
+          children: [
+            Container(
+              height: 70,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withOpacity(0.3),
+                    Colors.transparent,
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Finance Dashboard',
+                        style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Refresh',
+                          onPressed: _isLoading ? null : _loadFinanceData,
+                          icon: const Icon(Icons.refresh, color: Colors.white),
+                        ),
+                        ClipOval(
+                          child: Image.asset(
+                            'assets/images/User_Profile.png',
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        if (!isMobile) ...[
+                          const SizedBox(width: 10),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                userRole,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(width: 10),
+                        PopupMenuButton<String>(
+                          icon:
+                              const Icon(Icons.more_vert, color: Colors.white),
+                          onSelected: (value) {
+                            if (value == 'logout') {
+                              app.logout();
+                              AuthService.logout();
+                              Navigator.pushNamed(context, '/login');
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => const [
+                            PopupMenuItem<String>(
+                              value: 'logout',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.logout),
+                                  SizedBox(width: 8),
+                                  Text('Logout'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child:
+                          CircularProgressIndicator(color: PremiumTheme.teal),
+                    )
+                  : _loadError != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _loadError!,
+                                  textAlign: TextAlign.center,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: Colors.white.withOpacity(0.85),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                ElevatedButton.icon(
+                                  onPressed: _loadFinanceData,
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('Retry'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: PremiumTheme.teal,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : Row(
+                          children: [
+                            _buildSidebar(),
+                            Expanded(
+                              child: CustomScrollbar(
+                                controller: _scrollController,
+                                child: SingleChildScrollView(
+                                  controller: _scrollController,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Align(
+                                      alignment: Alignment.topCenter,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                            maxWidth: 1280),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Review proposals pending financial approval.',
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                color:
+                                                    PremiumTheme.textSecondary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 20),
+                                            _buildKpiRow(
+                                              pendingCount:
+                                                  filteredPending.length,
+                                              approvedCount:
+                                                  filteredApproved.length,
+                                              rejectedCount:
+                                                  filteredRejected.length,
+                                              pendingSum: pendingSum,
+                                              approvedSum: approvedSum,
+                                              rejectedSum: rejectedSum,
+                                              avgDeal: avgDeal,
+                                            ),
+                                            const SizedBox(height: 20),
+                                            _buildFiltersCard(),
+                                            const SizedBox(height: 20),
+                                            _buildChartsRow(
+                                              pendingSum: pendingSum,
+                                              approvedSum: approvedSum,
+                                              rejectedSum: rejectedSum,
+                                              approvalRate: approvalRate,
+                                            ),
+                                            const SizedBox(height: 28),
+                                            Builder(
+                                              builder: (context) {
+                                                void openProposal(
+                                                    Map<String, dynamic>
+                                                        proposal) {
+                                                  _selectProposal(proposal);
+                                                }
+
+                                                final leftColumn = Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .stretch,
+                                                  children: [
+                                                    _buildProposalSection(
+                                                      title:
+                                                          'Pending Finance Review',
+                                                      subtitle:
+                                                          'Awaiting finance decision',
+                                                      color: Colors.orange,
+                                                      icon:
+                                                          Icons.hourglass_empty,
+                                                      proposals:
+                                                          filteredPending,
+                                                      onOpen: openProposal,
+                                                    ),
+                                                    const SizedBox(height: 20),
+                                                    _buildProposalSection(
+                                                      title:
+                                                          'Recently Approved',
+                                                      subtitle:
+                                                          'Latest finance approvals',
+                                                      color: Colors.green,
+                                                      icon: Icons.check_circle,
+                                                      proposals:
+                                                          filteredApproved
+                                                              .take(6)
+                                                              .toList(),
+                                                      onOpen: openProposal,
+                                                    ),
+                                                    const SizedBox(height: 20),
+                                                    _buildProposalSection(
+                                                      title:
+                                                          'Recently Rejected',
+                                                      subtitle:
+                                                          'Latest finance rejections',
+                                                      color: Colors.red,
+                                                      icon: Icons.cancel,
+                                                      proposals:
+                                                          filteredRejected
+                                                              .take(6)
+                                                              .toList(),
+                                                      onOpen: openProposal,
+                                                    ),
+                                                  ],
+                                                );
+
+                                                if (isDesktop) {
+                                                  return Row(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Expanded(
+                                                          flex: 7,
+                                                          child: leftColumn),
+                                                      const SizedBox(width: 18),
+                                                      Expanded(
+                                                        flex: 5,
+                                                        child:
+                                                            _buildDetailsPanel(),
+                                                      ),
+                                                    ],
+                                                  );
+                                                }
+
+                                                return Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .stretch,
+                                                  children: [
+                                                    leftColumn,
+                                                    const SizedBox(height: 20),
+                                                    _buildDetailsPanel(),
+                                                  ],
+                                                );
+                                              },
+                                            ),
+                                            const SizedBox(height: 24),
+                                            const Footer(),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _selectProposal(Map<String, dynamic> proposal) {
     final amount = _extractAmount(proposal);
     setState(() {
@@ -2042,4 +2363,7 @@ class _BarChartPainter extends CustomPainter {
         oldDelegate.maxValue != maxValue ||
         oldDelegate.color != color;
   }
+}
+
+*/
 }

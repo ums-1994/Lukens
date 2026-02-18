@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS clients (
     name VARCHAR(150) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     organization VARCHAR(150),
+    region VARCHAR(80),
     role client_role_enum DEFAULT 'Client',
     token UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     is_active BOOLEAN DEFAULT true,
