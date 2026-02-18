@@ -416,6 +416,8 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client')
                 elif 'client_name' in existing_columns:
                     select_cols.append('client_name')
+                if 'budget' in existing_columns:
+                    select_cols.append('budget')
                 if 'created_at' in existing_columns:
                     select_cols.append('created_at')
                 if 'updated_at' in existing_columns:
@@ -621,7 +623,6 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             if is_finance:
                 for forbidden in [
                     'title',
-                    'content',
                     'client',
                     'client_name',
                     'client_email',
@@ -1011,6 +1012,9 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
                     'pdf_url': row_dict.get('pdf_url'),
                     'client_email': row_dict.get('client_email') or '',
                 }
+
+                if 'budget' in row_dict:
+                    response['budget'] = row_dict.get('budget')
 
                 if client_col:
                     response['client'] = row_dict.get(client_col) or ''

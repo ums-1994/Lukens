@@ -202,6 +202,7 @@ class ApiService {
     String? clientName,
     String? clientEmail,
     String? status,
+    double? budget,
   }) async {
     try {
       final response = await http.put(
@@ -213,6 +214,7 @@ class ApiService {
           'client_name': clientName,
           'client_email': clientEmail,
           'status': status,
+          if (budget != null) 'budget': budget,
         }),
       );
 

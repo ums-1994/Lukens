@@ -1570,7 +1570,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           // Add tables to the section's tables list
           if (tablesToInsert.isNotEmpty) {
-            currentSection.tables.addAll(tablesToInsert);
+            if (isFinanceRole) {
+              currentSection.tables.insertAll(0, tablesToInsert);
+            } else {
+              currentSection.tables.addAll(tablesToInsert);
+            }
           }
         });
 
@@ -2866,6 +2870,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ? 'Untitled Document'
         : _titleController.text;
     final content = _serializeDocumentContent();
+    final isFinanceRole = context.read<RoleService>().isFinance();
+    final computedBudget = _computePricingTotal();
 
     try {
       if (_savedProposalId == null) {
@@ -2921,6 +2927,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ? null
               : _clientEmailController.text.trim(),
           status: _proposalStatus ?? 'draft',
+          budget: isFinanceRole ? computedBudget : null,
         );
         print('✅ Proposal updated: $_savedProposalId');
         print('🔍 Update result: $result');
@@ -5432,7 +5439,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             index,
             tableIndex,
             table,
-            key: ValueKey('table_${index}_$tableIndex'),
           );
         }
         if (isManagerRole) {
@@ -5442,7 +5448,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           index,
           tableIndex,
           table,
-          key: ValueKey('table_${index}_$tableIndex'),
         );
       },
       onRemoveInlineImage: (imageIndex) {
@@ -5704,6 +5709,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Widget _buildTableContainer(int sectionIndex, int tableIndex,
       DocumentTable table, String currencySymbol,
       {Key? key}) {
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final totalColIndex =
+        table.type == 'price' ? table.getResolvedPriceTotalColumnIndex() : -1;
+
     return Container(
       key: key,
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -5730,11 +5739,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 Row(
                   children: [
                     // Drag handle icon (for ReorderableListView)
-                    Icon(
-                      Icons.drag_handle,
-                      size: 18,
-                      color: Colors.grey[600],
-                    ),
+                    if (isFinanceRole)
+                      ReorderableDragStartListener(
+                        index: tableIndex,
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 18,
+                          color: Colors.grey[600],
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.drag_handle,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
                     const SizedBox(width: 8),
                     Text(
                       '${table.type == 'price' ? 'Price' : 'Text'} Table',
@@ -5808,43 +5827,57 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   (rowIndex) => DataRow(
                     cells: List.generate(
                       table.cells[rowIndex + 1].length,
-                      (colIndex) => DataCell(
-                        Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: TextField(
+                      (colIndex) {
+                        final isPriceTotalCell =
+                            table.type == 'price' && colIndex == totalColIndex;
+
+                        if (isPriceTotalCell) {
+                          return DataCell(
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Text(
+                                table.cells[rowIndex + 1][colIndex],
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  textBaseline: TextBaseline.alphabetic,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return DataCell(
+                          Directionality(
                             textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.left,
-                            controller: TextEditingController(
-                              text: table.cells[rowIndex + 1][colIndex],
-                            ),
-                            onChanged: (value) {
-                              setState(() {
-                                table.cells[rowIndex + 1][colIndex] = value;
-                                // Auto-calculate total for price tables
-                                if (table.type == 'price' &&
-                                    (colIndex == 2 || colIndex == 3)) {
-                                  final qty = double.tryParse(
-                                          table.cells[rowIndex + 1][2]) ??
-                                      0;
-                                  final price = double.tryParse(
-                                          table.cells[rowIndex + 1][3]) ??
-                                      0;
-                                  table.cells[rowIndex + 1][4] =
-                                      (qty * price).toStringAsFixed(2);
-                                }
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.all(8),
-                            ),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              textBaseline: TextBaseline.alphabetic,
+                            child: TextFormField(
+                              key: ValueKey(
+                                '${table.hashCode}-$rowIndex-$colIndex',
+                              ),
+                              textDirection: TextDirection.ltr,
+                              textAlign: TextAlign.left,
+                              initialValue: table.cells[rowIndex + 1][colIndex],
+                              onChanged: (value) {
+                                setState(() {
+                                  table.cells[rowIndex + 1][colIndex] = value;
+                                  if (table.type == 'price') {
+                                    table
+                                        .recalculatePriceRowTotal(rowIndex + 1);
+                                  }
+                                });
+                              },
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.all(8),
+                              ),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                textBaseline: TextBaseline.alphabetic,
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),
