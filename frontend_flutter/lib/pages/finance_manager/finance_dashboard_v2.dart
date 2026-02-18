@@ -204,7 +204,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     final app = context.watch<AppState>();
     final proposals = _getFilteredProposals(app);
 
-    final totalCount = proposals.length;
     final pendingCount = proposals
         .where((p) => ((p['status'] ?? '')
                 .toString()
@@ -218,6 +217,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                 .toLowerCase()
                 .contains('approved') ||
             (p['status'] ?? '').toString().toLowerCase().contains('signed')))
+        .length;
+
+    final sentToClientCount = proposals
+        .where((p) => (p['status'] ?? '')
+            .toString()
+            .toLowerCase()
+            .contains('sent to client'))
         .length;
 
     double totalAmount = 0;
@@ -256,9 +262,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                                         CrossAxisAlignment.stretch,
                                     children: [
                                       _buildSummaryRow(
-                                        totalCount: totalCount,
                                         pendingCount: pendingCount,
                                         approvedCount: approvedCount,
+                                        sentToClientCount: sentToClientCount,
                                         totalAmount: totalAmount,
                                       ),
                                       const SizedBox(height: 16),
@@ -462,19 +468,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Widget _buildSummaryRow({
-    required int totalCount,
     required int pendingCount,
     required int approvedCount,
+    required int sentToClientCount,
     required double totalAmount,
   }) {
     final cards = <Widget>[
-      _buildSummaryCard(
-        label: 'Total Proposals',
-        value: totalCount.toString(),
-        subtitle: 'Across all statuses',
-        icon: Icons.folder_open,
-        color: PremiumTheme.teal,
-      ),
       _buildSummaryCard(
         label: 'Pending Internal',
         value: pendingCount.toString(),
@@ -488,6 +487,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         subtitle: 'Approved or client-signed',
         icon: Icons.check_circle,
         color: Colors.green,
+      ),
+      _buildSummaryCard(
+        label: 'Sent to Client',
+        value: sentToClientCount.toString(),
+        subtitle: 'Shared with client',
+        icon: Icons.send,
+        color: PremiumTheme.teal,
       ),
       _buildSummaryCard(
         label: 'Total Value',
@@ -766,7 +772,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     final status = (p['status'] ?? 'Draft').toString();
     final amount = _extractAmount(p);
 
-    return Padding(
+    final proposalId = p['id']?.toString();
+
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
         children: [
@@ -807,6 +815,24 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           ),
         ],
       ),
+    );
+
+    if (proposalId == null || proposalId.isEmpty) return row;
+
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BlankDocumentEditorPage(
+              proposalId: proposalId,
+              proposalTitle: title,
+              readOnly: false,
+            ),
+          ),
+        );
+      },
+      child: row,
     );
   }
 

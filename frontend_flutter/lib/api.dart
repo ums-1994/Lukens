@@ -514,12 +514,17 @@ class AppState extends ChangeNotifier {
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
-      if (r.statusCode == 200) {
-        await fetchProposals();
-        notifyListeners();
+      if (r.statusCode != 200) {
+        throw Exception(
+          'Failed to update proposal status (${r.statusCode}): ${r.body}',
+        );
       }
+
+      await fetchProposals();
+      notifyListeners();
     } catch (e) {
       print('Error updating proposal status: $e');
+      rethrow;
     }
   }
 
