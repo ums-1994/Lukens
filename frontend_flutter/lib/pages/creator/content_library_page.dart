@@ -383,64 +383,6 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     return [];
   }
 
-  // Navigation and logout methods
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
-        break;
-      case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        Navigator.pushReplacementNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        // Already on content library page
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Approved Proposals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
-        break;
-      case 'Analytics (My Pipeline)':
-        Navigator.pushReplacementNamed(context, '/analytics');
-        break;
-      case 'Logout':
-        _handleLogout(context);
-        break;
-    }
-  }
-
-  void _handleLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                final app = context.read<AppState>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   static const Set<String> _textCategories = {
     'sections',
     'company profile',

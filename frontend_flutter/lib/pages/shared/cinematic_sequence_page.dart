@@ -153,31 +153,33 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     },
                   ),
                 ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: size.height - (isMobile ? 80 : 120),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Animated headline
-                      _buildAnimatedHeadline(isMobile),
+                Expanded(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: size.height - (isMobile ? 80 : 120),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Animated headline
+                        _buildAnimatedHeadline(isMobile),
 
-                      SizedBox(height: isMobile ? 24 : 40),
+                        SizedBox(height: isMobile ? 24 : 40),
 
-                      // Subheading
-                      _buildSubheading(isMobile),
+                        // Subheading
+                        _buildSubheading(isMobile),
 
-                      SizedBox(height: isMobile ? 40 : 56),
+                        SizedBox(height: isMobile ? 40 : 56),
 
-                      // CTA buttons
-                      _buildCTAButtons(isMobile),
-                    ],
+                        // CTA buttons
+                        _buildCTAButtons(isMobile),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
 

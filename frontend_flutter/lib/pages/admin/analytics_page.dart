@@ -1,3 +1,12 @@
+export 'analytics_page_backup.dart';
+
+/*
+// This file intentionally re-exports the stable implementation.
+//
+// The previous in-file implementation had become corrupted (parse errors),
+// which caused cascading analyzer errors (including "missing build()").
+export 'analytics_page_backup.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
@@ -4076,3 +4085,4 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 }
+*/
