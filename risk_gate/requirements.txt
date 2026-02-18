@@ -1,0 +1,9 @@
+# Core dependencies (required)
+numpy>=1.21.0
+
+# Optional dependencies for enhanced functionality
+# Install with: pip install -r requirements.txt[optional]
+PyPDF2>=3.0.0              # PDF text extraction
+python-docx>=0.8.11         # DOCX text extraction
+sentence-transformers>=2.2.0  # Embeddings for semantic analysis
+chromadb>=0.4.0              # Vector database for template matching

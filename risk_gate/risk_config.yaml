@@ -1,0 +1,89 @@
+# Risk Gate Configuration
+# Controls which gates are enabled and their sensitivity levels
+
+gates:
+  security:
+    enabled: true
+    sensitivity: medium
+    validators:
+      - injection_attempts
+      - malicious_code
+      - data_exfiltration
+    mitigations:
+      - block_response
+      - log_alert
+      - sanitize_input
+
+  safety:
+    enabled: true
+    sensitivity: high
+    validators:
+      - harmful_content
+      - self_harm
+      - violence
+    mitigations:
+      - block_response
+      - provide_resources
+      - log_alert
+
+  legal:
+    enabled: true
+    sensitivity: medium
+    validators:
+      - illegal_activities
+      - copyright_infringement
+      - regulated_advice
+    mitigations:
+      - refuse_request
+      - suggest_alternatives
+      - log_incident
+
+  ethics:
+    enabled: true
+    sensitivity: medium
+    validators:
+      - bias_detection
+      - fairness_check
+      - transparency
+    mitigations:
+      - add_disclaimer
+      - provide_context
+      - log_review
+
+  data:
+    enabled: true
+    sensitivity: high
+    validators:
+      - pii_detection
+      - sensitive_data
+      - data_classification
+    mitigations:
+      - redact_data
+      - anonymize
+      - log_access
+
+  privacy:
+    enabled: true
+    sensitivity: high
+    validators:
+      - consent_check
+      - data_minimization
+      - purpose_limitation
+    mitigations:
+      - request_consent
+      - limit_data_use
+      - log_compliance
+
+global_settings:
+  log_level: INFO
+  max_response_time: 5000  # ms
+  fallback_behavior: block
+  notification_channels:
+    - console
+    - file
+    - webhook
+
+thresholds:
+  risk_score_threshold: 0.7
+  multiple_gate_threshold: 0.5
+  critical_risk_threshold: 0.9
