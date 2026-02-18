@@ -122,7 +122,9 @@ class _DashboardPageState extends State<DashboardPage>
       // Fetch risks for proposals that need review (draft or pending approval)
       final proposalsNeedingReview = app.proposals.where((proposal) {
         final status = (proposal['status'] ?? '').toString().toLowerCase();
-        return status == 'draft' || status == 'pending ceo approval';
+        return status == 'draft' ||
+            status == 'pending ceo approval' ||
+            status == 'pending approval';
       }).toList();
 
       // Analyze risks for each proposal using the AI risk analysis API
@@ -284,6 +286,10 @@ class _DashboardPageState extends State<DashboardPage>
       // Special handling for draft status variations
       if (filter == 'draft') {
         return status == 'draft' || status.isEmpty;
+      }
+
+      if (filter == 'pending_approval') {
+        return status == 'pending ceo approval' || status == 'pending approval';
       }
 
       // For other statuses, do exact match after normalization
@@ -1096,8 +1102,10 @@ class _DashboardPageState extends State<DashboardPage>
         _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
             'Active', context),
         _buildStatCard(
-            'Pending CEO Approval',
-            counts['Pending CEO Approval']?.toString() ?? '0',
+            'Pending Approval',
+            counts['Pending CEO Approval']?.toString() ??
+                counts['Pending Approval']?.toString() ??
+                '0',
             'Awaiting Review',
             context),
         _buildStatCard(
@@ -1119,7 +1127,7 @@ class _DashboardPageState extends State<DashboardPage>
       case 'Draft Proposals':
         gradient = PremiumTheme.orangeGradient;
         break;
-      case 'Pending CEO Approval':
+      case 'Pending Approval':
         gradient = PremiumTheme.purpleGradient;
         break;
       case 'Sent to Client':
@@ -1685,13 +1693,14 @@ class _DashboardPageState extends State<DashboardPage>
                       .length),
               const SizedBox(width: 8),
               _buildFilterTab(
-                  'Pending CEO Approval',
-                  'pending ceo approval',
-                  proposals
-                      .where((p) =>
-                          (p['status'] ?? '').toString().toLowerCase() ==
-                          'pending ceo approval')
-                      .length),
+                  'Pending Approval',
+                  'pending_approval',
+                  proposals.where((p) {
+                    final s = (p['status'] ?? '').toString().toLowerCase();
+                    return s == 'pending ceo approval' ||
+                        s == 'pending approval' ||
+                        s == 'pending_approval';
+                  }).length),
               const SizedBox(width: 8),
               _buildFilterTab(
                   'Signed',
@@ -1726,6 +1735,7 @@ class _DashboardPageState extends State<DashboardPage>
         else
           ...filteredProposals.take(5).map((proposal) {
             String status = proposal['status'] ?? 'Draft';
+            status = _getStatusLabel(status);
             Color statusColor = _getStatusColor(status);
             Color textColor = _getStatusTextColor(status);
 
@@ -2074,13 +2084,15 @@ class _DashboardPageState extends State<DashboardPage>
         return PremiumTheme.orange;
       case 'in review':
       case 'pending ceo approval':
+      case 'pending approval':
+      case 'pending_approval':
         return PremiumTheme.purple;
       case 'sent to client':
         return PremiumTheme.info;
       case 'signed':
-        return PremiumTheme.teal;
+        return PremiumTheme.success;
       default:
-        return PremiumTheme.orange;
+        return PremiumTheme.textSecondary;
     }
   }
 
@@ -2088,6 +2100,15 @@ class _DashboardPageState extends State<DashboardPage>
     // For the new premium design, we use the same color for text
     // with opacity adjustments in the container
     return _getStatusColor(status);
+  }
+
+  String _getStatusLabel(String status) {
+    final s = status.toLowerCase().trim();
+    if (s == 'pending ceo approval' || s == 'pending approval') {
+      return 'Pending Approval';
+    }
+    if (s == 'pending_approval') return 'Pending Approval';
+    return status;
   }
 
   String _formatDate(dynamic date) {

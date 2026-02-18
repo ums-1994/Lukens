@@ -3,6 +3,7 @@ Proposal management routes
 Extracted from app.py for better organization
 """
 from flask import Blueprint, request, jsonify
+from typing import Optional
 from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
 from api.utils.helpers import resolve_user_id, create_notification
@@ -12,6 +13,26 @@ import psycopg2.extras
 import traceback
 
 bp = Blueprint('proposals', __name__)
+
+
+def _role_key(raw_role: Optional[str]) -> str:
+    return (raw_role or '').strip().lower()
+
+
+def _normalize_status_key(raw_status: Optional[str]) -> str:
+    return (raw_status or '').strip().lower()
+
+
+def _is_finance_role(role_key: str) -> bool:
+    return role_key.startswith('finance') or role_key == 'finance'
+
+
+def _is_admin_role(role_key: str) -> bool:
+    return role_key in ['admin', 'ceo']
+
+
+def _is_manager_role(role_key: str) -> bool:
+    return role_key in ['manager', 'creator', 'user'] or not role_key
 
 
 @bp.post("/proposals")
@@ -582,6 +603,35 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             user_id = resolved_user_id
 
+            # Determine requester role (to support finance/admin behaviours)
+            requester_role = None
+            try:
+                cursor.execute('SELECT role FROM users WHERE id = %s', (user_id,))
+                role_row = cursor.fetchone()
+                if role_row:
+                    requester_role = role_row[0]
+            except Exception:
+                requester_role = None
+
+            requester_role = (requester_role or '').strip().lower()
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+
+            # Finance users can only update pricing-related fields.
+            # We enforce this server-side so Finance cannot modify scope/content/client metadata.
+            if is_finance:
+                for forbidden in [
+                    'title',
+                    'content',
+                    'client',
+                    'client_name',
+                    'client_email',
+                    'client_id',
+                    'timeline_days',
+                    # Status transitions must go through the dedicated status endpoint
+                    'status',
+                ]:
+                    data.pop(forbidden, None)
+
             if not is_finance:
                 cursor.execute(
                     f"SELECT {owner_col} FROM proposals WHERE id = %s",
@@ -607,7 +657,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 except Exception:
                     sections_json = str(data['sections'])
                 params.append(sections_json)
-            if 'status' in data:
+            if 'status' in data and not is_finance:
                 updates.append('status = %s')
                 params.append(data['status'])
             # Determine client / metadata columns safely based on schema
@@ -617,16 +667,24 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             elif 'client_name' in existing_columns:
                 client_col = 'client_name'
 
-            if client_col and ('client_name' in data or 'client' in data):
+            if client_col and ('client_name' in data or 'client' in data) and not is_finance:
                 updates.append(f"{client_col} = %s")
                 params.append(data.get('client_name') or data.get('client'))
-            if 'client_email' in data and 'client_email' in existing_columns:
+            if (
+                'client_email' in data
+                and 'client_email' in existing_columns
+                and not is_finance
+            ):
                 updates.append('client_email = %s')
                 params.append(data['client_email'])
             if 'budget' in data and 'budget' in existing_columns:
                 updates.append('budget = %s')
                 params.append(data['budget'])
-            if 'timeline_days' in data and 'timeline_days' in existing_columns:
+            if (
+                'timeline_days' in data
+                and 'timeline_days' in existing_columns
+                and not is_finance
+            ):
                 updates.append('timeline_days = %s')
                 params.append(data['timeline_days'])
             
@@ -639,6 +697,102 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
     except Exception as e:
         print(f"❌ Error updating proposal {proposal_id}: {e}")
         import traceback
+        traceback.print_exc()
+        return jsonify({'detail': str(e)}), 500
+
+
+@bp.patch("/proposals/<int:proposal_id>/status")
+@token_required
+def update_proposal_status(username=None, proposal_id=None, user_id=None, email=None):
+    """Update proposal status with RBAC/state-machine enforcement (Option B workflow)."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        requested_status = data.get('status')
+        if not requested_status:
+            return jsonify({'detail': 'Status is required'}), 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                resolved_user_id = resolve_user_id(cursor, username or email)
+            if not resolved_user_id:
+                return jsonify({'detail': 'User not found'}), 400
+
+            cursor.execute('SELECT role FROM users WHERE id = %s', (resolved_user_id,))
+            role_row = cursor.fetchone()
+            role_key = _role_key(role_row[0] if role_row else None)
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            proposal_row = cursor.fetchone()
+            if not proposal_row:
+                return jsonify({'detail': 'Proposal not found'}), 404
+
+            current_key = _normalize_status_key(proposal_row[0])
+            target_key = _normalize_status_key(str(requested_status))
+
+            # Normalize common variants
+            if current_key == '':
+                current_key = 'draft'
+            if target_key == 'pending ceo approval':
+                target_key = 'pending approval'
+
+            # Option B workflow:
+            # Manager: Draft -> Pricing In Progress
+            # Finance: Pricing In Progress -> Pending Approval
+            # Admin: Pending Approval -> Approved/Rejected
+            allowed = False
+
+            if _is_manager_role(role_key):
+                if current_key == 'draft' and target_key == 'pricing in progress':
+                    allowed = True
+                # Allow returning to draft from rejected
+                if current_key == 'rejected' and target_key == 'draft':
+                    allowed = True
+
+            if _is_finance_role(role_key):
+                if current_key in ['draft', 'pricing in progress'] and target_key == 'pricing in progress':
+                    allowed = True
+                if current_key == 'pricing in progress' and target_key == 'pending approval':
+                    allowed = True
+
+            if _is_admin_role(role_key):
+                if current_key == 'pending approval' and target_key in ['approved', 'rejected']:
+                    allowed = True
+                if current_key == 'rejected' and target_key == 'draft':
+                    allowed = True
+
+            if not allowed:
+                return jsonify({
+                    'detail': 'Status transition not allowed',
+                    'current_status': proposal_row[0],
+                    'requested_status': requested_status,
+                    'role': role_key,
+                }), 403
+
+            # Write canonical display values
+            status_to_store = requested_status
+            if target_key == 'draft':
+                status_to_store = 'Draft'
+            elif target_key == 'pricing in progress':
+                status_to_store = 'Pricing In Progress'
+            elif target_key == 'pending approval':
+                status_to_store = 'Pending Approval'
+            elif target_key == 'approved':
+                status_to_store = 'Approved'
+            elif target_key == 'rejected':
+                status_to_store = 'Rejected'
+
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() WHERE id = %s''',
+                (status_to_store, proposal_id),
+            )
+            conn.commit()
+
+            return jsonify({'detail': 'Status updated', 'status': status_to_store}), 200
+    except Exception as e:
+        print(f"❌ Error updating proposal status: {e}")
         traceback.print_exc()
         return jsonify({'detail': str(e)}), 500
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
@@ -29,6 +30,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final roleService = context.read<RoleService>();
+      if (!roleService.isFinance()) {
+        roleService.switchRole(UserRole.finance);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 

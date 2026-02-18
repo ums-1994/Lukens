@@ -209,6 +209,123 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _initializeAuth();
   }
 
+  Future<void> _sendToFinance() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before sending to Finance'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send to Finance'),
+        content: const Text(
+          'This will move the proposal to Pricing In Progress so Finance can add pricing and tables.\n\nDo you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Sent to Finance for pricing'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/creator_dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send to Finance: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _startPricingFinance() async {
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before starting pricing'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Pricing started'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start pricing: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   bool _isTruthy(dynamic value) {
     if (value is bool) return value;
     if (value is int) return value == 1;
@@ -2259,8 +2376,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Status helper methods
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return const Color(0xFFF39C12); // Orange
+    }
+    switch (s) {
       case 'pending approval':
         return const Color(0xFFF39C12); // Orange
       case 'sent to client':
@@ -2275,8 +2395,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return Icons.pending;
+    }
+    switch (s) {
       case 'pending approval':
         return Icons.pending;
       case 'sent to client':
@@ -2291,8 +2414,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getStatusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return 'Pending Approval';
+    }
+    switch (s) {
       case 'pending approval':
         return 'Pending Approval';
       case 'sent to client':
@@ -2420,6 +2546,32 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
       );
       return;
+    }
+
+    // If user already selected a client in the dropdown, ensure fields are filled
+    if (_selectedClientId != null &&
+        (_clientNameController.text.trim().isEmpty ||
+            _clientEmailController.text.trim().isEmpty)) {
+      Map<String, dynamic>? selected;
+      for (final c in _clients) {
+        final id = _tryParseClientId(c);
+        if (id == _selectedClientId) {
+          selected = c;
+          break;
+        }
+      }
+
+      if (selected != null) {
+        final name = _extractClientName(selected).trim();
+        final email = _extractClientEmail(selected).trim();
+
+        if (name.isNotEmpty && _clientNameController.text.trim().isEmpty) {
+          _clientNameController.text = name;
+        }
+        if (email.isNotEmpty && _clientEmailController.text.trim().isEmpty) {
+          _clientEmailController.text = email;
+        }
+      }
     }
 
     // Check if client information is provided
@@ -4340,6 +4492,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   Widget _buildTopHeader() {
     final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
+    final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
+    final isPricingStatus = statusKey == 'pricing in progress';
 
     return Container(
       color: Colors.white,
@@ -4621,13 +4777,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           if (_proposalStatus != null && _proposalStatus != 'draft')
             const SizedBox(width: 12),
           // Send for Approval button
-          if (_proposalStatus == null || _proposalStatus == 'draft')
+          if (isManagerRole && isDraftStatus)
             ElevatedButton.icon(
-              onPressed:
-                  isFinanceRole ? _submitForApprovalFinance : _sendForApproval,
+              onPressed: _sendToFinance,
               icon: const Icon(Icons.send, size: 16),
-              label: Text(
-                  isFinanceRole ? 'Submit for Approval' : 'Send for Approval'),
+              label: const Text('Send to Finance'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2ECC71),
                 foregroundColor: Colors.white,
@@ -4639,8 +4793,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               ),
             ),
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            const SizedBox(width: 12),
+          if (isManagerRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isDraftStatus)
+            ElevatedButton.icon(
+              onPressed: _startPricingFinance,
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: const Text('Start Pricing'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isPricingStatus)
+            ElevatedButton.icon(
+              onPressed: _submitForApprovalFinance,
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Submit for Approval'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isPricingStatus) const SizedBox(width: 12),
           // Action buttons
           OutlinedButton.icon(
             onPressed: _showPreview,
@@ -5142,12 +5331,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final section = _sections[index];
     final isHovered = _hoveredSectionIndex == index;
     final isSelected = _selectedSectionIndex == index;
+
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final financeTextLocked = isFinanceRole;
+
     return SectionWidget(
       section: section,
       isHovered: isHovered,
       isSelected: isSelected,
-      readOnly: widget.readOnly,
-      canDelete: _sections.length > 1,
+      readOnly: widget.readOnly || financeTextLocked,
+      canDelete: !isFinanceRole && (_sections.length > 1),
       onHoverChanged: (hovered) {
         setState(() {
           _hoveredSectionIndex = hovered ? index : -1;
@@ -5156,40 +5350,60 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       onTap: () {
         setState(() => _selectedSectionIndex = index);
       },
-      onInsertBelow: () => _insertSection(index),
-      onInsertFromLibrary: () {
-        setState(() {
-          _selectedSectionIndex = index;
-        });
-        _addFromLibrary();
-      },
-      onShowAIAssistant: () {
-        setState(() {
-          _selectedSectionIndex = index;
-        });
-        _showAIAssistantDialog();
-      },
-      onDuplicate: () => _duplicateSection(index),
-      onDelete: () => _deleteSection(index),
+      onInsertBelow: isFinanceRole ? () {} : () => _insertSection(index),
+      onInsertFromLibrary: isFinanceRole
+          ? () {}
+          : () {
+              setState(() {
+                _selectedSectionIndex = index;
+              });
+              _addFromLibrary();
+            },
+      onShowAIAssistant: isFinanceRole
+          ? () {}
+          : () {
+              setState(() {
+                _selectedSectionIndex = index;
+              });
+              _showAIAssistantDialog();
+            },
+      onDuplicate: isFinanceRole ? () {} : () => _duplicateSection(index),
+      onDelete: isFinanceRole ? () {} : () => _deleteSection(index),
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
       onReorderTables: (int oldIndex, int newIndex) {
-        setState(() {
-          if (newIndex > oldIndex) {
-            newIndex -= 1;
-          }
-          final table = section.tables.removeAt(oldIndex);
-          section.tables.insert(newIndex, table);
-        });
+        if (isFinanceRole) {
+          setState(() {
+            if (newIndex > oldIndex) {
+              newIndex -= 1;
+            }
+            final table = section.tables.removeAt(oldIndex);
+            section.tables.insert(newIndex, table);
+          });
+        }
       },
-      buildInteractiveTable: (int tableIndex, DocumentTable table) =>
-          _buildInteractiveTable(
-        index,
-        tableIndex,
-        table,
-        key: ValueKey('table_${index}_$tableIndex'),
-      ),
+      buildInteractiveTable: (int tableIndex, DocumentTable table) {
+        // Finance can edit pricing tables; Manager can view tables but not edit.
+        if (isFinanceRole) {
+          return _buildInteractiveTable(
+            index,
+            tableIndex,
+            table,
+            key: ValueKey('table_${index}_$tableIndex'),
+          );
+        }
+        if (isManagerRole) {
+          return _buildReadOnlyTable(table);
+        }
+        return _buildInteractiveTable(
+          index,
+          tableIndex,
+          table,
+          key: ValueKey('table_${index}_$tableIndex'),
+        );
+      },
       onRemoveInlineImage: (imageIndex) {
+        if (isFinanceRole) return;
         setState(() {
           _sections[index].inlineImages.removeAt(imageIndex);
         });

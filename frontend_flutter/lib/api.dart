@@ -429,7 +429,9 @@ class AppState extends ChangeNotifier {
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
-      return 'Pending CEO Approval';
+      return 'Pending Approval';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
+      return 'Pending Approval';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
     if (lowerStatus == 'signed' ||
