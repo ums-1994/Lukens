@@ -1,5 +1,6 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -41,6 +42,51 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   String _activeFilter = 'all'; // all, pending, approved, rejected
   String _searchQuery = '';
   bool _initialArgsApplied = false;
+
+  static const Color _adminBlockBase = Color(0xFF252525);
+
+  BoxDecoration _adminBlockDecoration(double radius) {
+    return BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          _adminBlockBase.withValues(alpha: 0.55),
+          _adminBlockBase.withValues(alpha: 0.32),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(
+        color: Colors.white.withValues(alpha: 0.12),
+        width: 1.2,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.18),
+          blurRadius: 22,
+          offset: const Offset(0, 12),
+        ),
+      ],
+    );
+  }
+
+  Widget _adminFrostedBlock({
+    required Widget child,
+    required double radius,
+    EdgeInsets padding = const EdgeInsets.all(24),
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          padding: padding,
+          decoration: _adminBlockDecoration(radius),
+          child: child,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -324,8 +370,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                         Material(child: _buildSidebar(context)),
                         const SizedBox(width: 24),
                         Expanded(
-                          child: GlassContainer(
-                            borderRadius: 32,
+                          child: _adminFrostedBlock(
+                            radius: 32,
                             padding: const EdgeInsets.all(24),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -910,8 +956,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     final proposals = _getVisibleProposals();
 
     if (proposals.isEmpty) {
-      return GlassContainer(
-        borderRadius: 24,
+      return _adminFrostedBlock(
+        radius: 24,
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -952,8 +998,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       }
     }
 
-    return GlassContainer(
-      borderRadius: 24,
+    return _adminFrostedBlock(
+      radius: 24,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -962,7 +1008,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           const SizedBox(height: 8),
           Container(
             height: 1,
-            color: Colors.white.withValues(alpha: 0.08),
+            color: Colors.white.withValues(alpha: 0.10),
           ),
           const SizedBox(height: 4),
           ...rows,

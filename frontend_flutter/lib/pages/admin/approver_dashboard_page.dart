@@ -292,9 +292,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  // Darken overall page so background image is only subtly visible
-                  Colors.black.withValues(alpha: 0.78),
-                  Colors.black.withValues(alpha: 0.55),
+                  // Keep it dark, but let the background image show through.
+                  _adminBase.withValues(alpha: 0.45),
+                  _adminBase.withValues(alpha: 0.24),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -320,6 +320,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                           child: _buildDarkGlass(
                             borderRadius: 32,
                             padding: EdgeInsets.all(compact ? 16 : 24),
+                            // Lighter than the stat cards so the background is visible,
+                            // while the blur keeps it from distracting the content.
+                            backgroundAlpha: 0.04,
+                            borderAlpha: 0.12,
+                            shadowAlpha: 0.08,
                             child: LayoutBuilder(
                               builder: (context, constraints) {
                                 // Avoid bottom overflows on shorter viewports by
@@ -599,25 +604,29 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   static const Color _cardAccent = Color(0xFFC10D00);
-  static const double _glassBlurSigma = 18;
+  static const Color _adminBase = Color(0xFF252525);
+  static const double _glassBlurSigma = 32;
 
-  BoxDecoration _darkGlassDecoration(double borderRadius) {
+  BoxDecoration _darkGlassDecoration(
+    double borderRadius, {
+    double backgroundAlpha = 0.05,
+    double borderAlpha = 0.14,
+    double shadowAlpha = 0.10,
+  }) {
     return BoxDecoration(
-      gradient: LinearGradient(
-        colors: [
-          // Dark enough to keep content readable,
-          // but still slightly transparent so the background is faintly visible.
-          Colors.black.withValues(alpha: 0.58),
-          Colors.black.withValues(alpha: 0.38),
-        ],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
+      color: _adminBase.withValues(alpha: backgroundAlpha),
       borderRadius: BorderRadius.circular(borderRadius),
       border: Border.all(
-        color: Colors.white.withValues(alpha: 0.10),
+        color: Colors.white.withValues(alpha: borderAlpha),
         width: 1,
       ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: shadowAlpha),
+          blurRadius: 22,
+          offset: const Offset(0, 12),
+        ),
+      ],
     );
   }
 
@@ -625,6 +634,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     required Widget child,
     double borderRadius = 24,
     EdgeInsets padding = const EdgeInsets.all(20),
+    double backgroundAlpha = 0.12,
+    double borderAlpha = 0.10,
+    double shadowAlpha = 0.25,
   }) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -632,7 +644,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         filter: ImageFilter.blur(sigmaX: _glassBlurSigma, sigmaY: _glassBlurSigma),
         child: Container(
           padding: padding,
-          decoration: _darkGlassDecoration(borderRadius),
+          decoration: _darkGlassDecoration(
+            borderRadius,
+            backgroundAlpha: backgroundAlpha,
+            borderAlpha: borderAlpha,
+            shadowAlpha: shadowAlpha,
+          ),
           child: child,
         ),
       ),
@@ -846,7 +863,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               child: Container(
                 height: 44,
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.25),
+                  color: _adminBase.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.10),
@@ -936,7 +953,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.25),
+                  color: _adminBase.withValues(alpha: 0.25),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: isActive
@@ -971,8 +988,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: isActive
-                  ? Colors.black.withValues(alpha: 0.30)
-                  : Colors.black.withValues(alpha: 0.18),
+                  ? _adminBase.withValues(alpha: 0.30)
+                  : _adminBase.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isActive
@@ -987,7 +1004,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.25),
+                    color: _adminBase.withValues(alpha: 0.25),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: isActive
@@ -1113,7 +1130,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.22),
+                    color: _adminBase.withValues(alpha: 0.22),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: PremiumTheme.orange.withValues(alpha: 0.35),
@@ -1166,7 +1183,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   icon: const Icon(Icons.check),
                   label: const Text('Approve'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black.withValues(alpha: 0.22),
+                    backgroundColor: _adminBase.withValues(alpha: 0.22),
                     foregroundColor: Colors.white,
                     side: BorderSide(
                       color: PremiumTheme.teal.withValues(alpha: 0.65),
@@ -1197,7 +1214,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.22),
+        color: _adminBase.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
