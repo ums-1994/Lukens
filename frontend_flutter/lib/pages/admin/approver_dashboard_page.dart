@@ -292,8 +292,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  // Darken overall page so background image is only subtly visible
+                  Colors.black.withValues(alpha: 0.78),
+                  Colors.black.withValues(alpha: 0.55),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -598,13 +599,16 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   static const Color _cardAccent = Color(0xFFC10D00);
+  static const double _glassBlurSigma = 18;
 
   BoxDecoration _darkGlassDecoration(double borderRadius) {
     return BoxDecoration(
       gradient: LinearGradient(
         colors: [
-          Colors.black.withValues(alpha: 0.40),
-          Colors.black.withValues(alpha: 0.20),
+          // Dark enough to keep content readable,
+          // but still slightly transparent so the background is faintly visible.
+          Colors.black.withValues(alpha: 0.58),
+          Colors.black.withValues(alpha: 0.38),
         ],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
@@ -625,7 +629,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        filter: ImageFilter.blur(sigmaX: _glassBlurSigma, sigmaY: _glassBlurSigma),
         child: Container(
           padding: padding,
           decoration: _darkGlassDecoration(borderRadius),

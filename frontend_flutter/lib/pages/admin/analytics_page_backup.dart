@@ -2705,130 +2705,109 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
             // Main Content Area
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withValues(alpha: 0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 720;
-                    final userWidget = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 35,
-                          height: 35,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF3498DB),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              userInitial,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+              child: Column(
+                children: [
+                  Container(
+                    height: 70,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.transparent,
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final compact = constraints.maxWidth < 720;
+                          final userWidget = Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 35,
+                                height: 35,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF3498DB),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    userInitial,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            userName,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => [
-                            const PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Text(
+                                  userName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert,
+                                    color: Colors.white),
+                                onSelected: (value) {
+                                  if (value == 'logout') {
+                                    Navigator.pushNamed(context, '/login');
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => [
+                                  const PopupMenuItem<String>(
+                                    value: 'logout',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.logout),
+                                        SizedBox(width: 8),
+                                        Text('Logout'),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
+                            ],
+                          );
 
-                    if (compact) {
-                      return Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Analytics Dashboard',
-                              overflow: TextOverflow.ellipsis,
-                              style: PremiumTheme.titleLarge
-                                  .copyWith(fontSize: 22),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Flexible(child: userWidget),
-                        ],
-                      );
-                    }
+                          if (compact) {
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Analytics Dashboard',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: PremiumTheme.titleLarge
+                                        .copyWith(fontSize: 22),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Flexible(child: userWidget),
+                              ],
+                            );
+                          }
 
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Analytics Dashboard',
-                          style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                        ),
-                        userWidget,
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-            Expanded(
-              child: Row(
-                children: [
-                  Consumer<AppState>(
-                    builder: (context, app, _) {
-                      final user = AuthService.currentUser ?? app.currentUser;
-                      final role =
-                          (user?['role'] ?? '').toString().toLowerCase().trim();
-                      final isAdmin = role == 'admin' || role == 'ceo';
-                      return AppSideNav(
-                        isCollapsed: app.isSidebarCollapsed,
-                        currentLabel: app.currentNavLabel,
-                        isAdmin: isAdmin,
-                        onToggle: app.toggleSidebar,
-                        onSelect: (label) {
-                          app.setCurrentNavLabel(label);
-                          _navigateToPage(context, label);
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Analytics Dashboard',
+                                style: PremiumTheme.titleLarge
+                                    .copyWith(fontSize: 22),
+                              ),
+                              userWidget,
+                            ],
+                          );
                         },
-                      );
-                    },
+                      ),
+                    ),
                   ),
                   Expanded(
                     child: CustomScrollbar(
@@ -3208,10 +3187,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     ),
                   ),
                 ],
-              ),
-            ),
-                  ],
-                ),
               ),
             ),
           ],
