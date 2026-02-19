@@ -842,78 +842,84 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           ),
         ),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.10),
-                      width: 1,
-                    ),
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: InkWell(
+              onTap: _toggleSidebar,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    width: 1,
                   ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
+                ),
+                child: Row(
+                  mainAxisAlignment: _isSidebarCollapsed
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (!_isSidebarCollapsed)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'Navigation',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
                         ),
                       ),
-                    ],
-                  ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: _isSidebarCollapsed ? 0 : 8),
+                      child: Icon(
+                        _isSidebarCollapsed
+                            ? Icons.keyboard_arrow_right
+                            : Icons.keyboard_arrow_left,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem(
-                'Approvals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approvals',
-                context),
-            _buildNavItem('History', 'assets/images/analytics.png',
-                _currentPage == 'History', context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: const Color(0xFF2C3E50),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+                      _currentPage == 'Dashboard', context),
+                  _buildNavItem(
+                      'Approvals',
+                      'assets/images/Time Allocation_Approval_Blue.png',
+                      _currentPage == 'Approvals',
+                      context),
+                  _buildNavItem('Analytics', 'assets/images/analytics.png',
+                      _currentPage == 'Analytics', context),
+                  _buildNavItem('History', 'assets/images/analytics.png',
+                      _currentPage == 'History', context),
+                  const SizedBox(height: 20),
+                ],
               ),
-            const SizedBox(height: 12),
-            _buildNavItem('Settings', 'assets/images/analytics.png',
-                _currentPage == 'Settings', context),
-            _buildNavItem('Sign Out', 'assets/images/Logout_KhonoBuzz.png',
-                false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
+            ),
+          ),
+          if (!_isSidebarCollapsed)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              height: 1,
+              color: const Color(0xFF2C3E50),
+            ),
+          const SizedBox(height: 12),
+          _buildNavItem('Sign Out', 'assets/images/Logout_KhonoBuzz.png', false,
+              context),
+          const SizedBox(height: 20),
+        ],
       ),
     );
   }
@@ -1517,18 +1523,21 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         break;
       case 'Approvals':
         // Go to the dedicated admin approvals view
-        Navigator.pushReplacementNamed(context, '/admin_approvals');
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'pending'},
+        );
+        break;
+      case 'Analytics':
+        Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'History':
         // History of approvals also uses the admin approvals view
-        Navigator.pushReplacementNamed(context, '/admin_approvals');
-        break;
-      case 'Settings':
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Settings - Coming soon'),
-            backgroundColor: Colors.orange,
-          ),
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'approved'},
         );
         break;
       case 'Sign Out':

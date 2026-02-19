@@ -12,6 +12,7 @@ import 'package:web/web.dart' as web;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
@@ -46,6 +47,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final NumberFormat _compactCurrencyFormatter =
       NumberFormat.compactCurrency(symbol: _currencySymbol, decimalDigits: 1);
 
+  bool _isAdminSidebarCollapsed = true;
+  String _adminCurrentPage = 'Analytics';
+
   @override
   void initState() {
     super.initState();
@@ -63,7 +67,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<AppState>().setCurrentNavLabel('Analytics (My Pipeline)');
+      final app = context.read<AppState>();
+      final user = AuthService.currentUser ?? app.currentUser;
+      final role = (user?['role'] ?? '').toString().toLowerCase().trim();
+      final isAdmin = role == 'admin' || role == 'ceo';
+      app.setCurrentNavLabel(isAdmin ? 'Analytics' : 'Analytics (My Pipeline)');
     });
   }
 
@@ -2672,6 +2680,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final user = AuthService.currentUser ?? app.currentUser;
+    final role = (user?['role'] ?? '').toString().toLowerCase().trim();
+    final isAdmin = role == 'admin' || role == 'ceo';
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
@@ -2683,25 +2694,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         height: MediaQuery.of(context).size.height,
         child: Row(
           children: [
-            // Consistent Sidebar using AppSideNav
-            Consumer<AppState>(
-              builder: (context, app, _) {
-                final user = AuthService.currentUser ?? app.currentUser;
-                final role =
-                    (user?['role'] ?? '').toString().toLowerCase().trim();
-                final isAdmin = role == 'admin' || role == 'ceo';
-                return AppSideNav(
-                  isCollapsed: app.isSidebarCollapsed,
-                  currentLabel: app.currentNavLabel,
-                  isAdmin: isAdmin,
-                  onToggle: app.toggleSidebar,
-                  onSelect: (label) {
-                    app.setCurrentNavLabel(label);
-                    _navigateToPage(context, label);
-                  },
-                );
-              },
-            ),
+            if (isAdmin)
+              Material(child: _buildAdminSidebar(context))
+            else
+              // Creator navigation for non-admin users
+              Consumer<AppState>(
+                builder: (context, app, _) {
+                  return AppSideNav(
+                    isCollapsed: app.isSidebarCollapsed,
+                    currentLabel: app.currentNavLabel,
+                    isAdmin: false,
+                    onToggle: app.toggleSidebar,
+                    onSelect: (label) {
+                      app.setCurrentNavLabel(label);
+                      _navigateToPage(context, label);
+                    },
+                  );
+                },
+              ),
 
             // Main Content Area
             Expanded(
@@ -4193,6 +4203,266 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         break;
       case 'Logout':
         Navigator.pushReplacementNamed(context, '/login');
+        break;
+    }
+  }
+
+  static const Color _adminAccent = Color(0xFFC10D00);
+
+  void _toggleAdminSidebar() {
+    setState(() => _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed);
+  }
+
+  Widget _buildAdminSidebar(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isAdminSidebarCollapsed ? 90.0 : 250.0,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.black.withOpacity(0.3),
+            Colors.black.withOpacity(0.2),
+          ],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        border: Border(
+          right: BorderSide(
+            color: PremiumTheme.glassWhiteBorder,
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: InkWell(
+              onTap: _toggleAdminSidebar,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: _isAdminSidebarCollapsed
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (!_isAdminSidebarCollapsed)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'Navigation',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: _isAdminSidebarCollapsed ? 0 : 8),
+                      child: Icon(
+                        _isAdminSidebarCollapsed
+                            ? Icons.keyboard_arrow_right
+                            : Icons.keyboard_arrow_left,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildAdminNavItem(
+                    label: 'Dashboard',
+                    assetPath: 'assets/images/Dahboard.png',
+                  ),
+                  _buildAdminNavItem(
+                    label: 'Approvals',
+                    assetPath: 'assets/images/Time Allocation_Approval_Blue.png',
+                  ),
+                  _buildAdminNavItem(
+                    label: 'Analytics',
+                    assetPath: 'assets/images/analytics.png',
+                  ),
+                  _buildAdminNavItem(
+                    label: 'History',
+                    assetPath: 'assets/images/analytics.png',
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+          if (!_isAdminSidebarCollapsed)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              height: 1,
+              color: const Color(0xFF2C3E50),
+            ),
+          const SizedBox(height: 12),
+          _buildAdminNavItem(
+            label: 'Logout',
+            assetPath: 'assets/images/Logout_KhonoBuzz.png',
+            isBottomItem: true,
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminNavItem({
+    required String label,
+    required String assetPath,
+    bool isBottomItem = false,
+  }) {
+    final isActive = !isBottomItem && _adminCurrentPage == label;
+    if (_isAdminSidebarCollapsed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Tooltip(
+          message: label,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _onAdminNavTap(label),
+              borderRadius: BorderRadius.circular(30),
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isActive
+                        ? _adminAccent
+                        : Colors.white.withValues(alpha: 0.18),
+                    width: isActive ? 2 : 1,
+                  ),
+                ),
+                padding: const EdgeInsets.all(6),
+                child: ClipOval(
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _onAdminNavTap(label),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? Colors.black.withValues(alpha: 0.30)
+                  : Colors.black.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isActive
+                    ? _adminAccent.withValues(alpha: 0.65)
+                    : Colors.white.withValues(alpha: 0.10),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isActive
+                          ? _adminAccent
+                          : Colors.white.withValues(alpha: 0.18),
+                      width: isActive ? 2 : 1,
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(6),
+                  child: ClipOval(
+                    child: AssetService.buildImageWidget(assetPath,
+                        fit: BoxFit.contain),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                      fontSize: 14,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                if (isActive)
+                  const Icon(Icons.arrow_forward_ios,
+                      size: 12, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onAdminNavTap(String label) {
+    if (label != 'Logout') {
+      setState(() {
+        _adminCurrentPage = label;
+      });
+    }
+    _navigateAdminToPage(context, label);
+  }
+
+  void _navigateAdminToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        break;
+      case 'Approvals':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'pending'},
+        );
+        break;
+      case 'Analytics':
+        // Already here
+        break;
+      case 'History':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'approved'},
+        );
+        break;
+      case 'Logout':
+        AuthService.logout();
+        Navigator.pushNamedAndRemoveUntil(
+            context, '/login', (Route<dynamic> route) => false);
         break;
     }
   }

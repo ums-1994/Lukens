@@ -40,6 +40,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   List<Map<String, dynamic>> _rejectedProposals = [];
   String _activeFilter = 'all'; // all, pending, approved, rejected
   String _searchQuery = '';
+  bool _initialArgsApplied = false;
 
   @override
   void initState() {
@@ -52,6 +53,29 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialArgsApplied) return;
+    _initialArgsApplied = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final raw = args['initialFilter'];
+      final filter = raw is String ? raw.toLowerCase().trim() : null;
+      if (filter == 'pending' ||
+          filter == 'approved' ||
+          filter == 'rejected' ||
+          filter == 'all') {
+        setState(() {
+          _activeFilter = filter!;
+          if (filter == 'pending') _currentPage = 'Approvals';
+          if (filter == 'approved') _currentPage = 'History';
+        });
+      }
+    }
   }
 
   @override
@@ -490,76 +514,85 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           ),
         ),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: InkWell(
+              onTap: _toggleSidebar,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: PremiumTheme.glassWhite,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: PremiumTheme.glassWhiteBorder,
+                    width: 1,
                   ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
+                ),
+                child: Row(
+                  mainAxisAlignment: _isSidebarCollapsed
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (!_isSidebarCollapsed)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'Navigation',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
                         ),
                       ),
-                    ],
-                  ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: _isSidebarCollapsed ? 0 : 8),
+                      child: Icon(
+                        _isSidebarCollapsed
+                            ? Icons.keyboard_arrow_right
+                            : Icons.keyboard_arrow_left,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem(
-                'Approvals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Admin Approvals',
-                context),
-            _buildNavItem('Analytics', 'assets/images/analytics.png',
-                _currentPage == 'Analytics', context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: const Color(0xFF2C3E50),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
+                      _currentPage == 'Dashboard', context),
+                  _buildNavItem(
+                      'Approvals',
+                      'assets/images/Time Allocation_Approval_Blue.png',
+                      _currentPage == 'Admin Approvals' ||
+                          _currentPage == 'Approvals',
+                      context),
+                  _buildNavItem('Analytics', 'assets/images/analytics.png',
+                      _currentPage == 'Analytics', context),
+                  _buildNavItem('History', 'assets/images/analytics.png',
+                      _currentPage == 'History', context),
+                  const SizedBox(height: 20),
+                ],
               ),
-            const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
+            ),
+          ),
+          if (!_isSidebarCollapsed)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              height: 1,
+              color: const Color(0xFF2C3E50),
+            ),
+          const SizedBox(height: 12),
+          _buildNavItem(
+              'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
+          const SizedBox(height: 20),
+        ],
       ),
     );
   }
@@ -1600,10 +1633,27 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
-        // Already here
+        setState(() => _activeFilter = 'pending');
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
         break;
       case 'Analytics':
         Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'History':
+        setState(() => _activeFilter = 'approved');
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
         break;
       case 'Logout':
         AuthService.logout();
