@@ -4218,14 +4218,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       duration: const Duration(milliseconds: 300),
       width: _isAdminSidebarCollapsed ? 90.0 : 250.0,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.3),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
+        color: const Color(0xFF252525),
         border: Border(
           right: BorderSide(
             color: PremiumTheme.glassWhiteBorder,
